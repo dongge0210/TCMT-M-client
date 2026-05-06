@@ -361,6 +361,17 @@ int main(int argc, char* argv[]) {
         Logger::Warn("IPC server start failed: " + ipcServer.GetLastError());
     }
 
+    // Initial USB detection (startup scan)
+    try {
+        UsbInfo usb;
+        usb.Detect();
+        const auto& devs = usb.GetDevices();
+        Logger::Info("USB: initial scan — " + std::to_string(devs.size()) + " device(s) found");
+        for (size_t di = 0; di < std::min(devs.size(), size_t(5)); ++di)
+            Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                        + " PID:" + std::to_string(devs[di].pid));
+    } catch (...) { Logger::Debug("USB: initial scan failed"); }
+
     // Start TUI
     tcmt::TuiApp tuiApp;
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
