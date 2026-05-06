@@ -50,6 +50,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
 #include "core/MCP/MCPServer.h"
+#include "core/IPC/IPCClient.h"
 #include "core/temperature/TemperatureWrapper.h"
 #include "tui/TuiApp.h"
 #include "core/Config/ConfigManager.h"
@@ -748,49 +749,81 @@ int main(int argc, char* argv[]) {
             TemperatureWrapper::Initialize();
             tcmt::mcp::MCPServer server;
 
-            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature", []() -> nlohmann::json {
-                CpuInfo cpu;
-                nlohmann::json j;
-                j["name"] = cpu.GetName();
-                j["usage"] = cpu.GetUsage();
-                j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
-                j["cores"]["performance"] = cpu.GetLargeCores();
-                j["cores"]["efficiency"] = cpu.GetSmallCores();
-                j["frequencies"]["pCore"] = cpu.GetLargeCoreSpeed();
-                j["frequencies"]["eCore"] = cpu.GetSmallCoreSpeed();
-                return j;
-            });
+            // Try IPC client first, fall back to direct hardware reads
+            tcmt::ipc::IPCClient ipc;
+            bool useIpc = ipc.Connect();
+            if (useIpc) Logger::Info("MCP: using IPC");
+            else        Logger::Info("MCP: IPC unavailable, using direct hardware reads");
 
-            server.RegisterTool("get_memory", "System memory statistics", []() -> nlohmann::json {
-                MemoryInfo mem;
+            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
+            [&ipc, useIpc]() -> nlohmann::json {
                 nlohmann::json j;
-                j["total"] = mem.GetTotalPhysical();
-                j["available"] = mem.GetAvailablePhysical();
-                j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                return j;
-            });
-
-            server.RegisterTool("get_gpu_status", "GPU usage and memory", []() -> nlohmann::json {
-                GpuInfo gpu;
-                nlohmann::json j;
-                const auto& gpus = gpu.GetGpuData();
-                if (!gpus.empty()) {
-                    j["name"] = std::string(gpus[0].name.begin(), gpus[0].name.end());
-                    j["usage"] = gpus[0].usage;
-                    j["memory"] = gpus[0].dedicatedMemory;
+                if (useIpc) {
+                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
+                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+                } else {
+                    CpuInfo cpu; MemoryInfo mem; DiskInfo disk;
+                    j["name"] = cpu.GetName();
+                    j["usage"] = cpu.GetUsage();
+                    j["cores"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+                    j["temperature"] = 0.0;
                 }
                 return j;
             });
-
-            server.RegisterTool("get_system_info", "OS version and hardware summary", []() -> nlohmann::json {
-                OSInfo os;
-                CpuInfo cpu;
-                MemoryInfo mem;
+            server.RegisterTool("get_memory", "System memory statistics",
+            [&ipc, useIpc]() -> nlohmann::json {
                 nlohmann::json j;
-                j["os"] = os.GetVersion();
-                j["cpu"] = cpu.GetName();
-                j["cores"] = cpu.GetTotalCores();
-                j["memoryTotal"] = mem.GetTotalPhysical();
+                if (useIpc) {
+                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+                } else {
+                    MemoryInfo mem;
+                    j["total"] = mem.GetTotalPhysical();
+                    j["available"] = mem.GetAvailablePhysical();
+                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+                }
+                return j;
+            });
+            server.RegisterTool("get_gpu_status", "GPU usage and memory",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+                } else {
+                    GpuInfo gpu;
+                    const auto& gpus = gpu.GetGpuData();
+                    if (!gpus.empty()) {
+                        j["name"] = std::string(gpus[0].name.begin(), gpus[0].name.end());
+                        j["usage"] = gpus[0].usage;
+                        j["memory"] = gpus[0].dedicatedMemory;
+                    }
+                }
+                return j;
+            });
+            server.RegisterTool("get_system_info", "OS version and hardware summary",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["os"] = ipc.ReadString("os/version").value_or("");
+                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+                } else {
+                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
+                    j["os"] = os.GetVersion();
+                    j["cpu"] = cpu.GetName();
+                    j["cores"] = cpu.GetTotalCores();
+                    j["memoryTotal"] = mem.GetTotalPhysical();
+                }
                 return j;
             });
 

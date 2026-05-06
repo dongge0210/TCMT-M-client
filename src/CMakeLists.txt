@@ -47,12 +47,13 @@ set(MCP_SOURCES
 )
 
 
-# IPC module (schema-based shared memory pipeline, macOS for now)
-set(IPC_SOURCES "")
+# IPC module
+set(IPC_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCClient.cpp
+)
 if(TCMT_MACOS)
     list(APPEND IPC_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCServer.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCClient.cpp
     )
 endif()
 

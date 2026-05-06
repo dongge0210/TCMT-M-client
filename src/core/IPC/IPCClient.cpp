@@ -1,15 +1,18 @@
 #include "IPCClient.h"
 #include "../Utils/Logger.h"
+#include <cstring>
+#include <algorithm>
+#include <optional>
+
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <cstring>
 #include <cerrno>
-#include <algorithm>
-#include <optional>
+#endif
 
 namespace tcmt::ipc {
 
@@ -17,9 +20,33 @@ IPCClient::IPCClient()  = default;
 IPCClient::~IPCClient() { Disconnect(); }
 
 void IPCClient::Disconnect() {
+#ifndef _WIN32
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (sockFd_ != -1) { close(sockFd_); sockFd_ = -1; }
+#else
+    if (shmPtr_) { UnmapViewOfFile(shmPtr_); shmPtr_ = nullptr; }
+    if (shmHandle_) { CloseHandle(shmHandle_); shmHandle_ = nullptr; }
+    if (pipeHandle_ != INVALID_HANDLE_VALUE) { CloseHandle(pipeHandle_); pipeHandle_ = INVALID_HANDLE_VALUE; }
+#endif
     connected_ = false;
+}
+
+ssize_t IPCClient::ReadPipe(void* buf, size_t len) {
+#ifndef _WIN32
+    return read(sockFd_, buf, len);
+#else
+    DWORD n = 0;
+    return ReadFile(pipeHandle_, buf, (DWORD)len, &n, nullptr) ? (ssize_t)n : -1;
+#endif
+}
+
+ssize_t IPCClient::WritePipe(const void* buf, size_t len) {
+#ifndef _WIN32
+    return write(sockFd_, buf, len);
+#else
+    DWORD n = 0;
+    return WriteFile(pipeHandle_, buf, (DWORD)len, &n, nullptr) ? (ssize_t)n : -1;
+#endif
 }
 
 // === Connect ===
@@ -33,6 +60,7 @@ bool IPCClient::Connect() {
 }
 
 bool IPCClient::ConnectSocket() {
+#ifndef _WIN32
     sockFd_ = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sockFd_ == -1) { lastError_ = "socket() failed"; return false; }
 
@@ -46,6 +74,17 @@ bool IPCClient::ConnectSocket() {
         close(sockFd_); sockFd_ = -1;
         return false;
     }
+#else
+    std::string pipePath = "\\\\.\\pipe\\TCMT_IPC_Pipe";
+    pipeHandle_ = CreateFileA(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE,
+                              0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (pipeHandle_ == INVALID_HANDLE_VALUE) {
+        lastError_ = "NamedPipe connect failed: " + std::to_string(GetLastError());
+        return false;
+    }
+    DWORD mode = PIPE_READMODE_MESSAGE;
+    SetNamedPipeHandleState(pipeHandle_, &mode, nullptr, nullptr);
+#endif
     return true;
 }
 
@@ -54,23 +93,23 @@ bool IPCClient::Handshake() {
     PipeMessage hello;
     hello.type    = static_cast<uint8_t>(PipeMsgType::Hello);
     hello.version = IPC_VERSION;
-    if (write(sockFd_, &hello, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE) {
+    if (WritePipe(&hello, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE) {
         lastError_ = "HELLO write failed";
         return false;
     }
 
     // 2. Read HELLO_ACK
     PipeMessage msg;
-    ssize_t n = read(sockFd_, &msg, PIPE_MSG_HEADER_SIZE);
-    if (n != (ssize_t)PIPE_MSG_HEADER_SIZE || msg.type != static_cast<uint8_t>(PipeMsgType::HelloAck)) {
+    if (ReadPipe(&msg, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE ||
+        msg.type != static_cast<uint8_t>(PipeMsgType::HelloAck)) {
         lastError_ = "HELLO_ACK not received";
         return false;
     }
 
     // 3. Read SCHEMA
     SchemaHeader schemaHeader;
-    n = read(sockFd_, &schemaHeader, IPC_SCHEMA_HEADER_SIZE);
-    if (n != (ssize_t)IPC_SCHEMA_HEADER_SIZE || schemaHeader.magic != IPC_MAGIC) {
+    if (ReadPipe(&schemaHeader, IPC_SCHEMA_HEADER_SIZE) != (ssize_t)IPC_SCHEMA_HEADER_SIZE ||
+        schemaHeader.magic != IPC_MAGIC) {
         lastError_ = "Schema header invalid";
         return false;
     }
@@ -81,7 +120,7 @@ bool IPCClient::Handshake() {
     size_t fieldBytes = fieldCount * IPC_FIELD_DEF_SIZE;
     size_t total = 0;
     while (total < fieldBytes) {
-        n = read(sockFd_, reinterpret_cast<char*>(fieldBuf.data()) + total, fieldBytes - total);
+        ssize_t n = ReadPipe(reinterpret_cast<char*>(fieldBuf.data()) + total, fieldBytes - total);
         if (n <= 0) { lastError_ = "Schema fields read failed"; return false; }
         total += n;
     }
@@ -97,7 +136,7 @@ bool IPCClient::Handshake() {
     PipeMessage ack;
     ack.type    = static_cast<uint8_t>(PipeMsgType::Ack);
     ack.version = IPC_VERSION;
-    if (write(sockFd_, &ack, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE) {
+    if (WritePipe(&ack, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE) {
         lastError_ = "ACK write failed";
         return false;
     }
@@ -106,15 +145,20 @@ bool IPCClient::Handshake() {
 }
 
 bool IPCClient::OpenSharedMemory() {
+#ifndef _WIN32
     int fd = shm_open("/tcmt_ipc_shm", O_RDONLY, 0);
-    if (fd == -1) {
-        lastError_ = "shm_open failed";
-        return false;
-    }
+    if (fd == -1) { lastError_ = "shm_open failed"; return false; }
     shmSize_ = schemaHeader_.totalSize;
     shmPtr_ = mmap(nullptr, shmSize_, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
     if (shmPtr_ == MAP_FAILED) { shmPtr_ = nullptr; lastError_ = "mmap failed"; return false; }
+#else
+    shmSize_ = schemaHeader_.totalSize;
+    shmHandle_ = OpenFileMappingA(FILE_MAP_READ, FALSE, "Global\\TCMT_IPC_SharedMemory");
+    if (!shmHandle_) { lastError_ = "OpenFileMapping failed"; return false; }
+    shmPtr_ = MapViewOfFile(shmHandle_, FILE_MAP_READ, 0, 0, shmSize_);
+    if (!shmPtr_) { CloseHandle(shmHandle_); shmHandle_ = nullptr; lastError_ = "MapViewOfFile failed"; return false; }
+#endif
     return true;
 }
 

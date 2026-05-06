@@ -6,6 +6,10 @@
 #include <map>
 #include <cstdint>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace tcmt::ipc {
 
 // C++ IPC client — mirrors C# IPCPipeClient + IPCMemoryReader.
@@ -34,7 +38,15 @@ private:
     bool Handshake();
     bool OpenSharedMemory();
 
+    ssize_t ReadPipe(void* buf, size_t len);
+    ssize_t WritePipe(const void* buf, size_t len);
+
+#ifdef _WIN32
+    HANDLE pipeHandle_ = INVALID_HANDLE_VALUE;
+    HANDLE shmHandle_  = nullptr;
+#else
     int sockFd_ = -1;
+#endif
     void* shmPtr_ = nullptr;
     size_t shmSize_ = 0;
 
