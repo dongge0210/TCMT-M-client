@@ -1,0 +1,67 @@
+project_name = "TCMT"
+project_path = "."
+output_path = "./litho.docs"
+internal_path = ".litho"
+target_language = "zh"
+analyze_dependencies = false
+identify_components = true
+max_depth = 10
+core_component_percentage = 0.3
+max_file_size = 524288
+include_tests = false
+include_hidden = false
+git_tracked_only = true
+
+excluded_dirs = [
+    ".litho", "litho.docs", "target", "node_modules", ".git",
+    "build", "dist", "venv", ".vs", "bin", "obj",
+    "Debug", "Release", "*Tests", "__pycache__",
+    ".cursor", ".claude", ".remember", "vault", "inbox", "knowledge",
+    "docs", "AvaloniaUI/bin", "AvaloniaUI/obj",
+    "src/third_party", "tools", "cmake",
+    "src/core/DataStruct", "src/core/Platform",
+    "src/core/board", "src/core/usb", "src/core/Config",
+    "AvaloniaUI/Converters",
+    "src/CPP-parsers/extern"
+]
+excluded_files = [
+    "litho.toml", "*.log", "*.tmp", "*.cache",
+    "*.lock", ".gitignore", "*.md", "*.txt",
+    "compile_commands.json", "swarmvault.*",
+    "*.csproj", "*.sln", "*.vcxproj", "*.filters",
+    "*.axaml", "*.xaml", "*.config", "*.o", "*.obj",
+    "*.pdb", "*.a", "*.lib", "*.dylib", "*.mdb",
+    "*.resx", "*.resources", "*.Designer.cs"
+]
+excluded_extensions = [
+    "jpg", "jpeg", "png", "gif", "bmp", "ico",
+    "mp3", "mp4", "avi", "pdf", "zip", "tar",
+    "exe", "dll", "so", "archive", "pdb",
+    "xcf", "svg", "webp"
+]
+included_extensions = ["cpp", "h", "hpp", "cs", "c"]
+
+[llm]
+provider = "deepseek"
+api_key = "sk-88e7c1af6e724d898fe10405681e1f4d"
+api_base_url = "https://api.deepseek.com"
+model_efficient = "deepseek-v4-flash"
+model_powerful = "deepseek-v4-pro"
+max_tokens = 1000000
+temperature = 0.1
+retry_attempts = 5
+retry_delay_ms = 5000
+timeout_seconds = 300
+disable_preset_tools = false
+max_parallels = 20
+
+[cache]
+enabled = true
+cache_dir = ".litho/cache"
+expire_hours = 10240
+
+[boundary_analysis]
+max_boundary_insights = 50
+code_insights_limit = 20
+include_source_code = true
+only_directories_when_files_more_than = 100

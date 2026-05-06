@@ -28,6 +28,7 @@
 #include "core/power/PowerInfo.h"
 #include "core/disk/DiskInfo.h"
 #include "core/history/HistoryLogger.h"
+#include "core/usb/UsbInfo.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/DataStruct/SharedMemoryManager.h"
 #include "core/IPC/IPCServer.h"
@@ -746,6 +747,23 @@ int main(int argc, char* argv[]) {
                     snapshots.push_back({"battery/percent", (double)data.batteryPercent, "%", (uint64_t)nowMs});
                 }
                 historyLogger.WriteBatch(snapshots);
+            }
+
+            // USB detection (every 10 seconds)
+            static int usbCheckCounter = 0;
+            if (++usbCheckCounter >= 20) {
+                usbCheckCounter = 0;
+                try {
+                    UsbInfo usb;
+                    usb.Detect();
+                    const auto& devs = usb.GetDevices();
+                    if (!devs.empty()) {
+                        Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                        for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
+                            Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                                        + " PID:" + std::to_string(devs[di].pid));
+                    }
+                } catch (...) {}
             }
 
             loopCounter++;
