@@ -635,7 +635,6 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
 
-            TemperatureWrapper::Initialize();
 
             // Build JSON via ConfigManager, then dump to stdout via temp file
             char tmpBuf[MAX_PATH];
@@ -746,7 +745,6 @@ int main(int argc, char* argv[]) {
             _setmode(_fileno(stdout), _O_BINARY);
             _setmode(_fileno(stdin), _O_BINARY);
 #endif
-            TemperatureWrapper::Initialize();
             tcmt::mcp::MCPServer server;
 
             // Try IPC client first, fall back to direct hardware reads
@@ -981,7 +979,6 @@ int main(int argc, char* argv[]) {
 
         // Initialize hardware monitoring bridge
         try {
-            TemperatureWrapper::Initialize();
             Logger::Debug("Hardware monitoring bridge initialized successfully");
         }
         catch (const std::exception& e) {
