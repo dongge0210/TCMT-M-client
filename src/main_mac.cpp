@@ -29,6 +29,7 @@
 #include "core/disk/DiskInfo.h"
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
+#include "core/MCP/MCPServer.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/DataStruct/SharedMemoryManager.h"
 #include "core/IPC/IPCServer.h"
@@ -209,6 +210,143 @@ int main(int argc, char* argv[]) {
         std::cout << std::endl;
         std::remove(tmpPath.c_str());
 
+        TemperatureWrapper::Cleanup();
+        return 0;
+    }
+
+    // ======================== --mcp Mode ========================
+    bool mcpMode = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--mcp") {
+            mcpMode = true;
+            break;
+        }
+    }
+    if (mcpMode) {
+        try { TemperatureWrapper::Initialize(); } catch (...) {}
+        tcmt::mcp::MCPServer server;
+
+        // Register tools — each reads directly from hardware modules
+        server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature", []() -> nlohmann::json {
+            CpuInfo cpu;
+            nlohmann::json j;
+            j["name"] = cpu.GetName();
+            j["usage"] = cpu.GetUsage();
+            j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+            j["cores"]["performance"] = cpu.GetLargeCores();
+            j["cores"]["efficiency"] = cpu.GetSmallCores();
+            j["frequencies"]["pCore"] = cpu.GetLargeCoreSpeed();
+            j["frequencies"]["eCore"] = cpu.GetSmallCoreSpeed();
+            auto temps = TemperatureWrapper::GetTemperatures();
+            for (const auto& [n, t] : temps)
+                if (n.find("CPU") != std::string::npos || n.find("cpu") != std::string::npos)
+                    { j["temperature"] = t; break; }
+            return j;
+        });
+
+        server.RegisterTool("get_memory", "System memory statistics", []() -> nlohmann::json {
+            MemoryInfo mem;
+            nlohmann::json j;
+            j["total"] = mem.GetTotalPhysical();
+            j["available"] = mem.GetAvailablePhysical();
+            j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+            return j;
+        });
+
+        server.RegisterTool("get_gpu_status", "GPU usage and memory", []() -> nlohmann::json {
+            GpuInfo gpu;
+            nlohmann::json j;
+            const auto& gpus = gpu.GetGpuData();
+            if (!gpus.empty()) {
+                j["name"] = std::string(gpus[0].name.begin(), gpus[0].name.end());
+                j["usage"] = gpus[0].usage;
+                j["memory"] = gpus[0].dedicatedMemory;
+            }
+            auto temps = TemperatureWrapper::GetTemperatures();
+            for (const auto& [n, t] : temps)
+                if (n.find("GPU") != std::string::npos || n.find("gpu") != std::string::npos)
+                    { j["temperature"] = t; break; }
+            return j;
+        });
+
+        server.RegisterTool("get_disk_health", "Logical volumes + physical disk SMART", []() -> nlohmann::json {
+            DiskInfo disk;
+            nlohmann::json j;
+            auto volumes = disk.GetDisks();
+            for (const auto& v : volumes) {
+                nlohmann::json dv;
+                dv["label"] = v.label;
+                dv["fs"] = v.fileSystem;
+                dv["total"] = v.totalSize;
+                dv["used"] = v.usedSpace;
+                j["volumes"].push_back(dv);
+            }
+            SystemInfo si;
+            disk.CollectSmartData(si);
+            for (const auto& pd : si.physicalDisks) {
+                nlohmann::json pj;
+                for (size_t k = 0; k < 63 && pd.model[k] != u'\0'; ++k)
+                    pj["model"] = pj.value("model", "") + std::string(1, (char)pd.model[k]);
+                if (pd.capacity > 0) pj["capacity"] = pd.capacity;
+                pj["smart"] = pd.smartSupported;
+                j["physical"].push_back(pj);
+            }
+            return j;
+        });
+
+        server.RegisterTool("get_battery_info", "Battery percentage and AC status", []() -> nlohmann::json {
+            PowerInfo power;
+            power.Detect();
+            nlohmann::json j;
+            j["acOnline"] = power.acOnline;
+            if (!power.batteries.empty()) {
+                j["percent"] = power.batteries[0].chargePercent;
+            } else {
+                j["percent"] = -1;
+            }
+            return j;
+        });
+
+        server.RegisterTool("get_network_info", "Network adapters and throughput", []() -> nlohmann::json {
+            NetworkAdapter net;
+            nlohmann::json j;
+            const auto& adapters = net.GetAdapters();
+            for (const auto& a : adapters) {
+                if (a.ip.empty()) continue;
+                nlohmann::json na;
+                na["name"] = a.name;
+                na["ip"] = a.ip;
+                na["mac"] = a.mac;
+                na["type"] = a.adapterType;
+                na["speed"] = a.speed;
+                na["downloadSpeed"] = a.downloadSpeed;
+                na["uploadSpeed"] = a.uploadSpeed;
+                j["adapters"].push_back(na);
+            }
+            return j;
+        });
+
+        server.RegisterTool("get_temperatures", "All temperature sensors", []() -> nlohmann::json {
+            nlohmann::json j;
+            auto temps = TemperatureWrapper::GetTemperatures();
+            for (const auto& [name, value] : temps)
+                j["sensors"].push_back({{"name", name}, {"value", value}});
+            return j;
+        });
+
+        server.RegisterTool("get_system_info", "OS version and hardware summary", []() -> nlohmann::json {
+            OSInfo os;
+            CpuInfo cpu;
+            MemoryInfo mem;
+            nlohmann::json j;
+            j["os"] = os.GetVersion();
+            j["cpu"] = cpu.GetName();
+            j["cores"] = cpu.GetTotalCores();
+            j["memoryTotal"] = mem.GetTotalPhysical();
+            return j;
+        });
+
+        server.Run();
         TemperatureWrapper::Cleanup();
         return 0;
     }

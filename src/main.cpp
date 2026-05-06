@@ -49,6 +49,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/IPC/NamedPipeServer.h"
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
+#include "core/MCP/MCPServer.h"
 #include "core/temperature/TemperatureWrapper.h"
 #include "tui/TuiApp.h"
 #include "core/Config/ConfigManager.h"
@@ -728,6 +729,73 @@ int main(int argc, char* argv[]) {
 
             TemperatureWrapper::Cleanup();
             CoUninitialize();
+            return 0;
+        }
+
+        // ======================== --mcp Mode ========================
+        bool mcpMode = false;
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--mcp") {
+                mcpMode = true;
+                break;
+            }
+        }
+        if (mcpMode) {
+#ifdef _WIN32
+            _setmode(_fileno(stdout), _O_BINARY);
+            _setmode(_fileno(stdin), _O_BINARY);
+#endif
+            TemperatureWrapper::Initialize();
+            tcmt::mcp::MCPServer server;
+
+            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature", []() -> nlohmann::json {
+                CpuInfo cpu;
+                nlohmann::json j;
+                j["name"] = cpu.GetName();
+                j["usage"] = cpu.GetUsage();
+                j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+                j["cores"]["performance"] = cpu.GetLargeCores();
+                j["cores"]["efficiency"] = cpu.GetSmallCores();
+                j["frequencies"]["pCore"] = cpu.GetLargeCoreSpeed();
+                j["frequencies"]["eCore"] = cpu.GetSmallCoreSpeed();
+                return j;
+            });
+
+            server.RegisterTool("get_memory", "System memory statistics", []() -> nlohmann::json {
+                MemoryInfo mem;
+                nlohmann::json j;
+                j["total"] = mem.GetTotalPhysical();
+                j["available"] = mem.GetAvailablePhysical();
+                j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+                return j;
+            });
+
+            server.RegisterTool("get_gpu_status", "GPU usage and memory", []() -> nlohmann::json {
+                GpuInfo gpu;
+                nlohmann::json j;
+                const auto& gpus = gpu.GetGpuData();
+                if (!gpus.empty()) {
+                    j["name"] = std::string(gpus[0].name.begin(), gpus[0].name.end());
+                    j["usage"] = gpus[0].usage;
+                    j["memory"] = gpus[0].dedicatedMemory;
+                }
+                return j;
+            });
+
+            server.RegisterTool("get_system_info", "OS version and hardware summary", []() -> nlohmann::json {
+                OSInfo os;
+                CpuInfo cpu;
+                MemoryInfo mem;
+                nlohmann::json j;
+                j["os"] = os.GetVersion();
+                j["cpu"] = cpu.GetName();
+                j["cores"] = cpu.GetTotalCores();
+                j["memoryTotal"] = mem.GetTotalPhysical();
+                return j;
+            });
+
+            server.Run();
+            TemperatureWrapper::Cleanup();
             return 0;
         }
 

@@ -41,6 +41,11 @@ set(CONFIG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Config/ConfigManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Config/ConfigManager.cpp
 )
+# MCP server (JSON-RPC 2.0 over stdio)
+set(MCP_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP/MCPServer.cpp
+)
+
 
 # IPC module (schema-based shared memory pipeline, macOS for now)
 set(IPC_SOURCES "")
@@ -116,7 +121,8 @@ add_library(TCMTCore STATIC
     ${CORE_MODULES_SOURCES}
     ${DATASTRUCT_SOURCES}
     ${CONFIG_SOURCES}
-    ${IPC_SOURCES}
+    ${MCP_SOURCES}
+	    ${IPC_SOURCES}
     ${HISTORY_SOURCES}
     ${TEMP_SOURCES}
     ${TUI_SOURCES}
@@ -135,6 +141,7 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
 
     # CPP-parsers unified config interface
     ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/include
