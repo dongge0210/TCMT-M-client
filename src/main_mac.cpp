@@ -224,7 +224,6 @@ int main(int argc, char* argv[]) {
         }
     }
     if (mcpMode) {
-        try { TemperatureWrapper::Initialize(); } catch (...) {}
         tcmt::mcp::MCPServer server;
 
         // Try IPC client first (reads from running C++ process), fall back to direct HW
