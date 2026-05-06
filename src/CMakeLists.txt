@@ -52,6 +52,7 @@ set(IPC_SOURCES "")
 if(TCMT_MACOS)
     list(APPEND IPC_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCServer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCClient.cpp
     )
 endif()
 
