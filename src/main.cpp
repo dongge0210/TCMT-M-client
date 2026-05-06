@@ -48,6 +48,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/DataStruct/SharedMemoryManager.h"
 #include "core/IPC/NamedPipeServer.h"
 #include "core/history/HistoryLogger.h"
+#include "core/usb/UsbInfo.h"
 #include "core/temperature/TemperatureWrapper.h"
 #include "tui/TuiApp.h"
 #include "core/Config/ConfigManager.h"
@@ -895,6 +896,17 @@ int main(int argc, char* argv[]) {
         tuiApp.Start();
         Logger::Info("TUI started");
 
+        // Initial USB detection (startup scan)
+        try {
+            UsbInfo usb;
+            usb.Detect();
+            const auto& devs = usb.GetDevices();
+            Logger::Info("USB: initial scan — " + std::to_string(devs.size()) + " device(s) found");
+            for (size_t di = 0; di < std::min(devs.size(), size_t(5)); ++di)
+                Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                            + " PID:" + std::to_string(devs[di].pid));
+        } catch (...) { Logger::Debug("USB: initial scan failed"); }
+
         // History logger (SQLite)
         HistoryLogger historyLogger;
         historyLogger.SetRetentionDays(30);
@@ -1580,6 +1592,23 @@ int main(int argc, char* argv[]) {
                         }
                         if (sysInfo.batteryPercent >= 0)
                             snapshots.push_back({"battery/percent", (double)sysInfo.batteryPercent, "%", (uint64_t)nowMs});
+                        // USB detection (every ~10 seconds)
+                        static int usbCheckCounter = 0;
+                        if (++usbCheckCounter >= 20) {
+                            usbCheckCounter = 0;
+                            try {
+                                UsbInfo usb;
+                                usb.Detect();
+                                const auto& devs = usb.GetDevices();
+                                if (!devs.empty()) {
+                                    Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                                    for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
+                                        Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                                                    + " PID:" + std::to_string(devs[di].pid));
+                                }
+                            } catch (...) {}
+                        }
+
                         historyLogger.WriteBatch(snapshots);
                     }
 
