@@ -115,7 +115,8 @@ void IPCServer::AcceptLoop() {
             std::lock_guard<std::mutex> lock(clientsMutex_);
             clients_.push_back({clientFd, ClientType::Unknown});
         }
-        HandleClient(clientFd);
+        // Spawn thread per client — supports MCP + Avalonia concurrently
+        std::thread(&IPCServer::HandleClient, this, clientFd).detach();
     }
 }
 
