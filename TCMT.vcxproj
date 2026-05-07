@@ -159,10 +159,15 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <!-- SharedMemoryManager_Windows.cpp NOT needed here -->
     <ClCompile Include="src\core\disk\DiskInfo.cpp" />
     <ClCompile Include="src\core\gpu\GpuInfo.cpp" />
+    <ClCompile Include="src\core\history\HistoryLogger.cpp" />
+    <ClCompile Include="src\core\IPC\IPCClient.cpp" />
+    <ClCompile Include="src\core\IPC\NamedPipeServer.cpp" />
+    <ClCompile Include="src\core\MCP\MCPServer.cpp" />
     <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
     <ClCompile Include="src\core\os\OSInfo.cpp" />
     <ClCompile Include="src\core\Platform\Platform_Windows.cpp" />
+    <ClCompile Include="src\core\usb\UsbInfo.cpp" />
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>
