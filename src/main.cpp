@@ -798,106 +798,84 @@ int main(int argc, char* argv[]) {
 #endif
             tcmt::mcp::MCPServer server;
 
-            // Phase 1: Try to connect to a running TCMT instance
+            // Try IPC client first — like Avalonia, reuse running TCMT instance
             tcmt::ipc::IPCClient ipc;
-            bool hasRemote = ipc.Connect();
-            if (hasRemote) {
-                Logger::Info("MCP: connected to running TCMT instance via IPC");
+            bool useIpc = ipc.Connect();
+            if (useIpc) {
+                Logger::Info("MCP: connected to running TCMT via IPC");
+                ipc.ClosePipe(); // free server slot for other clients (Avalonia)
             } else {
-                Logger::Info("MCP: no running instance — becoming primary");
+                Logger::Info("MCP: IPC unavailable, using direct hardware reads");
             }
 
-            // Phase 2: If no remote, become the primary instance
-            std::unique_ptr<tcmt::ipc::NamedPipeServer> pipeServer;
-            std::unique_ptr<WmiManager> wmiManager;
-
-            if (!hasRemote) {
-                // Init COM (needed for WMI)
-                HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-                if (FAILED(hr)) Logger::Warn("MCP: COM init failed");
-
-                // Init shared memory
-                if (!SharedMemoryManager::InitSharedMemory()) {
-                    Logger::Error("MCP: SharedMemory init failed: " + SharedMemoryManager::GetLastError());
-                }
-
-                // Init NamedPipeServer with schema
-                pipeServer = std::make_unique<tcmt::ipc::NamedPipeServer>();
-                tcmt::ipc::SchemaHeader schemaHdr;
-                std::vector<tcmt::ipc::FieldDef> fields;
-                BuildWindowsIpcSchema(schemaHdr, fields);
-                pipeServer->UpdateSchema(schemaHdr, fields);
-                if (pipeServer->Start()) {
-                    Logger::Info("MCP: NamedPipeServer started");
-                } else {
-                    Logger::Warn("MCP: NamedPipeServer start failed: " + pipeServer->LastError());
-                }
-
-                // Connect IPCClient directly to SharedMemory buffer
-                auto* shmBuf = SharedMemoryManager::GetBuffer();
-                if (shmBuf) {
-                    ipc.ConnectDirect(static_cast<void*>(shmBuf), sizeof(SharedMemoryBlock),
-                                      schemaHdr, fields);
-                    Logger::Info("MCP: IPCClient direct-connected to SharedMemory");
-                }
-
-                // Init hardware readers for background collection
-                TemperatureWrapper::Initialize();
-                wmiManager = std::make_unique<WmiManager>();
-                if (!wmiManager->IsInitialized()) {
-                    Logger::Warn("MCP: WmiManager init failed");
-                }
-                Logger::Info("MCP: hardware readers initialized — ready");
-            }
-
-            // Phase 3: Register 4 MCP tools — always use IPC
             server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
-            [&ipc]() -> nlohmann::json {
+            [&ipc, useIpc]() -> nlohmann::json {
                 nlohmann::json j;
-                j["name"]    = ipc.ReadString("cpu/name").value_or("");
-                j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
-                j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
-                j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
-                j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
-                j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
-                j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+                if (useIpc) {
+                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
+                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+                } else {
+                    CpuInfo cpu;
+                    j["name"] = cpu.GetName();
+                    j["usage"] = cpu.GetUsage();
+                    j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+                    j["temperature"] = 0.0;
+                }
                 return j;
             });
             server.RegisterTool("get_memory", "System memory statistics",
-            [&ipc]() -> nlohmann::json {
+            [&ipc, useIpc]() -> nlohmann::json {
                 nlohmann::json j;
-                j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
-                j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
-                j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+                if (useIpc) {
+                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+                } else {
+                    MemoryInfo mem;
+                    j["total"] = mem.GetTotalPhysical();
+                    j["available"] = mem.GetAvailablePhysical();
+                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+                }
                 return j;
             });
             server.RegisterTool("get_gpu_status", "GPU usage and memory",
-            [&ipc]() -> nlohmann::json {
+            [&ipc, useIpc]() -> nlohmann::json {
                 nlohmann::json j;
-                j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
-                j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
-                j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+                if (useIpc) {
+                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+                } else {
+                    // GPU fallback requires WmiManager — skip on Windows
+                }
                 return j;
             });
             server.RegisterTool("get_system_info", "OS version and hardware summary",
-            [&ipc]() -> nlohmann::json {
+            [&ipc, useIpc]() -> nlohmann::json {
                 nlohmann::json j;
-                j["os"] = ipc.ReadString("os/version").value_or("");
-                j["cpu"] = ipc.ReadString("cpu/name").value_or("");
-                j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+                if (useIpc) {
+                    j["os"] = ipc.ReadString("os/version").value_or("");
+                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+                } else {
+                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
+                    j["os"] = os.GetVersion();
+                    j["cpu"] = cpu.GetName();
+                    j["cores"] = cpu.GetTotalCores();
+                    j["memoryTotal"] = mem.GetTotalPhysical();
+                }
                 return j;
             });
 
-            // Phase 4: Run MCP server (blocking stdin/stdout loop)
             server.Run();
-
-            // Phase 5: Cleanup
-            if (pipeServer) pipeServer->Stop();
             TemperatureWrapper::Cleanup();
-            SharedMemoryManager::CleanupSharedMemory();
-            CoUninitialize();
             return 0;
         }
 

@@ -28,6 +28,8 @@ public:
     bool ConnectDirect(void* shmPtr, size_t shmSize,
                        const SchemaHeader& header,
                        const std::vector<FieldDef>& fields);
+    // Close socket/pipe but keep shared memory mapped (frees server slot for other clients)
+    void ClosePipe();
     void Disconnect();
     bool IsConnected() const { return connected_; }
 

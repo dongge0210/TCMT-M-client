@@ -64,6 +64,14 @@ bool IPCClient::Connect() {
     return true;
 }
 
+void IPCClient::ClosePipe() {
+#ifndef _WIN32
+    if (sockFd_ != -1) { close(sockFd_); sockFd_ = -1; }
+#else
+    if (pipeHandle_ != INVALID_HANDLE_VALUE) { CloseHandle(pipeHandle_); pipeHandle_ = INVALID_HANDLE_VALUE; }
+#endif
+}
+
 bool IPCClient::ConnectDirect(void* shmPtr, size_t shmSize,
                                const SchemaHeader& header,
                                const std::vector<FieldDef>& fields) {
