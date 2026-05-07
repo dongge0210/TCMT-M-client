@@ -5,6 +5,14 @@ using Avalonia.Media;
 
 namespace AvaloniaUI.Converters;
 
+internal static class ConverterColors
+{
+    public static readonly SolidColorBrush Green  = new SolidColorBrush(Color.Parse("#FF4CAF50"));
+    public static readonly SolidColorBrush Orange = new SolidColorBrush(Color.Parse("#FFFF9800"));
+    public static readonly SolidColorBrush Red    = new SolidColorBrush(Color.Parse("#FFF44336"));
+    public static readonly SolidColorBrush Gray   = new SolidColorBrush(Colors.Gray);
+}
+
 /// <summary>
 /// Converts null to default value, useful for binding errors
 /// </summary>
@@ -27,17 +35,13 @@ public class NullToDefaultConverter : IValueConverter
 
 public class BoolToColorConverter : IValueConverter
 {
-    private static readonly SolidColorBrush GreenBrush = new SolidColorBrush(Color.Parse("#FF4CAF50"));
-    private static readonly SolidColorBrush RedBrush = new SolidColorBrush(Color.Parse("#FFF44336"));
-    private static readonly SolidColorBrush GrayBrush = new SolidColorBrush(Colors.Gray);
-
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is bool isConnected)
         {
-            return isConnected ? GreenBrush : RedBrush;
+            return isConnected ? ConverterColors.Green : ConverterColors.Red;
         }
-        return GrayBrush;
+        return ConverterColors.Gray;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -51,11 +55,6 @@ public class BoolToColorConverter : IValueConverter
 /// </summary>
 public class PercentToWarningColorConverter : IValueConverter
 {
-    private static readonly SolidColorBrush GreenBrush = new SolidColorBrush(Color.Parse("#FF4CAF50"));
-    private static readonly SolidColorBrush OrangeBrush = new SolidColorBrush(Color.Parse("#FFFF9800"));
-    private static readonly SolidColorBrush RedBrush = new SolidColorBrush(Color.Parse("#FFF44336"));
-    private static readonly SolidColorBrush GrayBrush = new SolidColorBrush(Colors.Gray);
-
     public double WarningThreshold { get; set; } = 80;
     public double CriticalThreshold { get; set; } = 95;
 
@@ -64,12 +63,12 @@ public class PercentToWarningColorConverter : IValueConverter
         if (value is double percent)
         {
             if (percent >= CriticalThreshold)
-                return RedBrush;
+                return ConverterColors.Red;
             if (percent >= WarningThreshold)
-                return OrangeBrush;
-            return GreenBrush;
+                return ConverterColors.Orange;
+            return ConverterColors.Green;
         }
-        return GrayBrush;
+        return ConverterColors.Gray;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -78,34 +77,3 @@ public class PercentToWarningColorConverter : IValueConverter
     }
 }
 
-/// <summary>
-/// Converts temperature to warning color (green -> orange -> red)
-/// </summary>
-public class TemperatureToWarningColorConverter : IValueConverter
-{
-    private static readonly SolidColorBrush GreenBrush = new SolidColorBrush(Color.Parse("#FF4CAF50"));
-    private static readonly SolidColorBrush OrangeBrush = new SolidColorBrush(Color.Parse("#FFFF9800"));
-    private static readonly SolidColorBrush RedBrush = new SolidColorBrush(Color.Parse("#FFF44336"));
-    private static readonly SolidColorBrush GrayBrush = new SolidColorBrush(Colors.Gray);
-
-    public double WarningThreshold { get; set; } = 70;
-    public double CriticalThreshold { get; set; } = 85;
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value is double temp)
-        {
-            if (temp >= CriticalThreshold)
-                return RedBrush;
-            if (temp >= WarningThreshold)
-                return OrangeBrush;
-            return GreenBrush;
-        }
-        return GrayBrush;
-    }
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
-}

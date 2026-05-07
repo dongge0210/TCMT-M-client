@@ -305,14 +305,20 @@ public class IPCMemoryReader : IDisposable
 
     public bool? ReadBool(string fieldName)
     {
-        var field = FindField(fieldName); if (field == null) return null;
-        if (field.Size < 1) return null;
+        var b = ReadUInt8(fieldName);
+        return b.HasValue ? b.Value != 0 : null;
+    }
 
+    private byte[]? ReadBytes(int offset, int count)
+    {
+        var buf = new byte[count];
         if (OperatingSystem.IsMacOS())
-            return Marshal.ReadByte(_shmPtr, (int)field.Offset) != 0;
-        if (_accessor != null)
-            return _accessor.ReadBoolean((int)field.Offset);
-        return null;
+            Marshal.Copy(new IntPtr(_shmPtr.ToInt64() + offset), buf, 0, count);
+        else if (_accessor != null)
+            _accessor.ReadArray(offset, buf, 0, count);
+        else
+            return null;
+        return buf;
     }
 
     public string? ReadString(string fieldName)
@@ -321,26 +327,13 @@ public class IPCMemoryReader : IDisposable
         int maxLen = (int)Math.Min(field.Size, _schema!.Header.TotalSize - field.Offset);
         if (maxLen <= 0) return null;
 
-        if (OperatingSystem.IsMacOS())
-        {
-            var buf = new byte[maxLen];
-            Marshal.Copy(new IntPtr(_shmPtr.ToInt64() + (int)field.Offset), buf, 0, maxLen);
-            int len = 0;
-            while (len < maxLen && buf[len] != 0) len++;
-            if (len == 0) return string.Empty;
-            return Encoding.ASCII.GetString(buf, 0, len);
-        }
+        var buf = ReadBytes((int)field.Offset, maxLen);
+        if (buf == null) return null;
 
-        if (_accessor != null)
-        {
-            var buf = new byte[maxLen];
-            _accessor.ReadArray((int)field.Offset, buf, 0, maxLen);
-            int len = 0;
-            while (len < maxLen && buf[len] != 0) len++;
-            if (len == 0) return string.Empty;
-            return Encoding.ASCII.GetString(buf, 0, len);
-        }
-        return null;
+        int len = 0;
+        while (len < buf.Length && buf[len] != 0) len++;
+        if (len == 0) return string.Empty;
+        return Encoding.ASCII.GetString(buf, 0, len);
     }
 
     // --- WString 支持 ---
@@ -351,18 +344,17 @@ public class IPCMemoryReader : IDisposable
         int maxBytes = (int)Math.Min(field.Size, _schema!.Header.TotalSize - field.Offset);
         if (maxBytes <= 0) return null;
 
-        if (OperatingSystem.IsWindows() && _accessor != null)
-        {
-            var buf = new byte[maxBytes];
-            _accessor.ReadArray((int)field.Offset, buf, 0, maxBytes);
-            int len = 0;
-            while (len + 1 < maxBytes && (buf[len] != 0 || buf[len + 1] != 0)) len += 2;
-            if (len == 0) return string.Empty;
-            return Encoding.Unicode.GetString(buf, 0, len);
-        }
-
         // macOS: IPCDataBlock uses char[] not WCHAR, fall through to String read
-        return ReadString(fieldName);
+        if (OperatingSystem.IsMacOS())
+            return ReadString(fieldName);
+
+        var buf = ReadBytes((int)field.Offset, maxBytes);
+        if (buf == null) return null;
+
+        int len = 0;
+        while (len + 1 < buf.Length && (buf[len] != 0 || buf[len + 1] != 0)) len += 2;
+        if (len == 0) return string.Empty;
+        return Encoding.Unicode.GetString(buf, 0, len);
     }
 
     // --- 按 FieldDef 读取 ---
