@@ -70,6 +70,7 @@ struct TuiData {
     // Connections
     int connectionCount = 0;
     std::string connectionSince;
+    std::vector<uint8_t> clientTypes;  // ClientType values per connection
 
     // TPM
     std::string tpmInfo;

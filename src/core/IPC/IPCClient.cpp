@@ -120,12 +120,18 @@ bool IPCClient::ConnectSocket() {
 }
 
 bool IPCClient::Handshake() {
-    // 1. Send HELLO
+    // 1. Send HELLO (with client type in payload)
     PipeMessage hello;
     hello.type    = static_cast<uint8_t>(PipeMsgType::Hello);
     hello.version = IPC_VERSION;
+    hello.payloadSize = 1;  // 1-byte client type
     if (WritePipe(&hello, PIPE_MSG_HEADER_SIZE) != (int)PIPE_MSG_HEADER_SIZE) {
         lastError_ = "HELLO write failed";
+        return false;
+    }
+    uint8_t clientType = static_cast<uint8_t>(ClientType::MCP);
+    if (WritePipe(&clientType, 1) != 1) {
+        lastError_ = "HELLO payload write failed";
         return false;
     }
 

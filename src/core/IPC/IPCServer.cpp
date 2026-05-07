@@ -80,8 +80,8 @@ void IPCServer::Stop() {
         std::lock_guard<std::mutex> lock(clientsMutex_);
         PipeMessage shutdown{};
         shutdown.type = static_cast<uint8_t>(PipeMsgType::Shutdown);
-        for (int fd : clients_) {
-            write(fd, &shutdown, PIPE_MSG_HEADER_SIZE);
+        for (auto& c : clients_) {
+            write(c.fd, &shutdown, PIPE_MSG_HEADER_SIZE);
         }
     }
 
@@ -89,8 +89,8 @@ void IPCServer::Stop() {
         serverThread_.join();
 
     std::lock_guard<std::mutex> lock(clientsMutex_);
-    for (int fd : clients_) {
-        close(fd);
+    for (auto& c : clients_) {
+        close(c.fd);
     }
     clients_.clear();
 
@@ -113,7 +113,7 @@ void IPCServer::AcceptLoop() {
 
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
-            clients_.push_back(clientFd);
+            clients_.push_back({clientFd, ClientType::Unknown});
         }
         HandleClient(clientFd);
     }
@@ -128,6 +128,27 @@ void IPCServer::HandleClient(int clientFd) {
         close(clientFd);
         return;
     }
+
+    // Read client type from HELLO payload (1 byte)
+    ClientType clientType = ClientType::Unknown;
+    if (msg.payloadSize >= 1) {
+        uint8_t typeByte = 0;
+        read(clientFd, &typeByte, 1);
+        if (typeByte <= 2) clientType = static_cast<ClientType>(typeByte);
+    }
+
+    // Store client type
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        for (auto& c : clients_) {
+            if (c.fd == clientFd) { c.type = clientType; break; }
+        }
+    }
+
+    const char* typeStr = clientType == ClientType::Avalonia ? "Avalonia" :
+                           clientType == ClientType::MCP ? "MCP" : "Unknown";
+    Logger::Info(std::string("IPC: ") + typeStr + " client connected, " +
+                 std::to_string(GetClientCount()) + " client(s) total");
 
     // Send HELLO ACK
     PipeMessage ack{};
@@ -145,13 +166,12 @@ void IPCServer::HandleClient(int clientFd) {
         close(clientFd);
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
-            auto it = std::find(clients_.begin(), clients_.end(), clientFd);
+            auto it = std::find_if(clients_.begin(), clients_.end(),
+                [clientFd](const ClientInfo& c) { return c.fd == clientFd; });
             if (it != clients_.end()) clients_.erase(it);
         }
         return;
     }
-
-    Logger::Info("IPC: client connected, " + std::to_string(GetClientCount()) + " client(s) total");
 
     // Keep-alive loop: handle PING/PONG/BYE with non-blocking poll
     while (running_) {
@@ -176,7 +196,8 @@ void IPCServer::HandleClient(int clientFd) {
     close(clientFd);
     {
         std::lock_guard<std::mutex> lock(clientsMutex_);
-        auto it = std::find(clients_.begin(), clients_.end(), clientFd);
+        auto it = std::find_if(clients_.begin(), clients_.end(),
+            [clientFd](const ClientInfo& c) { return c.fd == clientFd; });
         if (it != clients_.end()) clients_.erase(it);
     }
     Logger::Info("IPC: client disconnected, " + std::to_string(GetClientCount()) + " client(s) total");
@@ -189,6 +210,14 @@ int IPCServer::GetClientCount() const {
 
 bool IPCServer::HasClients() const {
     return GetClientCount() > 0;
+}
+
+std::vector<ClientType> IPCServer::GetClientTypes() const {
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    std::vector<ClientType> types;
+    for (const auto& c : clients_)
+        types.push_back(c.type);
+    return types;
 }
 
 void IPCServer::SendSchema(int fd) {
@@ -224,9 +253,9 @@ void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<Field
     // Broadcast to all connected clients
     std::lock_guard<std::mutex> lock(clientsMutex_);
     for (auto it = clients_.begin(); it != clients_.end(); ) {
-        int n = write(*it, data.data(), data.size());
+        int n = write(it->fd, data.data(), data.size());
         if (n <= 0) {
-            close(*it);
+            close(it->fd);
             it = clients_.erase(it);
         } else {
             ++it;

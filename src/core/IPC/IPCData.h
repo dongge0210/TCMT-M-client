@@ -16,6 +16,13 @@ constexpr int      IPC_MAX_CLIENTS    = 8;
 constexpr const char* IPC_SHM_PATH   = "/tcmt_ipc_shm";
 constexpr const char* IPC_SOCK_PATH  = "/tmp/tcmt_ipc.sock";
 
+// === Client types (sent in HELLO payload) ===
+enum class ClientType : uint8_t {
+    Unknown  = 0,
+    Avalonia = 1,  // C# Avalonia GUI
+    MCP      = 2,  // C++ MCP server (--mcp mode)
+};
+
 // === Pipe message types (after schema handshake) ===
 enum class PipeMsgType : uint8_t {
     Hello      = 0x01,  // C# → C++: client intro

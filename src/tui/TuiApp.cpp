@@ -504,9 +504,19 @@ void TuiApp::Run() {
             mvwprintw(stdscr, connTop, 1, "Connections");
             wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
             if (data.connectionCount > 0) {
-                auto connStr = "IPC: " + std::to_string(data.connectionCount) + " client(s)";
+                int avaloniaCount = 0, mcpCount = 0, unknownCount = 0;
+                for (auto t : data.clientTypes) {
+                    if (t == 1) avaloniaCount++;
+                    else if (t == 2) mcpCount++;
+                    else unknownCount++;
+                }
+                std::string parts;
+                if (avaloniaCount > 0) parts += "Avalonia x" + std::to_string(avaloniaCount) + " ";
+                if (mcpCount > 0) parts += "MCP x" + std::to_string(mcpCount) + " ";
+                if (unknownCount > 0) parts += "? x" + std::to_string(unknownCount) + " ";
+                auto connStr = "IPC: " + parts;
                 if (!data.connectionSince.empty())
-                    connStr += ", since " + data.connectionSince;
+                    connStr += "since " + data.connectionSince;
                 int color = 2;
                 wattron(stdscr, COLOR_PAIR(color));
                 mvwprintw(stdscr, connTop, 14, "%.*s", cols - 16, connStr.c_str());

@@ -25,6 +25,7 @@ public:
     // Client tracking
     int GetClientCount() const;
     bool HasClients() const;
+    std::vector<ClientType> GetClientTypes() const;
 
     // Broadcast schema to all connected clients
     void UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields);
@@ -47,7 +48,8 @@ private:
     void* shmPtr_ = nullptr;
 
     // Connected clients
-    std::vector<int> clients_;
+    struct ClientInfo { int fd = -1; ClientType type = ClientType::Unknown; };
+    std::vector<ClientInfo> clients_;
     mutable std::mutex clientsMutex_;
 
     // Current schema

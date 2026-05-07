@@ -655,6 +655,9 @@ int main(int argc, char* argv[]) {
             tcmt::TuiData data;
             data.osVersion = os.GetVersion();
             data.connectionCount = ipcServer.GetClientCount();
+            auto ct = ipcServer.GetClientTypes();
+            data.clientTypes.clear();
+            for (auto t : ct) data.clientTypes.push_back(static_cast<uint8_t>(t));
             static bool hadConn = false;
             static std::string connSinceStr;
             if (data.connectionCount > 0 && !hadConn) {
