@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <cerrno>
 #endif
 
@@ -95,16 +96,44 @@ bool IPCClient::ConnectSocket() {
     sockFd_ = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sockFd_ == -1) { lastError_ = "socket() failed"; return false; }
 
+    // Set non-blocking to avoid blocking on connect() when no server is running
+    int flags = fcntl(sockFd_, F_GETFL, 0);
+    fcntl(sockFd_, F_SETFL, flags | O_NONBLOCK);
+
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, IPC_SOCK_PATH, sizeof(addr.sun_path) - 1);
 
-    if (connect(sockFd_, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+    int rc = connect(sockFd_, (struct sockaddr*)&addr, sizeof(addr));
+    if (rc == -1 && errno != EINPROGRESS) {
         lastError_ = std::string("connect() failed: ") + strerror(errno);
         close(sockFd_); sockFd_ = -1;
         return false;
     }
+
+    if (rc == -1) {
+        // Wait for connection with 500ms timeout
+        struct pollfd pfd = {sockFd_, POLLOUT, 0};
+        int ret = poll(&pfd, 1, 500);
+        if (ret <= 0) {
+            lastError_ = "connect() timeout — no TCMT instance running";
+            close(sockFd_); sockFd_ = -1;
+            return false;
+        }
+        // Verify connection succeeded
+        int err = 0;
+        socklen_t len = sizeof(err);
+        getsockopt(sockFd_, SOL_SOCKET, SO_ERROR, &err, &len);
+        if (err != 0) {
+            lastError_ = std::string("connect() error: ") + strerror(err);
+            close(sockFd_); sockFd_ = -1;
+            return false;
+        }
+    }
+
+    // Restore blocking mode
+    fcntl(sockFd_, F_SETFL, flags);
 #else
     std::string pipePath = "\\\\.\\pipe\\TCMT_IPC_Pipe";
     pipeHandle_ = CreateFileA(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE,
