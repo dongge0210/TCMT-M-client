@@ -8,6 +8,12 @@ Please ignore this warning - the project structure doesn't support this scenario
 */
 // Do NOT include winsock2.h here - it breaks other headers that include windows.h first
 // Network headers are included in the platform-specific source files instead
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include <winsock2.h>
 #include <windows.h>
 #include <shellapi.h>
@@ -797,6 +803,7 @@ int main(int argc, char* argv[]) {
                     j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
                     j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
                 } else {
+#ifdef TCMT_MACOS
                     GpuInfo gpu;
                     const auto& gpus = gpu.GetGpuData();
                     if (!gpus.empty()) {
@@ -804,6 +811,7 @@ int main(int argc, char* argv[]) {
                         j["usage"] = gpus[0].usage;
                         j["memory"] = gpus[0].dedicatedMemory;
                     }
+#endif
                 }
                 return j;
             });

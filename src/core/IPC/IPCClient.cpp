@@ -31,21 +31,21 @@ void IPCClient::Disconnect() {
     connected_ = false;
 }
 
-ssize_t IPCClient::ReadPipe(void* buf, size_t len) {
+int IPCClient::ReadPipe(void* buf, size_t len) {
 #ifndef _WIN32
     return read(sockFd_, buf, len);
 #else
     DWORD n = 0;
-    return ReadFile(pipeHandle_, buf, (DWORD)len, &n, nullptr) ? (ssize_t)n : -1;
+    return ReadFile(pipeHandle_, buf, (DWORD)len, &n, nullptr) ? (int)n : -1;
 #endif
 }
 
-ssize_t IPCClient::WritePipe(const void* buf, size_t len) {
+int IPCClient::WritePipe(const void* buf, size_t len) {
 #ifndef _WIN32
     return write(sockFd_, buf, len);
 #else
     DWORD n = 0;
-    return WriteFile(pipeHandle_, buf, (DWORD)len, &n, nullptr) ? (ssize_t)n : -1;
+    return WriteFile(pipeHandle_, buf, (DWORD)len, &n, nullptr) ? (int)n : -1;
 #endif
 }
 
@@ -93,14 +93,14 @@ bool IPCClient::Handshake() {
     PipeMessage hello;
     hello.type    = static_cast<uint8_t>(PipeMsgType::Hello);
     hello.version = IPC_VERSION;
-    if (WritePipe(&hello, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE) {
+    if (WritePipe(&hello, PIPE_MSG_HEADER_SIZE) != (int)PIPE_MSG_HEADER_SIZE) {
         lastError_ = "HELLO write failed";
         return false;
     }
 
     // 2. Read HELLO_ACK
     PipeMessage msg;
-    if (ReadPipe(&msg, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE ||
+    if (ReadPipe(&msg, PIPE_MSG_HEADER_SIZE) != (int)PIPE_MSG_HEADER_SIZE ||
         msg.type != static_cast<uint8_t>(PipeMsgType::HelloAck)) {
         lastError_ = "HELLO_ACK not received";
         return false;
@@ -108,7 +108,7 @@ bool IPCClient::Handshake() {
 
     // 3. Read SCHEMA
     SchemaHeader schemaHeader;
-    if (ReadPipe(&schemaHeader, IPC_SCHEMA_HEADER_SIZE) != (ssize_t)IPC_SCHEMA_HEADER_SIZE ||
+    if (ReadPipe(&schemaHeader, IPC_SCHEMA_HEADER_SIZE) != (int)IPC_SCHEMA_HEADER_SIZE ||
         schemaHeader.magic != IPC_MAGIC) {
         lastError_ = "Schema header invalid";
         return false;
@@ -120,7 +120,7 @@ bool IPCClient::Handshake() {
     size_t fieldBytes = fieldCount * IPC_FIELD_DEF_SIZE;
     size_t total = 0;
     while (total < fieldBytes) {
-        ssize_t n = ReadPipe(reinterpret_cast<char*>(fieldBuf.data()) + total, fieldBytes - total);
+        int n = ReadPipe(reinterpret_cast<char*>(fieldBuf.data()) + total, fieldBytes - total);
         if (n <= 0) { lastError_ = "Schema fields read failed"; return false; }
         total += n;
     }
@@ -136,7 +136,7 @@ bool IPCClient::Handshake() {
     PipeMessage ack;
     ack.type    = static_cast<uint8_t>(PipeMsgType::Ack);
     ack.version = IPC_VERSION;
-    if (WritePipe(&ack, PIPE_MSG_HEADER_SIZE) != (ssize_t)PIPE_MSG_HEADER_SIZE) {
+    if (WritePipe(&ack, PIPE_MSG_HEADER_SIZE) != (int)PIPE_MSG_HEADER_SIZE) {
         lastError_ = "ACK write failed";
         return false;
     }

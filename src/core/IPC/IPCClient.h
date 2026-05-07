@@ -38,8 +38,8 @@ private:
     bool Handshake();
     bool OpenSharedMemory();
 
-    ssize_t ReadPipe(void* buf, size_t len);
-    ssize_t WritePipe(const void* buf, size_t len);
+    int ReadPipe(void* buf, size_t len);
+    int WritePipe(const void* buf, size_t len);
 
 #ifdef _WIN32
     HANDLE pipeHandle_ = INVALID_HANDLE_VALUE;
