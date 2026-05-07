@@ -738,6 +738,51 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
+        // ======================== MCP Helpers ========================
+
+        // Build schema describing SharedMemoryBlock fields (for NamedPipeServer + ConnectDirect)
+        static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
+                                           std::vector<tcmt::ipc::FieldDef>& fields) {
+            schemaHdr.totalSize = sizeof(SharedMemoryBlock);
+            auto addField = [&](const char* name, uint32_t offset, uint16_t size,
+                                uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
+                                uint32_t count = 0) {
+                tcmt::ipc::FieldDef f{};
+                f.offset = offset; f.size = size; f.type = type; f.count = count;
+                std::strncpy(f.name, name, tcmt::ipc::IPC_FIELD_NAME_LEN - 1);
+                fields.push_back(f);
+            };
+            using FT = tcmt::ipc::FieldType;
+            addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
+            addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
+            addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
+            addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
+            addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
+            addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
+            addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
+            addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
+            addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
+            addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
+            addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
+            addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
+            addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
+            addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
+            addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
+            addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
+            for (int i = 0; i < 2; i++) {
+                char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
+                uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
+                addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+                addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+                addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
+                addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
+                addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
+            }
+            addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
+            addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
+            addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        }
+
         // ======================== --mcp Mode ========================
         bool mcpMode = false;
         for (int i = 1; i < argc; ++i) {
@@ -753,88 +798,106 @@ int main(int argc, char* argv[]) {
 #endif
             tcmt::mcp::MCPServer server;
 
-            // Try IPC client first, fall back to direct hardware reads
+            // Phase 1: Try to connect to a running TCMT instance
             tcmt::ipc::IPCClient ipc;
-            bool useIpc = ipc.Connect();
-            if (useIpc) Logger::Info("MCP: using IPC");
-            else        Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+            bool hasRemote = ipc.Connect();
+            if (hasRemote) {
+                Logger::Info("MCP: connected to running TCMT instance via IPC");
+            } else {
+                Logger::Info("MCP: no running instance — becoming primary");
+            }
 
-            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
-                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
-                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
-                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
-                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
-                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
-                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
-                } else {
-                    CpuInfo cpu; MemoryInfo mem; DiskInfo disk;
-                    j["name"] = cpu.GetName();
-                    j["usage"] = cpu.GetUsage();
-                    j["cores"] = cpu.GetLargeCores() + cpu.GetSmallCores();
-                    j["temperature"] = 0.0;
+            // Phase 2: If no remote, become the primary instance
+            std::unique_ptr<tcmt::ipc::NamedPipeServer> pipeServer;
+            std::unique_ptr<WmiManager> wmiManager;
+
+            if (!hasRemote) {
+                // Init COM (needed for WMI)
+                HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                if (FAILED(hr)) Logger::Warn("MCP: COM init failed");
+
+                // Init shared memory
+                if (!SharedMemoryManager::InitSharedMemory()) {
+                    Logger::Error("MCP: SharedMemory init failed: " + SharedMemoryManager::GetLastError());
                 }
+
+                // Init NamedPipeServer with schema
+                pipeServer = std::make_unique<tcmt::ipc::NamedPipeServer>();
+                tcmt::ipc::SchemaHeader schemaHdr;
+                std::vector<tcmt::ipc::FieldDef> fields;
+                BuildWindowsIpcSchema(schemaHdr, fields);
+                pipeServer->UpdateSchema(schemaHdr, fields);
+                if (pipeServer->Start()) {
+                    Logger::Info("MCP: NamedPipeServer started");
+                } else {
+                    Logger::Warn("MCP: NamedPipeServer start failed: " + pipeServer->LastError());
+                }
+
+                // Connect IPCClient directly to SharedMemory buffer
+                auto* shmBuf = SharedMemoryManager::GetBuffer();
+                if (shmBuf) {
+                    ipc.ConnectDirect(static_cast<void*>(shmBuf), sizeof(SharedMemoryBlock),
+                                      schemaHdr, fields);
+                    Logger::Info("MCP: IPCClient direct-connected to SharedMemory");
+                }
+
+                // Init hardware readers for background collection
+                TemperatureWrapper::Initialize();
+                wmiManager = std::make_unique<WmiManager>();
+                if (!wmiManager->IsInitialized()) {
+                    Logger::Warn("MCP: WmiManager init failed");
+                }
+                Logger::Info("MCP: hardware readers initialized — ready");
+            }
+
+            // Phase 3: Register 4 MCP tools — always use IPC
+            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
+            [&ipc]() -> nlohmann::json {
+                nlohmann::json j;
+                j["name"]    = ipc.ReadString("cpu/name").value_or("");
+                j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+                j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+                j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+                j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+                j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+                j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
                 return j;
             });
             server.RegisterTool("get_memory", "System memory statistics",
-            [&ipc, useIpc]() -> nlohmann::json {
+            [&ipc]() -> nlohmann::json {
                 nlohmann::json j;
-                if (useIpc) {
-                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
-                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
-                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
-                } else {
-                    MemoryInfo mem;
-                    j["total"] = mem.GetTotalPhysical();
-                    j["available"] = mem.GetAvailablePhysical();
-                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                }
+                j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+                j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+                j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
                 return j;
             });
             server.RegisterTool("get_gpu_status", "GPU usage and memory",
-            [&ipc, useIpc]() -> nlohmann::json {
+            [&ipc]() -> nlohmann::json {
                 nlohmann::json j;
-                if (useIpc) {
-                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
-                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
-                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
-                } else {
-#ifdef TCMT_MACOS
-                    GpuInfo gpu;
-                    const auto& gpus = gpu.GetGpuData();
-                    if (!gpus.empty()) {
-                        j["name"] = std::string(gpus[0].name.begin(), gpus[0].name.end());
-                        j["usage"] = gpus[0].usage;
-                        j["memory"] = gpus[0].dedicatedMemory;
-                    }
-#endif
-                }
+                j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+                j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+                j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
                 return j;
             });
             server.RegisterTool("get_system_info", "OS version and hardware summary",
-            [&ipc, useIpc]() -> nlohmann::json {
+            [&ipc]() -> nlohmann::json {
                 nlohmann::json j;
-                if (useIpc) {
-                    j["os"] = ipc.ReadString("os/version").value_or("");
-                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
-                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
-                } else {
-                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
-                    j["os"] = os.GetVersion();
-                    j["cpu"] = cpu.GetName();
-                    j["cores"] = cpu.GetTotalCores();
-                    j["memoryTotal"] = mem.GetTotalPhysical();
-                }
+                j["os"] = ipc.ReadString("os/version").value_or("");
+                j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+                j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
                 return j;
             });
 
+            // Phase 4: Run MCP server (blocking stdin/stdout loop)
             server.Run();
+
+            // Phase 5: Cleanup
+            if (pipeServer) pipeServer->Stop();
             TemperatureWrapper::Cleanup();
+            SharedMemoryManager::CleanupSharedMemory();
+            CoUninitialize();
             return 0;
         }
 
@@ -901,48 +964,10 @@ int main(int argc, char* argv[]) {
             // Named pipe IPC server — sends schema to C# Avalonia
 #ifdef _WIN32
             pipeServer = std::make_unique<tcmt::ipc::NamedPipeServer>();
-            // Build schema describing SharedMemoryBlock fields
             {
                 tcmt::ipc::SchemaHeader schemaHdr;
-                schemaHdr.totalSize = sizeof(SharedMemoryBlock);
                 std::vector<tcmt::ipc::FieldDef> fields;
-                // CPU
-                auto addField = [&](const char* name, uint32_t offset, uint16_t size,
-                                    uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
-                                    uint32_t count = 0) {
-                    tcmt::ipc::FieldDef f{};
-                    f.offset = offset; f.size = size; f.type = type; f.count = count;
-                    std::strncpy(f.name, name, tcmt::ipc::IPC_FIELD_NAME_LEN - 1);
-                    fields.push_back(f);
-                };
-                addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)tcmt::ipc::FieldType::WString);
-                addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)tcmt::ipc::FieldType::Int32);
-                addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)tcmt::ipc::FieldType::Int32);
-                addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
-                addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)tcmt::ipc::FieldType::Int32);
-                addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)tcmt::ipc::FieldType::Int32);
-                addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
-                addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
-                addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)tcmt::ipc::FieldType::Bool);
-                addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)tcmt::ipc::FieldType::Bool);
-                addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
-                addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)tcmt::ipc::FieldType::UInt64);
-                addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)tcmt::ipc::FieldType::UInt64);
-                addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)tcmt::ipc::FieldType::UInt64);
-                addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)tcmt::ipc::FieldType::UInt64);
-                addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
-                for (int i = 0; i < 2; i++) {
-                    char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
-                    uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
-                    addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)tcmt::ipc::FieldType::WString);
-                    addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)tcmt::ipc::FieldType::WString);
-                    addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)tcmt::ipc::FieldType::UInt64);
-                    addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
-                    addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)tcmt::ipc::FieldType::Bool);
-                }
-                addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)tcmt::ipc::FieldType::Int32);
-                addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)tcmt::ipc::FieldType::Bool);
-                addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)tcmt::ipc::FieldType::WString);
+                BuildWindowsIpcSchema(schemaHdr, fields);
                 pipeServer->UpdateSchema(schemaHdr, fields);
             }
             if (pipeServer->Start()) {
