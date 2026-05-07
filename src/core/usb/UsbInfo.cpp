@@ -8,6 +8,7 @@
 #include <setupapi.h>
 #include <cfgmgr32.h>
 #include <devguid.h>
+#include <usbiodef.h>
 #include <regex>
 #include <sstream>
 #include <iomanip>
@@ -30,8 +31,8 @@ static bool ParseVidPidFromHardwareId(const std::wstring& hwId, uint16_t& vid, u
     std::wregex pattern(L"VID_([0-9A-Fa-f]{4}).*PID_([0-9A-Fa-f]{4})");
     std::wsmatch match;
     if (std::regex_search(hwId, match, pattern) && match.size() >= 3) {
-        vid = ParseHex16(std::string(match[1].begin(), match[1].end()));
-        pid = ParseHex16(std::string(match[2].begin(), match[2].end()));
+        vid = ParseHex16(std::string(match[1].first, match[1].second));
+        pid = ParseHex16(std::string(match[2].first, match[2].second));
         return true;
     }
     return false;

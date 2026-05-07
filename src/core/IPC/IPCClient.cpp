@@ -21,14 +21,18 @@ IPCClient::~IPCClient() { Disconnect(); }
 
 void IPCClient::Disconnect() {
 #ifndef _WIN32
-    if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
+    if (ownsShm_ && shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (sockFd_ != -1) { close(sockFd_); sockFd_ = -1; }
 #else
-    if (shmPtr_) { UnmapViewOfFile(shmPtr_); shmPtr_ = nullptr; }
-    if (shmHandle_) { CloseHandle(shmHandle_); shmHandle_ = nullptr; }
+    if (ownsShm_ && shmPtr_) { UnmapViewOfFile(shmPtr_); shmPtr_ = nullptr; }
+    if (ownsShm_ && shmHandle_) { CloseHandle(shmHandle_); shmHandle_ = nullptr; }
     if (pipeHandle_ != INVALID_HANDLE_VALUE) { CloseHandle(pipeHandle_); pipeHandle_ = INVALID_HANDLE_VALUE; }
 #endif
     connected_ = false;
+    ownsShm_ = false;
+    shmPtr_ = nullptr;
+    shmSize_ = 0;
+    fields_.clear();
 }
 
 int IPCClient::ReadPipe(void* buf, size_t len) {
@@ -55,7 +59,26 @@ bool IPCClient::Connect() {
     if (!ConnectSocket()) return false;
     if (!Handshake()) { Disconnect(); return false; }
     if (!OpenSharedMemory()) { Disconnect(); return false; }
+    ownsShm_ = true;
     connected_ = true;
+    return true;
+}
+
+bool IPCClient::ConnectDirect(void* shmPtr, size_t shmSize,
+                               const SchemaHeader& header,
+                               const std::vector<FieldDef>& fields) {
+    Disconnect();
+    if (!shmPtr || shmSize == 0) { lastError_ = "ConnectDirect: null shm or zero size"; return false; }
+    shmPtr_ = shmPtr;
+    shmSize_ = shmSize;
+    schemaHeader_ = header;
+    fields_.clear();
+    for (const auto& f : fields) {
+        fields_[f.name] = f;
+    }
+    ownsShm_ = false;  // caller owns the memory
+    connected_ = true;
+    Logger::Debug("IPCClient: direct-connected, " + std::to_string(fields_.size()) + " fields, totalSize=" + std::to_string(schemaHeader_.totalSize));
     return true;
 }
 

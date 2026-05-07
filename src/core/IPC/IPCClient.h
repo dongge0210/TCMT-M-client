@@ -1,12 +1,14 @@
 #pragma once
 
 #include "IPCData.h"
+#include <optional>
 #include <string>
 #include <vector>
 #include <map>
 #include <cstdint>
 
 #ifdef _WIN32
+#include <winsock2.h>
 #include <windows.h>
 #endif
 
@@ -21,6 +23,11 @@ public:
     ~IPCClient();
 
     bool Connect();   // Full handshake: connect → HELLO → schema → ACK → shm_open
+    // In-process direct connection: use existing shm pointer + parsed schema
+    // (no socket/pipe handshake, no shm_open — caller owns the memory)
+    bool ConnectDirect(void* shmPtr, size_t shmSize,
+                       const SchemaHeader& header,
+                       const std::vector<FieldDef>& fields);
     void Disconnect();
     bool IsConnected() const { return connected_; }
 
@@ -49,6 +56,7 @@ private:
 #endif
     void* shmPtr_ = nullptr;
     size_t shmSize_ = 0;
+    bool ownsShm_ = false;
 
     std::map<std::string, FieldDef> fields_;
     SchemaHeader schemaHeader_{};
