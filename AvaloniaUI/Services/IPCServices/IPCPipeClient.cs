@@ -116,13 +116,16 @@ public class IPCPipeClient : IAsyncDisposable
 
     private async Task ReceiveLoopAsync(Stream stream, CancellationToken ct)
     {
-        // === Phase 1: Send HELLO ===
-        var hello = new byte[MsgHeaderSize];
-        hello[0] = 0x01; // Hello
+        // === Phase 1: Send HELLO (with client type = Avalonia) ===
+        var hello = new byte[MsgHeaderSize + 1]; // header + 1-byte payload
+        hello[0] = 0x01;  // Hello
         hello[1] = IPCConstants.CurrentVersion;
+        hello[2] = 1;      // payloadSize (LE): 1 byte — client type
+        hello[3] = 0;
+        hello[4] = 0x01;  // ClientType::Avalonia
         await stream.WriteAsync(hello, ct);
         await stream.FlushAsync(ct);
-        Log.Debug("IPC: HELLO sent");
+        Log.Debug("IPC: HELLO sent (Avalonia)");
 
         // === Phase 2: Receive HELLO_ACK + SCHEMA ===
         var msgBuf = new byte[MsgHeaderSize];
