@@ -31,8 +31,12 @@ bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
         L"Microsoft Basic Display Adapter", L"Microsoft Hyper-V Video",
         L"VMware SVGA 3D", L"VirtualBox Graphics Adapter",
         L"Todesk Virtual Display Adapter", L"Parsec Virtual Display Adapter",
+        L"TeamViewer Display", L"AnyDesk Display", L"VNC Display",
+        L"Citrix Display", L"Remote Desktop Display", L"RDP Display",
         L"Standard VGA Graphics Adapter", L"Generic PnP Monitor",
-        L"Remote Desktop Display", L"RDP Display"
+        L"Virtual Desktop Infrastructure", L"VDI Display",
+        L"Cloud Display", L"Remote Graphics",
+        L"AskLinkIddDriver Device"
     };
     std::wstring lowerName = name;
     std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
@@ -44,7 +48,7 @@ bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
     }
     const std::vector<std::wstring> keywords = {
         L"virtual", L"remote", L"basic", L"generic", L"standard vga",
-        L"rdp", L"vnc", L"vmware", L"virtualbox", L"hyper-v"
+        L"rdp", L"vnc", L"citrix", L"vmware", L"virtualbox", L"hyper-v"
     };
     for (const auto& kw : keywords)
         if (lowerName.find(kw) != std::wstring::npos) return true;
@@ -80,12 +84,20 @@ void GpuInfo::DetectGpusViaWmi() {
         data.isIntegrated = data.deviceId.find(L"VEN_8086") != std::wstring::npos;
         gpuList.push_back(data);
 
+        // Log GPU detection
+        std::string gpuNameStr(data.name.begin(), data.name.end());
+        Logger::Info("Detected GPU: " + gpuNameStr +
+                    " (virtual: " + (data.isVirtual ? "yes" : "no") +
+                    ", NVIDIA: " + (data.isNvidia ? "yes" : "no") +
+                    ", integrated: " + (data.isIntegrated ? "yes" : "no") + ")");
+
         VariantClear(&vtName); VariantClear(&vtPnpId);
         VariantClear(&vtAdapterRAM); VariantClear(&vtCurrentClockSpeed);
         pclsObj->Release();
     }
     pEnumerator->Release();
 
+    // Query detailed info for NVIDIA GPUs (via NVML)
     for (size_t i = 0; i < gpuList.size(); ++i) {
         if (gpuList[i].isNvidia && !gpuList[i].isVirtual)
             QueryNvidiaGpuInfo(static_cast<int>(i));
@@ -116,27 +128,35 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
     nvmlReturn_t result = nvmlDeviceGetHandleByIndex(0, &device);
     if (NVML_SUCCESS != result) { nvmlShutdown(); return; }
 
+    // Get VRAM info
     nvmlMemory_t memory;
     result = nvmlDeviceGetMemoryInfo(device, &memory);
     if (NVML_SUCCESS == result) {
         gpuList[index].dedicatedMemory = memory.total;
-        gpuList[index].coreClock = (double)memory.used / (double)memory.total * 100.0; // VRAM % used
     }
 
+    // Get core clock (MHz)
+    unsigned int clockMHz = 0;
+    result = nvmlDeviceGetClockInfo(device, NVML_CLOCK_GRAPHICS, &clockMHz);
+    if (NVML_SUCCESS == result) {
+        gpuList[index].coreClock = static_cast<double>(clockMHz);
+    }
+
+    // Get temperature
     #pragma warning(disable: 4996)
     unsigned int temp = 0;
     result = nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &temp);
 #pragma warning(default: 4996)
     if (NVML_SUCCESS == result) gpuList[index].temperature = temp;
 
-    // 获取 GPU 使用率
+    // Get GPU usage
     nvmlUtilization_t util;
     result = nvmlDeviceGetUtilizationRates(device, &util);
     if (NVML_SUCCESS == result) {
         gpuList[index].usage = static_cast<double>(util.gpu);
-        Logger::Debug("GPU usage from NVML: " + std::to_string(util.gpu) + "%");
     }
 
+    // Get CUDA compute capability
     int major = 0, minor = 0;
     result = nvmlDeviceGetCudaComputeCapability(device, &major, &minor);
     if (NVML_SUCCESS == result) {
