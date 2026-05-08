@@ -590,6 +590,51 @@ public:
     }
 };
 
+// ======================== MCP Helpers ========================
+
+// Build schema describing SharedMemoryBlock fields (for NamedPipeServer + ConnectDirect)
+static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
+                                   std::vector<tcmt::ipc::FieldDef>& fields) {
+    schemaHdr.totalSize = sizeof(SharedMemoryBlock);
+    auto addField = [&](const char* name, uint32_t offset, uint16_t size,
+                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
+                        uint32_t count = 0) {
+        tcmt::ipc::FieldDef f{};
+        f.offset = offset; f.size = size; f.type = type; f.count = count;
+        std::strncpy(f.name, name, tcmt::ipc::IPC_FIELD_NAME_LEN - 1);
+        fields.push_back(f);
+    };
+    using FT = tcmt::ipc::FieldType;
+    addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
+    addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
+    addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
+    addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
+    addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
+    addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
+    addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
+    addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
+    for (int i = 0; i < 2; i++) {
+        char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
+        addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
+        addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
+        addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
+    }
+    addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
+    addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
+    addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+}
+
 int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
@@ -736,51 +781,6 @@ int main(int argc, char* argv[]) {
             TemperatureWrapper::Cleanup();
             CoUninitialize();
             return 0;
-        }
-
-        // ======================== MCP Helpers ========================
-
-        // Build schema describing SharedMemoryBlock fields (for NamedPipeServer + ConnectDirect)
-        static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
-                                           std::vector<tcmt::ipc::FieldDef>& fields) {
-            schemaHdr.totalSize = sizeof(SharedMemoryBlock);
-            auto addField = [&](const char* name, uint32_t offset, uint16_t size,
-                                uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
-                                uint32_t count = 0) {
-                tcmt::ipc::FieldDef f{};
-                f.offset = offset; f.size = size; f.type = type; f.count = count;
-                std::strncpy(f.name, name, tcmt::ipc::IPC_FIELD_NAME_LEN - 1);
-                fields.push_back(f);
-            };
-            using FT = tcmt::ipc::FieldType;
-            addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
-            addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
-            addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
-            addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
-            addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
-            addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
-            addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
-            addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
-            addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
-            addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
-            addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
-            addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
-            addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
-            addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
-            addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
-            addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
-            for (int i = 0; i < 2; i++) {
-                char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
-                uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
-                addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-                addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-                addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
-                addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
-                addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
-            }
-            addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
-            addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
-            addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
         }
 
         // ======================== --mcp Mode ========================
