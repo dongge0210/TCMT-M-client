@@ -136,9 +136,10 @@ void IPCServer::HandlePipeClient(void* hPipe) {
         for (auto& c : clients_) {
             if (c.hPipe == hPipe) { c.type = ct; break; }
         }
+        int cc = static_cast<int>(clients_.size());
         const char* ts = ct == ClientType::Avalonia ? "Avalonia" : ct == ClientType::MCP ? "MCP" : "Unknown";
         Logger::Info(std::string("IPC: ") + ts + " client connected (pipe), " +
-                     std::to_string(GetClientCount()) + " client(s) total");
+                     std::to_string(cc) + " client(s) total");
     }
 
     // --- Phase 2: Send HELLO_ACK + schema ---
