@@ -1597,6 +1597,12 @@ int main(int argc, char* argv[]) {
                     }
                     
                     tuiData.osVersion = sysInfo.osVersion;
+                    tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
+                    if (ipcServer) {
+                        auto ct = ipcServer->GetClientTypes();
+                        tuiData.clientTypes.clear();
+                        for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
+                    }
                     tuiData.temperatures = sysInfo.temperatures;
                     if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
                         auto& tpm = sysInfo.tpms[0];
