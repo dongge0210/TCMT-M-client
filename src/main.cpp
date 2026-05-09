@@ -52,7 +52,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/utils/TpmBridge.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/DataStruct/SharedMemoryManager.h"
-#include "core/IPC/NamedPipeServer.h"
+#include "core/IPC/IPCServer.h"
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
 #include "core/MCP/MCPServer.h"
@@ -527,16 +527,9 @@ public:
             
             GpuInfo gpuInfo(wmiManager);
             const auto& gpus = gpuInfo.GetGpuData();
-            
-            // Record all detected GPUs
-            for (const auto& gpu : gpus) {
-                std::string gpuName = WinUtils::WstringToString(gpu.name);
-                Logger::Info("Detected GPU: " + gpuName + 
-                           " (Virtual: " + (gpu.isVirtual ? "Yes" : "No") + 
-                           ", NVIDIA: " + (gpuName.find("NVIDIA") != std::string::npos ? "Yes" : "No") + 
-                           ", Integrated: " + (gpuName.find("Intel") != std::string::npos ||
-                                       gpuName.find("AMD") != std::string::npos ? "Yes" : "No") + ")");
-            }
+
+            // GpuInfo::DetectGpusViaWmi() already logs each GPU — no need to duplicate here
+            Logger::Debug("GPU cache: found " + std::to_string(gpus.size()) + " GPU(s) from WMI");
             
             const GpuInfo::GpuData* selectedGpu = nullptr;
             for (const auto& gpu : gpus) {
@@ -592,7 +585,7 @@ public:
 
 // ======================== MCP Helpers ========================
 
-// Build schema describing SharedMemoryBlock fields (for NamedPipeServer + ConnectDirect)
+// Build schema describing SharedMemoryBlock fields (for IPCServer + ConnectDirect)
 static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
                                    std::vector<tcmt::ipc::FieldDef>& fields) {
     schemaHdr.totalSize = sizeof(SharedMemoryBlock);
@@ -922,7 +915,7 @@ int main(int argc, char* argv[]) {
         }
 
 #ifdef _WIN32
-        std::unique_ptr<tcmt::ipc::NamedPipeServer> pipeServer;
+        std::unique_ptr<tcmt::ipc::IPCServer> ipcServer;
 #endif
         try {
             if (!SharedMemoryManager::InitSharedMemory()) {
@@ -939,24 +932,24 @@ int main(int argc, char* argv[]) {
             }
             Logger::Info("Shared memory initialized successfully");
 
-            // Named pipe IPC server — sends schema to C# Avalonia
+            // IPC server — sends schema to C# Avalonia (Named Pipe on Windows, UDS on macOS)
 #ifdef _WIN32
-            pipeServer = std::make_unique<tcmt::ipc::NamedPipeServer>();
+            ipcServer = std::make_unique<tcmt::ipc::IPCServer>();
             {
                 tcmt::ipc::SchemaHeader schemaHdr;
                 std::vector<tcmt::ipc::FieldDef> fields;
                 BuildWindowsIpcSchema(schemaHdr, fields);
-                pipeServer->UpdateSchema(schemaHdr, fields);
+                ipcServer->UpdateSchema(schemaHdr, fields);
             }
-            if (pipeServer->Start()) {
-                Logger::Info("NamedPipe IPC server started");
+            if (ipcServer->Start()) {
+                Logger::Info("IPC server started (named pipe)");
             } else {
-                Logger::Warn("NamedPipe IPC failed: " + pipeServer->LastError());
+                Logger::Warn("IPC server failed: " + ipcServer->LastError());
             }
 #endif
         }
         catch (const std::exception& e) {
-            Logger::Error("Exception during shared memory initialization: " + std::string(e.what()));
+            Logger::Error("Exception during shared memory initialization: " + std::string(e.what());
             SafeExit(1);
         }
 
@@ -988,9 +981,10 @@ int main(int argc, char* argv[]) {
             SafeExit(1);
         }
 
-        // Initialize hardware monitoring bridge
+        // Initialize hardware monitoring bridge (LHM for temperature sensors)
         try {
-            Logger::Debug("Hardware monitoring bridge initialized successfully");
+            TemperatureWrapper::Initialize();
+            Logger::Info("Hardware monitoring bridge (LHM) initialized");
         }
         catch (const std::exception& e) {
             Logger::Error("Hardware monitoring bridge initialization failed: " + std::string(e.what()));
