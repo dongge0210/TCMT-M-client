@@ -77,13 +77,23 @@ void UsbInfo::Detect() {
             }
         }
 
+        // Helper: convert WCHAR buffer to UTF-8 std::string
+        auto WCharToUtf8 = [](const WCHAR* wstr, size_t len) -> std::string {
+            if (len == 0) return {};
+            int needed = WideCharToMultiByte(CP_UTF8, 0, wstr, (int)len, nullptr, 0, nullptr, nullptr);
+            if (needed <= 0) return {};
+            std::string result(needed, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, wstr, (int)len, &result[0], needed, nullptr, nullptr);
+            return result;
+        };
+
         // Get friendly name
         WCHAR nameBuffer[256] = {0};
         if (SetupDiGetDeviceRegistryProperty(
                 devInfoSet, &devInfoData,
                 SPDRP_FRIENDLYNAME, nullptr,
                 reinterpret_cast<PBYTE>(nameBuffer), sizeof(nameBuffer), nullptr)) {
-            device.name = std::string(nameBuffer, nameBuffer + wcslen(nameBuffer));
+            device.name = WCharToUtf8(nameBuffer, wcslen(nameBuffer));
         } else {
             // Fallback to device description
             WCHAR descBuffer[256] = {0};
@@ -91,7 +101,7 @@ void UsbInfo::Detect() {
                     devInfoSet, &devInfoData,
                     SPDRP_DEVICEDESC, nullptr,
                     reinterpret_cast<PBYTE>(descBuffer), sizeof(descBuffer), nullptr)) {
-                device.name = std::string(descBuffer, descBuffer + wcslen(descBuffer));
+                device.name = WCharToUtf8(descBuffer, wcslen(descBuffer));
             } else {
                 device.name = "Unknown USB Device";
             }
@@ -103,7 +113,7 @@ void UsbInfo::Detect() {
                 devInfoSet, &devInfoData,
                 SPDRP_MFG, nullptr,
                 reinterpret_cast<PBYTE>(mfrBuffer), sizeof(mfrBuffer), nullptr)) {
-            device.manufacturer = std::string(mfrBuffer, mfrBuffer + wcslen(mfrBuffer));
+            device.manufacturer = WCharToUtf8(mfrBuffer, wcslen(mfrBuffer));
         }
 
         // Try to get serial number via CM_Get_Device_ID
