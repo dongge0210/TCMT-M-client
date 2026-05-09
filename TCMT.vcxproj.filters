@@ -128,5 +128,20 @@
     <ClCompile Include="src\tui\TuiApp.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\usb\UsbInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\MCP\MCPServer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\IPC\IPCClient.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\history\HistoryLogger.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\IPC\IPCServer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
