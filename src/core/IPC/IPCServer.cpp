@@ -66,8 +66,8 @@ void IPCServer::Stop() {
 }
 
 // ── Windows: Named Pipe server loop ──
-// Simple fire-and-forget: send schema on each new connection, no handshake/keep-alive.
-// This matches the old NamedPipeServer behavior which worked reliably.
+// Handshake + schema delivery inline (no threads). PeekNamedPipe avoids
+// ReadFile blocking issues on byte-mode pipes with message-mode clients.
 void IPCServer::ServerLoop() {
 #ifdef _WIN32
     const char* pipeName = "\\\\.\\pipe\\TCMT_IPC_Pipe";
@@ -98,13 +98,81 @@ void IPCServer::ServerLoop() {
 
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
-            clients_.push_back({hPipe, ClientType::Avalonia});  // assume Avalonia by default
+            clients_.push_back({hPipe, ClientType::Unknown});
         }
 
-        Logger::Info("IPC: client connected (named pipe), " +
+        // === Handshake inline (no threads — NamedPipe doesn't support concurrent accept) ===
+
+        // Wait for HELLO (poll with 2s timeout)
+        PipeMessage msg;
+        DWORD n = 0;
+        bool gotHello = false;
+        for (int w = 0; w < 40 && running_; ++w) {
+            DWORD avail = 0;
+            if (PeekNamedPipe(hPipe, nullptr, 0, nullptr, &avail, nullptr) && avail >= PIPE_MSG_HEADER_SIZE) {
+                if (ReadFile(hPipe, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) && n >= PIPE_MSG_HEADER_SIZE
+                    && msg.type == static_cast<uint8_t>(PipeMsgType::Hello)) {
+                    gotHello = true;
+                    break;
+                }
+            }
+            Sleep(50);
+        }
+        if (!gotHello) {
+            Logger::Debug("IPC: pipe client didn't send HELLO, closing");
+            CloseHandle(hPipe);
+            continue;
+        }
+
+        // Read client type from payload
+        ClientType ct = ClientType::Unknown;
+        if (msg.payloadSize >= 1) {
+            uint8_t tb = 0; DWORD tr = 0;
+            ReadFile(hPipe, &tb, 1, &tr, nullptr);
+            if (tb <= 2) ct = static_cast<ClientType>(tb);
+        }
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex_);
+            for (auto& c : clients_) {
+                if (c.hPipe == hPipe) { c.type = ct; break; }
+            }
+        }
+
+        const char* ts = ct == ClientType::Avalonia ? "Avalonia" : ct == ClientType::MCP ? "MCP" : "Unknown";
+        Logger::Info(std::string("IPC: ") + ts + " client connected (pipe), " +
                      std::to_string(GetClientCount()) + " client(s) total");
 
+        // Send HELLO_ACK
+        PipeMessage ack{};
+        ack.type = static_cast<uint8_t>(PipeMsgType::HelloAck);
+        ack.version = IPC_VERSION;
+        WriteFile(hPipe, &ack, PIPE_MSG_HEADER_SIZE, &n, nullptr);
+
+        // Send schema
         SendSchemaToPeer(hPipe);
+
+        // Wait for ACK (poll with 2s timeout)
+        bool gotAck = false;
+        for (int w = 0; w < 40 && running_; ++w) {
+            DWORD avail = 0;
+            if (PeekNamedPipe(hPipe, nullptr, 0, nullptr, &avail, nullptr) && avail >= PIPE_MSG_HEADER_SIZE) {
+                if (ReadFile(hPipe, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) && n >= PIPE_MSG_HEADER_SIZE
+                    && msg.type == static_cast<uint8_t>(PipeMsgType::Ack)) {
+                    gotAck = true;
+                    break;
+                }
+            }
+            Sleep(50);
+        }
+
+        if (!gotAck) {
+            Logger::Debug("IPC: pipe client didn't ACK");
+            CloseHandle(hPipe);
+            continue;
+        }
+
+        // Handshake complete — pipe stays open, no keep-alive polling.
+        // Next iteration of while loop creates a new pipe instance (blocks on ConnectNamedPipe).
     }
 #endif
 }
