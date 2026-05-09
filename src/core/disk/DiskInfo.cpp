@@ -3,8 +3,8 @@
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
-#include "../utils/WinUtils.h"
-#include "../utils/WmiManager.h"
+#include "../Utils/WinUtils.h"
+#include "../Utils/WmiManager.h"
 #include <wbemidl.h>
 #pragma comment(lib, "wbemuuid.lib")
 
