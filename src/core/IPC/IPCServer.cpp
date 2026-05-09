@@ -1,5 +1,275 @@
 #include "IPCServer.h"
 #include "../Utils/Logger.h"
+
+#ifdef _WIN32
+// ======================== Windows Implementation (Named Pipe) ========================
+#include <windows.h>
+#include <cstring>
+#include <algorithm>
+
+namespace tcmt::ipc {
+
+IPCServer::IPCServer() = default;
+
+IPCServer::~IPCServer() {
+    Stop();
+}
+
+bool IPCServer::Start() {
+#ifdef _WIN32
+    running_ = true;
+    serverThread_ = std::thread(&IPCServer::ServerLoop, this);
+    return true;
+#else
+    lastError_ = "IPCServer: platform mismatch";
+    return false;
+#endif
+}
+
+void IPCServer::Stop() {
+    running_ = false;
+
+#ifdef _WIN32
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        for (auto& c : clients_) {
+            if (c.hPipe) {
+                CancelIoEx(static_cast<HANDLE>(c.hPipe), nullptr);
+                CloseHandle(static_cast<HANDLE>(c.hPipe));
+            }
+        }
+        clients_.clear();
+    }
+#endif
+
+    if (serverThread_.joinable())
+        serverThread_.join();
+
+#ifndef _WIN32
+    // macOS/Linux cleanup
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        PipeMessage shutdown{};
+        shutdown.type = static_cast<uint8_t>(PipeMsgType::Shutdown);
+        for (auto& c : clients_) {
+            write(c.fd, &shutdown, PIPE_MSG_HEADER_SIZE);
+        }
+        for (auto& c : clients_) close(c.fd);
+        clients_.clear();
+    }
+
+    if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
+    if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
+    if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
+    unlink(IPC_SOCK_PATH);
+#endif
+}
+
+// ── Windows: Named Pipe server loop ──
+void IPCServer::ServerLoop() {
+#ifdef _WIN32
+    const char* pipeName = "\\\\.\\pipe\\TCMT_IPC_Pipe";
+
+    while (running_) {
+        HANDLE hPipe = CreateNamedPipeA(
+            pipeName,
+            PIPE_ACCESS_DUPLEX,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            PIPE_UNLIMITED_INSTANCES,
+            4096, 4096, 0, nullptr);
+
+        if (hPipe == INVALID_HANDLE_VALUE) {
+            lastError_ = "CreateNamedPipe failed";
+            continue;
+        }
+
+        BOOL connected = ConnectNamedPipe(hPipe, nullptr);
+        if (!connected) {
+            DWORD gle = GetLastError();
+            connected = (gle == ERROR_PIPE_CONNECTED) ? TRUE : FALSE;
+        }
+
+        if (!connected) {
+            CloseHandle(hPipe);
+            continue;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex_);
+            clients_.push_back({hPipe, ClientType::Unknown});
+        }
+
+        // Handle client in a detached thread (supports MCP + Avalonia concurrently)
+        std::thread(&IPCServer::HandlePipeClient, this, hPipe).detach();
+    }
+#endif
+}
+
+// ── Windows: Handle a single named pipe client ──
+void IPCServer::HandlePipeClient(void* hPipe) {
+#ifdef _WIN32
+    HANDLE h = static_cast<HANDLE>(hPipe);
+
+    // Wait for HELLO message
+    PipeMessage msg;
+    DWORD n = 0;
+    if (!ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) || n < PIPE_MSG_HEADER_SIZE ||
+        msg.type != static_cast<uint8_t>(PipeMsgType::Hello)) {
+        Logger::Debug("IPC: pipe client sent invalid HELLO");
+        CloseHandle(h);
+        return;
+    }
+
+    // Read client type from payload (1 byte)
+    ClientType clientType = ClientType::Unknown;
+    if (msg.payloadSize >= 1) {
+        uint8_t typeByte = 0;
+        DWORD tb = 0;
+        ReadFile(h, &typeByte, 1, &tb, nullptr);
+        if (typeByte <= 2) clientType = static_cast<ClientType>(typeByte);
+    }
+
+    // Store client type
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        for (auto& c : clients_) {
+            if (c.hPipe == hPipe) { c.type = clientType; break; }
+        }
+    }
+
+    const char* typeStr = clientType == ClientType::Avalonia ? "Avalonia" :
+                           clientType == ClientType::MCP ? "MCP" : "Unknown";
+    Logger::Info(std::string("IPC: ") + typeStr + " client connected (named pipe), " +
+                 std::to_string(GetClientCount()) + " client(s) total");
+
+    // Send HELLO ACK
+    PipeMessage ack{};
+    ack.type = static_cast<uint8_t>(PipeMsgType::HelloAck);
+    ack.version = IPC_VERSION;
+    WriteFile(h, &ack, PIPE_MSG_HEADER_SIZE, &n, nullptr);
+
+    // Send schema
+    SendSchemaToPeer(hPipe);
+
+    // Wait for client ACK
+    if (!ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) || n < PIPE_MSG_HEADER_SIZE ||
+        msg.type != static_cast<uint8_t>(PipeMsgType::Ack)) {
+        Logger::Debug("IPC: pipe client didn't ACK schema");
+        CloseHandle(h);
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex_);
+            clients_.erase(
+                std::remove_if(clients_.begin(), clients_.end(),
+                    [h](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
+                clients_.end());
+        }
+        return;
+    }
+
+    // Keep-alive loop
+    while (running_) {
+        DWORD bytesRead = 0;
+        BOOL ok = ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &bytesRead, nullptr);
+        if (!ok || bytesRead == 0) break;
+
+        if (msg.type == static_cast<uint8_t>(PipeMsgType::Ping)) {
+            PipeMessage pong{};
+            pong.type = static_cast<uint8_t>(PipeMsgType::Pong);
+            DWORD written = 0;
+            WriteFile(h, &pong, PIPE_MSG_HEADER_SIZE, &written, nullptr);
+        } else if (msg.type == static_cast<uint8_t>(PipeMsgType::Bye)) {
+            Logger::Info("IPC: pipe client sent BYE");
+            break;
+        }
+    }
+
+    // Cleanup
+    CloseHandle(h);
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex_);
+        clients_.erase(
+            std::remove_if(clients_.begin(), clients_.end(),
+                [h](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
+            clients_.end());
+    }
+    Logger::Info("IPC: pipe client disconnected, " + std::to_string(GetClientCount()) + " client(s) total");
+#endif
+}
+
+void IPCServer::SendSchemaToPeer(void* peerHandle) {
+    auto data = SerializeSchema();
+    if (data.empty()) return;
+#ifdef _WIN32
+    DWORD written = 0;
+    WriteFile(static_cast<HANDLE>(peerHandle), data.data(), static_cast<DWORD>(data.size()), &written, nullptr);
+#else
+    write(static_cast<int>(reinterpret_cast<intptr_t>(peerHandle)), data.data(), data.size());
+#endif
+}
+
+std::vector<uint8_t> IPCServer::SerializeSchema() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<uint8_t> buf;
+    buf.resize(IPC_SCHEMA_HEADER_SIZE + schemaFields_.size() * IPC_FIELD_DEF_SIZE);
+
+    schemaHeader_.fieldCount = static_cast<uint16_t>(schemaFields_.size());
+    std::memcpy(buf.data(), &schemaHeader_, IPC_SCHEMA_HEADER_SIZE);
+
+    for (size_t i = 0; i < schemaFields_.size(); ++i) {
+        std::memcpy(buf.data() + IPC_SCHEMA_HEADER_SIZE + i * IPC_FIELD_DEF_SIZE,
+                    &schemaFields_[i], IPC_FIELD_DEF_SIZE);
+    }
+    return buf;
+}
+
+void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        schemaHeader_ = header;
+        schemaFields_ = fields;
+    }
+
+    auto data = SerializeSchema();
+
+    // Broadcast to all connected clients
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+#ifdef _WIN32
+    for (auto it = clients_.begin(); it != clients_.end(); ) {
+        DWORD written = 0;
+        if (!WriteFile(static_cast<HANDLE>(it->hPipe), data.data(), static_cast<DWORD>(data.size()), &written, nullptr)) {
+            CloseHandle(static_cast<HANDLE>(it->hPipe));
+            it = clients_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+#else
+    for (auto it = clients_.begin(); it != clients_.end(); ) {
+        int n = write(it->fd, data.data(), data.size());
+        if (n <= 0) { close(it->fd); it = clients_.erase(it); } else { ++it; }
+    }
+#endif
+}
+
+int IPCServer::GetClientCount() const {
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    return static_cast<int>(clients_.size());
+}
+
+bool IPCServer::HasClients() const { return GetClientCount() > 0; }
+
+std::vector<ClientType> IPCServer::GetClientTypes() const {
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    std::vector<ClientType> types;
+    for (const auto& c : clients_)
+        types.push_back(c.type);
+    return types;
+}
+
+} // namespace tcmt::ipc
+
+#else // !defined(_WIN32)
+// ======================== macOS/Linux Implementation (UDS + POSIX shm) ========================
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
@@ -21,7 +291,7 @@ IPCServer::~IPCServer() {
 
 bool IPCServer::Start() {
     // 1. Create shared memory file + mmap
-    shm_unlink(IPC_SHM_PATH); // clean up stale mapping
+    shm_unlink(IPC_SHM_PATH);
     shmFd_ = shm_open(IPC_SHM_PATH, O_CREAT | O_RDWR, 0666);
     if (shmFd_ == -1) {
         lastError_ = "shm_open failed: " + std::string(std::strerror(errno));
@@ -38,6 +308,7 @@ bool IPCServer::Start() {
         close(shmFd_); shmFd_ = -1;
         return false;
     }
+    shmSize_ = sizeof(IPCDataBlock);
     std::memset(shmPtr_, 0, sizeof(IPCDataBlock));
 
     // 2. Create UDS
@@ -89,13 +360,11 @@ void IPCServer::Stop() {
         serverThread_.join();
 
     std::lock_guard<std::mutex> lock(clientsMutex_);
-    for (auto& c : clients_) {
-        close(c.fd);
-    }
+    for (auto& c : clients_) close(c.fd);
     clients_.clear();
 
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
-    if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, sizeof(IPCDataBlock)); shmPtr_ = nullptr; }
+    if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
     unlink(IPC_SOCK_PATH);
 }
@@ -158,7 +427,7 @@ void IPCServer::HandleClient(int clientFd) {
     write(clientFd, &ack, PIPE_MSG_HEADER_SIZE);
 
     // Send schema
-    SendSchema(clientFd);
+    SendSchemaToPeer(reinterpret_cast<void*>(static_cast<intptr_t>(clientFd)));
 
     // Wait for client ACK (or BYE)
     n = read(clientFd, &msg, PIPE_MSG_HEADER_SIZE);
@@ -177,12 +446,12 @@ void IPCServer::HandleClient(int clientFd) {
     // Keep-alive loop: handle PING/PONG/BYE with non-blocking poll
     while (running_) {
         struct pollfd pfd = {clientFd, POLLIN, 0};
-        int ret = poll(&pfd, 1, 1000);  // 1-second timeout
+        int ret = poll(&pfd, 1, 1000);
         if (ret < 0) break;
-        if (ret == 0) continue;  // timeout, check running_
+        if (ret == 0) continue;
 
         n = read(clientFd, &msg, PIPE_MSG_HEADER_SIZE);
-        if (n <= 0) { Logger::Debug("IPC: client pipe closed (n=" + std::to_string(n) + ")"); break; }
+        if (n <= 0) { Logger::Debug("IPC: client pipe closed"); break; }
         if (msg.type == static_cast<uint8_t>(PipeMsgType::Ping)) {
             PipeMessage pong{};
             pong.type = static_cast<uint8_t>(PipeMsgType::Pong);
@@ -221,9 +490,10 @@ std::vector<ClientType> IPCServer::GetClientTypes() const {
     return types;
 }
 
-void IPCServer::SendSchema(int fd) {
+void IPCServer::SendSchemaToPeer(void* peerHandle) {
     auto data = SerializeSchema();
     if (data.empty()) return;
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(peerHandle));
     write(fd, data.data(), data.size());
 }
 
@@ -255,13 +525,10 @@ void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<Field
     std::lock_guard<std::mutex> lock(clientsMutex_);
     for (auto it = clients_.begin(); it != clients_.end(); ) {
         int n = write(it->fd, data.data(), data.size());
-        if (n <= 0) {
-            close(it->fd);
-            it = clients_.erase(it);
-        } else {
-            ++it;
-        }
+        if (n <= 0) { close(it->fd); it = clients_.erase(it); } else { ++it; }
     }
 }
 
 } // namespace tcmt::ipc
+
+#endif // _WIN32

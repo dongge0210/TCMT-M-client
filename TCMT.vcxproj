@@ -161,7 +161,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\gpu\GpuInfo.cpp" />
     <ClCompile Include="src\core\history\HistoryLogger.cpp" />
     <ClCompile Include="src\core\IPC\IPCClient.cpp" />
-    <ClCompile Include="src\core\IPC\NamedPipeServer.cpp" />
+    <ClCompile Include="src\core\IPC\IPCServer.cpp" />
     <ClCompile Include="src\core\MCP\MCPServer.cpp" />
     <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
