@@ -114,25 +114,10 @@ void IPCServer::HandlePipeClient(void* hPipe) {
     PipeMessage msg;
     DWORD n = 0;
 
-    // Helper: wait for data with timeout
-    auto waitForData = [&](int timeoutMs, DWORD minBytes) -> bool {
-        for (int w = 0; w < timeoutMs / 50 && running_; ++w) {
-            DWORD avail = 0;
-            if (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) && avail >= minBytes)
-                return true;
-            Sleep(50);
-        }
-        return false;
-    };
-
-    // --- Phase 1: Wait for HELLO (2s timeout) ---
-    if (!waitForData(2000, PIPE_MSG_HEADER_SIZE)) {
-        Logger::Debug("IPC: pipe HELLO timeout");
-        goto cleanup;
-    }
+    // --- Phase 1: Wait for HELLO (blocking ReadFile, PIPE_WAIT mode) ---
     if (!ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) || n < PIPE_MSG_HEADER_SIZE ||
         msg.type != static_cast<uint8_t>(PipeMsgType::Hello)) {
-        Logger::Debug("IPC: pipe invalid HELLO");
+        Logger::Debug("IPC: pipe HELLO failed, err=" + std::to_string(::GetLastError()));
         goto cleanup;
     }
 
@@ -162,14 +147,10 @@ void IPCServer::HandlePipeClient(void* hPipe) {
     }
     SendSchemaToPeer(h);
 
-    // --- Phase 3: Wait for ACK (2s timeout) ---
-    if (!waitForData(2000, PIPE_MSG_HEADER_SIZE)) {
-        Logger::Debug("IPC: pipe ACK timeout");
-        goto cleanup;
-    }
+    // --- Phase 3: Wait for ACK (blocking ReadFile) ---
     if (!ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) || n < PIPE_MSG_HEADER_SIZE ||
         msg.type != static_cast<uint8_t>(PipeMsgType::Ack)) {
-        Logger::Debug("IPC: pipe invalid ACK");
+        Logger::Debug("IPC: pipe ACK failed, err=" + std::to_string(::GetLastError()));
         goto cleanup;
     }
 
