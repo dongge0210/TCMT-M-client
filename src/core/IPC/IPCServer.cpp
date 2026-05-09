@@ -66,6 +66,8 @@ void IPCServer::Stop() {
 }
 
 // ── Windows: Named Pipe server loop ──
+// Simple fire-and-forget: send schema on each new connection, no handshake/keep-alive.
+// This matches the old NamedPipeServer behavior which worked reliably.
 void IPCServer::ServerLoop() {
 #ifdef _WIN32
     const char* pipeName = "\\\\.\\pipe\\TCMT_IPC_Pipe";
@@ -96,88 +98,20 @@ void IPCServer::ServerLoop() {
 
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
-            clients_.push_back({hPipe, ClientType::Unknown});
+            clients_.push_back({hPipe, ClientType::Avalonia});  // assume Avalonia by default
         }
 
-        // Handle client in a detached thread (supports MCP + Avalonia concurrently)
-        std::thread(&IPCServer::HandlePipeClient, this, hPipe).detach();
+        Logger::Info("IPC: client connected (named pipe), " +
+                     std::to_string(GetClientCount()) + " client(s) total");
+
+        SendSchemaToPeer(hPipe);
     }
 #endif
 }
 
-// ── Windows: Handle a single named pipe client ──
+// ── Windows: HandlePipeClient — stub (unused, kept for declaration) ──
 void IPCServer::HandlePipeClient(void* hPipe) {
-#ifdef _WIN32
-    HANDLE h = static_cast<HANDLE>(hPipe);
-
-    // Wait for HELLO message
-    PipeMessage msg;
-    DWORD n = 0;
-    if (!ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) || n < PIPE_MSG_HEADER_SIZE ||
-        msg.type != static_cast<uint8_t>(PipeMsgType::Hello)) {
-        Logger::Debug("IPC: pipe client sent invalid HELLO");
-        CloseHandle(h);
-        return;
-    }
-
-    // Read client type from payload (1 byte)
-    ClientType clientType = ClientType::Unknown;
-    if (msg.payloadSize >= 1) {
-        uint8_t typeByte = 0;
-        DWORD tb = 0;
-        ReadFile(h, &typeByte, 1, &tb, nullptr);
-        if (typeByte <= 2) clientType = static_cast<ClientType>(typeByte);
-    }
-
-    // Store client type
-    {
-        std::lock_guard<std::mutex> lock(clientsMutex_);
-        for (auto& c : clients_) {
-            if (c.hPipe == hPipe) { c.type = clientType; break; }
-        }
-    }
-
-    const char* typeStr = clientType == ClientType::Avalonia ? "Avalonia" :
-                           clientType == ClientType::MCP ? "MCP" : "Unknown";
-    Logger::Info(std::string("IPC: ") + typeStr + " client connected (named pipe), " +
-                 std::to_string(GetClientCount()) + " client(s) total");
-
-    // Send HELLO ACK
-    PipeMessage ack{};
-    ack.type = static_cast<uint8_t>(PipeMsgType::HelloAck);
-    ack.version = IPC_VERSION;
-    WriteFile(h, &ack, PIPE_MSG_HEADER_SIZE, &n, nullptr);
-
-    // Send schema
-    SendSchemaToPeer(hPipe);
-
-    // Wait for client ACK
-    if (!ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &n, nullptr) || n < PIPE_MSG_HEADER_SIZE ||
-        msg.type != static_cast<uint8_t>(PipeMsgType::Ack)) {
-        Logger::Debug("IPC: pipe client didn't ACK schema");
-        CloseHandle(h);
-        {
-            std::lock_guard<std::mutex> lock(clientsMutex_);
-            clients_.erase(
-                std::remove_if(clients_.begin(), clients_.end(),
-                    [hPipe](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
-                clients_.end());
-        }
-        return;
-    }
-
-    // Named Pipes: no keep-alive — schema delivered, pipe stays open.
-    // Client (Avalonia) reads PING/PONG over the still-open pipe.
-    // Cleanup happens in Stop() which closes all handles.
-    {
-        std::lock_guard<std::mutex> lock(clientsMutex_);
-        clients_.erase(
-            std::remove_if(clients_.begin(), clients_.end(),
-                [hPipe](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
-            clients_.end());
-    }
-    Logger::Info("IPC: pipe client disconnected, " + std::to_string(GetClientCount()) + " client(s) total");
-#endif
+    (void)hPipe;
 }
 
 void IPCServer::SendSchemaToPeer(void* peerHandle) {
