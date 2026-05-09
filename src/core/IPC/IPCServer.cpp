@@ -205,10 +205,6 @@ cleanup:
 #endif
 }
 
-// ── Windows: HandlePipeClient — stub (unused, kept for declaration) ──
-void IPCServer::HandlePipeClient(void* hPipe) {
-    (void)hPipe;
-}
 
 void IPCServer::SendSchemaToPeer(void* peerHandle) {
     auto data = SerializeSchema();
