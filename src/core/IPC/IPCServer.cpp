@@ -98,10 +98,13 @@ void IPCServer::ServerLoop() {
 
         {
             std::lock_guard<std::mutex> lock(clientsMutex_);
-            clients_.push_back({hPipe, ClientType::Unknown});
+            clients_.push_back({hPipe, ClientType::Avalonia});
         }
 
-        std::thread(&IPCServer::HandlePipeClient, this, hPipe).detach();
+        Logger::Info("IPC: client connected (pipe), " +
+                     std::to_string(GetClientCount()) + " client(s) total");
+
+        SendSchemaToPeer(hPipe);
     }
 #endif
 }
