@@ -62,6 +62,7 @@ public:
     static void Error(const std::string& message);
     static void Critical(const std::string& message);
     static void Fatal(const std::string& message);
+    static void Flush();
 
 #if defined(TCMT_MACOS) || defined(_WIN32)
     // Get the TUI log buffer (for TUI mode)

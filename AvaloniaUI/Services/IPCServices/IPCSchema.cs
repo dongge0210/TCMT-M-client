@@ -22,7 +22,7 @@ public static class IPCConstants
 {
     public const uint   Magic             = 0x54434D54; // "TCMT"
     public const byte   CurrentVersion    = 1;
-    public const int    MaxFields         = 120;
+    public const int    MaxFields         = 200;
     public const int    FieldNameLen      = 32;
     public const int    FieldUnitsLen     = 16;
     public const int    SchemaHeaderSize  = 16;  // sizeof(SchemaHeader)

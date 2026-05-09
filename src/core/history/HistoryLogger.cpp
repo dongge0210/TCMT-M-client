@@ -112,6 +112,80 @@ void HistoryLogger::WriteBatch(const std::vector<SensorSnapshot>& batch)
 }
 
 // ============================================================================
+// Query interface
+// ============================================================================
+
+std::vector<SensorSnapshot>
+HistoryLogger::GetSnapshots(const std::string& name, int limit)
+{
+    if (!db_)
+        return {};
+
+    static const char* sql =
+        "SELECT name, value, units, timestamp_ms "
+        "FROM sensors WHERE name = ? "
+        "ORDER BY timestamp_ms DESC LIMIT ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK)
+        return {};
+
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+
+    std::vector<SensorSnapshot> results;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        SensorSnapshot s;
+        const char* rawName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        s.name        = rawName ? rawName : "";
+        s.value       = sqlite3_column_double(stmt, 1);
+        const char* rawUnits = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        s.units       = rawUnits ? rawUnits : "";
+        s.timestampMs = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
+        results.push_back(std::move(s));
+    }
+
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+std::vector<SensorSnapshot>
+HistoryLogger::GetSnapshots(int64_t sinceTimestampMs, int limit)
+{
+    if (!db_)
+        return {};
+
+    static const char* sql =
+        "SELECT name, value, units, timestamp_ms "
+        "FROM sensors WHERE timestamp_ms >= ? "
+        "ORDER BY timestamp_ms DESC LIMIT ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK)
+        return {};
+
+    sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(sinceTimestampMs));
+    sqlite3_bind_int(stmt, 2, limit);
+
+    std::vector<SensorSnapshot> results;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        SensorSnapshot s;
+        const char* rawName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        s.name        = rawName ? rawName : "";
+        s.value       = sqlite3_column_double(stmt, 1);
+        const char* rawUnits = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        s.units       = rawUnits ? rawUnits : "";
+        s.timestampMs = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
+        results.push_back(std::move(s));
+    }
+
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+// ============================================================================
 // Background worker
 // ============================================================================
 
@@ -268,6 +342,8 @@ bool HistoryLogger::Initialize(const std::string&) { return false; }
 void HistoryLogger::Shutdown() {}
 bool HistoryLogger::IsRunning() const { return false; }
 void HistoryLogger::WriteBatch(const std::vector<SensorSnapshot>&) {}
+std::vector<SensorSnapshot> HistoryLogger::GetSnapshots(const std::string&, int) { return {}; }
+std::vector<SensorSnapshot> HistoryLogger::GetSnapshots(int64_t, int) { return {}; }
 void HistoryLogger::RunLoop() {}
 bool HistoryLogger::CreateTables() { return false; }
 void HistoryLogger::FlushBatch(const std::vector<SensorSnapshot>&) {}

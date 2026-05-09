@@ -51,6 +51,21 @@ public:
     /// maxPending_, the background thread is woken immediately.
     void WriteBatch(const std::vector<SensorSnapshot>& batch);
 
+    /// Retrieve recent snapshots for a specific sensor name.
+    /// The result is ordered by timestamp descending (most recent first).
+    /// @param name  Sensor name to look up.
+    /// @param limit Maximum number of rows to return (default 100).
+    /// @return A vector of SensorSnapshot values, empty if the sensor is not found.
+    /// @note On Windows this always returns an empty vector.
+    std::vector<SensorSnapshot> GetSnapshots(const std::string& name, int limit = 100);
+
+    /// Retrieve snapshots recorded at or after |sinceTimestampMs|.
+    /// The result is ordered by timestamp descending (most recent first).
+    /// @param sinceTimestampMs  Epoch-millisecond threshold (inclusive).
+    /// @param limit             Maximum number of rows to return (default 100).
+    /// @note On Windows this always returns an empty vector.
+    std::vector<SensorSnapshot> GetSnapshots(int64_t sinceTimestampMs, int limit = 100);
+
 private:
     void RunLoop();
     bool CreateTables();

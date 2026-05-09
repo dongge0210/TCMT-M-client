@@ -4,6 +4,8 @@
 #include "../../tui/LogBuffer.h"
 #endif
 
+#include <filesystem>
+
 std::ofstream Logger::logFile;
 std::mutex Logger::logMutex;
 bool Logger::consoleOutputEnabled = true;
@@ -34,6 +36,13 @@ static tcmt::LogBuffer g_tuiLogBuffer;
 #include <vector>
 
 void Logger::Initialize(const std::string& logFilePath) {
+    // Rotate log if it exceeds ~10 MB
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(logFilePath, ec);
+    if (!ec && fileSize > 10 * 1024 * 1024) {
+        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
+        (void)ec;
+    }
     logFile.open(logFilePath, std::ios::binary | std::ios::app);
     if (!logFile.is_open()) {
         throw std::runtime_error("Cannot open log file");
@@ -80,7 +89,6 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
     logFile.write(logEntry.c_str(), logEntry.size());
-    logFile.flush();
 
 #if defined(TCMT_MACOS) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
@@ -150,6 +158,13 @@ static bool IsTTY() {
 }
 
 void Logger::Initialize(const std::string& logFilePath) {
+    // Rotate log if it exceeds ~10 MB
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(logFilePath, ec);
+    if (!ec && fileSize > 10 * 1024 * 1024) {
+        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
+        (void)ec;
+    }
     logFile.open(logFilePath, std::ios::binary | std::ios::app);
     if (!logFile.is_open()) {
         throw std::runtime_error("Cannot open log file: " + logFilePath);
@@ -191,7 +206,6 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
     logFile.write(logEntry.c_str(), logEntry.size());
-    logFile.flush();
 
     // Push to TUI log buffer (for macOS TUI mode)
     g_tuiLogBuffer.Push(logEntry);
@@ -233,6 +247,13 @@ void Logger::Fatal(const std::string& message)    { WriteLog("FATAL",   message,
 #include <iostream>
 
 void Logger::Initialize(const std::string& logFilePath) {
+    // Rotate log if it exceeds ~10 MB
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(logFilePath, ec);
+    if (!ec && fileSize > 10 * 1024 * 1024) {
+        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
+        (void)ec;
+    }
     logFile.open(logFilePath, std::ios::binary | std::ios::app);
     if (!logFile.is_open()) {
         throw std::runtime_error("Cannot open log file");
@@ -260,7 +281,6 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
     logFile.write(logEntry.c_str(), logEntry.size());
-    logFile.flush();
     if (consoleOutputEnabled) {
         printf("%s", logEntry.c_str());
         fflush(stdout);
@@ -276,6 +296,13 @@ void Logger::Critical(const std::string& message) { WriteLog("CRITICAL",message,
 void Logger::Fatal(const std::string& message)    { WriteLog("FATAL",   message, LOG_FATAL,   ConsoleColor::RED); }
 
 #endif
+
+void Logger::Flush() {
+    std::lock_guard<std::mutex> lock(logMutex);
+    if (logFile.is_open()) {
+        logFile.flush();
+    }
+}
 
 #if defined(TCMT_MACOS) || defined(_WIN32)
 // GetTuiBuffer - returns global log buffer for TUI
