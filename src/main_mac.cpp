@@ -32,7 +32,6 @@
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/DataStruct/DataStruct.h"
-#include "core/DataStruct/SharedMemoryManager.h"
 #include "core/IPC/IPCServer.h"
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/Utils/Logger.h"
@@ -564,14 +563,6 @@ int main(int argc, char* argv[]) {
         Logger::Error("GpuInfo init failed: " + std::string(e.what()));
     }
 
-    // Initialize shared memory (optional, for future GUI clients)
-    bool shmOk = SharedMemoryManager::InitSharedMemory();
-    if (shmOk) {
-        Logger::Debug("SharedMemory initialized");
-    } else {
-        Logger::Warn("SharedMemory init failed: " + SharedMemoryManager::GetLastError());
-    }
-
     // Initialize IPC server (schema-driven pipeline for C# Avalonia)
     tcmt::ipc::IPCServer ipcServer;
     {
@@ -789,82 +780,7 @@ int main(int argc, char* argv[]) {
             // Update TUI
             tuiApp.UpdateData(data);
 
-            // Also write to shared memory (optional)
-            if (shmOk) {
-                SystemInfo sysInfo{};
-                sysInfo.osVersion = os.GetVersion();
-                sysInfo.batteryPercent = cachedBatteryPercent;
-                sysInfo.acOnline = cachedAcOnline;
-                sysInfo.cpuName = data.cpuName;
-                sysInfo.cpuUsage = data.cpuUsage;
-                sysInfo.performanceCoreFreq = data.pCoreFreq;
-                sysInfo.efficiencyCoreFreq = data.eCoreFreq;
-                sysInfo.cpuTemperature = data.cpuTemp;
-                sysInfo.totalMemory = data.totalMemory;
-                sysInfo.usedMemory = data.usedMemory;
-                sysInfo.availableMemory = data.availableMemory;
-                sysInfo.compressedMemory = data.compressedMemory;
-                sysInfo.physicalCores = data.physicalCores;
-                sysInfo.performanceCores = data.performanceCores;
-                sysInfo.efficiencyCores = data.efficiencyCores;
-                sysInfo.gpuUsage = data.gpuUsage;
-                sysInfo.gpuTemperature = data.gpuTemp;
-                sysInfo.gpuName = data.gpuName;
-                sysInfo.gpuMemory = data.gpuMemory;
-
-                // Network adapters
-                for (const auto& adapter : data.adapters) {
-                    NetworkAdapterData nad{};
-                    auto u16name = Platform::StringConverter::Utf8ToChar16(adapter.name);
-                    auto u16ip = Platform::StringConverter::Utf8ToChar16(adapter.ip);
-                    auto u16mac = Platform::StringConverter::Utf8ToChar16(adapter.mac);
-                    auto u16type = Platform::StringConverter::Utf8ToChar16(adapter.type);
-                    size_t copyLen = std::min(u16name.length(), size_t(127));
-                    for (size_t i = 0; i < copyLen; ++i) nad.name[i] = u16name[i];
-                    nad.name[copyLen] = u'\0';
-                    copyLen = std::min(u16ip.length(), size_t(63));
-                    for (size_t i = 0; i < copyLen; ++i) nad.ipAddress[i] = u16ip[i];
-                    nad.ipAddress[copyLen] = u'\0';
-                    copyLen = std::min(u16mac.length(), size_t(31));
-                    for (size_t i = 0; i < copyLen; ++i) nad.mac[i] = u16mac[i];
-                    nad.mac[copyLen] = u'\0';
-                    copyLen = std::min(u16type.length(), size_t(31));
-                    for (size_t i = 0; i < copyLen; ++i) nad.adapterType[i] = u16type[i];
-                    nad.adapterType[copyLen] = u'\0';
-                    nad.speed = adapter.speed;
-                    nad.downloadSpeed = adapter.downloadSpeed;
-                    nad.uploadSpeed = adapter.uploadSpeed;
-                    sysInfo.adapters.push_back(nad);
-                }
-
-                // Disks
-                for (const auto& disk : data.disks) {
-                    DiskData dd{};
-                    dd.label = disk.label;
-                    dd.fileSystem = disk.fileSystem;
-                    dd.totalSize = disk.totalSize;
-                    dd.usedSpace = disk.usedSpace;
-                    dd.freeSpace = disk.totalSize - disk.usedSpace;
-                    sysInfo.disks.push_back(dd);
-                }
-
-                // Temperatures
-                sysInfo.temperatures = data.temperatures;
-
-                static std::vector<PhysicalDiskSmartData> cachedSmart;
-                static bool smartDone = false;
-                if (!smartDone) {
-                    try {
-                        SystemInfo tmpInfo;
-                        DiskInfo().CollectSmartData(tmpInfo);
-                        cachedSmart = std::move(tmpInfo.physicalDisks);
-                        smartDone = true;
-                    } catch (...) {}
-                }
-                sysInfo.physicalDisks = cachedSmart;
-                SharedMemoryManager::WriteToSharedMemory(sysInfo);
-
-                // Write to IPC shared memory (schema-driven, for C# Avalonia)
+            // Write to IPC shared memory (schema-driven, for C# Avalonia)
                 if (ipcServer.IsRunning()) {
                     auto* b = static_cast<tcmt::ipc::IPCDataBlock*>(ipcServer.GetShmPtr());
                     if (b) {
@@ -936,11 +852,21 @@ int main(int argc, char* argv[]) {
                             b->temperatures[ti].value = static_cast<float>(data.temperatures[ti].second);
                             b->tempCount++;
                         }
-                        // Physical disks (SMART) — convert WCHAR→char for IPC
+                        // Physical disks (SMART) — cached once at startup
+                        static std::vector<PhysicalDiskSmartData> cachedSmart;
+                        static bool smartDone = false;
+                        if (!smartDone) {
+                            try {
+                                SystemInfo tmp;
+                                DiskInfo().CollectSmartData(tmp);
+                                cachedSmart = std::move(tmp.physicalDisks);
+                                smartDone = true;
+                            } catch (...) {}
+                        }
                         b->physDiskCount = 0;
-                        for (size_t pi = 0; pi < std::min(sysInfo.physicalDisks.size(), size_t(2)); ++pi) {
+                        for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(2)); ++pi) {
                             auto& pd = b->physicalDisks[pi];
-                            const auto& src = sysInfo.physicalDisks[pi];
+                            const auto& src = cachedSmart[pi];
                             for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
                                 pd.model[k] = static_cast<char>(src.model[k]);
                             pd.model[63] = '\0';
@@ -958,7 +884,6 @@ int main(int argc, char* argv[]) {
                         }
                     }
                 }
-            }
 
             // Sleep
             auto loopEnd = std::chrono::high_resolution_clock::now();
@@ -1024,7 +949,6 @@ int main(int argc, char* argv[]) {
     Logger::Info("HistoryLogger stopped");
     ipcServer.Stop();
     Logger::Info("IPC server stopped");
-    SharedMemoryManager::CleanupSharedMemory();
     Logger::Info("Done.");
     return 0;
 }
