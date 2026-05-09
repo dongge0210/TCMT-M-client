@@ -220,7 +220,7 @@ bool IPCClient::OpenSharedMemory() {
     if (shmPtr_ == MAP_FAILED) { shmPtr_ = nullptr; lastError_ = "mmap failed"; return false; }
 #else
     shmSize_ = schemaHeader_.totalSize;
-    shmHandle_ = OpenFileMappingA(FILE_MAP_READ, FALSE, "Global\\TCMT_IPC_SharedMemory");
+    shmHandle_ = OpenFileMappingA(FILE_MAP_READ, FALSE, "Global\\SystemMonitorSharedMemory");
     if (!shmHandle_) { lastError_ = "OpenFileMapping failed"; return false; }
     shmPtr_ = MapViewOfFile(shmHandle_, FILE_MAP_READ, 0, 0, shmSize_);
     if (!shmPtr_) { CloseHandle(shmHandle_); shmHandle_ = nullptr; lastError_ = "MapViewOfFile failed"; return false; }
