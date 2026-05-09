@@ -9,6 +9,11 @@
 #include <cfgmgr32.h>
 #include <devguid.h>
 #include <usbiodef.h>
+
+// Manual GUID definition — bypasses LNK2001 when setupapi.lib doesn't export this symbol
+const GUID GUID_DEVINTERFACE_USB_DEVICE = {
+    0xA5DCBF10L, 0x6530, 0x11D2, { 0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED }
+};
 #include <regex>
 #include <sstream>
 #include <iomanip>
