@@ -21,8 +21,14 @@ public:
     bool IsRunning() const { return running_.load(); }
 
     // Shared memory access (macOS: own shm; Windows: delegates to SharedMemoryManager)
+#ifdef _WIN32
     void* GetShmPtr() const { return shmPtr_; }
     size_t GetShmSize() const { return shmSize_; }
+    void SetShmPtr(void* ptr, size_t sz) { shmPtr_ = ptr; shmSize_ = sz; }
+#else
+    void* GetShmPtr() const { return shmPtr_; }
+    size_t GetShmSize() const { return shmSize_; }
+#endif
 
     // Client tracking
     int GetClientCount() const;
@@ -48,6 +54,10 @@ private:
     std::atomic<bool> running_{false};
     std::thread serverThread_;
 
+    // Shared memory pointer (macOS: own shm; Windows: set by caller via SetShmPtr)
+    void* shmPtr_ = nullptr;
+    size_t shmSize_ = 0;
+
 #ifdef _WIN32
     // Windows: Named Pipe
     mutable std::mutex clientsMutex_;
@@ -57,8 +67,6 @@ private:
     // macOS/Linux: Unix Domain Socket + POSIX shm
     int listenFd_ = -1;
     int shmFd_ = -1;
-    void* shmPtr_ = nullptr;
-    size_t shmSize_ = 0;
     struct ClientInfo { int fd = -1; ClientType type = ClientType::Unknown; };
     std::vector<ClientInfo> clients_;
     mutable std::mutex clientsMutex_;

@@ -160,7 +160,7 @@ void IPCServer::HandlePipeClient(void* hPipe) {
             std::lock_guard<std::mutex> lock(clientsMutex_);
             clients_.erase(
                 std::remove_if(clients_.begin(), clients_.end(),
-                    [h](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
+                    [hPipe](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
                 clients_.end());
         }
         return;
@@ -189,7 +189,7 @@ void IPCServer::HandlePipeClient(void* hPipe) {
         std::lock_guard<std::mutex> lock(clientsMutex_);
         clients_.erase(
             std::remove_if(clients_.begin(), clients_.end(),
-                [h](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
+                [hPipe](const PipeClientInfo& c) { return c.hPipe == hPipe; }),
             clients_.end());
     }
     Logger::Info("IPC: pipe client disconnected, " + std::to_string(GetClientCount()) + " client(s) total");

@@ -944,12 +944,12 @@ int main(int argc, char* argv[]) {
             if (ipcServer->Start()) {
                 Logger::Info("IPC server started (named pipe)");
             } else {
-                Logger::Warn("IPC server failed: " + ipcServer->LastError());
+                Logger::Warn("IPC server failed: " + ipcServer->GetLastError());
             }
 #endif
         }
         catch (const std::exception& e) {
-            Logger::Error("Exception during shared memory initialization: " + std::string(e.what());
+            Logger::Error("Exception during shared memory initialization: " + std::string(e.what()));
             SafeExit(1);
         }
 
