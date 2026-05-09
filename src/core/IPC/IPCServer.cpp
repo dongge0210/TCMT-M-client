@@ -166,31 +166,9 @@ void IPCServer::HandlePipeClient(void* hPipe) {
         return;
     }
 
-    // Keep-alive loop — PeekNamedPipe avoids spinning on byte-mode pipes
-    while (running_) {
-        DWORD available = 0;
-        if (!PeekNamedPipe(h, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
-            Sleep(200);
-            continue;
-        }
-        DWORD bytesRead = 0;
-        BOOL ok = ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &bytesRead, nullptr);
-        if (!ok || bytesRead == 0) break;
-
-        if (msg.type == static_cast<uint8_t>(PipeMsgType::Ping)) {
-            PipeMessage pong{};
-            pong.type = static_cast<uint8_t>(PipeMsgType::Pong);
-            DWORD written = 0;
-            WriteFile(h, &pong, PIPE_MSG_HEADER_SIZE, &written, nullptr);
-        } else if (msg.type == static_cast<uint8_t>(PipeMsgType::Bye)) {
-            Logger::Info("IPC: pipe client sent BYE");
-            break;
-        }
-        Sleep(50);
-    }
-
-    // Cleanup
-    CloseHandle(h);
+    // Named Pipes: no keep-alive — schema delivered, pipe stays open.
+    // Client (Avalonia) reads PING/PONG over the still-open pipe.
+    // Cleanup happens in Stop() which closes all handles.
     {
         std::lock_guard<std::mutex> lock(clientsMutex_);
         clients_.erase(
