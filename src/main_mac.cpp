@@ -784,6 +784,9 @@ int main(int argc, char* argv[]) {
                 if (ipcServer.IsRunning()) {
                     auto* b = static_cast<tcmt::ipc::IPCDataBlock*>(ipcServer.GetShmPtr());
                     if (b) {
+                        // seqlock: mark write in progress (odd)
+                        b->writeSequence++;
+                        std::atomic_thread_fence(std::memory_order_release);
                         // CPU
                         std::strncpy(b->cpuName, data.cpuName.c_str(), 63);
                         b->cpuName[63] = '\0';
@@ -883,6 +886,9 @@ int main(int argc, char* argv[]) {
                             b->physDiskCount++;
                         }
                     }
+                    // seqlock: mark write complete (even)
+                    std::atomic_thread_fence(std::memory_order_release);
+                    b->writeSequence++;
                 }
 
             // Sleep

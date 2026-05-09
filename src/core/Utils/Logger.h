@@ -2,6 +2,10 @@
 #include <string>
 #include <fstream>
 #include <mutex>
+#include <thread>
+#include <condition_variable>
+#include <atomic>
+#include <vector>
 #include <algorithm>
 #ifdef TCMT_WINDOWS
 // winsock2.h must be before windows.h
@@ -45,6 +49,15 @@ private:
 #else
     static void* hConsole;
 #endif
+
+    // Async logging members
+    static std::vector<std::string> logQueue;
+    static std::condition_variable queueCV;
+    static std::thread workerThread;
+    static std::atomic<bool> shutdownFlag;
+    static std::atomic<bool> logFileOpen;
+
+    static void WorkerThreadFunc();
     static void WriteLog(const std::string& level, const std::string& message, LogLevel msgLevel, ConsoleColor color);
     static void SetConsoleColor(ConsoleColor color);
     static void ResetConsoleColor();
@@ -63,6 +76,7 @@ public:
     static void Critical(const std::string& message);
     static void Fatal(const std::string& message);
     static void Flush();
+    static void Shutdown();
 
 #if defined(TCMT_MACOS) || defined(_WIN32)
     // Get the TUI log buffer (for TUI mode)

@@ -3,6 +3,7 @@
 #define NOMINMAX
 #endif
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 
 // winsock2.h must be before windows.h to avoid symbol redefinition
@@ -228,6 +229,11 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
     if (waitResult == WAIT_ABANDONED) {
         Logger::Warn("Acquired abandoned shared memory mutex - previous owner may have crashed");
     }
+
+    // seqlock: mark write in progress (odd)
+    pBuffer->writeSequence++;
+    std::atomic_thread_fence(std::memory_order_release);
+
     auto SafeCopyWideString = [](wchar_t* dest, size_t destSize, const std::wstring& src) {
         try {
             if (dest == nullptr || destSize == 0) return;
@@ -421,15 +427,24 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->lastUpdate = Platform::SystemTime::Now();
         Logger::Trace("Successfully wrote system/disk/SMART information to shared memory");
     } catch (const std::exception& e) {
+        // seqlock: mark write complete (even) despite failure
+        std::atomic_thread_fence(std::memory_order_release);
+        pBuffer->writeSequence++;
         lastError = std::string("Exception in WriteToSharedMemory: ") + e.what();
         Logger::Error(lastError);
         ReleaseMutex(g_hMutex);
         return;
     } catch (...) {
+        // seqlock: mark write complete (even) despite failure
+        std::atomic_thread_fence(std::memory_order_release);
+        pBuffer->writeSequence++;
         lastError = "Unknown exception in WriteToSharedMemory";
         Logger::Error(lastError);
         ReleaseMutex(g_hMutex);
         return;
     }
+    // seqlock: mark write complete (even)
+    std::atomic_thread_fence(std::memory_order_release);
+    pBuffer->writeSequence++;
     ReleaseMutex(g_hMutex);
 }

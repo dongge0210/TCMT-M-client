@@ -16,10 +16,60 @@ void* Logger::hConsole = nullptr;
 void* Logger::hConsole = nullptr;
 #endif
 
+// Async logging members
+std::vector<std::string> Logger::logQueue;
+std::condition_variable Logger::queueCV;
+std::thread Logger::workerThread;
+std::atomic<bool> Logger::shutdownFlag{false};
+std::atomic<bool> Logger::logFileOpen{false};
+
 #if defined(TCMT_MACOS) || defined(_WIN32)
 // Global TUI log buffer (for TUI mode)
 static tcmt::LogBuffer g_tuiLogBuffer;
 #endif
+
+// ======================== Async Worker Thread ========================
+void Logger::WorkerThreadFunc() {
+    std::vector<std::string> localQueue;
+    while (true) {
+        {
+            std::unique_lock<std::mutex> lock(logMutex);
+            queueCV.wait(lock, [] { return shutdownFlag.load() || !logQueue.empty(); });
+            localQueue.swap(logQueue);
+        }
+
+        // Write batch to file
+        for (const auto& entry : localQueue) {
+            logFile.write(entry.c_str(), entry.size());
+        }
+        localQueue.clear();
+
+        if (shutdownFlag.load()) {
+            // Check for entries that arrived between swap and flag check
+            std::lock_guard<std::mutex> lock(logMutex);
+            if (logQueue.empty()) break;
+            localQueue.swap(logQueue);
+        }
+    }
+
+    // Final drain of localQueue (from the shutdown-path swap above)
+    for (const auto& entry : localQueue) {
+        logFile.write(entry.c_str(), entry.size());
+    }
+    localQueue.clear();
+
+    logFile.flush();
+}
+
+// Cleanup guard for static destruction ordering: ensures the worker
+// thread is joined before its static members are destroyed.
+namespace {
+    struct LogTerminator {
+        ~LogTerminator() {
+            Logger::Shutdown();
+        }
+    } logTerminator;
+}
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
@@ -54,6 +104,10 @@ void Logger::Initialize(const std::string& logFilePath) {
     SetConsoleCP(65001);
     SetConsoleOutputCP(65001);
     hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    // Start async worker thread
+    logFileOpen.store(true);
+    workerThread = std::thread(WorkerThreadFunc);
 }
 
 void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
@@ -74,10 +128,8 @@ void Logger::ResetConsoleColor() {
 void Logger::WriteLog(const std::string& level, const std::string& message,
                       LogLevel msgLevel, ConsoleColor color) {
     if (msgLevel < currentLogLevel) return;
-    std::lock_guard<std::mutex> lock(logMutex);
     constexpr size_t MAX_LOG_LENGTH = 4096;
     if (message.empty() || message.length() > MAX_LOG_LENGTH) return;
-    if (!logFile.is_open()) return;
 
     auto now = std::chrono::system_clock::now();
     auto time_now = std::chrono::system_clock::to_time_t(now);
@@ -88,11 +140,19 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
-    logFile.write(logEntry.c_str(), logEntry.size());
 
+    // Push to TUI buffer before moving string to async queue
 #if defined(TCMT_MACOS) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
 #endif
+
+    // Push to async queue (non-blocking for caller)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logFileOpen.load()) return;
+        logQueue.push_back(std::move(logEntry));
+    }
+    queueCV.notify_one();
 
     if (consoleOutputEnabled && hConsole != INVALID_HANDLE_VALUE) {
         HANDLE hCon = (HANDLE)hConsole;
@@ -174,6 +234,10 @@ void Logger::Initialize(const std::string& logFilePath) {
         logFile.write(reinterpret_cast<const char*>(bom), sizeof(bom));
     }
     consoleOutputEnabled = IsTTY();
+
+    // Start async worker thread
+    logFileOpen.store(true);
+    workerThread = std::thread(WorkerThreadFunc);
 }
 
 void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
@@ -191,10 +255,8 @@ void Logger::ResetConsoleColor() {
 void Logger::WriteLog(const std::string& level, const std::string& message,
                       LogLevel msgLevel, ConsoleColor /*color*/) {
     if (msgLevel < currentLogLevel) return;
-    std::lock_guard<std::mutex> lock(logMutex);
     constexpr size_t MAX_LOG_LENGTH = 4096;
     if (message.empty() || message.length() > MAX_LOG_LENGTH) return;
-    if (!logFile.is_open()) return;
 
     auto now = std::chrono::system_clock::now();
     auto time_now = std::chrono::system_clock::to_time_t(now);
@@ -205,10 +267,17 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
-    logFile.write(logEntry.c_str(), logEntry.size());
 
-    // Push to TUI log buffer (for macOS TUI mode)
+    // Push to TUI log buffer before moving string to async queue
     g_tuiLogBuffer.Push(logEntry);
+
+    // Push to async queue (non-blocking for caller)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logFileOpen.load()) return;
+        logQueue.push_back(std::move(logEntry));
+    }
+    queueCV.notify_one();
 
     if (consoleOutputEnabled) {
         const char* colorCode = ANSI_RESET;
@@ -259,6 +328,10 @@ void Logger::Initialize(const std::string& logFilePath) {
         throw std::runtime_error("Cannot open log file");
     }
     consoleOutputEnabled = true;
+
+    // Start async worker thread
+    logFileOpen.store(true);
+    workerThread = std::thread(WorkerThreadFunc);
 }
 void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
 void Logger::SetLogLevel(LogLevel level) { currentLogLevel = level; }
@@ -270,8 +343,6 @@ void Logger::ResetConsoleColor() {}
 void Logger::WriteLog(const std::string& level, const std::string& message,
                       LogLevel msgLevel, ConsoleColor) {
     if (msgLevel < currentLogLevel) return;
-    std::lock_guard<std::mutex> lock(logMutex);
-    if (!logFile.is_open()) return;
     auto now = std::chrono::system_clock::now();
     auto time_now = std::chrono::system_clock::to_time_t(now);
     std::tm timeinfo;
@@ -280,11 +351,20 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
-    logFile.write(logEntry.c_str(), logEntry.size());
+
+    // Console output before moving logEntry to queue
     if (consoleOutputEnabled) {
         printf("%s", logEntry.c_str());
         fflush(stdout);
     }
+
+    // Push to async queue (non-blocking for caller)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logFileOpen.load()) return;
+        logQueue.push_back(std::move(logEntry));
+    }
+    queueCV.notify_one();
 }
 
 void Logger::Trace(const std::string& message)    { WriteLog("TRACE",   message, LOG_TRACE,   ConsoleColor::PURPLE); }
@@ -298,9 +378,43 @@ void Logger::Fatal(const std::string& message)    { WriteLog("FATAL",   message,
 #endif
 
 void Logger::Flush() {
-    std::lock_guard<std::mutex> lock(logMutex);
+    // Signal the worker to process any pending entries
+    queueCV.notify_one();
+
+    // Drain entries that the worker may not have picked up yet.
+    // We take a short lock, swap, then write synchronously.
+    std::vector<std::string> entries;
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        entries.swap(logQueue);
+    }
+    for (const auto& entry : entries) {
+        logFile.write(entry.c_str(), entry.size());
+    }
+    logFile.flush();
+}
+
+void Logger::Shutdown() {
+    shutdownFlag.store(true);
+    queueCV.notify_one();
+    if (workerThread.joinable()) {
+        workerThread.join();
+    }
+
+    // Drain any entries that arrived after the worker exited
+    std::vector<std::string> remaining;
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        remaining.swap(logQueue);
+    }
+    for (const auto& entry : remaining) {
+        logFile.write(entry.c_str(), entry.size());
+    }
+
+    logFile.flush();
+    logFileOpen.store(false);
     if (logFile.is_open()) {
-        logFile.flush();
+        logFile.close();
     }
 }
 

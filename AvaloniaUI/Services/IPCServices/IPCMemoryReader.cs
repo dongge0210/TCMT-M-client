@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Serilog;
 
 namespace AvaloniaUI.Services.IPC;
@@ -175,6 +176,63 @@ public class IPCMemoryReader : IDisposable
         // Data is live via mmap / MemoryMappedFile; no refresh needed.
     }
 
+    /// <summary>
+    /// 读取 seqlock 序号（总在 offset 0）
+    /// </summary>
+    private uint ReadWriteSequence()
+    {
+        if (OperatingSystem.IsMacOS())
+            return _shmPtr != IntPtr.Zero && _shmPtr != MAP_FAILED
+                ? (uint)Marshal.ReadInt32(_shmPtr, 0) : 0;
+        if (_accessor != null)
+            return _accessor.ReadUInt32(0);
+        return 0;
+    }
+
+    /// <summary>
+    /// 在 seqlock 保护下执行读操作：读 seq → 若奇数自旋 → 读数据 → 再读 seq 校验
+    /// </summary>
+    private bool ReadWithSequence(int offset, Action readAction)
+    {
+        const int maxAttempts = 3;
+        const int maxSpin = 10;
+        _ = offset; // 保留参数签名；seq 固定位于 offset 0
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            Thread.MemoryBarrier();
+            uint seq1 = ReadWriteSequence();
+            Thread.MemoryBarrier();
+
+            if ((seq1 & 1) == 1) // 奇数 = 写入中
+            {
+                bool becameEven = false;
+                for (int spin = 0; spin < maxSpin; spin++)
+                {
+                    Thread.SpinWait(5);
+                    Thread.MemoryBarrier();
+                    uint s = ReadWriteSequence();
+                    Thread.MemoryBarrier();
+                    if ((s & 1) == 0) { seq1 = s; becameEven = true; break; }
+                }
+                if (!becameEven)
+                {
+                    Thread.Sleep(0); // 让出时间片再重试
+                    continue;
+                }
+            }
+
+            readAction();
+
+            Thread.MemoryBarrier();
+            uint seq2 = ReadWriteSequence();
+            Thread.MemoryBarrier();
+
+            if (seq2 == seq1) return true;
+        }
+        return false;
+    }
+
     public bool HasField(string name)
     {
         if (_schema == null) return false;
@@ -193,11 +251,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 1) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return Marshal.ReadByte(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadByte((int)field.Offset);
-        return null;
+        byte? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = Marshal.ReadByte(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadByte((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public ushort? ReadUInt16(string fieldName)
@@ -205,11 +266,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 2) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return (ushort)Marshal.ReadInt16(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadUInt16((int)field.Offset);
-        return null;
+        ushort? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = (ushort)Marshal.ReadInt16(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadUInt16((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public uint? ReadUInt32(string fieldName)
@@ -217,11 +281,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 4) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return (uint)Marshal.ReadInt32(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadUInt32((int)field.Offset);
-        return null;
+        uint? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = (uint)Marshal.ReadInt32(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadUInt32((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public ulong? ReadUInt64(string fieldName)
@@ -229,11 +296,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 8) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return (ulong)Marshal.ReadInt64(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadUInt64((int)field.Offset);
-        return null;
+        ulong? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = (ulong)Marshal.ReadInt64(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadUInt64((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public sbyte? ReadInt8(string fieldName)
@@ -241,11 +311,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 1) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return (sbyte)Marshal.ReadByte(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadSByte((int)field.Offset);
-        return null;
+        sbyte? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = (sbyte)Marshal.ReadByte(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadSByte((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public short? ReadInt16(string fieldName)
@@ -253,11 +326,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 2) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return Marshal.ReadInt16(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadInt16((int)field.Offset);
-        return null;
+        short? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = Marshal.ReadInt16(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadInt16((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public int? ReadInt32(string fieldName)
@@ -265,11 +341,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 4) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return Marshal.ReadInt32(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadInt32((int)field.Offset);
-        return null;
+        int? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = Marshal.ReadInt32(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadInt32((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public long? ReadInt64(string fieldName)
@@ -277,11 +356,14 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 8) return null;
 
-        if (OperatingSystem.IsMacOS())
-            return Marshal.ReadInt64(_shmPtr, (int)field.Offset);
-        if (_accessor != null)
-            return _accessor.ReadInt64((int)field.Offset);
-        return null;
+        long? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+                result = Marshal.ReadInt64(_shmPtr, (int)field.Offset);
+            else if (_accessor != null)
+                result = _accessor.ReadInt64((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public float? ReadFloat32(string fieldName)
@@ -289,14 +371,17 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 4) return null;
 
-        if (OperatingSystem.IsMacOS())
-        {
-            int bits = Marshal.ReadInt32(_shmPtr, (int)field.Offset);
-            return BitConverter.Int32BitsToSingle(bits);
-        }
-        if (_accessor != null)
-            return _accessor.ReadSingle((int)field.Offset);
-        return null;
+        float? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+            {
+                int bits = Marshal.ReadInt32(_shmPtr, (int)field.Offset);
+                result = BitConverter.Int32BitsToSingle(bits);
+            }
+            else if (_accessor != null)
+                result = _accessor.ReadSingle((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public double? ReadFloat64(string fieldName)
@@ -304,14 +389,17 @@ public class IPCMemoryReader : IDisposable
         var field = FindField(fieldName); if (field == null) return null;
         if (field.Size < 8) return null;
 
-        if (OperatingSystem.IsMacOS())
-        {
-            long bits = Marshal.ReadInt64(_shmPtr, (int)field.Offset);
-            return BitConverter.Int64BitsToDouble(bits);
-        }
-        if (_accessor != null)
-            return _accessor.ReadDouble((int)field.Offset);
-        return null;
+        double? result = null;
+        bool ok = ReadWithSequence(0, () => {
+            if (OperatingSystem.IsMacOS())
+            {
+                long bits = Marshal.ReadInt64(_shmPtr, (int)field.Offset);
+                result = BitConverter.Int64BitsToDouble(bits);
+            }
+            else if (_accessor != null)
+                result = _accessor.ReadDouble((int)field.Offset);
+        });
+        return ok ? result : null;
     }
 
     public bool? ReadBool(string fieldName)
@@ -322,14 +410,17 @@ public class IPCMemoryReader : IDisposable
 
     private byte[]? ReadBytes(int offset, int count)
     {
-        var buf = new byte[count];
-        if (OperatingSystem.IsMacOS())
-            Marshal.Copy(new IntPtr(_shmPtr.ToInt64() + offset), buf, 0, count);
-        else if (_accessor != null)
-            _accessor.ReadArray(offset, buf, 0, count);
-        else
-            return null;
-        return buf;
+        byte[]? buf = null;
+        bool ok = ReadWithSequence(0, () => {
+            buf = new byte[count];
+            if (OperatingSystem.IsMacOS())
+                Marshal.Copy(new IntPtr(_shmPtr.ToInt64() + offset), buf, 0, count);
+            else if (_accessor != null)
+                _accessor.ReadArray(offset, buf, 0, count);
+            else
+                buf = null;
+        });
+        return ok ? buf : null;
     }
 
     public string? ReadString(string fieldName)

@@ -90,6 +90,8 @@ struct FieldDef {
 
 // IPC data block -- shared via mmap file, read by C# AvaloniaUI
 struct IPCDataBlock {
+    uint32_t writeSequence           = 0; // seqlock: odd=write in progress, even=complete
+
     // CPU
     char     cpuName[64]             = {};
     uint8_t  physicalCores           = 0;

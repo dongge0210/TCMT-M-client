@@ -169,6 +169,8 @@ struct SystemInfo {
 
 // Shared memory main struct
 struct SharedMemoryBlock {
+    uint32_t writeSequence;   // seqlock: odd=write in progress, even=complete
+
     WCHAR cpuName[128];       // CPU name - WCHAR array
     int physicalCores;        // Physical cores
     int logicalCores;         // Logical cores
