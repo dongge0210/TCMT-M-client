@@ -355,7 +355,7 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         auto labelL = TrimRight(nameL, halfW - 9);
         int tcL = (tempL > 80) ? 4 : (tempL > 60) ? 3 : 2;
         wattron(win, COLOR_PAIR(tcL));
-        mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s %.0f C", halfW - 9, labelL.c_str(), tempL);
         wattroff(win, COLOR_PAIR(tcL));
 
         if (rightIdx < static_cast<int>(displayTemps.size())) {

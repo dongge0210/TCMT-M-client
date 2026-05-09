@@ -166,8 +166,13 @@ void IPCServer::HandlePipeClient(void* hPipe) {
         return;
     }
 
-    // Keep-alive loop
+    // Keep-alive loop — PeekNamedPipe avoids spinning on byte-mode pipes
     while (running_) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(h, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
+            Sleep(200);
+            continue;
+        }
         DWORD bytesRead = 0;
         BOOL ok = ReadFile(h, &msg, PIPE_MSG_HEADER_SIZE, &bytesRead, nullptr);
         if (!ok || bytesRead == 0) break;
@@ -181,6 +186,7 @@ void IPCServer::HandlePipeClient(void* hPipe) {
             Logger::Info("IPC: pipe client sent BYE");
             break;
         }
+        Sleep(50);
     }
 
     // Cleanup
