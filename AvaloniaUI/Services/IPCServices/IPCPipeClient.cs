@@ -38,9 +38,19 @@ public class IPCPipeClient : IAsyncDisposable
         if (_disposed) return;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
+        int retryCount = 0;
+        const int maxRetries = 10;
+
         while (!_cts.Token.IsCancellationRequested)
         {
             if (_serverShutdown || _schemaReceived) break;
+            if (retryCount >= maxRetries)
+            {
+                Log.Error("IPC: Max retries ({Max}) reached, giving up", maxRetries);
+                IsConnected = false;
+                OnConnectionChanged?.Invoke(false, "连接失败：已达最大重试次数");
+                break;
+            }
             try
             {
                 if (OperatingSystem.IsWindows())
@@ -54,11 +64,14 @@ public class IPCPipeClient : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                retryCount++;
+                int delayMs = Math.Min(1000 * (1 << retryCount), 30000); // 1s,2s,4s,...,30s max
                 LastError = ex.Message;
-                Log.Warning(ex, "Pipe connection lost, reconnecting in 1s...");
+                Log.Warning(ex, "Pipe connection lost, retry {Count}/{Max} in {Delay}ms...",
+                    retryCount, maxRetries, delayMs);
                 IsConnected = false;
                 OnConnectionChanged?.Invoke(false, LastError);
-                await Task.Delay(1000, _cts.Token);
+                await Task.Delay(delayMs, _cts.Token);
             }
         }
     }

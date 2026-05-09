@@ -78,16 +78,26 @@ public class IPCMemoryReader : IDisposable
 
     private bool OpenWindows()
     {
+        // Match SharedMemoryManager_Windows.cpp fallback: Global → Local → no prefix
+        string[] names = { "Global\\SystemMonitorSharedMemory",
+                           "Local\\SystemMonitorSharedMemory",
+                           "SystemMonitorSharedMemory" };
         try
         {
             var size = (long)_schema!.Header.TotalSize;
-            // Must match SharedMemoryManager_Windows.cpp: "Global\\SystemMonitorSharedMemory"
-            _mmf = OperatingSystem.IsWindows()
-                ? MemoryMappedFile.OpenExisting("Global\\SystemMonitorSharedMemory", MemoryMappedFileRights.Read)
-                : throw new PlatformNotSupportedException("Windows shared memory not available");
-            _accessor = _mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.Read);
-            Log.Information("IPC Memory: Opened Windows shared memory, size={Size}", size);
-            return true;
+            foreach (var name in names)
+            {
+                try
+                {
+                    _mmf = MemoryMappedFile.OpenExisting(name, MemoryMappedFileRights.Read);
+                    _accessor = _mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.Read);
+                    Log.Information("IPC Memory: Opened {Name}, size={Size}", name, size);
+                    return true;
+                }
+                catch (FileNotFoundException) { continue; }
+            }
+            Log.Error("IPC Memory: Shared memory not found in any namespace");
+            return false;
         }
         catch (Exception ex)
         {

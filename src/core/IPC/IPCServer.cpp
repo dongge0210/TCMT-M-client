@@ -73,6 +73,19 @@ void IPCServer::ServerLoop() {
     const char* pipeName = "\\\\.\\pipe\\TCMT_IPC_Pipe";
 
     while (running_) {
+        // Cleanup stale pipe handles before creating new instance
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex_);
+            for (auto it = clients_.begin(); it != clients_.end(); ) {
+                DWORD avail = 0;
+                if (!PeekNamedPipe(static_cast<HANDLE>(it->hPipe), nullptr, 0, nullptr, &avail, nullptr) &&
+                    ::GetLastError() == ERROR_BROKEN_PIPE) {
+                    CloseHandle(static_cast<HANDLE>(it->hPipe));
+                    it = clients_.erase(it);
+                } else { ++it; }
+            }
+        }
+
         HANDLE hPipe = CreateNamedPipeA(
             pipeName,
             PIPE_ACCESS_DUPLEX,
