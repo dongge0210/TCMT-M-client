@@ -626,6 +626,38 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
     addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
     addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+
+    // Network adapters (up to 4)
+    for (int i = 0; i < 4; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "net/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, adapters) + i * sizeof(NetworkAdapterData);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(NetworkAdapterData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(NetworkAdapterData, ipAddress), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(NetworkAdapterData, mac), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"type").c_str(), base + offsetof(NetworkAdapterData, adapterType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(NetworkAdapterData, speed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(NetworkAdapterData, downloadSpeed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(NetworkAdapterData, uploadSpeed), 8, (uint8_t)FT::UInt64);
+    }
+
+    // Disks (up to 8)
+    for (int i = 0; i < 8; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, disks) + i * sizeof(SharedMemoryBlock::SharedDiskData);
+        addField((std::string(pfx)+"label").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, label), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(SharedMemoryBlock::SharedDiskData, fileSystem), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"total").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, totalSize), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"used").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, usedSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"free").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, freeSpace), 8, (uint8_t)FT::UInt64);
+    }
+
+    // Temperature sensors (up to 10)
+    for (int i = 0; i < 10; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "sensor/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, temperatures) + i * sizeof(TemperatureData);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(TemperatureData, sensorName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -1097,7 +1129,8 @@ int main(int argc, char* argv[]) {
                     Logger::Info("Program is running stable");
                 }
                 
-                SystemInfo sysInfo;
+                SystemInfo sysInfo{};
+                sysInfo.compressedMemory = 0; // Windows: no compressed memory
 
                 try {
                     sysInfo.cpuUsage = 0.0;
