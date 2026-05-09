@@ -22,7 +22,7 @@ excluded_dirs = [
     "src/core/DataStruct", "src/core/Platform",
     "src/core/board", "src/core/usb", "src/core/Config",
     "AvaloniaUI/Converters",
-    "src/CPP-parsers/extern"
+    "src/CPP-parsers", "CPP-parsers", "third_party"
 ]
 excluded_files = [
     "litho.toml", "*.log", "*.tmp", "*.cache",

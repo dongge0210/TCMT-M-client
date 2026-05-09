@@ -194,7 +194,7 @@ bool SharedMemoryManager::InitSharedMemory() {
         memset(pBuffer, 0, sizeof(SharedMemoryBlock));
     }
 
-    Logger::Info("Shared memory successfully initialized.");
+    Logger::Info("Shared memory successfully initialized, sizeof(SharedMemoryBlock)=" + std::to_string(sizeof(SharedMemoryBlock)));
     return true;
 }
 

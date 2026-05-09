@@ -206,7 +206,9 @@ cleanup:
 
 void IPCServer::SendSchemaToPeer(void* peerHandle) {
     auto data = SerializeSchema();
-    if (data.empty()) return;
+    if (data.empty()) { Logger::Warn("IPC: SendSchemaToPeer — schema data is EMPTY!"); return; }
+    Logger::Debug("IPC: SendSchemaToPeer — sending " + std::to_string(data.size()) + " bytes (" +
+                  std::to_string(schemaFields_.size()) + " fields)");
 #ifdef _WIN32
     DWORD written = 0;
     WriteFile(static_cast<HANDLE>(peerHandle), data.data(), static_cast<DWORD>(data.size()), &written, nullptr);

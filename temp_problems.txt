@@ -1,0 +1,72 @@
+1:日志性能优化：引入异步日志写入（生产者-消费者模式），避免日志 I/O 阻塞采集主循环。
+
+2:SharedMemoryManager 静态方法风格与 Platform::SharedMemory 类封装并存
+两套并行共享内存机制（旧 DataStruct.h::SharedMemoryBlock 与新 IPCData.h::IPCDataBlock）
+去除旧的体系
+
+3:Windows 平台使用 NamedPipeServer 而 macOS 使用 IPCServer（UDS）
+统一来说，这都是IPC的内容，2个系统的管道和共享内存应该都在IPC里面（cpp/h）
+
+4: 内嵌 nlohmann/json	当前直接依赖 nlohmann/json 头文件，配置格式与 JSON 强绑定  
+？？？我不是说了通过cpp-parses来维护这个格式吗？
+
+5:无配置校验机制	Load() 仅做 JSON 解析，不提供配置项的结构化校验（如字段必填、取值范围验证）
+
+6:无配置热更新通知	配置变更后，依赖方需主动重新读取，没有基于事件的变更通知机制
+建议增加在在IPC的管道通知
+
+7:日志文件无轮转	Logger::Initialize() 以追加模式打开文件，运行时日志文件持续增长，无大小限制或文件轮转
+
+8:控制台输出性能	每次 WriteLog() 都执行 logFile.flush()，高频率日志场景下影响 I/O 性能
+
+9:历史记录无查询接口	HistoryLogger 目前仅提供 WriteBatch() 写入接口，缺少 Query() 或 GetSnapshots() 读取方法（头文件中声明了 GetSnapshots 但源码中未实现）
+
+10:检查 litho.docs/4、深入探索/数据模型域.md 的 615行到635行
+
+11:GPU代码和显存的代码被分开处理：src/core/gpu/ 和 src/core/memory/gpu/ 存在两套 GPU 实现
+可能导致混乱
+
+DONE 2026-05-07: 删除 memory/gpu/，修复 main/gpu 的 NVML coreClock bug，合并虚拟GPU检测+检测日志
+
+12:不应该固定采集频率固定
+我的意思是说：每个模块应该有各自的节奏，另外多线程
+
+13:共享内存无锁	写入时不加锁，C# 端可能读到部分更新的数据
+这里指的是新增的IPC
+
+14:WMI 查询缓存：对不变数据（主板、OS 版本）启动时查询一次后缓存，避免每秒重复 WMI 调用
+减少占用
+
+15:异步采集：对 I/O 密集型采集（磁盘、网络）使用异步/并行采集，缩短单次循环总耗时
+跟12点的一致
+
+16:NVML 延迟加载：GPU 模块中的 NVML 库通过动态加载（LoadLibrary），避免无 NVIDIA GPU 时加载失败
+很重要；核显，AMD或者英特尔的显卡会炸
+
+17:XAML 视图缺失	项目中未发现 .axaml 文件，UI 可能完全通过代码构建（确认为在搜索时的隔离导致，可以忽略）	缺乏声明式 UI 定义，维护性降低
+最好考虑逐步迁移部分 UI 到 XAML 以利用设计器
+
+18:TUI 面板自适应：当前面板为固定垂直布局，可考虑随终端尺寸变化自动调整列数和面板排列
+
+19:Wifi的监测：信道 强度 链路速度（这个使用已有的网络适配器） 等..其他的，但是不应该有断开的功能（这个很危险）
+
+20:蓝牙的监测：与wifi的想法差不多但不同
+
+21:给我一下 关键架构决策（ADRs），参考:litho.docs/2、架构概览.md
+
+22:强调声明TUI是主程序（核心）的一部分，而非通过使用IPC获取数据
+
+23:将温度采集部分纳入并行获取而非串行（特别是libre）
+
+24:共享内存无读写锁	引入序列号或 double-buffering 机制	消除读到不一致数据的可能
+《强调作用》
+
+25:schema对于模型数据/模块的类型提供的插槽是有瓶颈的，可能需要预留更多
+
+26:"[2026-05-07 21:08:26][INFO] IPC: MCP client connected, 1 client(s) total\n
+[2026-05-07 21:08:26][INFO] IPC: client disconnected, 0 client(s) total"
+MCP服务器存在问题
+
+27:目录存在大小写不一
+
+28:src/placeholder.cpp 是为mac的P1阶段开发，在后续阶段检查依赖并删除

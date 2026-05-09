@@ -406,9 +406,6 @@ description / bundle / minimal / hint / 白名单。
 - 第一批：sys-status / offsets verify / temps / refresh（可占位） / smart / smart-aging（数据不足返回码 6）。  
 - 不含：交互式 REPL、复杂历史回放、日志注入（后续扩展）。
 
-
-
-
 ### 31.9 SMART / Aging 占位策略
 - SMART 异步未完成：smart 命令 exitCode=6（DATA_NOT_READY）。  
 - Aging 数据点 <2：smart-aging exitCode=6。  
@@ -455,10 +452,8 @@ description / bundle / minimal / hint / 白名单。
 - TUI 的字段偏移数组与主程序结构保持同步（由公共头文件导出）。  
 - 结构升级时先更新偏移 JSON 和头文件，再编译 TUI。  
 
-
 ### 31.16 未来扩展占位
 命令：`tcm replay` / `tcm hw nvme` / `tcm hw memory` / `tcm hw cpu-features` / `tcm log --level INFO "..."` / `tcm trend export` / `tcm diag dump`。
-
 
 ---
 
@@ -594,6 +589,44 @@ description / bundle / minimal / hint / 白名单。
 - 检测显示器连接/断开事件
 - 识别蓝牙设备详细规格
 
+#### 多厂商 GPU 监控 (用户态)
+- **AMD GPU**: ADL2 SDK (AMD 官方用户态库，免费) — 温度/频率/使用率/功耗
+  - 参考: LibreHardwareMonitor 的 ADL 封装代码
+  - 条件: 有对应硬件时实现
+- **Intel GPU**: Intel PresentMon (开源 MIT) 或 GPA — GPU Busy/帧时间/频率估算
+  - 通过 ETW 事件采集，无需特殊驱动
+  - GitHub: GameTechDev/PresentMon
+  - 条件: 有对应硬件时实现
+- **NVIDIA GPU**: 已有 NVML 实现，保持不变
+
+#### WiFi 信号与网络详情 (Native Wifi API)
+- Windows 原生 wlanapi.dll (系统自带，无需驱动签名)
+- 可读: 当前连接 SSID 信号强度(dBm + 百分比)、信道、频段(2.4G/5G)、收发速率
+- 可控 (可选): 连接/断开/切换 AP (需评估是否属于 TCMT 范围)
+- 优先级: 中 (有无线网卡即可实现)
+
+#### WinRT 备选方案 (Windows 10+ 仅限)
+- **系统 Toast 通知**: 替代托盘气球通知，更现代的告警方式
+- **蓝牙设备详情/电量**: Windows.Devices.Bluetooth API
+- **电源适配器实时功率**: WMI 读不到的实时功率数据
+- **条件**: 不考虑 Win7/8 兼容性；等需要 Windows 原生功能时再引入
+- **注意**: TCMT 已有 #ifdef _WIN32 分平台架构，Windows 侧引入 WinRT 不影响 macOS
+
+#### 智能场景检测 (低优先级)
+- 基于进程名 + 硬件负载模式自动识别使用场景
+- 场景分类: Gaming / Compiling / Video / Idle / Unknown
+- 判断依据:
+  - Gaming: GPU>80% + UDP网络活跃 + CPU波动大
+  - Compiling: CPU全核满载 + 磁盘随机读 + GPU低
+  - Video: GPU解码活跃 + 网络下载持续
+  - Idle: CPU<10% + GPU<5%
+- 应用:
+  - 自动切换监控频率 (游戏时降频省资源)
+  - 异常行为标记 (和平时对比，今天哪里不对劲)
+  - 进程智能标签 ("Unity 编辑器" vs "Unity 游戏")
+- 初版可用规则判断实现，后续可升级轻量 AI 模型
+- **状态**: 低优先级，标签保留
+
 #### 调试/开发工具
 - 内置日志查看器
 - TCMT 自身性能分析（监控工具的监控）
@@ -603,6 +636,11 @@ description / bundle / minimal / hint / 白名单。
 - eBPF (macOS 支持差)
 - WPP (需要内核驱动开发)
 - DriverKit (99美元/年开发者账号)
+- **WinRing0 及依赖内核签名的方案** (驱动签名证书费用高昂，数千美元级别)
+  - AMD CPU 温度/功耗 (MSR 访问需 WinRing0)
+  - 主板传感器/SuperIO 芯片读取
+  - 内存 SPD / SMBus 访问
+  - 替代: 使用用户态 API (WMI/ADL/PresentMon/Native Wifi) 尽可能覆盖
 
 ---
 

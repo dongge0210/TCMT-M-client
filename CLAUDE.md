@@ -23,7 +23,7 @@ dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 ```
 macOS requires `brew install ncurses` (CMake's `find_package(Curses)` handles it).
 
-### Windows (x64, VS 2022)
+### Windows (x64, VS 2022/ VS 2026)
 Build order is critical (see `.github/workflows/build.yml` for CI reference):
 ```bash
 git submodule update --init --recursive

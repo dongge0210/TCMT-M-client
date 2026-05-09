@@ -71,7 +71,8 @@ void MCPServer::Run() {
                 running_ = false;
                 continue;
             }
-            else if (method == "ping")                  response = { {"jsonrpc","2.0"}, {"id",id}, {"result",{}} };
+            else if (method == "ping")                  
+                response = { {"jsonrpc","2.0"}, {"id",id}, {"result",{}} };
             else {
                 response = ErrorResponse(-32601, "Method not found: " + method, id);
             }

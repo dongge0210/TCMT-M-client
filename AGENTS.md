@@ -9,7 +9,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n h
 # AvaloniaUI (separate, reads SHM)
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 
-# ─── Windows (x64, VS 2022) ───
+# ─── Windows (x64, VS 2022/VS 2026 ) ───
 # Build order is critical (sln dependencies)
 git submodule update --init --recursive
 dotnet build src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472
