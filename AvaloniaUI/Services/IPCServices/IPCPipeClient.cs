@@ -191,9 +191,18 @@ public class IPCPipeClient : IAsyncDisposable
         // === Phase 4: Keep-alive / wait loop ===
         if (OperatingSystem.IsWindows())
         {
-            // Windows NamedPipe: just wait — ReadAsync returns 0 on idle pipe,
-            // causing reconnect flood. Use Task.Delay instead.
-            try { await Task.Delay(Timeout.Infinite, ct); }
+            // Windows NamedPipe: keep connection alive with blocking read.
+            // ReadAsync on an idle pipe blocks until data arrives or pipe breaks.
+            try
+            {
+                var dummy = new byte[1];
+                while (!ct.IsCancellationRequested)
+                {
+                    int r = await stream.ReadAsync(dummy, 0, 1, ct);
+                    if (r == 0) break; // pipe closed by server
+                }
+            }
+            catch (IOException) { }
             catch (OperationCanceledException) { }
         }
         else
