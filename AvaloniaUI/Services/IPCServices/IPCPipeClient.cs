@@ -177,59 +177,73 @@ public class IPCPipeClient : IAsyncDisposable
             return;
         }
 
-        // === Phase 3: Send ACK ===
-        var ack = new byte[MsgHeaderSize];
-        ack[0] = 0x03; // Ack
-        ack[1] = IPCConstants.CurrentVersion;
-        await stream.WriteAsync(ack, ct);
-        await stream.FlushAsync(ct);
-        Log.Debug("IPC: ACK sent");
+        // === Phase 3: Send ACK (macOS/Linux only — Windows skips handshake) ===
+        if (!OperatingSystem.IsWindows())
+        {
+            var ack = new byte[MsgHeaderSize];
+            ack[0] = 0x03; // Ack
+            ack[1] = IPCConstants.CurrentVersion;
+            await stream.WriteAsync(ack, ct);
+            await stream.FlushAsync(ct);
+            Log.Debug("IPC: ACK sent");
+        }
 
-        // === Phase 4: Keep-alive loop ===
-        while (!ct.IsCancellationRequested)
+        // === Phase 4: Keep-alive / wait loop ===
+        if (OperatingSystem.IsWindows())
         {
-            try
+            // Windows NamedPipe: just wait — ReadAsync returns 0 on idle pipe,
+            // causing reconnect flood. Use Task.Delay instead.
+            try { await Task.Delay(Timeout.Infinite, ct); }
+            catch (OperationCanceledException) { }
+        }
+        else
+        {
+            // macOS/Linux: full keep-alive loop (PING/PONG, schema update)
+            while (!ct.IsCancellationRequested)
             {
-                n = await ReadFullAsync(stream, msgBuf, MsgHeaderSize, ct);
-                if (n == 0) break;
-                byte msgType = msgBuf[0];
-                if (msgType == 0x05) // Pong
+                try
                 {
-                    Log.Debug("IPC: PONG received");
+                    n = await ReadFullAsync(stream, msgBuf, MsgHeaderSize, ct);
+                    if (n == 0) break;
+                    byte msgType = msgBuf[0];
+                    if (msgType == 0x05) // Pong
+                    {
+                        Log.Debug("IPC: PONG received");
+                    }
+                    else if (msgType == 0x07) // Shutdown
+                    {
+                        Log.Information("IPC: Server shutting down");
+                        OnConnectionChanged?.Invoke(false, "服务器已关闭");
+                        _serverShutdown = true;
+                        break;
+                    }
+                    else if (msgType == 0x08) // SchemaUpdate
+                    {
+                        Log.Information("IPC: Schema update — re-reading...");
+                        n = await ReadFullAsync(stream, headerBuf, schemaHeaderSize, ct);
+                        if (n < schemaHeaderSize) break;
+                        fieldCount = BitConverter.ToUInt16(headerBuf, 6);
+                        allFieldsSize = Math.Min(fieldCount, maxFields) * fieldDefSize;
+                        if (allFieldsSize > 0) await ReadFullAsync(stream, fieldBuf, allFieldsSize, ct);
+                        raw = new byte[schemaHeaderSize + allFieldsSize];
+                        Buffer.BlockCopy(headerBuf, 0, raw, 0, schemaHeaderSize);
+                        if (allFieldsSize > 0) Buffer.BlockCopy(fieldBuf, 0, raw, schemaHeaderSize, allFieldsSize);
+                        var newSchema = SchemaMessage.Parse(raw);
+                        if (newSchema.IsValid)
+                            OnSchemaReceived?.Invoke(newSchema);
+                    }
                 }
-                else if (msgType == 0x07) // Shutdown
-                {
-                    Log.Information("IPC: Server shutting down");
-                    OnConnectionChanged?.Invoke(false, "服务器已关闭");
-                    _serverShutdown = true;
-                    break;
-                }
-                else if (msgType == 0x08) // SchemaUpdate
-                {
-                    Log.Information("IPC: Schema update — re-reading...");
-                    n = await ReadFullAsync(stream, headerBuf, schemaHeaderSize, ct);
-                    if (n < schemaHeaderSize) break;
-                    fieldCount = BitConverter.ToUInt16(headerBuf, 6);
-                    allFieldsSize = Math.Min(fieldCount, maxFields) * fieldDefSize;
-                    if (allFieldsSize > 0) await ReadFullAsync(stream, fieldBuf, allFieldsSize, ct);
-                    raw = new byte[schemaHeaderSize + allFieldsSize];
-                    Buffer.BlockCopy(headerBuf, 0, raw, 0, schemaHeaderSize);
-                    if (allFieldsSize > 0) Buffer.BlockCopy(fieldBuf, 0, raw, schemaHeaderSize, allFieldsSize);
-                    var newSchema = SchemaMessage.Parse(raw);
-                    if (newSchema.IsValid)
-                        OnSchemaReceived?.Invoke(newSchema);
-                }
+                catch (IOException) { break; }
+                catch (OperationCanceledException) { break; }
             }
-            catch (IOException) { break; }
-            catch (OperationCanceledException) { break; }
+            // Keep-alive ended — treat as disconnect
+            if (!_serverShutdown)
+            {
+                Log.Warning("IPC: Connection lost (timeout/eof)");
+                OnConnectionChanged?.Invoke(false, "连接已断开");
+            }
+            Log.Debug("IPC: Keep-alive loop ended");
         }
-        // Keep-alive ended — treat as disconnect (SHUTDOWN, EOF, or crash)
-        if (!_serverShutdown)
-        {
-            Log.Warning("IPC: Connection lost (timeout/eof)");
-            OnConnectionChanged?.Invoke(false, "连接已断开");
-        }
-        Log.Debug("IPC: Keep-alive loop ended");
     }
 
     private static async Task<int> ReadFullAsync(Stream stream, byte[] buf, int len, CancellationToken ct)
