@@ -64,29 +64,41 @@ C++ Core (TCMT-M / TCMT.exe)
   │  Sources: WMI (Windows), IOKit/sysctl (macOS), LibreHardwareMonitor (Windows .NET),
   │           NVML/CUDA (Windows), SMC/powermetrics (macOS)
   ▼
-SharedMemoryBlock (~129KB packed struct, mutex-synchronized)
+IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
+  │  Schema-driven field offsets broadcasted over Unix socket (macOS) / NamedPipe (Windows)
   │
-  ├── AvaloniaUI (.NET 10.0, cross-platform) — reads via SharedMemoryService
-  └── ncurses TUI (macOS-only) — reads directly in main_mac.cpp
+  ├── AvaloniaUI (.NET 10.0, cross-platform) — connects via IPCPipeClient, reads via IPCMemoryReader
+  ├── ncurses TUI (macOS-only) — reads directly in main_mac.cpp
+  └── MCP Server — `TCMT-M --mcp` (JSON-RPC 2.0 stdio, uses IPC for data)
 ```
 
 ### Source Layout
-- `src/core/` — C++20 static library `TCMTCore`: hardware modules (CpuInfo, GpuInfo, MemoryInfo, DiskInfo, NetworkAdapter, OSInfo), Platform abstraction, ConfigManager (nlohmann/json), Logger, SharedMemoryManager, TemperatureWrapper
-- `src/DataStruct.h` — Packed `SharedMemoryBlock` with all hardware structs. **Critical**: uses `WCHAR` typedef (`char16_t` on macOS, `wchar_t` on Windows) — macOS `wchar_t` is 4 bytes but C# `ushort` expects 2.
-- `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH, auto-elevation)
+- `src/core/` — C++20 static library `TCMTCore`: hardware modules, IPC pipeline, MCP server, USB, HistoryLogger
+- `src/core/IPC/` — `IPCServer` (unified UDS+Windows), `IPCClient` (C++ client), `IPCData.h` (schema/protocol)
+- `src/core/MCP/` — `MCPServer` (8 hardware tools, JSON-RPC 2.0 over stdio)
+- `src/DataStruct.h` — Packed `SharedMemoryBlock` with all hardware structs. **Critical**: `WCHAR` typedef (`char16_t` on macOS, `wchar_t` on Windows)
+- `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI)
-- `src/tui/` — ncurses TUI implementation (macOS)
-- `src/third_party/` — 8 git submodules (LibreHardwareMonitor, curl, PDCurses, websocketpp, USBMonitor-cpp, tpm2-tss, TC, nlohmann/json)
+- `src/tui/` — ncurses TUI implementation (cross-platform)
+- `AvaloniaUI/Services/IPCServices/` — C# IPC pipeline (IPCPipeClient, IPCMemoryReader, IPCSchema, IPCSystemInfoMapper)
 - `AvaloniaUI/` — .NET 10.0 Avalonia 12.0.1 desktop app (MVVM with CommunityToolkit.Mvvm, Serilog)
 - `cmake/` — CMake modules (Platform detection, Compiler Options, Dependencies)
 - `tools/mcp-build/` — Python MCP build server
 - `docs/superpowers/specs/` — design specs for TPM, disk SMART, Avalonia migration
 
-### Shared Memory Gotchas
-1. **macOS `wchar_t` is 4 bytes** — `DataStruct.h` uses `WCHAR` typedef (`char16_t` on non-Windows). Do NOT revert to plain `wchar_t` in shared memory structs.
-2. **C# `Marshal.SizeOf` != C++ `sizeof`** — Differs by 24 bytes (C++ `pthread_mutex_t` is 64 bytes, C# maps it as `byte[40]`). The lock is the last field so earlier offsets are correct, but validate after any struct change.
-3. **AvaloniaUI uses P/Invoke on macOS** — `SharedMemoryService.cs` calls `shm_open/mmap/munmap/close` via `[DllImport("libc")]`. Name transformation must match `Platform_macOS.cpp`: strip `/`, truncate to 20 chars, prepend `/`.
-4. **Serilog has no configured sink** — `Log.*` calls compile but produce no output. macOS uses `Console.Error.WriteLine` with `DIAG` prefix to bypass this.
+### IPC / Shared Memory Gotchas
+
+**Cross-platform:**
+1. **macOS `wchar_t` is 4 bytes** — `DataStruct.h` uses `WCHAR` typedef (`char16_t` on non-Windows). Do NOT revert.
+2. **Two shared memory blocks**: `IPCDataBlock` (macOS, schema-driven) and `SharedMemoryBlock` (Windows, legacy). The C# mapper reads BOTH but the field names and offsets differ per platform.
+3. **Schema MaxFields=200** — must match in both `IPCData.h` and `IPCSchema.cs`. Bump both when adding fields.
+
+**Windows-specific (critical):**
+4. **Shared memory name**: C++ creates `Global\SystemMonitorSharedMemory` (with fallback to `Local\` and no prefix). C# `IPCMemoryReader.OpenWindows()` must try all 3 variants.
+5. **Float32/Float64**: `IPCMemoryReader.ReadFloat32` on an 8-byte field reads 4 bytes (garbage) and returns non-null, blocking `ReadFloat64` fallback via `??`. Always try `ReadFloat64` FIRST.
+6. **WString vs String**: Windows stores strings as `wchar_t` (UTF-16) in shared memory. Use `ReadWString` not `ReadString` for network, disk, temperature, SMART string fields.
+7. **Windows NamedPipe**: uses fire-and-forget schema delivery (no handshake). C# client on Windows skips HELLO/HELLO_ACK and reads schema bytes directly. macOS uses full handshake protocol.
+8. **MCP mode**: NEVER starts IPCServer. Always external IPC first, direct HW fallback. Uses non-blocking connect with 500ms timeout.
 
 ## Key Dependencies
 - **Windows**: CUDA 13.2, LibreHardwareMonitor (MPL-2.0, used as compiled DLL), WMI, PDH
