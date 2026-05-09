@@ -18,6 +18,7 @@ public class IPCPipeClient : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private bool _disposed;
     private bool _serverShutdown;
+    private bool _schemaReceived;
 
     /// <summary>
     /// 收到 Schema 时的回调。返回 true 表示接受，false 表示拒绝（版本不匹配等）
@@ -39,7 +40,7 @@ public class IPCPipeClient : IAsyncDisposable
 
         while (!_cts.Token.IsCancellationRequested)
         {
-            if (_serverShutdown) break;
+            if (_serverShutdown || _schemaReceived) break;
             try
             {
                 if (OperatingSystem.IsWindows())
@@ -191,19 +192,9 @@ public class IPCPipeClient : IAsyncDisposable
         // === Phase 4: Keep-alive / wait loop ===
         if (OperatingSystem.IsWindows())
         {
-            // Windows NamedPipe: keep connection alive with blocking read.
-            // ReadAsync on an idle pipe blocks until data arrives or pipe breaks.
-            try
-            {
-                var dummy = new byte[1];
-                while (!ct.IsCancellationRequested)
-                {
-                    int r = await stream.ReadAsync(dummy, 0, 1, ct);
-                    if (r == 0) break; // pipe closed by server
-                }
-            }
-            catch (IOException) { }
-            catch (OperationCanceledException) { }
+            // Windows: schema received, no keep-alive needed.
+            // Mark done so StartAsync won't retry.
+            _schemaReceived = true;
         }
         else
         {

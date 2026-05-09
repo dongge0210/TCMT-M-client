@@ -77,7 +77,7 @@ void IPCServer::ServerLoop() {
             pipeName,
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-            1,  // only 1 instance — prevents reconnect flood
+            PIPE_UNLIMITED_INSTANCES,
             4096, 4096, 0, nullptr);
 
         if (hPipe == INVALID_HANDLE_VALUE) {
