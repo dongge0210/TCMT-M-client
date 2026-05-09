@@ -85,7 +85,7 @@ void IPCServer::ServerLoop() {
 
         BOOL connected = ConnectNamedPipe(hPipe, nullptr);
         if (!connected) {
-            DWORD gle = GetLastError();
+            DWORD gle = ::GetLastError();
             connected = (gle == ERROR_PIPE_CONNECTED) ? TRUE : FALSE;
         }
 
