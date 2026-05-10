@@ -71,6 +71,11 @@ public:
     /// The config file path (resolved).
     const std::string& GetPath() const { return path_; }
 
+    /// Validate loaded config against expected schema.
+    /// Returns list of errors. Empty = valid. Caller should use defaults for invalid fields.
+    /// #5 — config validation
+    std::vector<std::string> Validate() const;
+
 private:
     /// Resolve a dotted key like "display.refreshRate" into nested json pointers.
     /// Returns pointer to the value, or nullptr if not found.

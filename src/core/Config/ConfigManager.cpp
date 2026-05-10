@@ -258,3 +258,45 @@ void ConfigManager::AppendToArray(const std::string& arrayKey,
 void ConfigManager::SetJson(const std::string& key, nlohmann::json value) {
     SetNested(GetData(), key, std::move(value));
 }
+
+std::vector<std::string> ConfigManager::Validate() const {
+    std::vector<std::string> errors;
+
+    // Define expected schema: {key, type, validator}
+    struct Rule { const char* key; enum { STR, INT, DOUBLE, BOOL } type;
+                  double minV = 0, maxV = 0; const char* const* enumVals = nullptr; int enumN = 0; };
+    static const char* logLevels[] = {"debug", "info", "warning", "error"};
+    Rule rules[] = {
+        {"logging.level",         Rule::STR,    0, 0, logLevels, 4},
+        {"display.refreshRate",   Rule::INT,   100, 5000},
+    };
+
+    for (auto& r : rules) {
+        auto* v = ResolveKey(r.key);
+        if (!v || v->is_null()) continue; // missing → use default, not an error
+
+        switch (r.type) {
+        case Rule::STR:
+            if (!v->is_string()) { errors.push_back(std::string(r.key) + ": expected string"); break; }
+            if (r.enumVals) {
+                bool ok = false;
+                for (int i = 0; i < r.enumN; ++i)
+                    if (v->get<std::string>() == r.enumVals[i]) { ok = true; break; }
+                if (!ok) errors.push_back(std::string(r.key) + ": invalid value '" + v->get<std::string>() + "'");
+            }
+            break;
+        case Rule::INT:
+            if (!v->is_number_integer()) { errors.push_back(std::string(r.key) + ": expected integer"); break; }
+            if (r.maxV > r.minV) { int iv = v->get<int>(); if (iv < r.minV || iv > r.maxV) errors.push_back(std::string(r.key) + ": out of range [" + std::to_string((int)r.minV) + "-" + std::to_string((int)r.maxV) + "]"); }
+            break;
+        case Rule::DOUBLE:
+            if (!v->is_number()) { errors.push_back(std::string(r.key) + ": expected number"); break; }
+            if (r.maxV > r.minV) { double dv = v->get<double>(); if (dv < r.minV || dv > r.maxV) errors.push_back(std::string(r.key) + ": out of range"); }
+            break;
+        case Rule::BOOL:
+            if (!v->is_boolean()) errors.push_back(std::string(r.key) + ": expected boolean");
+            break;
+        }
+    }
+    return errors;
+}
