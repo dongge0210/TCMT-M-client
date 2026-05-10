@@ -18,6 +18,7 @@ void BluetoothInfo::Detect() {
             return;
         }
 
+        data_.adapter.detected = true;
         data_.adapter.powerOn = ([ctrl powerState] == kBluetoothHCIPowerStateON);
         NSString* addr = [ctrl addressAsString];
         if (addr) data_.adapter.address = [addr UTF8String];

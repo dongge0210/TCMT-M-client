@@ -13,6 +13,7 @@ struct WiFiData {
     double txRate = 0;      // Transmit rate in Mbps
     bool powerOn = false;   // WiFi adapter enabled
     bool isConnected = false;
+    bool locationDenied = false; // macOS 15+: SSID unavailable due to Location Services denial
 };
 
 class WiFiInfo {

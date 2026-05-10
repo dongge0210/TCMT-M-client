@@ -793,13 +793,13 @@ int main(int argc, char* argv[]) {
             }
             {
               const auto& wd = s_wifi.GetData();
-              data.hasWiFi = wd.isConnected; // only when connected
+              data.hasWiFi = wd.powerOn; // show if adapter is powered on (even if not connected)
               data.wifiSSID = wd.ssid;
               data.wifiRSSI = wd.rssi;
               data.wifiChannel = wd.channel;
               data.wifiSecurity = wd.security;
               const auto& bd = s_bt.GetData();
-              data.hasBluetooth = !bd.adapter.name.empty(); // show if adapter detected
+              data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
               data.btPowerOn = bd.adapter.powerOn;
               data.btDeviceCount = static_cast<int>(bd.devices.size());
             }

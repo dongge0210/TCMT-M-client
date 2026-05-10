@@ -7,6 +7,7 @@
 #ifdef TCMT_MACOS
 
 #import <CoreWLAN/CoreWLAN.h>
+#import <CoreLocation/CoreLocation.h>
 
 // Convert CWSecurity enum to a human-readable string.
 // CoreWLAN defines CWSecurity as an NSInteger-backed enum; the value ranges
@@ -78,6 +79,18 @@ void WiFiInfo::Detect() {
         // If there is no SSID we are not connected to a network,
         // but the adapter may still be powered on.
         if (data_.ssid.empty()) {
+            // macOS 15+ requires Location Services permission for SSID.
+            // Check once and log a warning if denied.
+            static bool s_locationWarningLogged = false;
+            if (!s_locationWarningLogged) {
+                CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
+                if (auth == kCLAuthorizationStatusDenied) {
+                    data_.locationDenied = true;
+                    Logger::Warn("WiFi: Location Services denied — SSID unavailable. "
+                                 "Enable in System Settings > Privacy > Location Services > Terminal.app");
+                    s_locationWarningLogged = true;
+                }
+            }
             Logger::Debug("WiFiInfo: Wi-Fi is on but not connected to any network");
             return;
         }

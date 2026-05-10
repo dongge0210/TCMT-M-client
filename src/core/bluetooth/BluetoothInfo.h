@@ -5,6 +5,7 @@
 
 struct BluetoothAdapterData {
     bool powerOn = false;       // Adapter enabled
+    bool detected = false;      // Adapter hardware detected
     std::string address;        // "AA:BB:CC:DD:EE:FF"
     std::string name;           // Adapter name
 };
