@@ -1490,18 +1490,18 @@ int main(int argc, char* argv[]) {
                     }
                     // Collect physical disks (cached — WMI is slow, re-query every 60s)
                     static std::vector<PhysicalDiskSmartData> cachedPhysDisks;
-                    static auto lastPhysQuery = std::chrono::steady_clock::now();
+                    static auto lastPhysQuery = std::chrono::steady_clock::now() - std::chrono::seconds(61);
                     auto now = std::chrono::steady_clock::now();
-                    if (cachedPhysDisks.empty() ||
-                        std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysQuery).count() >= 60) {
+                    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysQuery).count() >= 60) {
                         if (wmiManager) {
                             DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
-                            cachedPhysDisks = sysInfo.physicalDisks;
-                            lastPhysQuery = now;
+                            if (!sysInfo.physicalDisks.empty())
+                                cachedPhysDisks = sysInfo.physicalDisks;
+                            lastPhysQuery = now; // always update — avoid retry flood on empty result
                         }
-                    } else {
-                        sysInfo.physicalDisks = cachedPhysDisks;
                     }
+                    if (!cachedPhysDisks.empty())
+                        sysInfo.physicalDisks = cachedPhysDisks;
                     
                     // Collect TPM data
                     {
