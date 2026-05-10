@@ -78,9 +78,24 @@ void WiFiInfo::Detect() {
 
         // macOS 15+ blocks SSID/BSSID/channel without Location Services.
         // Fallback: system_profiler SPAirPortDataType bypasses the restriction.
+        // Run once per program lifetime and cache results (popen is slow, ~1s).
+        static std::string s_cachedSSID, s_cachedBSSID, s_cachedSecurity;
+        static int s_cachedRSSI = 0, s_cachedChannel = 0;
+        static double s_cachedTxRate = 0;
+        static bool s_triedSystemProfiler = false;
+
         if (data_.ssid.empty() || data_.bssid.empty()) {
-            FILE* fp = popen("system_profiler SPAirPortDataType -json 2>/dev/null", "r");
-            if (fp) {
+            if (s_triedSystemProfiler) {
+                // Restore cached data
+                if (!s_cachedSSID.empty()) data_.ssid = s_cachedSSID;
+                if (!s_cachedBSSID.empty()) data_.bssid = s_cachedBSSID;
+                if (!s_cachedSecurity.empty()) data_.security = s_cachedSecurity;
+                if (s_cachedRSSI != 0) data_.rssi = s_cachedRSSI;
+                if (s_cachedChannel != 0) data_.channel = s_cachedChannel;
+                if (s_cachedTxRate > 0) data_.txRate = s_cachedTxRate;
+            } else {
+                s_triedSystemProfiler = true;
+                FILE* fp = popen("system_profiler SPAirPortDataType -json 2>/dev/null", "r");
                 std::string json;
                 char buf[4096];
                 while (fgets(buf, sizeof(buf), fp)) json += buf;
@@ -127,8 +142,12 @@ void WiFiInfo::Detect() {
                         }
                     }
                 } catch (...) {}
-                data_.isConnected = !data_.bssid.empty();
-            }
+                // Cache parsed values for future Detect() calls (Clear() resets data_)
+                s_cachedSSID = data_.ssid; s_cachedBSSID = data_.bssid;
+                s_cachedSecurity = data_.security; s_cachedRSSI = data_.rssi;
+                s_cachedChannel = data_.channel; s_cachedTxRate = data_.txRate;
+            } // system_profiler fallback
+            data_.isConnected = !data_.bssid.empty();
         }
 
         if (!data_.isConnected) {
