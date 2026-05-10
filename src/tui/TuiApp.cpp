@@ -322,7 +322,7 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
 
     if (data.hasWiFi) {
         std::string wifiStr;
-        if (data.wifiSSID.empty()) {
+        if (data.wifiSSID.empty() && data.wifiBSSID.empty()) {
             wattron(win, COLOR_PAIR(5));
             mvwprintw(win, y + lines, x0 + 2, "WiFi:");
             wattroff(win, COLOR_PAIR(5));
