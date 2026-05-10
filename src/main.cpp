@@ -623,6 +623,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
         addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
         addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
+        addField((std::string(prefix)+"memoryPercent").c_str(), base + offsetof(GPUData, coreClock), 8);
+        addField((std::string(prefix)+"temperature").c_str(), offsetof(SharedMemoryBlock, gpuTemperature), 8);
     }
     addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
     addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
@@ -658,6 +660,19 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         uint32_t base = offsetof(SharedMemoryBlock, temperatures) + i * sizeof(TemperatureData);
         addField((std::string(pfx)+"name").c_str(), base + offsetof(TemperatureData, sensorName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
         addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
+    }
+
+    // Physical disks (SMART) (up to 2)
+    for (int i = 0; i < 2; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "phys/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, physicalDisks) + i * sizeof(PhysicalDiskSmartData);
+        addField((std::string(pfx)+"model").c_str(),       base + offsetof(PhysicalDiskSmartData, model), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(PhysicalDiskSmartData, serialNumber), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(PhysicalDiskSmartData, capacity), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(PhysicalDiskSmartData, interfaceType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
+        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 8);
+        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
     }
 }
 
@@ -1602,7 +1617,7 @@ int main(int argc, char* argv[]) {
                         tuiData.gpuName = sysInfo.gpuName;
                         tuiData.gpuMemory = sysInfo.gpuMemory;
                         tuiData.gpuUsage = sysInfo.gpuUsage;
-                        tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq;
+                        tuiData.gpuMemoryPercent = 0; // VRAM usage % — needs NVML memory query for real value
                     }
                     tuiData.gpuTemp = sysInfo.gpuTemperature;
                     
