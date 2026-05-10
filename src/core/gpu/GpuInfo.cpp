@@ -101,7 +101,7 @@ static NvmlApi& GetNvmlApi() {
 
         // Validate mandatory functions -- if any are missing, treat as unavailable
         if (!api.init || !api.shutdown || !api.getHandleByIndex) {
-            Logger::Warning("NVML loaded but missing required functions -- disabling NVML");
+            Logger::Warn("NVML loaded but missing required functions -- disabling NVML");
             FreeLibrary(api.module);
             api = NvmlApi{};
         }
