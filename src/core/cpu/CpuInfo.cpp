@@ -69,11 +69,20 @@ void CpuInfo::InitializeCounter() {
 }
 
 double CpuInfo::GetLargeCoreSpeed() const {
-    return 0.0; // Windows keeps it in cpp
+    // Read CurrentClockSpeed from registry (updated by OS, faster than WMI)
+    DWORD speed = 0;
+    DWORD size = sizeof(speed);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE,
+        L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+        L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
+        return static_cast<double>(speed); // MHz
+    }
+    return 0.0;
 }
 
 double CpuInfo::GetSmallCoreSpeed() const {
-    return 0.0; // Windows keeps it in cpp
+    // E-cores: same registry path, try CurrentClockSpeed as approximation
+    return GetLargeCoreSpeed(); // same base clock for now
 }
 
 void CpuInfo::CleanupCounter() {
