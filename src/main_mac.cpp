@@ -784,21 +784,22 @@ int main(int argc, char* argv[]) {
             }
 
             // WiFi & Bluetooth (every ~3 seconds)
-            { static int wbCtr = 0;
-              static WiFiInfo s_wifi;
-              static BluetoothInfo s_bt;
-              if (++wbCtr >= 6) { wbCtr = 0;
-                  try { s_wifi.Detect(); } catch (...) {}
-                  try { s_bt.Detect(); } catch (...) {}
-              }
+            static int wbCtr = 0;
+            static WiFiInfo s_wifi;
+            static BluetoothInfo s_bt;
+            if (++wbCtr >= 6) { wbCtr = 0;
+                try { s_wifi.Detect(); } catch (...) {}
+                try { s_bt.Detect(); } catch (...) {}
+            }
+            {
               const auto& wd = s_wifi.GetData();
-              data.hasWiFi = wd.powerOn;
+              data.hasWiFi = wd.isConnected; // only when connected
               data.wifiSSID = wd.ssid;
               data.wifiRSSI = wd.rssi;
               data.wifiChannel = wd.channel;
               data.wifiSecurity = wd.security;
               const auto& bd = s_bt.GetData();
-              data.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
+              data.hasBluetooth = !bd.adapter.name.empty(); // show if adapter detected
               data.btPowerOn = bd.adapter.powerOn;
               data.btDeviceCount = static_cast<int>(bd.devices.size());
             }
@@ -921,6 +922,23 @@ int main(int argc, char* argv[]) {
                             b->physDiskCount++;
                         }
                     }
+                    // WiFi
+                    const auto& wd2 = s_wifi.GetData();
+                    std::strncpy(b->wifi.ssid, wd2.ssid.c_str(), 31);
+                    b->wifi.ssid[31] = '\0';
+                    b->wifi.rssi = wd2.rssi;
+                    b->wifi.channel = wd2.channel;
+                    std::strncpy(b->wifi.security, wd2.security.c_str(), 15);
+                    b->wifi.security[15] = '\0';
+                    b->wifi.powerOn = wd2.powerOn;
+                    b->wifi.isConnected = wd2.isConnected;
+                    // Bluetooth
+                    const auto& bd2 = s_bt.GetData();
+                    b->bluetooth.powerOn = bd2.adapter.powerOn;
+                    b->bluetooth.deviceCount = static_cast<int32_t>(bd2.devices.size());
+                    std::strncpy(b->bluetooth.name, bd2.adapter.name.c_str(), 63);
+                    b->bluetooth.name[63] = '\0';
+
                     // seqlock: mark write complete (even)
                     std::atomic_thread_fence(std::memory_order_release);
                     b->writeSequence++;

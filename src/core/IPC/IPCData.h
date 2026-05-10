@@ -174,6 +174,25 @@ struct IPCDataBlock {
     };
     PhysDiskSlot physicalDisks[2]    = {};
     uint8_t  physDiskCount           = 0;
+
+    // WiFi
+    struct WifiSlot {
+        char     ssid[32]            = {};
+        int32_t  rssi                = 0;
+        int32_t  channel             = 0;
+        char     security[16]        = {};
+        bool     powerOn             = false;
+        bool     isConnected         = false;
+    };
+    WifiSlot wifi                     = {};
+
+    // Bluetooth
+    struct BtSlot {
+        bool     powerOn             = false;
+        int32_t  deviceCount         = 0;
+        char     name[64]            = {};
+    };
+    BtSlot bluetooth                  = {};
 };
 
 #pragma pack(pop)
