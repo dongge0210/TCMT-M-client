@@ -7,7 +7,7 @@
 #ifdef TCMT_MACOS
 
 #import <CoreWLAN/CoreWLAN.h>
-#import <CoreLocation/CoreLocation.h>
+#include <nlohmann/json.hpp>
 
 // Convert CWSecurity enum to a human-readable string.
 // CoreWLAN defines CWSecurity as an NSInteger-backed enum; the value ranges
@@ -76,19 +76,41 @@ void WiFiInfo::Detect() {
         // SSID may be hidden on macOS 15+ but we're still connected.
         data_.isConnected = !data_.bssid.empty();
 
-        if (!data_.isConnected) {
-            // macOS 15+ requires Location Services permission for SSID.
-            // Check once and log a warning if denied.
-            static bool s_locationWarningLogged = false;
-            if (!s_locationWarningLogged) {
-                CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
-                if (auth == kCLAuthorizationStatusDenied) {
-                    data_.locationDenied = true;
-                    Logger::Warn("WiFi: Location Services denied — SSID unavailable. "
-                                 "Enable in System Settings > Privacy > Location Services > Terminal.app");
-                    s_locationWarningLogged = true;
-                }
+        // macOS 15+ blocks SSID/BSSID/channel without Location Services.
+        // Fallback: system_profiler SPAirPortDataType bypasses the restriction.
+        if (data_.ssid.empty() || data_.bssid.empty()) {
+            FILE* fp = popen("system_profiler SPAirPortDataType -json 2>/dev/null", "r");
+            if (fp) {
+                std::string json;
+                char buf[4096];
+                while (fgets(buf, sizeof(buf), fp)) json += buf;
+                pclose(fp);
+                try {
+                    auto j = nlohmann::json::parse(json.empty() ? "{}" : json);
+                    if (j.contains("SPAirPortDataType") && j["SPAirPortDataType"].is_array()) {
+                        for (auto& item : j["SPAirPortDataType"]) {
+                            if (item.contains("spairport_airport_interfaces")) {
+                                for (auto& iface : item["spairport_airport_interfaces"]) {
+                                    if (data_.ssid.empty() && iface.contains("_name"))
+                                        data_.ssid = iface["_name"].get<std::string>();
+                                    if (data_.bssid.empty() && iface.contains("spairport_current_bssid"))
+                                        data_.bssid = iface["spairport_current_bssid"].get<std::string>();
+                                    if (data_.channel == 0 && iface.contains("spairport_current_channel"))
+                                        data_.channel = iface["spairport_current_channel"].get<int>();
+                                    if (data_.rssi == 0 && iface.contains("spairport_current_rssi"))
+                                        data_.rssi = iface["spairport_current_rssi"].get<int>();
+                                    if (data_.security.empty() && iface.contains("spairport_current_security_mode"))
+                                        data_.security = iface["spairport_current_security_mode"].get<std::string>();
+                                }
+                            }
+                        }
+                    }
+                } catch (...) {}
+                data_.isConnected = !data_.bssid.empty();
             }
+        }
+
+        if (!data_.isConnected) {
             Logger::Debug("WiFiInfo: Wi-Fi is on but not connected to any network");
             return;
         }

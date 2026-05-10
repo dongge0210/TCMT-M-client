@@ -107,7 +107,6 @@ function(tcmt_set_platform_libraries target)
         find_library(FOUNDATION_LIB Foundation)
         find_library(CORESERVICES_LIB CoreServices)
         find_library(COREWLAN_LIB CoreWLAN)
-        find_library(CORELOCATION_LIB CoreLocation)
 
         # 创建要链接的库列表
         set(MACOS_LIBS)
@@ -136,11 +135,6 @@ function(tcmt_set_platform_libraries target)
             list(APPEND MACOS_LIBS ${COREWLAN_LIB})
             message(STATUS "    Found CoreWLAN framework")
         endif()
-        if(CORELOCATION_LIB)
-            list(APPEND MACOS_LIBS ${CORELOCATION_LIB})
-            message(STATUS "    Found CoreLocation framework")
-        endif()
-
         target_link_libraries(${target} PRIVATE ${MACOS_LIBS})
 
         # macOS-specific compile options
