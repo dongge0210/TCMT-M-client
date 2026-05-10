@@ -51,6 +51,8 @@ public:
 
 #ifdef TCMT_WINDOWS
     GpuInfo(WmiManager& manager);
+    // Returns VRAM usage % (0-100) via NVML, or -1 if unavailable
+    static double GetVramUsagePercent();
 #else
     GpuInfo();
 #endif

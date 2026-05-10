@@ -1617,7 +1617,9 @@ int main(int argc, char* argv[]) {
                         tuiData.gpuName = sysInfo.gpuName;
                         tuiData.gpuMemory = sysInfo.gpuMemory;
                         tuiData.gpuUsage = sysInfo.gpuUsage;
-                        tuiData.gpuMemoryPercent = 0; // VRAM usage % — needs NVML memory query for real value
+                        double vramPct = GpuInfo::GetVramUsagePercent();
+                        tuiData.gpuMemoryPercent = vramPct;
+                        sysInfo.gpuCoreFreq = (vramPct >= 0) ? vramPct : 0.0;
                     }
                     tuiData.gpuTemp = sysInfo.gpuTemperature;
                     

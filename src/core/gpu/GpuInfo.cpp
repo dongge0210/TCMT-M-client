@@ -122,6 +122,21 @@ GpuInfo::~GpuInfo() {
     Logger::Info("GPU information detection complete");
 }
 
+double GpuInfo::GetVramUsagePercent() {
+    auto& nvml = GetNvmlApi();
+    if (!nvml.init || !nvml.getMemoryInfo) return -1;
+    nvmlReturn_t r = nvml.init();
+    if (NVML_SUCCESS != r) return -1;
+    nvmlDevice_t device;
+    r = nvml.getHandleByIndex(0, &device);
+    if (NVML_SUCCESS != r) { nvml.shutdown(); return -1; }
+    nvmlMemory_t mem;
+    r = nvml.getMemoryInfo(device, &mem);
+    nvml.shutdown();
+    if (NVML_SUCCESS != r || mem.total == 0) return -1;
+    return (static_cast<double>(mem.used) / static_cast<double>(mem.total)) * 100.0;
+}
+
 bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
     const std::vector<std::wstring> virtualGpuNames = {
         L"Microsoft Basic Display Adapter", L"Microsoft Hyper-V Video",
