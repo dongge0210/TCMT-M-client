@@ -181,7 +181,7 @@ public static class IPCSystemInfoMapper
                     var capacity = reader.ReadUInt64($"phys/{idx}/capacity") ?? 0;
                     var iface = reader.ReadWString($"phys/{idx}/interface") ?? "";
                     var temp = reader.ReadFloat64($"phys/{idx}/temperature") ?? 0;
-                    var health = reader.ReadFloat64($"phys/{idx}/health") ?? 0;
+                    var health = reader.ReadUInt8($"phys/{idx}/health") ?? 0;
                     var supported = reader.ReadBool($"phys/{idx}/smartSupported") ?? false;
 
                     if (capacity > 0)
@@ -193,7 +193,7 @@ public static class IPCSystemInfoMapper
                             Capacity = capacity,
                             InterfaceType = iface,
                             Temperature = temp,
-                            HealthPercentage = (byte)health,
+                            HealthPercentage = health,
                             SmartSupported = supported
                         });
                     }

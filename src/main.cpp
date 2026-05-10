@@ -671,7 +671,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(PhysicalDiskSmartData, capacity), 8, (uint8_t)FT::UInt64);
         addField((std::string(pfx)+"interface").c_str(),   base + offsetof(PhysicalDiskSmartData, interfaceType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
         addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
-        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 8);
+        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
     }
 }
