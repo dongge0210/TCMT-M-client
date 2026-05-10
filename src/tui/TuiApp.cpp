@@ -321,27 +321,18 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     int lines = 0;
 
     if (data.hasWiFi) {
-        std::string wifiStr;
-        if (data.wifiSSID.empty() && data.wifiBSSID.empty()) {
-            wattron(win, COLOR_PAIR(5));
-            mvwprintw(win, y + lines, x0 + 2, "WiFi:");
-            wattroff(win, COLOR_PAIR(5));
-            wattron(win, COLOR_PAIR(3));
-            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Not Connected");
-            wattroff(win, COLOR_PAIR(3));
-        } else {
-            wifiStr = "SSID: " + data.wifiSSID
-                    + "  Ch: " + std::to_string(data.wifiChannel)
-                    + "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm"
-                    + "  " + data.wifiSecurity;
-            if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
-            if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
-            wifiStr = TrimRight(wifiStr, maxW - 8);
-            wattron(win, COLOR_PAIR(5));
-            mvwprintw(win, y + lines, x0 + 2, "WiFi:");
-            wattroff(win, COLOR_PAIR(5));
-            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
-        }
+        std::string wifiStr = "On";
+        if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
+        if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
+        if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
+        if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
+        if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
+        if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
+        wifiStr = TrimRight(wifiStr, maxW - 8);
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
         lines++;
     }
 

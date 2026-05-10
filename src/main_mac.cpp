@@ -793,8 +793,8 @@ int main(int argc, char* argv[]) {
             }
             {
               const auto& wd = s_wifi.GetData();
-              data.hasWiFi = wd.powerOn || wd.isConnected;
-              data.wifiSSID = wd.ssid.empty() && wd.isConnected ? "(hidden)" : wd.ssid;
+              data.hasWiFi = wd.powerOn;
+              data.wifiSSID = wd.ssid;
               data.wifiBSSID = wd.bssid;
               data.wifiRSSI = wd.rssi;
               data.wifiChannel = wd.channel;
