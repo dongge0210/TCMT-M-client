@@ -678,14 +678,16 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     }
 
     // WiFi
-    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifiSSID), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifiRSSI), 4, (uint8_t)FT::Int32);
-    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifiChannel), 4, (uint8_t)FT::Int32);
-    addField("wifi/security", offsetof(SharedMemoryBlock, wifiSecurity), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifi.ssid), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
+    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
+    addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
+    addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
     // Bluetooth
-    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, btPowerOn), 1, (uint8_t)FT::Bool);
-    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, btDeviceCount), 4, (uint8_t)FT::Int32);
-    addField("bluetooth/name",        offsetof(SharedMemoryBlock, btName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
+    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
+    addField("bluetooth/name",        offsetof(SharedMemoryBlock, bluetooth.name), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
 }
 
 int main(int argc, char* argv[]) {
@@ -1708,6 +1710,22 @@ int main(int argc, char* argv[]) {
                       tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
                       tuiData.btPowerOn = bd.adapter.powerOn;
                       tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+
+                      // Write WiFi & Bluetooth to shared memory block
+                      if (auto* buf = SharedMemoryManager::GetBuffer()) {
+                          memset(&buf->wifi, 0, sizeof(buf->wifi));
+                          buf->wifi.powerOn = wd.powerOn;
+                          buf->wifi.isConnected = wd.isConnected;
+                          buf->wifi.rssi = wd.rssi;
+                          buf->wifi.channel = wd.channel;
+                          wcsncpy_s(buf->wifi.ssid, 32, WinUtils::StringToWstring(wd.ssid).c_str(), _TRUNCATE);
+                          wcsncpy_s(buf->wifi.security, 16, WinUtils::StringToWstring(wd.security).c_str(), _TRUNCATE);
+
+                          memset(&buf->bluetooth, 0, sizeof(buf->bluetooth));
+                          buf->bluetooth.powerOn = bd.adapter.powerOn;
+                          buf->bluetooth.deviceCount = static_cast<int32_t>(bd.devices.size());
+                          wcsncpy_s(buf->bluetooth.name, 64, WinUtils::StringToWstring(bd.adapter.name).c_str(), _TRUNCATE);
+                      }
                     }
 
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());

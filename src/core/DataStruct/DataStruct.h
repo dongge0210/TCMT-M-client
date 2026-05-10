@@ -228,6 +228,23 @@ struct SharedMemoryBlock {
     // OS version info
     WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
 
+    // WiFi info for Avalonia
+    struct {
+        WCHAR ssid[32];
+        int32_t rssi;
+        int32_t channel;
+        WCHAR security[16];
+        bool powerOn;
+        bool isConnected;
+    } wifi;
+
+    // Bluetooth info for Avalonia
+    struct {
+        bool powerOn;
+        int32_t deviceCount;
+        WCHAR name[64];
+    } bluetooth;
+
     PlatformSystemTime lastUpdate;
     PlatformCriticalSection lock;
 };

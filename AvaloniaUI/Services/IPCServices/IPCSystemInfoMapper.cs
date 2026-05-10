@@ -201,11 +201,23 @@ public static class IPCSystemInfoMapper
                 }
             }
 
-            // WiFi/BT data is NOT in shared memory yet. Those fields (HasWiFi, WifiSSID,
-            // WifiRSSI, WifiChannel, WifiSecurity, HasBluetooth, BtPowerOn, BtDeviceCount)
-            // are populated by the C++ main loop directly and passed through SystemInfo.
-            // They remain at default values when unavailable. The ViewModel checks for
-            // presence and hides the UI sections accordingly.
+            // WiFi (optional fields — may not exist in older schema)
+            if (reader.HasField("wifi/powerOn"))
+            {
+                info.HasWiFi = reader.ReadBool("wifi/powerOn") ?? false;
+                info.WifiSSID = ipc.ReadWString("wifi/ssid") ?? reader.ReadString("wifi/ssid") ?? "";
+                info.WifiRSSI = reader.ReadInt32("wifi/rssi") ?? 0;
+                info.WifiChannel = reader.ReadInt32("wifi/channel") ?? 0;
+                info.WifiSecurity = ipc.ReadWString("wifi/security") ?? reader.ReadString("wifi/security") ?? "";
+            }
+
+            // Bluetooth (optional fields — may not exist in older schema)
+            if (reader.HasField("bluetooth/powerOn"))
+            {
+                info.HasBluetooth = reader.ReadBool("bluetooth/powerOn") ?? false;
+                info.BtPowerOn = reader.ReadBool("bluetooth/powerOn") ?? false;
+                info.BtDeviceCount = reader.ReadInt32("bluetooth/deviceCount") ?? 0;
+            }
 
             return info;
         }
