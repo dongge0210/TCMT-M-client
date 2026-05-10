@@ -1,3 +1,20 @@
+// TuiApp.h — ncurses/PDCurses Text User Interface for TCMT
+//
+// The TUI is the PRIMARY user interface and runs as part of the C++ core process.
+// It reads hardware data directly via the same data structures the main loop
+// populates (TuiData / SystemInfo), NOT through IPC. This means:
+//
+//   - No IPC overhead: the TUI shares the process address space with the data
+//     collection loop. It renders from memory, not from a serialized protocol.
+//   - No dependency on a running GUI or schema pipeline: the TUI works even if
+//     IPCServer, Avalonia, or MCP are unavailable.
+//   - Ideal for headless/SSH/tmux environments where a graphical desktop or
+//     .NET runtime is not present.
+//
+// The TUI is NOT a "fallback" — it is the authoritative console interface for
+// the hardware monitor. Avalonia and MCP are IPC clients that connect to the
+// same core process and read from shared memory.
+//
 #pragma once
 
 #include "LogBuffer.h"
