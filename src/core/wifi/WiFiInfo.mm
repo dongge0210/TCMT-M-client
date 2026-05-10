@@ -64,21 +64,19 @@ void WiFiInfo::Detect() {
             return;
         }
 
-        // --- BSSID (MAC address of the access point) ---
+        // --- BSSID (MAC address of the access point, no Location Services needed) ---
         NSString* bssidStr = [interface bssid];
-        if (bssidStr) {
-            data_.bssid = [bssidStr UTF8String];
-        }
+        if (bssidStr) data_.bssid = [bssidStr UTF8String];
 
-        // --- SSID ---
+        // --- SSID (may be empty on macOS 15+ without Location Services) ---
         NSString* ssidStr = [interface ssid];
-        if (ssidStr) {
-            data_.ssid = [ssidStr UTF8String];
-        }
+        if (ssidStr) data_.ssid = [ssidStr UTF8String];
 
-        // If there is no SSID we are not connected to a network,
-        // but the adapter may still be powered on.
-        if (data_.ssid.empty()) {
+        // isConnected: BSSID is available regardless of Location Services.
+        // SSID may be hidden on macOS 15+ but we're still connected.
+        data_.isConnected = !data_.bssid.empty();
+
+        if (!data_.isConnected) {
             // macOS 15+ requires Location Services permission for SSID.
             // Check once and log a warning if denied.
             static bool s_locationWarningLogged = false;
@@ -94,8 +92,6 @@ void WiFiInfo::Detect() {
             Logger::Debug("WiFiInfo: Wi-Fi is on but not connected to any network");
             return;
         }
-
-        data_.isConnected = true;
 
         // --- RSSI (dBm) ---
         data_.rssi = static_cast<int>([interface rssiValue]);

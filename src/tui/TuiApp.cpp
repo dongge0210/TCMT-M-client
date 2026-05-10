@@ -334,6 +334,8 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
                     + "  Ch: " + std::to_string(data.wifiChannel)
                     + "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm"
                     + "  " + data.wifiSecurity;
+            if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
+            if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
             wifiStr = TrimRight(wifiStr, maxW - 8);
             wattron(win, COLOR_PAIR(5));
             mvwprintw(win, y + lines, x0 + 2, "WiFi:");

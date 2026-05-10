@@ -98,9 +98,11 @@ struct TuiData {
     // WiFi (optional — only if WiFiInfo::Detect() was called)
     bool hasWiFi = false;
     std::string wifiSSID;
+    std::string wifiBSSID;
     int wifiRSSI = 0;
     int wifiChannel = 0;
     std::string wifiSecurity;
+    double wifiTxRate = 0;
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
