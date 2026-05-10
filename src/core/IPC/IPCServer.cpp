@@ -276,6 +276,17 @@ std::vector<ClientType> IPCServer::GetClientTypes() const {
     return types;
 }
 
+void IPCServer::NotifyConfigChange() {
+    PipeMessage msg{};
+    msg.type = static_cast<uint8_t>(PipeMsgType::ConfigUpdate);
+    msg.version = IPC_VERSION;
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    for (auto& c : clients_) {
+        DWORD written = 0;
+        WriteFile(static_cast<HANDLE>(c.hPipe), &msg, PIPE_MSG_HEADER_SIZE, &written, nullptr);
+    }
+}
+
 } // namespace tcmt::ipc
 
 #else // !defined(_WIN32)
@@ -536,6 +547,16 @@ void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<Field
     for (auto it = clients_.begin(); it != clients_.end(); ) {
         int n = write(it->fd, data.data(), data.size());
         if (n <= 0) { close(it->fd); it = clients_.erase(it); } else { ++it; }
+    }
+}
+
+void IPCServer::NotifyConfigChange() {
+    PipeMessage msg{};
+    msg.type = static_cast<uint8_t>(PipeMsgType::ConfigUpdate);
+    msg.version = IPC_VERSION;
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    for (auto& c : clients_) {
+        write(c.fd, &msg, PIPE_MSG_HEADER_SIZE);
     }
 }
 

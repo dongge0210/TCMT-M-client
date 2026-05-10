@@ -37,6 +37,8 @@ public:
 
     // Broadcast schema to all connected clients
     void UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields);
+    // Broadcast config-change notification to all clients (#6 — config hot-reload)
+    void NotifyConfigChange();
 
     std::string GetLastError() const { return lastError_; }
 

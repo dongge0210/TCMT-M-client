@@ -1,12 +1,20 @@
 // ConfigManager.cpp - Application configuration manager
-// Uses nlohmann/json for JSON file I/O and typed access.
-// CPP-parsers (IConfigParser, JsonConfigParser) is compiled alongside
-// this module for future multi-format support.
+// Routes file I/O through IConfigParser (cpp-parsers) interface.
+// Internal data manipulation still uses nlohmann/json for the rich typed API
+// (dotted-key resolution, arrays, typed getters/setters) which the simpler
+// IConfigParser string-based interface cannot express.
 //
 // The data is stored as UTF-8 text in JSON format with 2-space indent.
 // Key resolution supports dotted notation (e.g., "display.refreshRate").
 
 #include "ConfigManager.h"
+
+// CPP-parsers unified config interface — only IConfigParser and
+// JsonConfigParser are used; ConfigParserFactory is avoided because
+// it transitively pulls in YAML/XML/TOML/INI backends that are not
+// compiled in the current macOS cmake configuration.
+#include "IConfigParser.h"
+#include "JsonConfigParser.h"
 
 #include <fstream>
 #include <iomanip>
@@ -29,33 +37,67 @@ static std::vector<std::string> SplitKey(const std::string& key) {
 }
 
 // =========================================================================
-// Construction / Loading / Saving
+// Construction / Destruction
 // =========================================================================
 
 ConfigManager::ConfigManager(const std::string& path)
     : path_(path)
 {
+    // Create the format-specific parser based on file extension.
+    // Currently only the JSON backend is available; fall back to
+    // JsonConfigParser for any unrecognised extension so that
+    // load/save still work for plain JSON files.
+    auto ext_pos = path_.find_last_of('.');
+    if (ext_pos != std::string::npos) {
+        std::string ext = path_.substr(ext_pos + 1);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == "json") {
+            parser_ = std::make_unique<JsonConfigParser>();
+        }
+        // Future backends (YAML, TOML, XML, INI) would be created here
+        // when their libraries are compiled into the build.
+    }
+    if (!parser_) {
+        // Default to JSON parser
+        parser_ = std::make_unique<JsonConfigParser>();
+    }
 }
 
-bool ConfigManager::Load() {
-    std::ifstream in(path_);
-    if (!in.is_open()) {
-        // File doesn't exist yet — that's fine, start with empty config
-        data_ = nlohmann::json::object();
-        loaded_ = true;
-        return true;
-    }
+ConfigManager::~ConfigManager() = default;
 
+// =========================================================================
+// Accessors to the internal nlohmann::json stored inside the parser
+// =========================================================================
+
+nlohmann::json& ConfigManager::GetData() {
+    // The parser is always a JsonConfigParser in the current build.
+    return static_cast<JsonConfigParser*>(parser_.get())->data;
+}
+
+const nlohmann::json& ConfigManager::GetData() const {
+    return static_cast<const JsonConfigParser*>(parser_.get())->data;
+}
+
+// =========================================================================
+// Loading / Saving (delegated to IConfigParser)
+// =========================================================================
+
+bool ConfigManager::Load() {
     try {
-        in >> data_;
-        loaded_ = true;
-        return true;
+        if (!parser_->load(path_)) {
+            // File doesn't exist yet — that's fine, start with empty config
+            GetData() = nlohmann::json::object();
+            loaded_ = true;
+            return true;
+        }
     } catch (const nlohmann::json::parse_error& e) {
         // Corrupt JSON file — warn and reset
-        data_ = nlohmann::json::object();
+        GetData() = nlohmann::json::object();
         loaded_ = true;
         return false;
     }
+    loaded_ = true;
+    return true;
 }
 
 bool ConfigManager::Save() const {
@@ -64,10 +106,7 @@ bool ConfigManager::Save() const {
         return false;
     }
     try {
-        std::ofstream out(path_);
-        if (!out.is_open()) return false;
-        out << data_.dump(2) << std::endl;
-        return true;
+        return parser_->save(path_);
     } catch (...) {
         return false;
     }
@@ -86,7 +125,7 @@ const nlohmann::json* ConfigManager::ResolveKey(
     }
 
     // Walk the JSON tree
-    const nlohmann::json* current = &data_;
+    const nlohmann::json* current = &GetData();
     for (size_t i = 0; i < parts.size() - 1; ++i) {
         if (!current->is_object()) return nullptr;
         auto it = current->find(parts[i]);
@@ -100,7 +139,6 @@ const nlohmann::json* ConfigManager::ResolveKey(
     if (!current->is_object()) return nullptr;
     auto it = current->find(parts.back());
     if (it == current->end()) return nullptr;
-    // Return pointer to the found value (same container as current, safe)
     return &it.value();
 }
 
@@ -171,23 +209,23 @@ static void SetNested(nlohmann::json& root,
 
 void ConfigManager::SetString(const std::string& key,
                               const std::string& value) {
-    SetNested(data_, key, value);
+    SetNested(GetData(), key, value);
 }
 
 void ConfigManager::SetInt(const std::string& key, int value) {
-    SetNested(data_, key, value);
+    SetNested(GetData(), key, value);
 }
 
 void ConfigManager::SetUint64(const std::string& key, uint64_t value) {
-    SetNested(data_, key, value);
+    SetNested(GetData(), key, value);
 }
 
 void ConfigManager::SetDouble(const std::string& key, double value) {
-    SetNested(data_, key, value);
+    SetNested(GetData(), key, value);
 }
 
 void ConfigManager::SetBool(const std::string& key, bool value) {
-    SetNested(data_, key, value);
+    SetNested(GetData(), key, value);
 }
 
 void ConfigManager::AppendToArray(const std::string& arrayKey,
@@ -195,7 +233,7 @@ void ConfigManager::AppendToArray(const std::string& arrayKey,
     auto parts = SplitKey(arrayKey);
     if (parts.empty()) return;
 
-    nlohmann::json* current = &data_;
+    nlohmann::json* current = &GetData();
     for (size_t i = 0; i < parts.size(); ++i) {
         if (!current->is_object()) {
             *current = nlohmann::json::object();
@@ -218,5 +256,5 @@ void ConfigManager::AppendToArray(const std::string& arrayKey,
 }
 
 void ConfigManager::SetJson(const std::string& key, nlohmann::json value) {
-    SetNested(data_, key, std::move(value));
+    SetNested(GetData(), key, std::move(value));
 }

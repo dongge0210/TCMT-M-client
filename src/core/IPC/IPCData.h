@@ -31,8 +31,9 @@ enum class PipeMsgType : uint8_t {
     Ping       = 0x04,  // C# → C++:  keep-alive
     Pong       = 0x05,  // C++ → C#:  keep-alive response
     Bye        = 0x06,  // C# → C++:  client disconnecting
-    Shutdown   = 0x07,  // C++ → C#:  server shutting down (SIGINT/SIGTERM)
-    SchemaUpdate = 0x08, // C++ → C#: schema changed, re-open shared memory
+    Shutdown     = 0x07,  // C++ → C#:  server shutting down (SIGINT/SIGTERM)
+    SchemaUpdate = 0x08,  // C++ → C#: schema changed, re-open shared memory
+    ConfigUpdate = 0x09,  // C++ → C#: config file changed, client should reload
 };
 
 #pragma pack(push, 1)

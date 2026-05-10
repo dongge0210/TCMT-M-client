@@ -1,26 +1,38 @@
 // ConfigManager.h - Application configuration manager
-// Wraps nlohmann/json with typed access, defaults, and JSON file I/O.
-// CPP-parsers IConfigParser integration point: this class can be refactored
-// to use IConfigParser/JsonConfigParser for multi-format config support.
+// Wraps IConfigParser (cpp-parsers) for multi-format config file I/O
+// and provides a typed access API backed by nlohmann/json internally.
 //
-// For macOS, CPP-parsers (IConfigParser.h, JsonConfigParser.h) is compiled
-// and available as part of TCMTCore. See src/CMakeLists.txt.
+// The IConfigParser is selected at construction based on file extension.
+// Currently only the JSON backend is compiled, but the interface-based
+// design allows future backends (YAML, TOML, XML, INI) to be swapped in
+// without changing callers.
+//
+// If no matching parser is available for the file extension, a JsonConfigParser
+// is used as a safe default.
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <cstdint>
 #include <nlohmann/json.hpp>
+
+class IConfigParser;
 
 class ConfigManager {
 public:
     /// Construct with path to config file (default: "config.json")
     explicit ConfigManager(const std::string& path = "config.json");
 
-    /// Load config from file. Returns true on success.
+    /// Destructor (required by unique_ptr<IConfigParser> with forward decl)
+    ~ConfigManager();
+
+    /// Load config from file using the format-specific parser.
+    /// Returns true on success; initialises empty and returns false on error.
     bool Load();
 
-    /// Save current config to file. Returns true on success.
+    /// Save current config to file using the format-specific parser.
+    /// Returns true on success.
     bool Save() const;
 
     // ---- Typed getters with defaults ----
@@ -65,7 +77,15 @@ private:
     /// Uses pointer (not iterator) to avoid cross-container comparison issues.
     const nlohmann::json* ResolveKey(const std::string& key) const;
 
-    nlohmann::json data_;
-    std::string    path_;
-    bool           loaded_ = false;
+    /// Access the internal nlohmann::json storage through the IConfigParser.
+    /// Convenience accessors that downcast to JsonConfigParser.
+    nlohmann::json& GetData();
+    const nlohmann::json& GetData() const;
+
+    /// Format-agnostic config parser (always a JsonConfigParser with
+    /// the current build configuration).
+    std::unique_ptr<IConfigParser> parser_;
+
+    std::string  path_;
+    bool         loaded_ = false;
 };
