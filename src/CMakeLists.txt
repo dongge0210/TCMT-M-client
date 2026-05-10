@@ -32,6 +32,20 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_cpu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_io.cpp
 )
+# macOS-only modules (.mm Objective-C++, not valid for MSVC)
+if(TCMT_MACOS)
+    list(APPEND CORE_MODULES_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+    )
+endif()
+
+# Windows Bluetooth (bthprops.cpl API)
+if(TCMT_WINDOWS)
+    list(APPEND CORE_MODULES_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
+    )
+endif()
 
 # DataStruct / SharedMemory
 set(DATASTRUCT_SOURCES
@@ -145,6 +159,8 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/board
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
 
@@ -195,6 +211,17 @@ if(TCMT_MACOS)
 endif()
 if(TCMT_WINDOWS)
     message(STATUS "  SQLite3: link manually via vcpkg (disabled for now)")
+endif()
+
+# IOBluetooth.framework — macOS Bluetooth monitoring (C API)
+if(TCMT_MACOS)
+    find_library(IOBLUETOOTH_LIB IOBluetooth)
+    if(IOBLUETOOTH_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${IOBLUETOOTH_LIB})
+        message(STATUS "  IOBluetooth.framework: ${IOBLUETOOTH_LIB}")
+    else()
+        message(WARNING "  IOBluetooth.framework not found — Bluetooth monitoring disabled")
+    endif()
 endif()
 
 # ============================================================

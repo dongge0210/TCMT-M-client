@@ -29,6 +29,7 @@
 #include "core/disk/DiskInfo.h"
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
+#include "core/wifi/WiFiInfo.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/DataStruct/DataStruct.h"
