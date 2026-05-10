@@ -491,12 +491,16 @@ void TuiApp::Run() {
         if (ry > maxY) ry = maxY;
 
         // === Bottom panels: Connections → Log → System ===
-        int sysTop = rows - 3;  // System frame
-        int connTop = sysTop - 2; // Connection info (1 row + separator)
+        // System(3 rows) + Connections(2 rows) are reserved at bottom.
+        // Content must not overflow into them.
+        int sysTop = rows - 3;
+        int connTop = sysTop - 2;
+        int contentEnd = ly > ry ? ly : ry;
+        // Clip content to not overwrite reserved panels
+        if (contentEnd >= connTop) contentEnd = connTop - 1;
         std::string logSep(cols - 2, '-');
 
         // === Connections panel ===
-        int contentEnd = ly > ry ? ly : ry;
         bool showConn = (connTop > contentEnd + 1) && data.connectionCount >= 0;
         if (showConn) {
             mvwprintw(stdscr, connTop - 1, 1, "%.*s", cols - 2, logSep.c_str());
