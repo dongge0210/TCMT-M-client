@@ -155,24 +155,24 @@ void WiFiInfo::Detect() {
             return;
         }
 
-        // --- RSSI (dBm) ---
-        data_.rssi = static_cast<int>([interface rssiValue]);
-
-        // --- Noise (dBm) ---
-        data_.noise = static_cast<int>([interface noiseMeasurement]);
-
-        // --- Channel ---
+        // --- RSSI / Noise / Channel / Security / TxRate (CoreWLAN) ---
+        // Only override if CoreWLAN returns valid data (not blocked by Location Services).
+        // system_profiler fallback may have already filled these.
+        int cwRssi = static_cast<int>([interface rssiValue]);
+        if (cwRssi != 0 || data_.rssi == 0) data_.rssi = cwRssi;
+        int cwNoise = static_cast<int>([interface noiseMeasurement]);
+        if (cwNoise != 0 || data_.noise == 0) data_.noise = cwNoise;
         CWChannel* wlanChannel = [interface wlanChannel];
         if (wlanChannel) {
-            data_.channel = static_cast<int>([wlanChannel channelNumber]);
+            int ch = static_cast<int>([wlanChannel channelNumber]);
+            if (ch != 0 || data_.channel == 0) data_.channel = ch;
         }
-
-        // --- Security type ---
         CWSecurity secType = [interface security];
-        data_.security = SecurityToString(secType);
-
-        // --- Transmit rate (Mbps) ---
-        data_.txRate = [interface transmitRate];
+        std::string secStr = SecurityToString(secType);
+        if (!secStr.empty() && secStr != "Unknown") data_.security = secStr;
+        else if (data_.security.empty()) data_.security = secStr;
+        double cwRate = [interface transmitRate];
+        if (cwRate > 0 || data_.txRate == 0) data_.txRate = cwRate;
 
         Logger::Debug("WiFiInfo: ssid=" + data_.ssid +
                       " bssid=" + data_.bssid +
