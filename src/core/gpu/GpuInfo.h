@@ -53,6 +53,10 @@ public:
     GpuInfo(WmiManager& manager);
     // Returns VRAM usage % (0-100) via NVML, or -1 if unavailable
     static double GetVramUsagePercent();
+    // Returns GPU usage % (0-100) via NVML, or -1 if unavailable
+    static double GetGpuUsage();
+    // Returns GPU temperature (C) via NVML, or -1 if unavailable
+    static double GetGpuTemperature();
 #else
     GpuInfo();
 #endif

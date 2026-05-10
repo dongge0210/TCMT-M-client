@@ -1259,6 +1259,14 @@ int main(int argc, char* argv[]) {
                     sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
                     sysInfo.gpuUsage = cachedGpuUsage;
 
+                    // Override with NVML real-time data (NVIDIA GPUs only)
+                    double nvmlUsage  = GpuInfo::GetGpuUsage();
+                    double nvmlTemp   = GpuInfo::GetGpuTemperature();
+                    double nvmlVramPct = GpuInfo::GetVramUsagePercent();
+                    if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
+                    if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
+                    if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
+
                     // Fix GPU array population - add data validation and cleanup
                     sysInfo.gpus.clear();
                     if (!cachedGpuName.empty() && cachedGpuName != "No GPU detected") {
@@ -1617,9 +1625,7 @@ int main(int argc, char* argv[]) {
                         tuiData.gpuName = sysInfo.gpuName;
                         tuiData.gpuMemory = sysInfo.gpuMemory;
                         tuiData.gpuUsage = sysInfo.gpuUsage;
-                        double vramPct = GpuInfo::GetVramUsagePercent();
-                        tuiData.gpuMemoryPercent = vramPct;
-                        sysInfo.gpuCoreFreq = (vramPct >= 0) ? vramPct : 0.0;
+                        tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
                     }
                     tuiData.gpuTemp = sysInfo.gpuTemperature;
                     

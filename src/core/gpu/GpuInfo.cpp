@@ -109,6 +109,38 @@ static NvmlApi& GetNvmlApi() {
     return api;
 }
 
+// Persistent NVML session — initialized once, kept alive across program lifetime.
+// Avoids the overhead of nvmlInit/nvmlShutdown on every query.
+struct NvmlSession {
+    NvmlApi* api = nullptr;
+    nvmlDevice_t device = nullptr;
+    bool ok = false;
+
+    NvmlSession() {
+        api = &GetNvmlApi();
+        if (!api->init) { Logger::Debug("NVML: DLL not loaded, skipping session"); return; }
+        nvmlReturn_t r = api->init();
+        if (NVML_SUCCESS != r) { Logger::Debug("NVML: nvmlInit failed (code=" + std::to_string(r) + ")"); return; }
+        r = api->getHandleByIndex(0, &device);
+        if (NVML_SUCCESS != r) { api->shutdown(); Logger::Debug("NVML: getHandleByIndex failed"); return; }
+        ok = true;
+        Logger::Info("NVML: persistent session initialized");
+    }
+
+    ~NvmlSession() {
+        if (ok && api && api->shutdown) api->shutdown();
+    }
+
+    // Prevent copy/move
+    NvmlSession(const NvmlSession&) = delete;
+    NvmlSession& operator=(const NvmlSession&) = delete;
+};
+
+static NvmlSession& GetNvmlSession() {
+    static NvmlSession session;
+    return session;
+}
+
 GpuInfo::GpuInfo(WmiManager& manager) : wmiManager(manager) {
     if (!wmiManager.IsInitialized()) {
         Logger::Error("WMI service not initialized");
@@ -123,18 +155,27 @@ GpuInfo::~GpuInfo() {
 }
 
 double GpuInfo::GetVramUsagePercent() {
-    auto& nvml = GetNvmlApi();
-    if (!nvml.init || !nvml.getMemoryInfo) return -1;
-    nvmlReturn_t r = nvml.init();
-    if (NVML_SUCCESS != r) return -1;
-    nvmlDevice_t device;
-    r = nvml.getHandleByIndex(0, &device);
-    if (NVML_SUCCESS != r) { nvml.shutdown(); return -1; }
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getMemoryInfo) return -1;
     nvmlMemory_t mem;
-    r = nvml.getMemoryInfo(device, &mem);
-    nvml.shutdown();
-    if (NVML_SUCCESS != r || mem.total == 0) return -1;
+    if (NVML_SUCCESS != s.api->getMemoryInfo(s.device, &mem) || mem.total == 0) return -1;
     return (static_cast<double>(mem.used) / static_cast<double>(mem.total)) * 100.0;
+}
+
+double GpuInfo::GetGpuUsage() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getUtilizationRates) return -1;
+    nvmlUtilization_t util;
+    if (NVML_SUCCESS != s.api->getUtilizationRates(s.device, &util)) return -1;
+    return static_cast<double>(util.gpu);
+}
+
+double GpuInfo::GetGpuTemperature() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getTemperature) return -1;
+    unsigned int temp = 0;
+    if (NVML_SUCCESS != s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp)) return -1;
+    return static_cast<double>(temp);
 }
 
 bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
@@ -229,66 +270,37 @@ void GpuInfo::QueryIntelGpuInfo(int index) {
 }
 
 void GpuInfo::QueryNvidiaGpuInfo(int index) {
-    auto& nvml = GetNvmlApi();
-    if (!nvml.init) {
-        // NVML DLL not available (no NVIDIA driver) -- silently skip detailed query
-        return;
-    }
-
-    nvmlReturn_t result = nvml.init();
-    if (NVML_SUCCESS != result) {
-        Logger::Error("NVML initialization failed (error code: " + std::to_string(result) + ")");
-        return;
-    }
-
-    nvmlDevice_t device;
-    result = nvml.getHandleByIndex(0, &device);
-    if (NVML_SUCCESS != result) {
-        nvml.shutdown();
-        Logger::Error("NVML failed to get device handle");
-        return;
-    }
+    auto& s = GetNvmlSession();
+    if (!s.ok) return; // NVML not available (no NVIDIA GPU)
 
     // Get VRAM info
     nvmlMemory_t memory;
-    result = nvml.getMemoryInfo(device, &memory);
-    if (NVML_SUCCESS == result) {
+    if (NVML_SUCCESS == s.api->getMemoryInfo(s.device, &memory))
         gpuList[index].dedicatedMemory = memory.total;
-    }
 
     // Get core clock (MHz)
     unsigned int clockMHz = 0;
-    result = nvml.getClockInfo(device, NVML_CLOCK_GRAPHICS, &clockMHz);
-    if (NVML_SUCCESS == result) {
+    if (NVML_SUCCESS == s.api->getClockInfo(s.device, NVML_CLOCK_GRAPHICS, &clockMHz))
         gpuList[index].coreClock = static_cast<double>(clockMHz);
-    }
 
     // Get temperature
     unsigned int temp = 0;
-    #pragma warning(push)
-    #pragma warning(disable: 4996)
-    result = nvml.getTemperature(device, NVML_TEMPERATURE_GPU, &temp);
-    #pragma warning(pop)
-    if (NVML_SUCCESS == result) gpuList[index].temperature = temp;
+    if (NVML_SUCCESS == s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp))
+        gpuList[index].temperature = temp;
 
     // Get GPU usage
     nvmlUtilization_t util;
-    result = nvml.getUtilizationRates(device, &util);
-    if (NVML_SUCCESS == result) {
+    if (NVML_SUCCESS == s.api->getUtilizationRates(s.device, &util))
         gpuList[index].usage = static_cast<double>(util.gpu);
-    }
 
     // Get CUDA compute capability (optional, not available in all NVML versions)
-    if (nvml.getCudaComputeCapability) {
+    if (s.api->getCudaComputeCapability) {
         int major = 0, minor = 0;
-        result = nvml.getCudaComputeCapability(device, &major, &minor);
-        if (NVML_SUCCESS == result) {
+        if (NVML_SUCCESS == s.api->getCudaComputeCapability(s.device, &major, &minor)) {
             gpuList[index].computeCapabilityMajor = major;
             gpuList[index].computeCapabilityMinor = minor;
         }
     }
-
-    nvml.shutdown();
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
