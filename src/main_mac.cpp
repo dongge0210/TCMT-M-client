@@ -639,23 +639,15 @@ int main(int argc, char* argv[]) {
         cachedVirt = cpuInfo->IsVirtualizationEnabled();
     }
 
+    // Start ModuleCoordinator background collection threads
+    ModuleCoordinator coordinator;
+    coordinator.Start();
+
     int loopCounter = 1;
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {
             auto loopStart = std::chrono::high_resolution_clock::now();
-
-            // === Battery / power (shared between TUI and SHM) ===
-            int cachedBatteryPercent = -1;
-            bool cachedAcOnline = false;
-            try {
-                PowerInfo power;
-                power.Detect();
-                if (!power.batteries.empty()) {
-                    cachedBatteryPercent = static_cast<int>(power.batteries[0].chargePercent);
-                }
-                cachedAcOnline = power.acOnline;
-            } catch (...) {}
 
             // === Build TuiData snapshot ===
             tcmt::TuiData data;
@@ -677,48 +669,27 @@ int main(int argc, char* argv[]) {
                 connSinceStr.clear();
             }
             data.connectionSince = connSinceStr;
-            data.batteryPercent = cachedBatteryPercent;
-            data.acOnline = cachedAcOnline;
             data.cpuName = cachedCpuName;
             data.physicalCores = cachedTotalCores;
             data.performanceCores = cachedPCores;
             data.efficiencyCores = cachedECores;
-            data.cpuUsage = 0.0;
-            data.pCoreFreq = 0.0;
-            data.eCoreFreq = 0.0;
-            data.cpuTemp = 0.0;
-            data.totalMemory = 0;
-            data.usedMemory = 0;
-            data.availableMemory = 0;
-            data.gpuUsage = 0.0;
-            data.gpuTemp = 0.0;
 
-            // CPU dynamic info
-            if (cpuInfo) {
-                data.cpuUsage = cpuInfo->GetUsage();
-                data.pCoreFreq = cpuInfo->GetLargeCoreSpeed();
-                data.eCoreFreq = cpuInfo->GetSmallCoreSpeed();
+            // Coordinator snapshot fills CPU, Memory, Disk, Network, Temperature, Power
+            {
+                SystemInfo sysInfo;
+                coordinator.Snapshot(sysInfo, data);
+
+                // Copy remaining fields that Snapshot doesn't set directly on TuiData
+                data.cpuUsage = sysInfo.cpuUsage;
+                data.pCoreFreq = sysInfo.performanceCoreFreq;
+                data.eCoreFreq = sysInfo.efficiencyCoreFreq;
+                data.totalMemory = sysInfo.totalMemory;
+                data.usedMemory = sysInfo.usedMemory;
+                data.availableMemory = sysInfo.availableMemory;
+                data.compressedMemory = sysInfo.compressedMemory;
             }
 
-            // Memory
-            try {
-                MemoryInfo mem;
-                data.totalMemory = mem.GetTotalPhysical();
-                data.usedMemory = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                data.availableMemory = mem.GetAvailablePhysical();
-
-                // Compressed memory via host_statistics64
-                vm_statistics64_data_t vmStats;
-                mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-                if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
-                                      (host_info64_t)&vmStats, &count) == KERN_SUCCESS) {
-                    data.compressedMemory = (uint64_t)vmStats.compressor_page_count * vm_kernel_page_size;
-                }
-            } catch (const std::exception& e) {
-                Logger::Error("Memory error: " + std::string(e.what()));
-            }
-
-            // GPU
+            // GPU (coordinator doesn't have a GPU loop — keep inline)
             if (gpuInfo) {
                 gpuInfo->RefreshUsage();
                 const auto& gpus = gpuInfo->GetGpuData();
@@ -732,55 +703,6 @@ int main(int argc, char* argv[]) {
                         data.gpuUsage = gpu.usage;
                     }
                 }
-            }
-
-            // Network
-            try {
-                NetworkAdapter net;
-                const auto& adapters = net.GetAdapters();
-                for (const auto& adapter : adapters) {
-                    tcmt::TuiData::NetInfo ni;
-                    ni.name = adapter.name;
-                    ni.ip = adapter.ip;
-                    ni.mac = adapter.mac;
-                    ni.type = adapter.adapterType;
-                    ni.speed = adapter.speed;
-                    ni.downloadSpeed = adapter.downloadSpeed;
-                    ni.uploadSpeed = adapter.uploadSpeed;
-                    data.adapters.push_back(ni);
-                }
-            } catch (const std::exception& e) {
-                Logger::Error("Network error: " + std::string(e.what()));
-            }
-
-            // Disk
-            try {
-                DiskInfo disk;
-                auto volumes = disk.GetDisks();
-                for (const auto& vol : volumes) {
-                    tcmt::TuiData::DiskInfo di;
-                    di.label = vol.label;
-                    di.totalSize = vol.totalSize;
-                    di.usedSpace = vol.usedSpace;
-                    di.fileSystem = vol.fileSystem;
-                    data.disks.push_back(di);
-                }
-            } catch (const std::exception& e) {
-                Logger::Error("Disk error: " + std::string(e.what()));
-            }
-
-            // Temperature
-            try {
-                auto temps = TemperatureWrapper::GetTemperatures();
-                data.temperatures = temps;
-                for (const auto& [name, temp] : temps) {
-                    bool isGpu = (name.find("TG") != std::string::npos ||
-                                  name.find("GPU") != std::string::npos);
-                    if (isGpu && data.gpuTemp == 0) data.gpuTemp = temp;
-                    else if (!isGpu && data.cpuTemp == 0) data.cpuTemp = temp;
-                }
-            } catch (const std::exception& e) {
-                Logger::Error("Temperature error: " + std::string(e.what()));
             }
 
             // WiFi & Bluetooth (every ~3 seconds)

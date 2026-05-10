@@ -1143,7 +1143,11 @@ int main(int argc, char* argv[]) {
         }
         
         ThreadSafeGpuCache gpuCache;
-        
+
+        // Start ModuleCoordinator background collection threads
+        ModuleCoordinator coordinator;
+        coordinator.Start();
+
         while (!g_shouldExit.load()) {
             try {
                 auto loopStart = std::chrono::high_resolution_clock::now();
@@ -1225,26 +1229,10 @@ int main(int argc, char* argv[]) {
                 sysInfo.hyperThreading = cachedHyperThreading;
                 sysInfo.virtualization = cachedVirtualization;
 
-                try {
-                    if (cpuInfo) {
-                        sysInfo.cpuUsage = cpuInfo->GetUsage();
-                        sysInfo.performanceCoreFreq = cpuInfo->GetLargeCoreSpeed();
-                        sysInfo.efficiencyCoreFreq = cpuInfo->GetSmallCoreSpeed();
-                        sysInfo.cpuUsageSampleIntervalMs = cpuInfo->GetLastSampleIntervalMs();
-                    }
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get CPU dynamic info: " + std::string(e.what()));
-                }
-
-                try {
-                    MemoryInfo mem;
-                    sysInfo.totalMemory = mem.GetTotalPhysical();
-                    sysInfo.usedMemory = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                    sysInfo.availableMemory = mem.GetAvailablePhysical();
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get memory info: " + std::string(e.what()));
+                // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
+                {
+                    tcmt::TuiData tempTui;
+                    coordinator.Snapshot(sysInfo, tempTui);
                 }
 
                 if (!gpuCache.IsInitialized()) {
@@ -1434,74 +1422,10 @@ int main(int argc, char* argv[]) {
                     sysInfo.networkAdapterSpeed = 0;
                 }
 
-                // Add temperature data collection (get each loop to ensure real-time data)
-                try {
-                    auto temperatures = TemperatureWrapper::GetTemperatures();
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                    for (const auto& temp : temperatures) {
-                        std::string nameLower = temp.first;
-                        std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
-                        if (nameLower.find("gpu") != std::string::npos || nameLower.find("graphics") != std::string::npos) {
-                            if (sysInfo.gpuTemperature == 0)
-                                sysInfo.gpuTemperature = temp.second;
-                            sysInfo.temperatures.push_back({"GPU", temp.second});
-                        } else if (nameLower.find("package") != std::string::npos ||
-                                   nameLower.find("cpu temperature") != std::string::npos ||
-                                   nameLower == "cpu") {
-                            sysInfo.cpuTemperature = temp.second;
-                            sysInfo.temperatures.push_back({"CPU Package", temp.second});
-                        } else if (nameLower.find("cpu core") != std::string::npos) {
-                            sysInfo.temperatures.push_back({temp.first, temp.second});
-                        } else {
-                            sysInfo.temperatures.push_back(temp);
-                        }
-                    }
-                    if (isFirstRun) {
-                        Logger::Debug("Collected " + std::to_string(temperatures.size()) + " temperature readings");
-                        for (const auto& temp : sysInfo.temperatures) {
-                            Logger::Debug("Temperature sensor: " + temp.first + " = " + std::to_string(temp.second) + "°C");
-                        }
-                        Logger::Debug("CPU temperature: " + std::to_string(sysInfo.cpuTemperature) + ", GPU temperature: " + std::to_string(sysInfo.gpuTemperature));
-                    }
-                }
-                catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get temperature data - Out of memory: " + std::string(e.what()));
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get temperature data: " + std::string(e.what()));
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-                catch (...) {
-                    Logger::Error("Failed to get temperature data - Unknown exception");
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
+                // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
 
-                // Add disk info collection (get each loop to ensure real-time data)
+                // Physical disk (SMART) and TPM collection (coordinator handles logical disks)
                 try {
-                    DiskInfo diskInfo;
-                    auto disks = diskInfo.GetDisks();
-                    if (disks.size() > 8) {
-                        Logger::Error("Disk count exceeds maximum allowed (8). Skipping disk data update.");
-                        sysInfo.disks.clear();
-                    } else {
-                        sysInfo.disks = disks;
-                        if (isFirstRun) {
-                            Logger::Debug("Collected " + std::to_string(disks.size()) + " disk entries");
-                            for (size_t i = 0; i < disks.size(); ++i) {
-                                const auto& disk = disks[i];
-                                Logger::Debug("Disk " + std::to_string(i) + ": Label=" + disk.label + ", FileSystem=" + disk.fileSystem);
-                            }
-                        }
-                    }
                     // Collect physical disks (cached — WMI is slow, re-query every 60s)
                     static std::vector<PhysicalDiskSmartData> cachedPhysDisks;
                     static auto lastPhysQuery = std::chrono::steady_clock::now() - std::chrono::seconds(61);
@@ -1516,7 +1440,7 @@ int main(int argc, char* argv[]) {
                     }
                     if (!cachedPhysDisks.empty())
                         sysInfo.physicalDisks = cachedPhysDisks;
-                    
+
                     // Collect TPM data
                     {
                         TpmInfo tpmInfo = {};
@@ -1528,18 +1452,15 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get disk/physical disk data - Out of memory: " + std::string(e.what()));
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data - Out of memory: " + std::string(e.what()));
                     sysInfo.physicalDisks.clear();
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("Failed to get disk/physical disk data: " + std::string(e.what()));
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data: " + std::string(e.what()));
                     sysInfo.physicalDisks.clear();
                 }
                 catch (...) {
-                    Logger::Error("Failed to get disk/physical disk data - Unknown exception");
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data - Unknown exception");
                     sysInfo.physicalDisks.clear();
                 }
 
