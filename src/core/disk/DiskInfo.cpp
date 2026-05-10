@@ -204,8 +204,8 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 }
                 data.smartSupported = false;
                 data.smartEnabled = false;
-                data.healthPercentage = 0;
-                data.temperature = 0.0;
+                data.healthPercentage = 100; // assume healthy when SMART not available
+                data.temperature = -1;       // unknown (not 0°C, which is misleading)
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
             }
