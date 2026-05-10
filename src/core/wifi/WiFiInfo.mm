@@ -91,16 +91,37 @@ void WiFiInfo::Detect() {
                         for (auto& item : j["SPAirPortDataType"]) {
                             if (item.contains("spairport_airport_interfaces")) {
                                 for (auto& iface : item["spairport_airport_interfaces"]) {
-                                    if (data_.ssid.empty() && iface.contains("_name"))
-                                        data_.ssid = iface["_name"].get<std::string>();
-                                    if (data_.bssid.empty() && iface.contains("spairport_current_bssid"))
-                                        data_.bssid = iface["spairport_current_bssid"].get<std::string>();
-                                    if (data_.channel == 0 && iface.contains("spairport_current_channel"))
-                                        data_.channel = iface["spairport_current_channel"].get<int>();
-                                    if (data_.rssi == 0 && iface.contains("spairport_current_rssi"))
-                                        data_.rssi = iface["spairport_current_rssi"].get<int>();
-                                    if (data_.security.empty() && iface.contains("spairport_current_security_mode"))
-                                        data_.security = iface["spairport_current_security_mode"].get<std::string>();
+                                    // BSSID from interface-level field
+                                    if (data_.bssid.empty() && iface.contains("spairport_wireless_mac_address"))
+                                        data_.bssid = iface["spairport_wireless_mac_address"].get<std::string>();
+                                    // Current network info (contains SSID/channel/rate/security/signal)
+                                    if (iface.contains("spairport_current_network_information")) {
+                                        auto& net = iface["spairport_current_network_information"];
+                                        if (data_.ssid.empty() && net.contains("_name"))
+                                            data_.ssid = net["_name"].get<std::string>();
+                                        if (net.contains("spairport_network_channel")) {
+                                            std::string ch = net["spairport_network_channel"].get<std::string>();
+                                            // Parse "157 (5GHz, 80MHz)" -> channel=157
+                                            size_t sp = ch.find(' ');
+                                            data_.channel = (sp != std::string::npos) ? std::stoi(ch.substr(0, sp)) : std::stoi(ch);
+                                        }
+                                        if (data_.rssi == 0 && net.contains("spairport_signal_noise")) {
+                                            std::string sn = net["spairport_signal_noise"].get<std::string>();
+                                            // "-53 dBm / -91 dBm" -> RSSI = -53
+                                            data_.rssi = std::stoi(sn);
+                                        }
+                                        if (data_.security.empty() && net.contains("spairport_security_mode")) {
+                                            std::string sec = net["spairport_security_mode"].get<std::string>();
+                                            // "spairport_security_mode_wpa2_personal" -> "WPA2-Personal"
+                                            if (sec.find("wpa3") != std::string::npos) data_.security = "WPA3";
+                                            else if (sec.find("wpa2") != std::string::npos) data_.security = "WPA2-Personal";
+                                            else if (sec.find("wpa") != std::string::npos) data_.security = "WPA-Personal";
+                                            else if (sec.find("wep") != std::string::npos) data_.security = "WEP";
+                                            else if (sec.find("none") != std::string::npos) data_.security = "Open";
+                                        }
+                                        if (data_.txRate == 0 && net.contains("spairport_network_rate"))
+                                            data_.txRate = net["spairport_network_rate"].get<double>();
+                                    }
                                 }
                             }
                         }
