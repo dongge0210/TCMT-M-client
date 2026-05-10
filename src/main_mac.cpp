@@ -34,6 +34,7 @@
 #include "core/DataStruct/DataStruct.h"
 #include "core/IPC/IPCServer.h"
 #include "core/temperature/TemperatureWrapper.h"
+#include "core/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
 

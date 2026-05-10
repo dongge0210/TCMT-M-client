@@ -58,6 +58,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/temperature/TemperatureWrapper.h"
+#include "core/ModuleCoordinator.h"
 #include "tui/TuiApp.h"
 #include "core/Config/ConfigManager.h"
 #include <fstream>
