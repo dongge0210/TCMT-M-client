@@ -93,6 +93,18 @@ namespace AvaloniaUI.Models
         public double GpuTemperature { get; set; }
         public double CpuUsageSampleIntervalMs { get; set; }
         public DateTime LastUpdate { get; set; }
+
+        // WiFi — populated by C++ side, not via IPC schema yet
+        public bool HasWiFi { get; set; }
+        public string WifiSSID { get; set; } = "";
+        public int WifiRSSI { get; set; }
+        public int WifiChannel { get; set; }
+        public string WifiSecurity { get; set; } = "";
+
+        // Bluetooth — populated by C++ side, not via IPC schema yet
+        public bool HasBluetooth { get; set; }
+        public bool BtPowerOn { get; set; }
+        public int BtDeviceCount { get; set; }
     }
 
     public abstract class NotifyBase : INotifyPropertyChanged

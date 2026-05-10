@@ -201,6 +201,12 @@ public static class IPCSystemInfoMapper
                 }
             }
 
+            // WiFi/BT data is NOT in shared memory yet. Those fields (HasWiFi, WifiSSID,
+            // WifiRSSI, WifiChannel, WifiSecurity, HasBluetooth, BtPowerOn, BtDeviceCount)
+            // are populated by the C++ main loop directly and passed through SystemInfo.
+            // They remain at default values when unavailable. The ViewModel checks for
+            // presence and hides the UI sections accordingly.
+
             return info;
         }
         catch (Exception ex)

@@ -300,6 +300,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AcOnline = info.AcOnline;
         OnPropertyChanged(nameof(HasBattery));
         OnPropertyChanged(nameof(BatteryLabel));
+
+        // WiFi
+        WifiSSID = info.WifiSSID ?? "";
+        WifiRSSI = info.WifiRSSI;
+        WifiChannel = info.WifiChannel;
+        WifiSecurity = info.WifiSecurity ?? "";
+        OnPropertyChanged(nameof(HasWiFi));
+        OnPropertyChanged(nameof(WifiDisplay));
+
+        // Bluetooth
+        HasBluetooth = info.HasBluetooth;
+        BtPowerOn = info.BtPowerOn;
+        BtDeviceCount = info.BtDeviceCount;
+        OnPropertyChanged(nameof(BtDisplay));
+
         Log.Debug("TPM 更新: {Manuf}, {Status}", TpmInfo.Manufacturer, TpmInfo.Status);
     }
 
@@ -572,6 +587,33 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool HasBattery => BatteryPercent >= 0;
     public string BatteryLabel => AcOnline ? "AC" : "BAT";
+
+    // WiFi
+    [ObservableProperty]
+    private string _wifiSSID = "";
+
+    [ObservableProperty]
+    private int _wifiRSSI;
+
+    [ObservableProperty]
+    private int _wifiChannel;
+
+    [ObservableProperty]
+    private string _wifiSecurity = "";
+
+    // Bluetooth
+    [ObservableProperty]
+    private bool _hasBluetooth;
+
+    [ObservableProperty]
+    private bool _btPowerOn;
+
+    [ObservableProperty]
+    private int _btDeviceCount;
+
+    public bool HasWiFi => !string.IsNullOrEmpty(WifiSSID);
+    public string WifiDisplay => HasWiFi ? $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}" : "";
+    public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";
 
     // Last update
     [ObservableProperty]

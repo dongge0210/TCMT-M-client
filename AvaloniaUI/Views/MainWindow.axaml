@@ -200,6 +200,12 @@
                             <TextBlock Text="标称速率: " Foreground="#FF666666" FontSize="11"/>
                             <TextBlock Text="{Binding SelectedNetwork.SpeedDisplay, TargetNullValue='N/A'}" Foreground="#FFB3B3B3" FontSize="11"/>
                         </StackPanel>
+                        <!-- WiFi -->
+                        <TextBlock Text="{Binding WifiDisplay}" Foreground="#FFB3B3B3" FontSize="11"
+                                   IsVisible="{Binding HasWiFi}" Margin="0,3,0,0"/>
+                        <!-- Bluetooth -->
+                        <TextBlock Text="{Binding BtDisplay}" Foreground="#FFB3B3B3" FontSize="11"
+                                   IsVisible="{Binding HasBluetooth}" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
