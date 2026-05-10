@@ -55,6 +55,8 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/IPC/IPCServer.h"
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
+#include "core/wifi/WiFiInfo.h"
+#include "core/bluetooth/BluetoothInfo.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/temperature/TemperatureWrapper.h"
@@ -674,6 +676,16 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
     }
+
+    // WiFi
+    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifiSSID), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifiRSSI), 4, (uint8_t)FT::Int32);
+    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifiChannel), 4, (uint8_t)FT::Int32);
+    addField("wifi/security", offsetof(SharedMemoryBlock, wifiSecurity), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    // Bluetooth
+    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, btPowerOn), 1, (uint8_t)FT::Bool);
+    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, btDeviceCount), 4, (uint8_t)FT::Int32);
+    addField("bluetooth/name",        offsetof(SharedMemoryBlock, btName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
 }
 
 int main(int argc, char* argv[]) {
@@ -1677,6 +1689,27 @@ int main(int argc, char* argv[]) {
                     } else {
                         tuiData.tpmInfo = "No TPM";
                     }
+
+                    // WiFi & Bluetooth (every ~3 seconds)
+                    { static int wbCtr = 0;
+                      static WiFiInfo s_wifi;
+                      static BluetoothInfo s_bt;
+                      if (++wbCtr >= 3) { wbCtr = 0;
+                          try { s_wifi.Detect(); } catch (...) {}
+                          try { s_bt.Detect(); } catch (...) {}
+                      }
+                      const auto& wd = s_wifi.GetData();
+                      tuiData.hasWiFi = wd.powerOn;
+                      tuiData.wifiSSID = wd.ssid;
+                      tuiData.wifiRSSI = wd.rssi;
+                      tuiData.wifiChannel = wd.channel;
+                      tuiData.wifiSecurity = wd.security;
+                      const auto& bd = s_bt.GetData();
+                      tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
+                      tuiData.btPowerOn = bd.adapter.powerOn;
+                      tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+                    }
+
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
                     
                     tuiApp.UpdateData(tuiData);

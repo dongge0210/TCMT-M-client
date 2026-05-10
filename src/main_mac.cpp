@@ -30,6 +30,7 @@
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
+#include "core/bluetooth/BluetoothInfo.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/DataStruct/DataStruct.h"
@@ -158,6 +159,18 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
         addF((std::string(p)+"health").c_str(),       base + offsetof(B::PhysDiskSlot, healthPercent));
         addB((std::string(p)+"smartSupported").c_str(), base + offsetof(B::PhysDiskSlot, smartSupported));
     }
+
+    // WiFi
+    addS("wifi/ssid",        offsetof(B, wifi.ssid), 32);
+    addI("wifi/rssi",        offsetof(B, wifi.rssi));
+    addI("wifi/channel",     offsetof(B, wifi.channel));
+    addS("wifi/security",    offsetof(B, wifi.security), 16);
+    addB("wifi/powerOn",     offsetof(B, wifi.powerOn));
+    addB("wifi/isConnected", offsetof(B, wifi.isConnected));
+    // Bluetooth
+    addB("bluetooth/powerOn",     offsetof(B, bluetooth.powerOn));
+    addI("bluetooth/deviceCount", offsetof(B, bluetooth.deviceCount));
+    addS("bluetooth/name",        offsetof(B, bluetooth.name), 64);
 }
 
 // ======================== Formatting Helpers ========================
@@ -768,6 +781,26 @@ int main(int argc, char* argv[]) {
                 }
             } catch (const std::exception& e) {
                 Logger::Error("Temperature error: " + std::string(e.what()));
+            }
+
+            // WiFi & Bluetooth (every ~3 seconds)
+            { static int wbCtr = 0;
+              static WiFiInfo s_wifi;
+              static BluetoothInfo s_bt;
+              if (++wbCtr >= 6) { wbCtr = 0;
+                  try { s_wifi.Detect(); } catch (...) {}
+                  try { s_bt.Detect(); } catch (...) {}
+              }
+              const auto& wd = s_wifi.GetData();
+              data.hasWiFi = wd.powerOn;
+              data.wifiSSID = wd.ssid;
+              data.wifiRSSI = wd.rssi;
+              data.wifiChannel = wd.channel;
+              data.wifiSecurity = wd.security;
+              const auto& bd = s_bt.GetData();
+              data.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
+              data.btPowerOn = bd.adapter.powerOn;
+              data.btDeviceCount = static_cast<int>(bd.devices.size());
             }
 
             // Timestamp

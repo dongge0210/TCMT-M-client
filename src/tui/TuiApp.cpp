@@ -316,6 +316,39 @@ int TuiApp::DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     return lines;
 }
 
+int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    int lines = 0;
+
+    if (data.hasWiFi) {
+        std::string wifiStr = "SSID: " + data.wifiSSID
+                           + "  Ch: " + std::to_string(data.wifiChannel)
+                           + "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm"
+                           + "  " + data.wifiSecurity;
+        wifiStr = TrimRight(wifiStr, maxW - 8);
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
+        lines++;
+    }
+
+    if (data.hasBluetooth) {
+        std::string btStr = data.btPowerOn
+            ? "On (" + std::to_string(data.btDeviceCount) + " devices)"
+            : "Off";
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "BT: ");
+        wattroff(win, COLOR_PAIR(5));
+        wattron(win, COLOR_PAIR(2));
+        mvwprintw(win, y + lines, x0 + 7, "%.*s", maxW - 9, btStr.c_str());
+        wattroff(win, COLOR_PAIR(2));
+        lines++;
+    }
+
+    return lines;
+}
+
 int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     if (data.tpmInfo.empty() || data.tpmInfo == "No TPM") return 0;
@@ -480,6 +513,10 @@ void TuiApp::Run() {
             ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
             if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
+            }
+            // WiFi & Bluetooth supplementary info after Network
+            if (ry < maxY) {
+                ry += DrawWifiBluetoothPanel(stdscr, data, ry, rx, rightW);
             }
             if (ry < maxY) {
                 ry += DrawTpmPanel(stdscr, data, ry, rx, rightW);

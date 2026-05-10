@@ -95,6 +95,17 @@ struct TuiData {
     // Temperatures
     std::vector<std::pair<std::string, double>> temperatures;
 
+    // WiFi (optional — only if WiFiInfo::Detect() was called)
+    bool hasWiFi = false;
+    std::string wifiSSID;
+    int wifiRSSI = 0;
+    int wifiChannel = 0;
+    std::string wifiSecurity;
+    // Bluetooth (optional)
+    bool hasBluetooth = false;
+    bool btPowerOn = false;
+    int btDeviceCount = 0;
+
     // Timestamp
     std::string timestamp;
 };
@@ -130,6 +141,7 @@ private:
     int DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);
