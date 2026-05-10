@@ -1488,13 +1488,20 @@ int main(int argc, char* argv[]) {
                             }
                         }
                     }
-                    // Collect physical disks and build logical drive mapping
-                    if (wmiManager) {
-                        DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
+                    // Collect physical disks (cached — WMI is slow, re-query every 60s)
+                    static std::vector<PhysicalDiskSmartData> cachedPhysDisks;
+                    static auto lastPhysQuery = std::chrono::steady_clock::now();
+                    auto now = std::chrono::steady_clock::now();
+                    if (cachedPhysDisks.empty() ||
+                        std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysQuery).count() >= 60) {
+                        if (wmiManager) {
+                            DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
+                            cachedPhysDisks = sysInfo.physicalDisks;
+                            lastPhysQuery = now;
+                        }
+                    } else {
+                        sysInfo.physicalDisks = cachedPhysDisks;
                     }
-                    
-                    // Collect disk SMART data
-                    DiskInfo::CollectSmartData(sysInfo);
                     
                     // Collect TPM data
                     {
