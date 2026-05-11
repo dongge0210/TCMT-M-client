@@ -32,9 +32,19 @@ static std::string WCharToUtf8(const WCHAR* wstr) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: extract BTH_ADDR (ULONGLONG) from BLUETOOTH_ADDRESS union
+// ---------------------------------------------------------------------------
+static BTH_ADDR BtAddrToUlong(const BLUETOOTH_ADDRESS& ba) {
+    // BLUETOOTH_ADDRESS is a union: { BTH_ADDR ullLong; BYTE rgBytes[6]; }
+    // On older SDKs this is BLUETOOTH_ADDRESS_STRUCT; both have .ullLong.
+    return ba.ullLong;
+}
+
+// ---------------------------------------------------------------------------
 // Helper: format a BTH_ADDR (48-bit Bluetooth MAC) as "AA:BB:CC:DD:EE:FF"
 // ---------------------------------------------------------------------------
-static std::string FormatBtAddress(BTH_ADDR addr) {
+static std::string FormatBtAddress(const BLUETOOTH_ADDRESS& ba) {
+    BTH_ADDR addr = BtAddrToUlong(ba);
     std::ostringstream oss;
     for (int i = 5; i >= 0; --i) {
         if (i < 5) oss << ':';
@@ -62,7 +72,6 @@ void BluetoothInfo::Detect() {
     HBLUETOOTH_RADIO_FIND hRadioFind = BluetoothFindFirstRadio(&radioParams, &hRadio);
 
     if (hRadioFind == nullptr) {
-        // No Bluetooth radio present or accessible -- return empty data
         Logger::Debug("BluetoothInfo: no Bluetooth radio found");
         return;
     }
@@ -76,8 +85,6 @@ void BluetoothInfo::Detect() {
             data_.adapter.name = WCharToUtf8(radioInfo.szName);
             data_.adapter.address = FormatBtAddress(radioInfo.address);
             data_.adapter.powerOn = true;
-
-            // Try to honour the first radio found (usually the only one)
             break;
         }
 
@@ -98,7 +105,7 @@ void BluetoothInfo::Detect() {
     searchParams.fReturnUnknown = FALSE;
     searchParams.fIssueInquiry = FALSE;
     searchParams.cTimeoutMultiplier = 0;
-    searchParams.hRadio = nullptr; // search across all radios
+    searchParams.hRadio = nullptr;
 
     BLUETOOTH_DEVICE_INFO deviceInfo;
     std::memset(&deviceInfo, 0, sizeof(deviceInfo));
@@ -115,32 +122,6 @@ void BluetoothInfo::Detect() {
         dev.name = WCharToUtf8(deviceInfo.szName);
         dev.address = FormatBtAddress(deviceInfo.Address);
         dev.connected = (deviceInfo.fConnected == TRUE);
-
-        // RSSI is available on Windows 10 Anniversary Update (1607) and later.
-        // The BLUETOOTH_DEVICE_INFO struct only exposes these members when
-        // NTDDI_VERSION >= NTDDI_WIN10_RS1.  Use __if_exists so the code
-        // compiles regardless of SDK version.
-        {
-            LONG rssiVal = 0;
-
-#if defined(__clang__) || defined(__GNUC__)
-            // GCC/Clang don't support __if_exists; skip RSSI for portability.
-            (void)rssiVal;
-#else
-            // MSVC: __if_exists is a compile-time guard.
-            __if_exists(deviceInfo.RSSI) {
-                rssiVal = deviceInfo.RSSI;
-            }
-            __if_exists(deviceInfo.EmulatedRSSI) {
-                if (rssiVal == 0) {
-                    rssiVal = deviceInfo.EmulatedRSSI;
-                }
-            }
-#endif
-            if (rssiVal != 0) {
-                dev.rssi = static_cast<int>(rssiVal);
-            }
-        }
 
         data_.devices.push_back(std::move(dev));
 

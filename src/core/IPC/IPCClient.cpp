@@ -241,7 +241,7 @@ static const FieldDef* Find(const std::map<std::string, FieldDef>& fields, const
 std::optional<std::string> IPCClient::ReadString(const std::string& name) {
     if (!shmPtr_) return std::nullopt;
     auto* f = Find(fields_, name); if (!f || f->size == 0) return std::nullopt;
-    size_t maxLen = std::min((size_t)f->size, shmSize_ - f->offset);
+    size_t maxLen = (std::min)((size_t)f->size, shmSize_ - f->offset);
     if (maxLen == 0) return std::nullopt;
     const char* src = static_cast<const char*>(shmPtr_) + f->offset;
     size_t len = 0;
