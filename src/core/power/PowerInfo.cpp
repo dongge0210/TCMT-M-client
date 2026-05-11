@@ -8,9 +8,13 @@
 #include <windows.h>
 #include <wbemidl.h>
 #include <comdef.h>
-#include <initguid.h>
 #include <powrprof.h>
 #include "../Utils/WmiManager.h"
+
+// NO_SUBTYPE_GUID may not be declared in newer SDKs; define it locally.
+// {fea3413e-7e05-4911-9a71-700331f1c294}
+static const GUID kNoSubtypeGuid = {0xfea3413e, 0x7e05, 0x4911,
+    {0x9a, 0x71, 0x70, 0x03, 0x31, 0xf1, 0xc2, 0x94}};
 #include "../Utils/WinUtils.h"
 
 #pragma comment(lib, "PowrProf.lib")
@@ -32,7 +36,7 @@ void PowerInfo::Detect() {
             wchar_t friendlyName[256] = {0};
             DWORD bufSize = sizeof(friendlyName);
             if (PowerReadFriendlyName(nullptr, pActiveGuid,
-                    &NO_SUBTYPE_GUID, nullptr, (PUCHAR)friendlyName, &bufSize) == ERROR_SUCCESS) {
+                    &kNoSubtypeGuid, nullptr, (PUCHAR)friendlyName, &bufSize) == ERROR_SUCCESS) {
                 powerPlan = WinUtils::WstringToString(std::wstring(friendlyName));
             } else {
                 // Fallback: convert GUID to string
