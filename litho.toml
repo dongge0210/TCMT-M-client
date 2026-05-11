@@ -20,7 +20,7 @@ excluded_dirs = [
     "docs", "AvaloniaUI/bin", "AvaloniaUI/obj",
     "tools", "cmake",
     "AvaloniaUI/Converters",
-    "src/CPP-parsers", "CPP-parsers", "third_party"
+    "third_party", "src/CPP-parsers"
 ]
 excluded_files = [
     "litho.toml", "*.log", "*.tmp", "*.cache",

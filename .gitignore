@@ -99,12 +99,11 @@ build-debug/
 knowledge/
 vault/
 inbox/
-.remember/*
+.remember/** 
 .obsidian/
 .cache/
 .litho/
 .claude/settings.local.json
-.gitignore
 swarmvault.schema.md
 swarmvault.config.json
 compile_commands.json
