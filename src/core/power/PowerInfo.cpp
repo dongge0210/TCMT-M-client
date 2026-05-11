@@ -8,7 +8,8 @@
 #include <windows.h>
 #include <wbemidl.h>
 #include <comdef.h>
-#include <powerbase.h>
+#include <initguid.h>
+#include <powrprof.h>
 #include "../Utils/WmiManager.h"
 #include "../Utils/WinUtils.h"
 
