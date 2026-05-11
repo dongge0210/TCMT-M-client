@@ -64,7 +64,7 @@ void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
             {
                 std::lock_guard<std::mutex> lock(data_.netMutex);
                 data_.adapters.clear();
-                data_.adapters.reserve(std::min(adapters.size(), size_t{4}));
+                data_.adapters.reserve((std::min)(adapters.size(), size_t{4}));
 
                 int count = 0;
                 for (const auto& a : adapters) {

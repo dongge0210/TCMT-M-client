@@ -72,7 +72,7 @@ void ModuleCoordinator::SleepFor(tcmt::compat::StopToken st, int ms) {
         auto now = std::chrono::steady_clock::now();
         if (now >= deadline) break;
         auto remain = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-        auto step = std::min(remain, std::chrono::milliseconds(50));
+        auto step = (std::min)(remain, std::chrono::milliseconds(50));
         std::this_thread::sleep_for(step);
     }
 }
