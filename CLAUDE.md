@@ -10,6 +10,12 @@ Cross-platform hardware monitoring tool (alpha-0.2, GPL-3.0). Monitors CPU, GPU,
 - **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.
 - **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with LibreHardwareMonitor bridge and an AvaloniaUI .NET 10.0 frontend.
 
+**CRITICAL: When adding new source files (.cpp/.h/.c/.mm), you MUST register them in ALL build systems:**
+1. **`TCMT.vcxproj`** — `<ClCompile Include="...">` for .cpp/.c/.mm, `<ClInclude Include="...">` for .h
+2. **`TCMT.vcxproj.filters`** — matching entries in both ItemGroups
+3. **`src/CMakeLists.txt`** — `list(APPEND CORE_MODULES_SOURCES ...)` or appropriate variable
+Missing a build system causes linker errors on one platform while the other builds fine.
+
 ## Build Commands
 
 ### macOS (Apple Silicon)
