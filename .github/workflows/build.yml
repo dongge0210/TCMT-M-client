@@ -102,7 +102,7 @@ jobs:
     - name: Build LibreHardwareMonitorLib
       run: |
         cd src/third_party/LibreHardwareMonitor
-        dotnet build LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472
+        dotnet build LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472 /p:NoWarn=CA1416;CS0067;NETSDK1233
 
     - name: Build CPP-parsers
       run: |

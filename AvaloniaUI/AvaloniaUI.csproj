@@ -10,7 +10,6 @@
     <AssemblyTitle>系统硬件监视器</AssemblyTitle>
     <AssemblyDescription>实时硬件监控工具 Avalonia 版本</AssemblyDescription>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <NoWarn>NETSDK1233;CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
