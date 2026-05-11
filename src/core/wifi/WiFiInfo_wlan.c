@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 
+#define _CRT_SECURE_NO_WARNINGS
 #include <winsock2.h>
 #include <windows.h>
 #include <wlanapi.h>
@@ -12,6 +13,25 @@
 #include <string.h>
 
 #pragma comment(lib, "wlanapi.lib")
+
+// dot11TxRate was removed from WLAN_ASSOCIATION_ATTRIBUTES in newer SDKs.
+// Provide a fallback so the code compiles across SDK versions.
+#ifndef WLAN_ASSOC_ATTR_HAS_DOT11TXRATE
+static ULONG GetTxRate(const PWLAN_CONNECTION_ATTRIBUTES pConn) {
+    // The field exists in older SDKs but not in 10.0.26100+.
+    // Use __if_exists for MSVC; GCC/Clang compilation on Windows is unlikely.
+#ifdef _MSC_VER
+    __if_exists(pConn->wlanAssociationAttributes.dot11TxRate) {
+        return pConn->wlanAssociationAttributes.dot11TxRate;
+    }
+#endif
+    return 0;
+}
+#else
+static ULONG GetTxRate(const PWLAN_CONNECTION_ATTRIBUTES pConn) {
+    return pConn->wlanAssociationAttributes.dot11TxRate;
+}
+#endif
 
 bool WlanDetect(WlanData* out) {
     if (!out) return false;
@@ -69,22 +89,26 @@ bool WlanDetect(WlanData* out) {
                      pConn->wlanAssociationAttributes.dot11Bssid[4],
                      pConn->wlanAssociationAttributes.dot11Bssid[5]);
 
-            // Tx rate (500 bps units -> Mbps)
-            out->txRate = pConn->wlanAssociationAttributes.dot11TxRate / 2000.0;
+            // Tx rate (500 bps units -> Mbps); field absent in newer SDKs
+            out->txRate = GetTxRate(pConn) / 2000.0;
 
             // Security
             switch (pConn->wlanSecurityAttributes.dot11AuthAlgorithm) {
-            case DOT11_AUTH_ALGO_80211_OPEN:   strncpy(out->security, "Open", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_80211_SHARED_KEY: strncpy(out->security, "WEP", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_WPA:          strncpy(out->security, "WPA-Enterprise", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_WPA_PSK:      strncpy(out->security, "WPA-Personal", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_WPA_NONE:     strncpy(out->security, "WPA-None", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_RSNA:         strncpy(out->security, "WPA2-Enterprise", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_RSNA_PSK:     strncpy(out->security, "WPA2-Personal", WLAN_SECURITY_MAX_LEN - 1); break;
+            case DOT11_AUTH_ALGO_80211_OPEN:       snprintf(out->security, WLAN_SECURITY_MAX_LEN, "Open"); break;
+            case DOT11_AUTH_ALGO_80211_SHARED_KEY: snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WEP"); break;
+            case DOT11_AUTH_ALGO_WPA:              snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA-Enterprise"); break;
+            case DOT11_AUTH_ALGO_WPA_PSK:          snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA-Personal"); break;
+            case DOT11_AUTH_ALGO_WPA_NONE:         snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA-None"); break;
+            case DOT11_AUTH_ALGO_RSNA:             snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA2-Enterprise"); break;
+            case DOT11_AUTH_ALGO_RSNA_PSK:         snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA2-Personal"); break;
+            // DOT11_AUTH_ALGO_WPA3 and DOT11_AUTH_ALGO_WPA3_SAE may share the
+            // same value in newer SDKs (see wlantypes.h); handle with one case.
+#if DOT11_AUTH_ALGO_WPA3 != DOT11_AUTH_ALGO_WPA3_SAE
             case DOT11_AUTH_ALGO_WPA3:
-            case DOT11_AUTH_ALGO_WPA3_SAE:     strncpy(out->security, "WPA3-SAE", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_WPA3_ENT_192: strncpy(out->security, "WPA3-Enterprise-192", WLAN_SECURITY_MAX_LEN - 1); break;
-            case DOT11_AUTH_ALGO_OWE:          strncpy(out->security, "OWE", WLAN_SECURITY_MAX_LEN - 1); break;
+#endif
+            case DOT11_AUTH_ALGO_WPA3_SAE:         snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA3-SAE"); break;
+            case DOT11_AUTH_ALGO_WPA3_ENT_192:     snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA3-Enterprise-192"); break;
+            case DOT11_AUTH_ALGO_OWE:              snprintf(out->security, WLAN_SECURITY_MAX_LEN, "OWE"); break;
             default:
                 snprintf(out->security, WLAN_SECURITY_MAX_LEN, "Auth-0x%X",
                          pConn->wlanSecurityAttributes.dot11AuthAlgorithm);
