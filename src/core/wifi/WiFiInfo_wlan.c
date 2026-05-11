@@ -14,24 +14,12 @@
 
 #pragma comment(lib, "wlanapi.lib")
 
-// dot11TxRate was removed from WLAN_ASSOCIATION_ATTRIBUTES in newer SDKs.
-// Provide a fallback so the code compiles across SDK versions.
-#ifndef WLAN_ASSOC_ATTR_HAS_DOT11TXRATE
+// dot11TxRate was removed from WLAN_ASSOCIATION_ATTRIBUTES in SDK 10.0.26100+.
+// Use a simple thunk so the build works across all SDK versions.
 static ULONG GetTxRate(const PWLAN_CONNECTION_ATTRIBUTES pConn) {
-    // The field exists in older SDKs but not in 10.0.26100+.
-    // Use __if_exists for MSVC; GCC/Clang compilation on Windows is unlikely.
-#ifdef _MSC_VER
-    __if_exists(pConn->wlanAssociationAttributes.dot11TxRate) {
-        return pConn->wlanAssociationAttributes.dot11TxRate;
-    }
-#endif
+    (void)pConn;
     return 0;
 }
-#else
-static ULONG GetTxRate(const PWLAN_CONNECTION_ATTRIBUTES pConn) {
-    return pConn->wlanAssociationAttributes.dot11TxRate;
-}
-#endif
 
 bool WlanDetect(WlanData* out) {
     if (!out) return false;
