@@ -75,6 +75,12 @@
     <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\ModuleCoordinator.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\Utils\JThreadCompat.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\bluetooth\BluetoothInfo.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -156,6 +162,15 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\ModuleCoordinator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\ModuleCoordinator_io.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp">
