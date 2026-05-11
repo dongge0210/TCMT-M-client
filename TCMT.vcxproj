@@ -150,6 +150,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\Utils\WMIManager.h" />
     <ClInclude Include="src\core\bluetooth\BluetoothInfo.h" />
     <ClInclude Include="src\core\wifi\WiFiInfo.h" />
+    <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h" />
     <ClInclude Include="src\tui\TuiApp.h" />
     <ClInclude Include="src\tui\LogBuffer.h" />
   </ItemGroup>
@@ -172,6 +173,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp" />
     <ClCompile Include="src\core\usb\UsbInfo.cpp" />
     <ClCompile Include="src\core\wifi\WiFiInfo.cpp" />
+    <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c" />
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>

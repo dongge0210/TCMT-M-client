@@ -18,18 +18,15 @@ excluded_dirs = [
     "Debug", "Release", "*Tests", "__pycache__",
     ".cursor", ".claude", ".remember", "vault", "inbox", "knowledge",
     "docs", "AvaloniaUI/bin", "AvaloniaUI/obj",
-    "src/third_party", "tools", "cmake",
-    "src/core/DataStruct", "src/core/Platform",
-    "src/core/board", "src/core/usb", "src/core/Config",
+    "tools", "cmake",
     "AvaloniaUI/Converters",
     "src/CPP-parsers", "CPP-parsers", "third_party"
 ]
 excluded_files = [
     "litho.toml", "*.log", "*.tmp", "*.cache",
-    "*.lock", ".gitignore", "*.md", "*.txt",
+    "*.lock", ".gitignore", "*.txt",
     "compile_commands.json", "swarmvault.*",
-    "*.csproj", "*.sln", "*.vcxproj", "*.filters",
-    "*.axaml", "*.xaml", "*.config", "*.o", "*.obj",
+    "*.config", "*.o", "*.obj",
     "*.pdb", "*.a", "*.lib", "*.dylib", "*.mdb",
     "*.resx", "*.resources", "*.Designer.cs"
 ]
@@ -39,7 +36,7 @@ excluded_extensions = [
     "exe", "dll", "so", "archive", "pdb",
     "xcf", "svg", "webp"
 ]
-included_extensions = ["cpp", "h", "hpp", "cs", "c"]
+included_extensions = ["cpp", "h", "hpp", "cs", "c", "mm", "axaml", "sln", "csproj", "md", "vcxproj", "filters"]
 
 [llm]
 provider = "deepseek"

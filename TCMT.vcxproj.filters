@@ -69,6 +69,15 @@
     <ClInclude Include="src\tui\TuiApp.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\wifi\WiFiInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\bluetooth\BluetoothInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Utils\Logger.cpp">
@@ -141,6 +150,15 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\IPC\IPCServer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\wifi\WiFiInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
