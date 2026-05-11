@@ -254,7 +254,7 @@ std::optional<std::string> IPCClient::ReadString(const std::string& name) {
 template<typename T> static std::optional<T> ReadNumeric(const FieldDef* f, const void* shmPtr, size_t shmSize) {
     if (!f || f->offset + f->size > shmSize) return std::nullopt;
     T val = 0;
-    memcpy(&val, static_cast<const char*>(shmPtr) + f->offset, std::min(sizeof(T), (size_t)f->size));
+    memcpy(&val, static_cast<const char*>(shmPtr) + f->offset, (std::min)(sizeof(T), (size_t)f->size));
     return val;
 }
 
