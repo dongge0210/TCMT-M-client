@@ -140,6 +140,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\gpu\GpuInfo.h" />
     <ClInclude Include="src\core\memory\MemoryInfo.h" />
     <ClInclude Include="src\core\network\NetworkAdapter.h" />
+    <ClInclude Include="src\core\power\PowerInfo.h" />
     <ClInclude Include="src\core\os\OSInfo.h" />
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
     <ClInclude Include="src\core\Utils\LibreHardwareMonitorBridge.h" />
@@ -170,6 +171,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\MCP\MCPServer.cpp" />
     <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
+    <ClCompile Include="src\core\power\PowerInfo.cpp" />
     <ClCompile Include="src\core\os\OSInfo.cpp" />
     <ClCompile Include="src\core\Platform\Platform_Windows.cpp" />
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp" />
