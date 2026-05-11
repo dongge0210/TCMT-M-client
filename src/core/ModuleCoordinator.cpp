@@ -19,22 +19,22 @@ ModuleCoordinator::~ModuleCoordinator() {
 void ModuleCoordinator::Start() {
     if (running_.exchange(true)) return;
 
-    cpuThread_     = std::jthread([](std::stop_token st, ModuleCoordinator* self) {
+    cpuThread_     = tcmt::compat::JThread([](tcmt::compat::StopToken st, ModuleCoordinator* self) {
         CpuLoop(self->data_, std::move(st));
     }, this);
-    memoryThread_  = std::jthread([](std::stop_token st, ModuleCoordinator* self) {
+    memoryThread_  = tcmt::compat::JThread([](tcmt::compat::StopToken st, ModuleCoordinator* self) {
         MemoryLoop(self->data_, std::move(st));
     }, this);
-    diskThread_    = std::jthread([](std::stop_token st, ModuleCoordinator* self) {
+    diskThread_    = tcmt::compat::JThread([](tcmt::compat::StopToken st, ModuleCoordinator* self) {
         self->DiskLoop(std::move(st));
     }, this);
-    netThread_     = std::jthread([](std::stop_token st, ModuleCoordinator* self) {
+    netThread_     = tcmt::compat::JThread([](tcmt::compat::StopToken st, ModuleCoordinator* self) {
         self->NetworkLoop(std::move(st));
     }, this);
-    tempThread_    = std::jthread([](std::stop_token st, ModuleCoordinator* self) {
+    tempThread_    = tcmt::compat::JThread([](tcmt::compat::StopToken st, ModuleCoordinator* self) {
         self->TemperatureLoop(std::move(st));
     }, this);
-    powerThread_   = std::jthread([](std::stop_token st, ModuleCoordinator* self) {
+    powerThread_   = tcmt::compat::JThread([](tcmt::compat::StopToken st, ModuleCoordinator* self) {
         PowerLoop(self->data_, std::move(st));
     }, this);
 
@@ -66,7 +66,7 @@ void ModuleCoordinator::Stop() {
 // =====================================================================
 // Sleep helper — checks stop token every 50ms for responsive shutdown
 // =====================================================================
-void ModuleCoordinator::SleepFor(std::stop_token st, int ms) {
+void ModuleCoordinator::SleepFor(tcmt::compat::StopToken st, int ms) {
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
     while (!st.stop_requested()) {
         auto now = std::chrono::steady_clock::now();
@@ -156,7 +156,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
 // =====================================================================
 // Phase 2: Temperature thread
 // =====================================================================
-void ModuleCoordinator::TemperatureLoop(std::stop_token st) {
+void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
     while (!st.stop_requested()) {
         try {
             auto temps = TemperatureWrapper::GetTemperatures();

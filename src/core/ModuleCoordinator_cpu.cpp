@@ -25,7 +25,7 @@
 // across loop iterations.  Each cycle collects usage, P-core freq, and
 // E-core freq then sleeps for 500 ms (minus the elapsed collection time).
 // =====================================================================
-void CpuLoop(ModuleData& data, std::stop_token st) {
+void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
     // Create the CpuInfo instance once; if construction fails the thread
     // exits immediately because there is nothing useful to do.
     std::unique_ptr<CpuInfo> cpuInfo;
@@ -72,7 +72,7 @@ void CpuLoop(ModuleData& data, std::stop_token st) {
 // values are always up-to-date.  On macOS compressed memory is read
 // directly via host_statistics64.
 // =====================================================================
-void MemoryLoop(ModuleData& data, std::stop_token st) {
+void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
     Logger::Info("MemoryLoop: started");
 
     while (!st.stop_requested()) {
@@ -119,7 +119,7 @@ void MemoryLoop(ModuleData& data, std::stop_token st) {
 // Constructs a fresh PowerInfo and calls Detect() each cycle to read
 // battery percentage and AC adapter status.
 // =====================================================================
-void PowerLoop(ModuleData& data, std::stop_token st) {
+void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
     Logger::Info("PowerLoop: started");
 
     while (!st.stop_requested()) {

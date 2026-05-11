@@ -6,6 +6,7 @@
 #include <string>
 #include "DataStruct/DataStruct.h"
 #include "../tui/TuiApp.h"
+#include "Utils/JThreadCompat.h"
 
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
@@ -43,9 +44,9 @@ struct ModuleData {
 };
 
 // Free function thread loops (implemented in ModuleCoordinator_cpu.cpp)
-void CpuLoop(ModuleData& data, std::stop_token st);
-void MemoryLoop(ModuleData& data, std::stop_token st);
-void PowerLoop(ModuleData& data, std::stop_token st);
+void CpuLoop(ModuleData& data, tcmt::compat::StopToken st);
+void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st);
+void PowerLoop(ModuleData& data, tcmt::compat::StopToken st);
 
 class ModuleCoordinator {
 public:
@@ -54,12 +55,12 @@ public:
     void Start();
     void Stop();
     void Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData);
-    static void SleepFor(std::stop_token st, int ms);
+    static void SleepFor(tcmt::compat::StopToken st, int ms);
 private:
     ModuleData data_;
     std::atomic<bool> running_{false};
-    std::jthread cpuThread_, memoryThread_, diskThread_, netThread_, tempThread_, powerThread_;
-    void DiskLoop(std::stop_token st);
-    void NetworkLoop(std::stop_token st);
-    void TemperatureLoop(std::stop_token st);
+    tcmt::compat::JThread cpuThread_, memoryThread_, diskThread_, netThread_, tempThread_, powerThread_;
+    void DiskLoop(tcmt::compat::StopToken st);
+    void NetworkLoop(tcmt::compat::StopToken st);
+    void TemperatureLoop(tcmt::compat::StopToken st);
 };

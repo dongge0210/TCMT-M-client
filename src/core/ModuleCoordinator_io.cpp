@@ -12,7 +12,7 @@
 // DiskLoop — 5-second cadence
 //   Each cycle: create DiskInfo, call GetDisks(), lock and copy to data_.
 // ============================================================================
-void ModuleCoordinator::DiskLoop(std::stop_token st) {
+void ModuleCoordinator::DiskLoop(tcmt::compat::StopToken st) {
     Logger::Debug("DiskLoop: started");
 
     while (!st.stop_requested()) {
@@ -47,7 +47,7 @@ void ModuleCoordinator::DiskLoop(std::stop_token st) {
 //              used inside the loop so COM/WMI is initialized once.
 //     macOS:   NetworkAdapter() default constructor is fine.
 // ============================================================================
-void ModuleCoordinator::NetworkLoop(std::stop_token st) {
+void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
     Logger::Debug("NetworkLoop: started");
 
     while (!st.stop_requested()) {
