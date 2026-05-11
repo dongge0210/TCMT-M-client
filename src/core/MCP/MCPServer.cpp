@@ -12,7 +12,7 @@ namespace tcmt::mcp {
 
 static const char* PROTOCOL_VERSION = "2024-11-05";
 static const char* SERVER_NAME    = "tcmt-mcp";
-static const char* SERVER_VERSION = "0.1.0";
+static const char* SERVER_VERSION = "alpha-0.2";
 
 MCPServer::MCPServer()  = default;
 MCPServer::~MCPServer() { Stop(); }

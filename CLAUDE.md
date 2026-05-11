@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cross-platform hardware monitoring tool (v0.14.0, GPL-3.0). Monitors CPU, GPU, memory, disk, network, OS, and temperature data, exposing results via shared memory IPC for a desktop UI or TUI.
+Cross-platform hardware monitoring tool (alpha-0.2, GPL-3.0). Monitors CPU, GPU, memory, disk, network, OS, and temperature data, exposing results via shared memory IPC for a desktop UI or TUI.
 
 **Two separate build systems co-exist:**
 - **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.
