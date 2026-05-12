@@ -111,6 +111,17 @@ Some `.cpp` / `.mm` files are compiled on ONE platform only:
 13. **No `std::jthread` / `std::stop_token`** on Xcode < 16 (Apple Clang). Use `tcmt::compat::StopToken` / `tcmt::compat::JThread` from `src/core/Utils/JThreadCompat.h`. Native `std::` types are aliased on MSVC.
 14. **`.mm` files** are Objective-C++ (used for CoreWLAN, IOBluetooth). Compiled only on macOS via CMake. MSVC/vcxproj must NOT include them.
 
+### CsWin32 / P/Invoke Rules (CRITICAL)
+
+The LibreHardwareMonitor submodule uses **CsWin32 v0.3.275** to generate Windows API wrappers from `NativeMethods.txt`. This means:
+
+15. **NEVER manually write `[DllImport]` stubs** for functions already listed in `NativeMethods.txt`. CsWin32 will generate the correct signatures with safe `SafeHandle` return types, `in` ref params, and proper enum types. Manual stubs cause signature mismatches with callers written for CsWin32-generated overloads.
+16. **Callers MUST use `PInvoke.SetupDiXxx(...)` prefix**, not bare `using static` imports from a manually-written stub class.
+17. **Concrete SafeHandle types matter**: CsWin32 generates typed safe handles (e.g. `SetupDiDestroyDeviceInfoListSafeHandle`). Don't pass the base `SafeHandle` class — cast to the concrete type when needed.
+18. **Enums, not ints**: CsWin32 overloads accept `SETUP_DI_REGISTRY_PROPERTY` enum directly. Don't cast to `uint`.
+
+**What happened (2026-05-12)**: A manual `SetupApi.cs` was added with raw pointer DllImport signatures (`Guid*`, `SP_DEVINFO_DATA*`, returns `HDEVINFO`). This conflicted with `BatteryGroup.cs` and `Stm32PortFinder.cs`, which were written for CsWin32-generated safe wrappers (returns `SetupDiDestroyDeviceInfoListSafeHandle`, takes `Guid` by value, uses `ref`/`in`). Fix: deleted `SetupApi.cs` (functions already in `NativeMethods.txt`), switched callers to `PInvoke.` prefix, and fixed helper methods to match the generated overloads.
+
 ## vcxproj Include Paths
 
 Windows build requires these include directories (set in `TCMT.vcxproj`):
