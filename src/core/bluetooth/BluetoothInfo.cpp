@@ -94,14 +94,14 @@ void BluetoothInfo::Detect() {
     BluetoothFindRadioClose(hRadioFind);
 
     // -----------------------------------------------------------------------
-    // Step 2: enumerate connected/paired devices
+    // Step 2: enumerate connected + paired + remembered devices (fast, no scan)
     // -----------------------------------------------------------------------
     BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams;
     std::memset(&searchParams, 0, sizeof(searchParams));
     searchParams.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
     searchParams.fReturnConnected = TRUE;
-    searchParams.fReturnAuthenticated = FALSE;
-    searchParams.fReturnRemembered = FALSE;
+    searchParams.fReturnRemembered = TRUE;   // paired devices
+    searchParams.fReturnAuthenticated = TRUE;
     searchParams.fReturnUnknown = FALSE;
     searchParams.fIssueInquiry = FALSE;
     searchParams.cTimeoutMultiplier = 0;
@@ -111,25 +111,65 @@ void BluetoothInfo::Detect() {
     std::memset(&deviceInfo, 0, sizeof(deviceInfo));
     deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
 
+    // Track seen addresses to avoid duplicates across search passes
+    std::vector<std::string> seenAddresses;
+
     HBLUETOOTH_DEVICE_FIND hDeviceFind = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
-    if (hDeviceFind == nullptr) {
-        Logger::Debug("BluetoothInfo: no Bluetooth devices found");
-        return;
+    if (hDeviceFind != nullptr) {
+        do {
+            BluetoothDeviceData dev;
+            dev.name = WCharToUtf8(deviceInfo.szName);
+            dev.address = FormatBtAddress(deviceInfo.Address);
+            dev.connected = (deviceInfo.fConnected == TRUE);
+            dev.remembered = (deviceInfo.fRemembered == TRUE);
+            seenAddresses.push_back(dev.address);
+            data_.devices.push_back(std::move(dev));
+
+            deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
+        } while (BluetoothFindNextDevice(hDeviceFind, &deviceInfo));
+        BluetoothFindDeviceClose(hDeviceFind);
     }
 
-    do {
-        BluetoothDeviceData dev;
-        dev.name = WCharToUtf8(deviceInfo.szName);
-        dev.address = FormatBtAddress(deviceInfo.Address);
-        dev.connected = (deviceInfo.fConnected == TRUE);
+    // -----------------------------------------------------------------------
+    // Step 3: inquiry scan for nearby/discoverable devices (slow, ~2.5s)
+    // -----------------------------------------------------------------------
+    BLUETOOTH_DEVICE_SEARCH_PARAMS inquiryParams;
+    std::memset(&inquiryParams, 0, sizeof(inquiryParams));
+    inquiryParams.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
+    inquiryParams.fReturnConnected = TRUE;
+    inquiryParams.fReturnRemembered = TRUE;
+    inquiryParams.fReturnAuthenticated = TRUE;
+    inquiryParams.fReturnUnknown = TRUE;     // discoverable but unknown
+    inquiryParams.fIssueInquiry = TRUE;       // perform radio scan
+    inquiryParams.cTimeoutMultiplier = 2;     // ~2.56s scan
+    inquiryParams.hRadio = hRadio;
 
-        data_.devices.push_back(std::move(dev));
+    BLUETOOTH_DEVICE_INFO inquiryDeviceInfo;
+    std::memset(&inquiryDeviceInfo, 0, sizeof(inquiryDeviceInfo));
+    inquiryDeviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
 
-        // Reset dwSize before the next call (SDK requirement)
-        deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
-    } while (BluetoothFindNextDevice(hDeviceFind, &deviceInfo));
+    HBLUETOOTH_DEVICE_FIND hInquiryFind = BluetoothFindFirstDevice(&inquiryParams, &inquiryDeviceInfo);
+    if (hInquiryFind != nullptr) {
+        do {
+            std::string addr = FormatBtAddress(inquiryDeviceInfo.Address);
+            // Skip duplicates from step 2
+            bool duplicate = false;
+            for (const auto& seen : seenAddresses) {
+                if (seen == addr) { duplicate = true; break; }
+            }
+            if (!duplicate) {
+                BluetoothDeviceData dev;
+                dev.name = WCharToUtf8(inquiryDeviceInfo.szName);
+                dev.address = addr;
+                dev.connected = (inquiryDeviceInfo.fConnected == TRUE);
+                dev.remembered = (inquiryDeviceInfo.fRemembered == TRUE);
+                data_.devices.push_back(std::move(dev));
+            }
 
-    BluetoothFindDeviceClose(hDeviceFind);
+            inquiryDeviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
+        } while (BluetoothFindNextDevice(hInquiryFind, &inquiryDeviceInfo));
+        BluetoothFindDeviceClose(hInquiryFind);
+    }
 
     Logger::Debug("BluetoothInfo: detected adapter \"" + data_.adapter.name +
                   "\" with " + std::to_string(data_.devices.size()) + " connected device(s)");

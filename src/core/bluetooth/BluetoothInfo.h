@@ -13,8 +13,9 @@ struct BluetoothAdapterData {
 struct BluetoothDeviceData {
     std::string name;           // Device name
     std::string address;        // "AA:BB:CC:DD:EE:FF"
-    int rssi = 0;               // Signal strength in dBm (Windows only, 0 if unavailable)
+    int rssi = 0;               // Signal strength in dBm (0 if unavailable)
     bool connected = false;
+    bool remembered = false;    // Paired/remembered
 };
 
 struct BluetoothData {

@@ -99,7 +99,7 @@ build-debug/
 knowledge/
 vault/
 inbox/
-.remember/** 
+.remember/
 .obsidian/
 .cache/
 .litho/

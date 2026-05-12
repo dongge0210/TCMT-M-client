@@ -29,7 +29,7 @@ dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 ```
 macOS requires `brew install ncurses` (CMake's `find_package(Curses)` handles it).
 
-### Windows (x64, VS 2022+)
+### Windows (x64, VS 2022 / 2026)
 Build order is critical (see `.github/workflows/build.yml` for CI reference):
 ```bash
 git submodule update --init --recursive
@@ -46,7 +46,7 @@ msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v14
 # 4. AvaloniaUI
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release
 ```
-Prerequisites: VS 2022 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0+ SDK.
+Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0+ SDK.
 
 ## Architecture
 
@@ -141,3 +141,6 @@ git submodule update --init --recursive
 - **macOS**: IOKit, CoreFoundation, CoreWLAN, IOBluetooth, ncurses
 - **AvaloniaUI**: Avalonia 12.0.1, CommunityToolkit.Mvvm 8.2.2, Serilog 3.1.1
 - **Config**: nlohmann/json (header-only, bundled in CPP-parsers submodule)
+
+## User addition notices
+- **language analysis**: Use 'linguisto --json' to determine language percentages

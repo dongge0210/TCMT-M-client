@@ -195,7 +195,6 @@ bool CpuInfo::IsVirtualizationEnabled() const {
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
-#include <mach/processor_info.h>
 #include <mach/mach_host.h>
 #include <unistd.h>
 // Note: cpuid.h is x86-only, no ARM equivalent needed
@@ -224,32 +223,26 @@ CpuInfo::CpuInfo()
 CpuInfo::~CpuInfo() { CleanupCounter(); }
 
 void CpuInfo::InitializeCounter() {
-    // Initialise with first reading
-    uint64_t now = GetTickCountMs();
-    processor_info_array_t cpuInfo = nullptr;
-    mach_msg_type_number_t numCpuInfo = 0;
-    natural_t numCpus = 0;
+    // host_statistics is the non-deprecated API that works on both
+    // Intel and Apple Silicon (host_processor_info is deprecated).
+    host_cpu_load_info_data_t cpuLoad;
+    mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
 
-    kern_return_t err = host_processor_info(
-        mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &numCpus,
-        &cpuInfo, &numCpuInfo);
+    kern_return_t err = host_statistics(
+        mach_host_self(), HOST_CPU_LOAD_INFO,
+        (host_info_t)&cpuLoad, &count);
 
     if (err != KERN_SUCCESS) return;
 
-    uint64_t totalTicks = 0, idleTicks = 0;
-    for (natural_t i = 0; i < numCpus; i++) {
-        int offset = i * CPU_STATE_MAX;
-        totalTicks += cpuInfo[offset + CPU_STATE_USER]
-                    + cpuInfo[offset + CPU_STATE_SYSTEM]
-                    + cpuInfo[offset + CPU_STATE_NICE]
-                    + cpuInfo[offset + CPU_STATE_IDLE];
-        idleTicks += cpuInfo[offset + CPU_STATE_IDLE];
-    }
-    vm_deallocate(mach_task_self(), (vm_address_t)cpuInfo, numCpuInfo * sizeof(natural_t));
+    uint64_t totalTicks = cpuLoad.cpu_ticks[CPU_STATE_USER]
+                        + cpuLoad.cpu_ticks[CPU_STATE_SYSTEM]
+                        + cpuLoad.cpu_ticks[CPU_STATE_NICE]
+                        + cpuLoad.cpu_ticks[CPU_STATE_IDLE];
+    uint64_t idleTicks  = cpuLoad.cpu_ticks[CPU_STATE_IDLE];
 
     prevTotalTicks = totalTicks;
-    prevIdleTicks = idleTicks;
-    prevSampleTimeMs = now;
+    prevIdleTicks  = idleTicks;
+    prevSampleTimeMs = GetTickCountMs();
 }
 
 void CpuInfo::CleanupCounter() {
@@ -336,30 +329,25 @@ std::string CpuInfo::GetNameFromRegistry() {
 }
 
 double CpuInfo::updateUsage() {
-    uint64_t now = GetTickCountMs();
+    uint64_t nowMs = GetTickCountMs();
+    uint64_t elapsedMs = nowMs - prevSampleTimeMs;
     // Ensure at least 100ms between samples for accuracy
-    if (now - prevSampleTimeMs < 100) return cpuUsage;
+    if (elapsedMs < 100) return cpuUsage;
 
-    processor_info_array_t cpuInfo = nullptr;
-    mach_msg_type_number_t numCpuInfo = 0;
-    natural_t numCpus = 0;
+    host_cpu_load_info_data_t cpuLoad;
+    mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
 
-    kern_return_t err = host_processor_info(
-        mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &numCpus,
-        &cpuInfo, &numCpuInfo);
+    kern_return_t err = host_statistics(
+        mach_host_self(), HOST_CPU_LOAD_INFO,
+        (host_info_t)&cpuLoad, &count);
 
     if (err != KERN_SUCCESS) return cpuUsage;
 
-    uint64_t totalTicks = 0, idleTicks = 0;
-    for (natural_t i = 0; i < numCpus; i++) {
-        int offset = i * CPU_STATE_MAX;
-        totalTicks += cpuInfo[offset + CPU_STATE_USER]
-                    + cpuInfo[offset + CPU_STATE_SYSTEM]
-                    + cpuInfo[offset + CPU_STATE_NICE]
-                    + cpuInfo[offset + CPU_STATE_IDLE];
-        idleTicks += cpuInfo[offset + CPU_STATE_IDLE];
-    }
-    vm_deallocate(mach_task_self(), (vm_address_t)cpuInfo, numCpuInfo * sizeof(natural_t));
+    uint64_t totalTicks = cpuLoad.cpu_ticks[CPU_STATE_USER]
+                        + cpuLoad.cpu_ticks[CPU_STATE_SYSTEM]
+                        + cpuLoad.cpu_ticks[CPU_STATE_NICE]
+                        + cpuLoad.cpu_ticks[CPU_STATE_IDLE];
+    uint64_t idleTicks  = cpuLoad.cpu_ticks[CPU_STATE_IDLE];
 
     uint64_t deltaTotal = totalTicks - prevTotalTicks;
     uint64_t deltaIdle  = idleTicks  - prevIdleTicks;
@@ -373,25 +361,10 @@ double CpuInfo::updateUsage() {
         else cpuUsage = newUsage;
     }
 
-    prevSampleTimeMs = now;
-    lastSampleIntervalMs = (double)(now - prevSampleTimeMs + (now - prevSampleTimeMs));
-    // Correct: use previous sample time for interval
-    lastSampleIntervalMs = (double)(now - prevSampleTimeMs);
-    // Actually prevSampleTimeMs was just updated, so we need to track before update
-    // The interval is (now - prevSampleTimeMs) before update. Let's use deltaTotal ticks
-    // as a proxy for elapsed time. mach_tick_rate gives ticks/sec.
-    static mach_timebase_info_data_t sTimebase;
-    static bool sTimebaseInit = false;
-    if (!sTimebaseInit) {
-        mach_timebase_info(&sTimebase);
-        sTimebaseInit = true;
-    }
-    // Convert tick delta to ms
-    uint64_t elapsedNs = deltaTotal * sTimebase.numer / sTimebase.denom;
-    lastSampleIntervalMs = elapsedNs / 1000000.0;
-
     prevTotalTicks = totalTicks;
     prevIdleTicks  = idleTicks;
+    prevSampleTimeMs = nowMs;
+    lastSampleIntervalMs = (double)elapsedMs;
 
     return cpuUsage;
 }
