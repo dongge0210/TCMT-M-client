@@ -1,3 +1,20 @@
+// TuiApp.h — ncurses/PDCurses Text User Interface for TCMT
+//
+// The TUI is the PRIMARY user interface and runs as part of the C++ core process.
+// It reads hardware data directly via the same data structures the main loop
+// populates (TuiData / SystemInfo), NOT through IPC. This means:
+//
+//   - No IPC overhead: the TUI shares the process address space with the data
+//     collection loop. It renders from memory, not from a serialized protocol.
+//   - No dependency on a running GUI or schema pipeline: the TUI works even if
+//     IPCServer, Avalonia, or MCP are unavailable.
+//   - Ideal for headless/SSH/tmux environments where a graphical desktop or
+//     .NET runtime is not present.
+//
+// The TUI is NOT a "fallback" — it is the authoritative console interface for
+// the hardware monitor. Avalonia and MCP are IPC clients that connect to the
+// same core process and read from shared memory.
+//
 #pragma once
 
 #include "LogBuffer.h"
@@ -38,6 +55,7 @@ struct TuiData {
     std::string gpuName;
     uint64_t gpuMemory = 0;
     double gpuUsage = 0.0;
+    double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
 
     // Disk
@@ -56,17 +74,39 @@ struct TuiData {
         std::string mac;
         std::string type;
         uint64_t speed = 0;
+        uint64_t downloadSpeed = 0;
+        uint64_t uploadSpeed = 0;
     };
     std::vector<NetInfo> adapters;
 
     // OS
     std::string osVersion;
+    int batteryPercent = -1;  // -1 = no battery
+    bool acOnline = false;
+
+    // Connections
+    int connectionCount = 0;
+    std::string connectionSince;
+    std::vector<uint8_t> clientTypes;  // ClientType values per connection
 
     // TPM
     std::string tpmInfo;
 
     // Temperatures
     std::vector<std::pair<std::string, double>> temperatures;
+
+    // WiFi (optional — only if WiFiInfo::Detect() was called)
+    bool hasWiFi = false;
+    std::string wifiSSID;
+    std::string wifiBSSID;
+    int wifiRSSI = 0;
+    int wifiChannel = 0;
+    std::string wifiSecurity;
+    double wifiTxRate = 0;
+    // Bluetooth (optional)
+    bool hasBluetooth = false;
+    bool btPowerOn = false;
+    int btDeviceCount = 0;
 
     // Timestamp
     std::string timestamp;
@@ -103,6 +143,7 @@ private:
     int DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);

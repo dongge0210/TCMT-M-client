@@ -38,6 +38,8 @@ public:
         bool isEnabled;
         bool isConnected;
         uint64_t speed;
+        uint64_t downloadSpeed = 0;
+        uint64_t uploadSpeed = 0;
         std::string speedString;
     };
 

@@ -8,10 +8,138 @@
 #include <algorithm>
 #include <cwctype>
 
-// NVML is only available when CUDA is installed
-#if defined(CUDA_SUPPORT) || defined(SUPPORT_NVIDIA_GPU)
-#include <nvml.h>
-#endif
+// ======================== NVML Dynamic Loading ========================
+// NVML (NVIDIA Management Library) is loaded at runtime via LoadLibrary/GetProcAddress
+// to avoid hard dependency on NVIDIA CUDA Toolkit. On systems without an NVIDIA GPU,
+// nvml.dll won't be present and all NVML calls are silently skipped.
+//
+// This replaces the previous static link to nvml.lib which caused the program
+// to fail on non-NVIDIA systems.
+
+// Minimum NVML types needed for function pointer signatures
+using nvmlDevice_t = void*;
+using nvmlReturn_t = unsigned int;
+
+struct nvmlMemory_t {
+    unsigned long long total;
+    unsigned long long free;
+    unsigned long long used;
+};
+
+struct nvmlUtilization_t {
+    unsigned int gpu;
+    unsigned int memory;
+};
+
+// NVML constants (not in header, so define locally)
+constexpr nvmlReturn_t NVML_SUCCESS = 0;
+constexpr int NVML_CLOCK_GRAPHICS = 1;
+constexpr int NVML_TEMPERATURE_GPU = 0;
+
+// Function pointer types for NVML API
+using NvmlInitFn = nvmlReturn_t (*)();
+using NvmlShutdownFn = nvmlReturn_t (*)();
+using NvmlDeviceGetHandleByIndexFn = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
+using NvmlDeviceGetMemoryInfoFn = nvmlReturn_t (*)(nvmlDevice_t, nvmlMemory_t*);
+using NvmlDeviceGetUtilizationRatesFn = nvmlReturn_t (*)(nvmlDevice_t, nvmlUtilization_t*);
+using NvmlDeviceGetTemperatureFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
+using NvmlDeviceGetClockInfoFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
+using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
+
+// Runtime NVML function table -- loaded once on first use
+struct NvmlApi {
+    HMODULE module = nullptr;
+
+    NvmlInitFn init = nullptr;
+    NvmlShutdownFn shutdown = nullptr;
+    NvmlDeviceGetHandleByIndexFn getHandleByIndex = nullptr;
+    NvmlDeviceGetMemoryInfoFn getMemoryInfo = nullptr;
+    NvmlDeviceGetUtilizationRatesFn getUtilizationRates = nullptr;
+    NvmlDeviceGetTemperatureFn getTemperature = nullptr;
+    NvmlDeviceGetClockInfoFn getClockInfo = nullptr;
+    NvmlDeviceGetCudaComputeCapabilityFn getCudaComputeCapability = nullptr;
+};
+
+// Singleton accessor: loads nvml.dll on first call, returns the function table.
+// If the DLL is not available (no NVIDIA driver installed), all function pointers
+// remain null and no further NVML queries are attempted.
+static NvmlApi& GetNvmlApi() {
+    static NvmlApi api;
+    static bool attempted = false;
+    if (!attempted) {
+        attempted = true;
+        api.module = LoadLibraryW(L"nvml.dll");
+        if (!api.module) {
+            Logger::Info("NVML not available (nvml.dll not found) -- skipping NVIDIA GPU details");
+            return api;
+        }
+
+        // Resolve all NVML functions by their exported names
+        api.init = reinterpret_cast<NvmlInitFn>(
+            GetProcAddress(api.module, "nvmlInit_v2"));
+
+        api.shutdown = reinterpret_cast<NvmlShutdownFn>(
+            GetProcAddress(api.module, "nvmlShutdown"));
+
+        api.getHandleByIndex = reinterpret_cast<NvmlDeviceGetHandleByIndexFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetHandleByIndex_v2"));
+
+        api.getMemoryInfo = reinterpret_cast<NvmlDeviceGetMemoryInfoFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetMemoryInfo"));
+
+        api.getUtilizationRates = reinterpret_cast<NvmlDeviceGetUtilizationRatesFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetUtilizationRates"));
+
+        api.getTemperature = reinterpret_cast<NvmlDeviceGetTemperatureFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetTemperature"));
+
+        api.getClockInfo = reinterpret_cast<NvmlDeviceGetClockInfoFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetClockInfo"));
+
+        api.getCudaComputeCapability = reinterpret_cast<NvmlDeviceGetCudaComputeCapabilityFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetCudaComputeCapability"));
+
+        // Validate mandatory functions -- if any are missing, treat as unavailable
+        if (!api.init || !api.shutdown || !api.getHandleByIndex) {
+            Logger::Warn("NVML loaded but missing required functions -- disabling NVML");
+            FreeLibrary(api.module);
+            api = NvmlApi{};
+        }
+    }
+    return api;
+}
+
+// Persistent NVML session — initialized once, kept alive across program lifetime.
+// Avoids the overhead of nvmlInit/nvmlShutdown on every query.
+struct NvmlSession {
+    NvmlApi* api = nullptr;
+    nvmlDevice_t device = nullptr;
+    bool ok = false;
+
+    NvmlSession() {
+        api = &GetNvmlApi();
+        if (!api->init) { Logger::Debug("NVML: DLL not loaded, skipping session"); return; }
+        nvmlReturn_t r = api->init();
+        if (NVML_SUCCESS != r) { Logger::Debug("NVML: nvmlInit failed (code=" + std::to_string(r) + ")"); return; }
+        r = api->getHandleByIndex(0, &device);
+        if (NVML_SUCCESS != r) { api->shutdown(); Logger::Debug("NVML: getHandleByIndex failed"); return; }
+        ok = true;
+        Logger::Info("NVML: persistent session initialized");
+    }
+
+    ~NvmlSession() {
+        if (ok && api && api->shutdown) api->shutdown();
+    }
+
+    // Prevent copy/move
+    NvmlSession(const NvmlSession&) = delete;
+    NvmlSession& operator=(const NvmlSession&) = delete;
+};
+
+static NvmlSession& GetNvmlSession() {
+    static NvmlSession session;
+    return session;
+}
 
 GpuInfo::GpuInfo(WmiManager& manager) : wmiManager(manager) {
     if (!wmiManager.IsInitialized()) {
@@ -26,13 +154,41 @@ GpuInfo::~GpuInfo() {
     Logger::Info("GPU information detection complete");
 }
 
+double GpuInfo::GetVramUsagePercent() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getMemoryInfo) return -1;
+    nvmlMemory_t mem;
+    if (NVML_SUCCESS != s.api->getMemoryInfo(s.device, &mem) || mem.total == 0) return -1;
+    return (static_cast<double>(mem.used) / static_cast<double>(mem.total)) * 100.0;
+}
+
+double GpuInfo::GetGpuUsage() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getUtilizationRates) return -1;
+    nvmlUtilization_t util;
+    if (NVML_SUCCESS != s.api->getUtilizationRates(s.device, &util)) return -1;
+    return static_cast<double>(util.gpu);
+}
+
+double GpuInfo::GetGpuTemperature() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getTemperature) return -1;
+    unsigned int temp = 0;
+    if (NVML_SUCCESS != s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp)) return -1;
+    return static_cast<double>(temp);
+}
+
 bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
     const std::vector<std::wstring> virtualGpuNames = {
         L"Microsoft Basic Display Adapter", L"Microsoft Hyper-V Video",
         L"VMware SVGA 3D", L"VirtualBox Graphics Adapter",
         L"Todesk Virtual Display Adapter", L"Parsec Virtual Display Adapter",
+        L"TeamViewer Display", L"AnyDesk Display", L"VNC Display",
+        L"Citrix Display", L"Remote Desktop Display", L"RDP Display",
         L"Standard VGA Graphics Adapter", L"Generic PnP Monitor",
-        L"Remote Desktop Display", L"RDP Display"
+        L"Virtual Desktop Infrastructure", L"VDI Display",
+        L"Cloud Display", L"Remote Graphics",
+        L"AskLinkIddDriver Device"
     };
     std::wstring lowerName = name;
     std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
@@ -44,7 +200,7 @@ bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
     }
     const std::vector<std::wstring> keywords = {
         L"virtual", L"remote", L"basic", L"generic", L"standard vga",
-        L"rdp", L"vnc", L"vmware", L"virtualbox", L"hyper-v"
+        L"rdp", L"vnc", L"citrix", L"vmware", L"virtualbox", L"hyper-v"
     };
     for (const auto& kw : keywords)
         if (lowerName.find(kw) != std::wstring::npos) return true;
@@ -80,12 +236,20 @@ void GpuInfo::DetectGpusViaWmi() {
         data.isIntegrated = data.deviceId.find(L"VEN_8086") != std::wstring::npos;
         gpuList.push_back(data);
 
+        // Log GPU detection
+        std::string gpuNameStr(data.name.begin(), data.name.end());
+        Logger::Info("Detected GPU: " + gpuNameStr +
+                    " (virtual: " + (data.isVirtual ? "yes" : "no") +
+                    ", NVIDIA: " + (data.isNvidia ? "yes" : "no") +
+                    ", integrated: " + (data.isIntegrated ? "yes" : "no") + ")");
+
         VariantClear(&vtName); VariantClear(&vtPnpId);
         VariantClear(&vtAdapterRAM); VariantClear(&vtCurrentClockSpeed);
         pclsObj->Release();
     }
     pEnumerator->Release();
 
+    // Query detailed info for NVIDIA GPUs (via NVML)
     for (size_t i = 0; i < gpuList.size(); ++i) {
         if (gpuList[i].isNvidia && !gpuList[i].isVirtual)
             QueryNvidiaGpuInfo(static_cast<int>(i));
@@ -106,50 +270,37 @@ void GpuInfo::QueryIntelGpuInfo(int index) {
 }
 
 void GpuInfo::QueryNvidiaGpuInfo(int index) {
-#if defined(CUDA_SUPPORT) || defined(SUPPORT_NVIDIA_GPU)
-    nvmlReturn_t initResult = nvmlInit();
-    if (NVML_SUCCESS != initResult) {
-        Logger::Error("NVML initialization failed: " + std::string(nvmlErrorString(initResult)));
-        return;
-    }
-    nvmlDevice_t device;
-    nvmlReturn_t result = nvmlDeviceGetHandleByIndex(0, &device);
-    if (NVML_SUCCESS != result) { nvmlShutdown(); return; }
+    auto& s = GetNvmlSession();
+    if (!s.ok) return; // NVML not available (no NVIDIA GPU)
 
+    // Get VRAM info
     nvmlMemory_t memory;
-    result = nvmlDeviceGetMemoryInfo(device, &memory);
-    if (NVML_SUCCESS == result) gpuList[index].dedicatedMemory = memory.total;
+    if (NVML_SUCCESS == s.api->getMemoryInfo(s.device, &memory))
+        gpuList[index].dedicatedMemory = memory.total;
 
+    // Get core clock (MHz)
     unsigned int clockMHz = 0;
-    result = nvmlDeviceGetClockInfo(device, NVML_CLOCK_GRAPHICS, &clockMHz);
-    if (NVML_SUCCESS == result) gpuList[index].coreClock = static_cast<double>(clockMHz);
+    if (NVML_SUCCESS == s.api->getClockInfo(s.device, NVML_CLOCK_GRAPHICS, &clockMHz))
+        gpuList[index].coreClock = static_cast<double>(clockMHz);
 
-    #pragma warning(disable: 4996)
+    // Get temperature
     unsigned int temp = 0;
-    result = nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &temp);
-#pragma warning(default: 4996)
-    if (NVML_SUCCESS == result) gpuList[index].temperature = temp;
+    if (NVML_SUCCESS == s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp))
+        gpuList[index].temperature = temp;
 
-    // 获取 GPU 使用率
+    // Get GPU usage
     nvmlUtilization_t util;
-    result = nvmlDeviceGetUtilizationRates(device, &util);
-    if (NVML_SUCCESS == result) {
+    if (NVML_SUCCESS == s.api->getUtilizationRates(s.device, &util))
         gpuList[index].usage = static_cast<double>(util.gpu);
-        Logger::Debug("GPU usage from NVML: " + std::to_string(util.gpu) + "%");
-    }
 
-    int major = 0, minor = 0;
-    result = nvmlDeviceGetCudaComputeCapability(device, &major, &minor);
-    if (NVML_SUCCESS == result) {
-        gpuList[index].computeCapabilityMajor = major;
-        gpuList[index].computeCapabilityMinor = minor;
+    // Get CUDA compute capability (optional, not available in all NVML versions)
+    if (s.api->getCudaComputeCapability) {
+        int major = 0, minor = 0;
+        if (NVML_SUCCESS == s.api->getCudaComputeCapability(s.device, &major, &minor)) {
+            gpuList[index].computeCapabilityMajor = major;
+            gpuList[index].computeCapabilityMinor = minor;
+        }
     }
-
-    nvmlShutdown();
-#else
-    // NVIDIA GPU monitoring not available without CUDA
-    gpuList[index].name = L"NVIDIA GPU (CUDA not available)";
-#endif
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }

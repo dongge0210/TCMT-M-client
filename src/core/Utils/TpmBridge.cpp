@@ -3,19 +3,20 @@
 #include "Logger.h"
 #include <winternl.h>
 #include <tbs.h>
+#include <mutex>
 
 // Static member initialization
 bool TpmBridge::initialized = false;
 bool TpmBridge::tpmPresent = false;
 
 bool TpmBridge::Initialize() {
-    if (initialized) return true;
-
-    // Check if TPM exists
-    tpmPresent = IsTpmPresent();
-
-    initialized = true;
-    return true;
+    static std::once_flag initFlag;
+    std::call_once(initFlag, [&]{
+        // Check if TPM exists
+        tpmPresent = IsTpmPresent();
+        initialized = true;
+    });
+    return initialized;
 }
 
 void TpmBridge::Cleanup() {
@@ -104,6 +105,12 @@ bool TpmBridge::GetTpmInfo(TpmInfo& info) {
 
         // Get vendor ID from implementation revision
         info.vendorId = static_cast<uint16_t>(tpmInfo.tpmImpRevision & 0xFFFF);
+
+        // Override manufacturer with actual TPM vendor name (was set to interface type above)
+        std::wstring vendorName = GetVendorString(info.vendorId);
+        if (!vendorName.empty()) {
+            wcsncpy_s(info.manufacturer, vendorName.c_str(), _TRUNCATE);
+        }
     }
 
     // Cleanup context

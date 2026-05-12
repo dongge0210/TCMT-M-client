@@ -19,18 +19,37 @@ set(UTILS_SOURCES
 
 # Core modules
 set(CORE_MODULES_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/board/BoardInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/cpu/CpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/DiskInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/usb/UsbInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_cpu.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_io.cpp
 )
+# macOS-only modules (.mm Objective-C++, not valid for MSVC)
+if(TCMT_MACOS)
+    list(APPEND CORE_MODULES_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+    )
+endif()
+
+# Windows Bluetooth (bthprops.cpl API)
+if(TCMT_WINDOWS)
+    list(APPEND CORE_MODULES_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
+    )
+endif()
 
 # DataStruct / SharedMemory
 set(DATASTRUCT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/DataStruct/DataStruct.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/DataStruct/Producer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/DataStruct/SharedMemoryManager.cpp
 )
 
@@ -38,6 +57,26 @@ set(DATASTRUCT_SOURCES
 set(CONFIG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Config/ConfigManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Config/ConfigManager.cpp
+)
+# MCP server (JSON-RPC 2.0 over stdio)
+set(MCP_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP/MCPServer.cpp
+)
+
+
+# IPC module
+set(IPC_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCClient.cpp
+)
+if(TCMT_MACOS)
+    list(APPEND IPC_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/IPC/IPCServer.cpp
+    )
+endif()
+
+# HistoryLogger (SQLite sensor data logging)
+set(HISTORY_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/history/HistoryLogger.cpp
 )
 
 # Temperature modules (Windows only for now)
@@ -101,6 +140,9 @@ add_library(TCMTCore STATIC
     ${CORE_MODULES_SOURCES}
     ${DATASTRUCT_SOURCES}
     ${CONFIG_SOURCES}
+    ${MCP_SOURCES}
+	    ${IPC_SOURCES}
+    ${HISTORY_SOURCES}
     ${TEMP_SOURCES}
     ${TUI_SOURCES}
 )
@@ -114,6 +156,13 @@ set_target_properties(TCMTCore PROPERTIES
 target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/board
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/power
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/usb
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/history
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
 
     # CPP-parsers unified config interface
     ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/include
@@ -151,6 +200,28 @@ if(TCMT_WINDOWS)
 elseif(TCMT_MACOS)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
+endif()
+
+# SQLite3 — macOS provides it via the system SDK (just -lsqlite3).
+# Windows users should install it via vcpkg (vcpkg install sqlite3) and
+# add find_package(SQLite3) to cmake/Dependencies.cmake.
+if(TCMT_MACOS)
+    target_link_libraries(TCMTCore PRIVATE sqlite3)
+    message(STATUS "  SQLite3: system library (-lsqlite3)")
+endif()
+if(TCMT_WINDOWS)
+    message(STATUS "  SQLite3: link manually via vcpkg (disabled for now)")
+endif()
+
+# IOBluetooth.framework — macOS Bluetooth monitoring (C API)
+if(TCMT_MACOS)
+    find_library(IOBLUETOOTH_LIB IOBluetooth)
+    if(IOBLUETOOTH_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${IOBLUETOOTH_LIB})
+        message(STATUS "  IOBluetooth.framework: ${IOBLUETOOTH_LIB}")
+    else()
+        message(WARNING "  IOBluetooth.framework not found — Bluetooth monitoring disabled")
+    endif()
 endif()
 
 # ============================================================

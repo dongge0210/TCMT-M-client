@@ -8,6 +8,12 @@ Please ignore this warning - the project structure doesn't support this scenario
 */
 // Do NOT include winsock2.h here - it breaks other headers that include windows.h first
 // Network headers are included in the platform-specific source files instead
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include <winsock2.h>
 #include <windows.h>
 #include <shellapi.h>
@@ -30,6 +36,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include <atomic>
 #include <locale>
 #include <new>
+#include <memory>
 #include <stdexcept>
 
 #include "core/cpu/CpuInfo.h"
@@ -37,16 +44,27 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/memory/MemoryInfo.h"
 #include "core/network/NetworkAdapter.h"
 #include "core/os/OSInfo.h"
-#include "core/utils/Logger.h"
-#include "core/utils/TimeUtils.h"
-#include "core/utils/WinUtils.h"
-#include "core/utils/WmiManager.h"
+#include "core/Utils/Logger.h"
+#include "core/Utils/TimeUtils.h"
+#include "core/Utils/WinUtils.h"
+#include "core/Utils/WmiManager.h"
 #include "core/disk/DiskInfo.h"
-#include "core/utils/TpmBridge.h"
+#include "core/Utils/TpmBridge.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/DataStruct/SharedMemoryManager.h"
+#include "core/IPC/IPCServer.h"
+#include "core/history/HistoryLogger.h"
+#include "core/usb/UsbInfo.h"
+#include "core/wifi/WiFiInfo.h"
+#include "core/bluetooth/BluetoothInfo.h"
+#include "core/MCP/MCPServer.h"
+#include "core/IPC/IPCClient.h"
 #include "core/temperature/TemperatureWrapper.h"
+#include "core/ModuleCoordinator.h"
 #include "tui/TuiApp.h"
+#include "core/Config/ConfigManager.h"
+#include <fstream>
+#include <cstdio>
 
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "user32.lib")
@@ -512,16 +530,9 @@ public:
             
             GpuInfo gpuInfo(wmiManager);
             const auto& gpus = gpuInfo.GetGpuData();
-            
-            // Record all detected GPUs
-            for (const auto& gpu : gpus) {
-                std::string gpuName = WinUtils::WstringToString(gpu.name);
-                Logger::Info("Detected GPU: " + gpuName + 
-                           " (Virtual: " + (gpu.isVirtual ? "Yes" : "No") + 
-                           ", NVIDIA: " + (gpuName.find("NVIDIA") != std::string::npos ? "Yes" : "No") + 
-                           ", Integrated: " + (gpuName.find("Intel") != std::string::npos ||
-                                       gpuName.find("AMD") != std::string::npos ? "Yes" : "No") + ")");
-            }
+
+            // GpuInfo::DetectGpusViaWmi() already logs each GPU — no need to duplicate here
+            Logger::Debug("GPU cache: found " + std::to_string(gpus.size()) + " GPU(s) from WMI");
             
             const GpuInfo::GpuData* selectedGpu = nullptr;
             for (const auto& gpu : gpus) {
@@ -575,6 +586,110 @@ public:
     }
 };
 
+// ======================== MCP Helpers ========================
+
+// Build schema describing SharedMemoryBlock fields (for IPCServer + ConnectDirect)
+static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
+                                   std::vector<tcmt::ipc::FieldDef>& fields) {
+    schemaHdr.totalSize = sizeof(SharedMemoryBlock);
+    auto addField = [&](const char* name, uint32_t offset, uint16_t size,
+                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
+                        uint32_t count = 0) {
+        tcmt::ipc::FieldDef f{};
+        f.offset = offset; f.size = size; f.type = type; f.count = count;
+        std::strncpy(f.name, name, tcmt::ipc::IPC_FIELD_NAME_LEN - 1);
+        fields.push_back(f);
+    };
+    using FT = tcmt::ipc::FieldType;
+    addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
+    addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
+    addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
+    addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
+    addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
+    addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
+    addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
+    addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
+    for (int i = 0; i < 2; i++) {
+        char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
+        addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
+        addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
+        addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
+        addField((std::string(prefix)+"memoryPercent").c_str(), base + offsetof(GPUData, coreClock), 8);
+        addField((std::string(prefix)+"temperature").c_str(), offsetof(SharedMemoryBlock, gpuTemperature), 8);
+    }
+    addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
+    addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
+    addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+
+    // Network adapters (up to 4)
+    for (int i = 0; i < 4; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "net/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, adapters) + i * sizeof(NetworkAdapterData);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(NetworkAdapterData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(NetworkAdapterData, ipAddress), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(NetworkAdapterData, mac), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"type").c_str(), base + offsetof(NetworkAdapterData, adapterType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(NetworkAdapterData, speed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(NetworkAdapterData, downloadSpeed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(NetworkAdapterData, uploadSpeed), 8, (uint8_t)FT::UInt64);
+    }
+
+    // Disks (up to 8)
+    for (int i = 0; i < 8; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, disks) + i * sizeof(SharedMemoryBlock::SharedDiskData);
+        addField((std::string(pfx)+"label").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, label), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(SharedMemoryBlock::SharedDiskData, fileSystem), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"total").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, totalSize), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"used").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, usedSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"free").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, freeSpace), 8, (uint8_t)FT::UInt64);
+    }
+
+    // Temperature sensors (up to 10)
+    for (int i = 0; i < 10; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "sensor/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, temperatures) + i * sizeof(TemperatureData);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(TemperatureData, sensorName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
+    }
+
+    // Physical disks (SMART) (up to 2)
+    for (int i = 0; i < 2; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "phys/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, physicalDisks) + i * sizeof(PhysicalDiskSmartData);
+        addField((std::string(pfx)+"model").c_str(),       base + offsetof(PhysicalDiskSmartData, model), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(PhysicalDiskSmartData, serialNumber), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(PhysicalDiskSmartData, capacity), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(PhysicalDiskSmartData, interfaceType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
+        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
+        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
+    }
+
+    // WiFi
+    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifi.ssid), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
+    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
+    addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
+    addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
+    // Bluetooth
+    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
+    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
+    addField("bluetooth/name",        offsetof(SharedMemoryBlock, bluetooth.name), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+}
+
 int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
@@ -600,6 +715,223 @@ int main(int argc, char* argv[]) {
         catch (const std::exception& e) {
             printf("Logging system initialization failed: %s\n", e.what());
             return 1;
+        }
+
+        // ======================== --json Mode ========================
+        bool jsonMode = false;
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--json") {
+                jsonMode = true;
+                break;
+            }
+        }
+
+        if (jsonMode) {
+            // One-shot JSON output for scripting
+            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            if (FAILED(hr)) {
+                Logger::Error("COM init failed for --json mode");
+                return 1;
+            }
+
+            auto wmiManager = std::make_unique<WmiManager>();
+            if (!wmiManager || !wmiManager->IsInitialized()) {
+                Logger::Error("WMI init failed for --json mode");
+                CoUninitialize();
+                return 1;
+            }
+
+
+            // Build JSON via ConfigManager, then dump to stdout via temp file
+            char tmpBuf[MAX_PATH];
+            GetTempPathA(MAX_PATH, tmpBuf);
+            std::string tmpPath = std::string(tmpBuf) + "tcmt_export.json";
+            std::remove(tmpPath.c_str());  // ensure clean start
+            ConfigManager cfg(tmpPath);
+            cfg.Load();  // starts with empty json::object
+
+            // OS
+            try {
+                OSInfo os;
+                cfg.SetString("os.version", os.GetVersion());
+            } catch (...) {}
+
+            // CPU
+            try {
+                auto cpu = std::make_unique<CpuInfo>();
+                cfg.SetString("cpu.name", cpu->GetName());
+                cfg.SetInt("cpu.cores.physical", cpu->GetLargeCores() + cpu->GetSmallCores());
+                cfg.SetInt("cpu.cores.logical", cpu->GetTotalCores());
+                cfg.SetDouble("cpu.usage", cpu->GetUsage());
+            } catch (...) {}
+
+            // Memory
+            try {
+                MemoryInfo mem;
+                cfg.SetUint64("memory.total", mem.GetTotalPhysical());
+                cfg.SetUint64("memory.available", mem.GetAvailablePhysical());
+                cfg.SetUint64("memory.used", mem.GetTotalPhysical() - mem.GetAvailablePhysical());
+            } catch (...) {}
+
+            // GPU
+            try {
+                GpuInfo gpuInfo(*wmiManager);
+                const auto& gpus = gpuInfo.GetGpuData();
+                if (!gpus.empty()) {
+                    cfg.SetString("gpu.name", WinUtils::WstringToString(gpus[0].name));
+                    cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
+                    cfg.SetDouble("gpu.usage", gpus[0].usage);
+                }
+            } catch (...) {}
+
+            // Network
+            try {
+                NetworkAdapter netAdapter(*wmiManager);
+                const auto& adapters = netAdapter.GetAdapters();
+                for (const auto& a : adapters) {
+                    nlohmann::json na;
+                    na["name"] = a.name;
+                    na["ip"] = a.ip;
+                    na["mac"] = a.mac;
+                    na["type"] = a.adapterType;
+                    na["speed"] = a.speed;
+                    cfg.AppendToArray("network.adapters", std::move(na));
+                }
+            } catch (...) {}
+
+            // Disks
+            try {
+                DiskInfo disk;
+                auto volumes = disk.GetDisks();
+                for (const auto& v : volumes) {
+                    nlohmann::json dj;
+                    dj["label"] = v.label;
+                    dj["fileSystem"] = v.fileSystem;
+                    dj["total"] = v.totalSize;
+                    dj["used"] = v.usedSpace;
+                    cfg.AppendToArray("disks", std::move(dj));
+                }
+            } catch (...) {}
+
+            // Temperatures
+            try {
+                auto temps = TemperatureWrapper::GetTemperatures();
+                nlohmann::json tempObj = nlohmann::json::object();
+                for (const auto& t : temps) {
+                    tempObj[t.first] = t.second;
+                }
+                cfg.SetJson("temperatures", std::move(tempObj));
+            } catch (...) {}
+
+            // Save to temp file, read back, print to stdout
+            if (cfg.Save()) {
+                std::ifstream in(tmpPath);
+                if (in) {
+                    std::cout << in.rdbuf();
+                }
+            }
+            std::cout << std::endl;
+            std::remove(tmpPath.c_str());
+
+            TemperatureWrapper::Cleanup();
+            CoUninitialize();
+            return 0;
+        }
+
+        // ======================== --mcp Mode ========================
+        bool mcpMode = false;
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--mcp") {
+                mcpMode = true;
+                break;
+            }
+        }
+        if (mcpMode) {
+#ifdef _WIN32
+            _setmode(_fileno(stdout), _O_BINARY);
+            _setmode(_fileno(stdin), _O_BINARY);
+#endif
+            tcmt::mcp::MCPServer server;
+
+            // Try IPC client first — like Avalonia, reuse running TCMT instance
+            tcmt::ipc::IPCClient ipc;
+            bool useIpc = ipc.Connect();
+            if (useIpc) {
+                Logger::Info("MCP: connected to running TCMT via IPC");
+                ipc.ClosePipe(); // free server slot for other clients (Avalonia)
+            } else {
+                Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+            }
+
+            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
+                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+                } else {
+                    CpuInfo cpu;
+                    j["name"] = cpu.GetName();
+                    j["usage"] = cpu.GetUsage();
+                    j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+                    j["temperature"] = 0.0;
+                }
+                return j;
+            });
+            server.RegisterTool("get_memory", "System memory statistics",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+                } else {
+                    MemoryInfo mem;
+                    j["total"] = mem.GetTotalPhysical();
+                    j["available"] = mem.GetAvailablePhysical();
+                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+                }
+                return j;
+            });
+            server.RegisterTool("get_gpu_status", "GPU usage and memory",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+                } else {
+                    // GPU fallback requires WmiManager — skip on Windows
+                }
+                return j;
+            });
+            server.RegisterTool("get_system_info", "OS version and hardware summary",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["os"] = ipc.ReadString("os/version").value_or("");
+                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+                } else {
+                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
+                    j["os"] = os.GetVersion();
+                    j["cpu"] = cpu.GetName();
+                    j["cores"] = cpu.GetTotalCores();
+                    j["memoryTotal"] = mem.GetTotalPhysical();
+                }
+                return j;
+            });
+
+            server.Run();
+            TemperatureWrapper::Cleanup();
+            return 0;
         }
 
         if (!IsRunAsAdmin()) {
@@ -644,6 +976,9 @@ int main(int argc, char* argv[]) {
             return -1;
         }
 
+#ifdef _WIN32
+        std::unique_ptr<tcmt::ipc::IPCServer> ipcServer;
+#endif
         try {
             if (!SharedMemoryManager::InitSharedMemory()) {
                 std::string error = SharedMemoryManager::GetLastError();
@@ -658,6 +993,22 @@ int main(int argc, char* argv[]) {
                 }
             }
             Logger::Info("Shared memory initialized successfully");
+
+            // IPC server — sends schema to C# Avalonia (Named Pipe on Windows, UDS on macOS)
+#ifdef _WIN32
+            ipcServer = std::make_unique<tcmt::ipc::IPCServer>();
+            {
+                tcmt::ipc::SchemaHeader schemaHdr;
+                std::vector<tcmt::ipc::FieldDef> fields;
+                BuildWindowsIpcSchema(schemaHdr, fields);
+                ipcServer->UpdateSchema(schemaHdr, fields);
+            }
+            if (ipcServer->Start()) {
+                Logger::Info("IPC server started (named pipe)");
+            } else {
+                Logger::Warn("IPC server failed: " + ipcServer->GetLastError());
+            }
+#endif
         }
         catch (const std::exception& e) {
             Logger::Error("Exception during shared memory initialization: " + std::string(e.what()));
@@ -692,10 +1043,10 @@ int main(int argc, char* argv[]) {
             SafeExit(1);
         }
 
-        // Initialize hardware monitoring bridge
+        // Initialize hardware monitoring bridge (LHM for temperature sensors)
         try {
             TemperatureWrapper::Initialize();
-            Logger::Debug("Hardware monitoring bridge initialized successfully");
+            Logger::Info("Hardware monitoring bridge (LHM) initialized");
         }
         catch (const std::exception& e) {
             Logger::Error("Hardware monitoring bridge initialization failed: " + std::string(e.what()));
@@ -709,7 +1060,52 @@ int main(int argc, char* argv[]) {
         tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
         tuiApp.Start();
         Logger::Info("TUI started");
-        
+
+        // Initial USB detection (startup scan)
+        try {
+            UsbInfo usb;
+            usb.Detect();
+            const auto& devs = usb.GetDevices();
+            Logger::Info("USB: initial scan — " + std::to_string(devs.size()) + " device(s) found");
+            for (size_t di = 0; di < std::min(devs.size(), size_t(5)); ++di)
+                Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                            + " PID:" + std::to_string(devs[di].pid));
+        } catch (...) { Logger::Debug("USB: initial scan failed"); }
+
+        // History logger (SQLite)
+        HistoryLogger historyLogger;
+        historyLogger.SetRetentionDays(30);
+        {
+            std::string dbPath;
+#ifdef _WIN32
+            char envBuf[MAX_PATH];
+            DWORD envLen = GetEnvironmentVariableA("APPDATA", envBuf, sizeof(envBuf));
+            if (envLen > 0 && envLen < sizeof(envBuf))
+                dbPath = std::string(envBuf) + "\\TCMT\\history.db";
+            else
+                dbPath = std::string(getenv("TEMP") ? getenv("TEMP") : "C:\\TEMP") + "\\tcmt_history.db";
+            // Create directory tree
+            std::string dir = dbPath.substr(0, dbPath.find_last_of('\\'));
+            for (size_t i = 0; i < dir.size(); i++)
+                if (dir[i] == '\\' || dir[i] == '/') {
+                    dir[i] = '\0';
+                    CreateDirectoryA(dir.c_str(), nullptr);
+                    dir[i] = '\\';
+                }
+            CreateDirectoryA(dir.c_str(), nullptr);
+#else
+            dbPath = getenv("HOME") ? std::string(getenv("HOME")) + "/.tcmt/history.db" : "/tmp/tcmt_history.db";
+            {
+                std::string dir = dbPath.substr(0, dbPath.find_last_of('/'));
+                mkdir(dir.c_str(), 0755);
+            }
+#endif
+            if (historyLogger.Initialize(dbPath))
+                Logger::Info("HistoryLogger: " + dbPath);
+            else
+                Logger::Warn("HistoryLogger failed to initialize");
+        }
+
         int loopCounter = 1;
         bool isFirstRun = true;
         
@@ -747,7 +1143,11 @@ int main(int argc, char* argv[]) {
         }
         
         ThreadSafeGpuCache gpuCache;
-        
+
+        // Start ModuleCoordinator background collection threads
+        ModuleCoordinator coordinator;
+        coordinator.Start();
+
         while (!g_shouldExit.load()) {
             try {
                 auto loopStart = std::chrono::high_resolution_clock::now();
@@ -763,7 +1163,8 @@ int main(int argc, char* argv[]) {
                     Logger::Info("Program is running stable");
                 }
                 
-                SystemInfo sysInfo;
+                SystemInfo sysInfo{};
+                sysInfo.compressedMemory = 0; // Windows: no compressed memory
 
                 try {
                     sysInfo.cpuUsage = 0.0;
@@ -828,26 +1229,10 @@ int main(int argc, char* argv[]) {
                 sysInfo.hyperThreading = cachedHyperThreading;
                 sysInfo.virtualization = cachedVirtualization;
 
-                try {
-                    if (cpuInfo) {
-                        sysInfo.cpuUsage = cpuInfo->GetUsage();
-                        sysInfo.performanceCoreFreq = cpuInfo->GetLargeCoreSpeed();
-                        sysInfo.efficiencyCoreFreq = cpuInfo->GetSmallCoreSpeed() * 0.8;
-                        sysInfo.cpuUsageSampleIntervalMs = cpuInfo->GetLastSampleIntervalMs();
-                    }
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get CPU dynamic info: " + std::string(e.what()));
-                }
-
-                try {
-                    MemoryInfo mem;
-                    sysInfo.totalMemory = mem.GetTotalPhysical();
-                    sysInfo.usedMemory = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                    sysInfo.availableMemory = mem.GetAvailablePhysical();
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get memory info: " + std::string(e.what()));
+                // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
+                {
+                    tcmt::TuiData tempTui;
+                    coordinator.Snapshot(sysInfo, tempTui);
                 }
 
                 if (!gpuCache.IsInitialized()) {
@@ -875,6 +1260,14 @@ int main(int argc, char* argv[]) {
                     sysInfo.gpuCoreFreq = cachedGpuCoreFreq;
                     sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
                     sysInfo.gpuUsage = cachedGpuUsage;
+
+                    // Override with NVML real-time data (NVIDIA GPUs only)
+                    double nvmlUsage  = GpuInfo::GetGpuUsage();
+                    double nvmlTemp   = GpuInfo::GetGpuTemperature();
+                    double nvmlVramPct = GpuInfo::GetVramUsagePercent();
+                    if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
+                    if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
+                    if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
 
                     // Fix GPU array population - add data validation and cleanup
                     sysInfo.gpus.clear();
@@ -987,6 +1380,8 @@ int main(int argc, char* argv[]) {
                             wcsncpy_s(data.ipAddress, ipW.c_str(), 64);
                             wcsncpy_s(data.adapterType, typeW.c_str(), 32);
                             data.speed = adapter.speed;
+                            data.downloadSpeed = adapter.downloadSpeed;
+                            data.uploadSpeed = adapter.uploadSpeed;
                             sysInfo.adapters.push_back(data);
                         }
                         sysInfo.networkAdapterName = adapters[0].name;
@@ -1027,77 +1422,25 @@ int main(int argc, char* argv[]) {
                     sysInfo.networkAdapterSpeed = 0;
                 }
 
-                // Add temperature data collection (get each loop to ensure real-time data)
-                try {
-                    auto temperatures = TemperatureWrapper::GetTemperatures();
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                    for (const auto& temp : temperatures) {
-                        std::string nameLower = temp.first;
-                        std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
-                        if (nameLower.find("gpu") != std::string::npos || nameLower.find("graphics") != std::string::npos) {
-                            sysInfo.gpuTemperature = temp.second;
-                            sysInfo.temperatures.push_back({"GPU", temp.second});
-                        } else if (nameLower.find("cpu") != std::string::npos || nameLower.find("package") != std::string::npos) {
-                            sysInfo.cpuTemperature = temp.second;
-                            sysInfo.temperatures.push_back({"CPU", temp.second});
-                        } else {
-                            sysInfo.temperatures.push_back(temp);
-                        }
-                    }
-                    if (isFirstRun) {
-                        Logger::Debug("Collected " + std::to_string(temperatures.size()) + " temperature readings");
-                        for (const auto& temp : sysInfo.temperatures) {
-                            Logger::Debug("Temperature sensor: " + temp.first + " = " + std::to_string(temp.second) + "°C");
-                        }
-                        Logger::Debug("CPU temperature: " + std::to_string(sysInfo.cpuTemperature) + ", GPU temperature: " + std::to_string(sysInfo.gpuTemperature));
-                    }
-                }
-                catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get temperature data - Out of memory: " + std::string(e.what()));
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get temperature data: " + std::string(e.what()));
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-                catch (...) {
-                    Logger::Error("Failed to get temperature data - Unknown exception");
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
+                // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
 
-                // Add disk info collection (get each loop to ensure real-time data)
+                // Physical disk (SMART) and TPM collection (coordinator handles logical disks)
                 try {
-                    DiskInfo diskInfo;
-                    auto disks = diskInfo.GetDisks();
-                    if (disks.size() > 8) {
-                        Logger::Error("Disk count exceeds maximum allowed (8). Skipping disk data update.");
-                        sysInfo.disks.clear();
-                    } else {
-                        sysInfo.disks = disks;
-                        if (isFirstRun) {
-                            Logger::Debug("Collected " + std::to_string(disks.size()) + " disk entries");
-                            for (size_t i = 0; i < disks.size(); ++i) {
-                                const auto& disk = disks[i];
-                                Logger::Debug("Disk " + std::to_string(i) + ": Label=" + disk.label + ", FileSystem=" + disk.fileSystem);
-                            }
+                    // Collect physical disks (cached — WMI is slow, re-query every 60s)
+                    static std::vector<PhysicalDiskSmartData> cachedPhysDisks;
+                    static auto lastPhysQuery = std::chrono::steady_clock::now() - std::chrono::seconds(61);
+                    auto now = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysQuery).count() >= 60) {
+                        if (wmiManager) {
+                            DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
+                            if (!sysInfo.physicalDisks.empty())
+                                cachedPhysDisks = sysInfo.physicalDisks;
+                            lastPhysQuery = now; // always update — avoid retry flood on empty result
                         }
                     }
-                    // Collect physical disks and build logical drive mapping
-                    if (wmiManager) {
-                        DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
-                    }
-                    
-                    // Collect disk SMART data
-                    DiskInfo::CollectSmartData(sysInfo);
-                    
+                    if (!cachedPhysDisks.empty())
+                        sysInfo.physicalDisks = cachedPhysDisks;
+
                     // Collect TPM data
                     {
                         TpmInfo tpmInfo = {};
@@ -1109,18 +1452,15 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get disk/physical disk data - Out of memory: " + std::string(e.what()));
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data - Out of memory: " + std::string(e.what()));
                     sysInfo.physicalDisks.clear();
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("Failed to get disk/physical disk data: " + std::string(e.what()));
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data: " + std::string(e.what()));
                     sysInfo.physicalDisks.clear();
                 }
                 catch (...) {
-                    Logger::Error("Failed to get disk/physical disk data - Unknown exception");
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data - Unknown exception");
                     sysInfo.physicalDisks.clear();
                 }
 
@@ -1227,6 +1567,7 @@ int main(int argc, char* argv[]) {
                         tuiData.gpuName = sysInfo.gpuName;
                         tuiData.gpuMemory = sysInfo.gpuMemory;
                         tuiData.gpuUsage = sysInfo.gpuUsage;
+                        tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
                     }
                     tuiData.gpuTemp = sysInfo.gpuTemperature;
                     
@@ -1249,10 +1590,18 @@ int main(int argc, char* argv[]) {
                         ni.mac = WinUtils::WstringToString(adapter.mac);
                         ni.type = WinUtils::WstringToString(adapter.adapterType);
                         ni.speed = adapter.speed;
+                        ni.downloadSpeed = adapter.downloadSpeed;
+                        ni.uploadSpeed = adapter.uploadSpeed;
                         tuiData.adapters.push_back(ni);
                     }
                     
                     tuiData.osVersion = sysInfo.osVersion;
+                    tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
+                    if (ipcServer) {
+                        auto ct = ipcServer->GetClientTypes();
+                        tuiData.clientTypes.clear();
+                        for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
+                    }
                     tuiData.temperatures = sysInfo.temperatures;
                     if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
                         auto& tpm = sysInfo.tpms[0];
@@ -1263,6 +1612,43 @@ int main(int argc, char* argv[]) {
                     } else {
                         tuiData.tpmInfo = "No TPM";
                     }
+
+                    // WiFi & Bluetooth (every ~3 seconds)
+                    { static int wbCtr = 0;
+                      static WiFiInfo s_wifi;
+                      static BluetoothInfo s_bt;
+                      if (++wbCtr >= 3) { wbCtr = 0;
+                          try { s_wifi.Detect(); } catch (...) {}
+                          try { s_bt.Detect(); } catch (...) {}
+                      }
+                      const auto& wd = s_wifi.GetData();
+                      tuiData.hasWiFi = wd.powerOn;
+                      tuiData.wifiSSID = wd.ssid;
+                      tuiData.wifiRSSI = wd.rssi;
+                      tuiData.wifiChannel = wd.channel;
+                      tuiData.wifiSecurity = wd.security;
+                      const auto& bd = s_bt.GetData();
+                      tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
+                      tuiData.btPowerOn = bd.adapter.powerOn;
+                      tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+
+                      // Write WiFi & Bluetooth to shared memory block
+                      if (auto* buf = SharedMemoryManager::GetBuffer()) {
+                          memset(&buf->wifi, 0, sizeof(buf->wifi));
+                          buf->wifi.powerOn = wd.powerOn;
+                          buf->wifi.isConnected = wd.isConnected;
+                          buf->wifi.rssi = wd.rssi;
+                          buf->wifi.channel = wd.channel;
+                          wcsncpy_s(buf->wifi.ssid, 32, WinUtils::StringToWstring(wd.ssid).c_str(), _TRUNCATE);
+                          wcsncpy_s(buf->wifi.security, 16, WinUtils::StringToWstring(wd.security).c_str(), _TRUNCATE);
+
+                          memset(&buf->bluetooth, 0, sizeof(buf->bluetooth));
+                          buf->bluetooth.powerOn = bd.adapter.powerOn;
+                          buf->bluetooth.deviceCount = static_cast<int32_t>(bd.devices.size());
+                          wcsncpy_s(buf->bluetooth.name, 64, WinUtils::StringToWstring(bd.adapter.name).c_str(), _TRUNCATE);
+                      }
+                    }
+
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
                     
                     tuiApp.UpdateData(tuiData);
@@ -1336,6 +1722,41 @@ int main(int argc, char* argv[]) {
                 
                 // Safely increment loop counter
                 try {
+                    // Push sensor history
+                    if (historyLogger.IsRunning()) {
+                        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        std::vector<SensorSnapshot> snapshots;
+                        snapshots.push_back({"cpu/usage", sysInfo.cpuUsage, "%", (uint64_t)nowMs});
+                        snapshots.push_back({"cpu/temperature", sysInfo.cpuTemperature, "C", (uint64_t)nowMs});
+                        snapshots.push_back({"gpu/usage", sysInfo.gpuUsage, "%", (uint64_t)nowMs});
+                        snapshots.push_back({"gpu/temperature", sysInfo.gpuTemperature, "C", (uint64_t)nowMs});
+                        if (sysInfo.totalMemory > 0) {
+                            double memPct = 100.0 * sysInfo.usedMemory / sysInfo.totalMemory;
+                            snapshots.push_back({"memory/percent", memPct, "%", (uint64_t)nowMs});
+                        }
+                        if (sysInfo.batteryPercent >= 0)
+                            snapshots.push_back({"battery/percent", (double)sysInfo.batteryPercent, "%", (uint64_t)nowMs});
+                        // USB detection (every ~10 seconds)
+                        static int usbCheckCounter = 0;
+                        if (++usbCheckCounter >= 20) {
+                            usbCheckCounter = 0;
+                            try {
+                                UsbInfo usb;
+                                usb.Detect();
+                                const auto& devs = usb.GetDevices();
+                                if (!devs.empty()) {
+                                    Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                                    for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
+                                        Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                                                    + " PID:" + std::to_string(devs[di].pid));
+                                }
+                            } catch (...) {}
+                        }
+
+                        historyLogger.WriteBatch(snapshots);
+                    }
+
                     loopCounter++;
                     
                     if (loopCounter < 0 || loopCounter > 2000000000) {
@@ -1393,6 +1814,8 @@ int main(int argc, char* argv[]) {
             Logger::Error("Error stopping TUI: " + std::string(e.what()));
         }
         
+        historyLogger.Shutdown();
+        Logger::Info("HistoryLogger stopped");
         SafeExit(0);
     }
     catch (const std::exception& e) {

@@ -9,13 +9,15 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using AvaloniaUI.Models;
-using AvaloniaUI.Services;
+using AvaloniaUI.Services.IPC;
 
 namespace AvaloniaUI.ViewModels;
 
 public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
-    private readonly SharedMemoryService _sharedMemory;
+    public bool IsMacOS => OperatingSystem.IsMacOS();
+    public bool IsNotMacOS => !OperatingSystem.IsMacOS();
+    private IPCService? _ipcService;
     private readonly DispatcherTimer _timer;
     private bool _disposed = false;
     private const int MaxChartPoints = 60;
@@ -28,7 +30,51 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public MainWindowViewModel()
     {
-        _sharedMemory = new SharedMemoryService();
+        try
+        {
+            _ipcService = new IPCService();
+            _ipcService.DataReady += () =>
+            {
+                try
+                {
+                    if (_ipcService != null && _ipcService.IsMemoryOpen)
+                    {
+                        var info = IPCSystemInfoMapper.Read(_ipcService);
+                        if (info != null)
+                        {
+                            _consecutiveErrors = 0;
+                            IsConnected = true;
+                            ConnectionStatus = "已连接 (IPC)";
+                            WindowTitle = "系统硬件监视器";
+                            UpdateSystemData(info);
+                            LastUpdate = DateTime.Now;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "IPC DataReady handler crashed");
+                }
+            };
+            _ipcService.ConnectionStateChanged += (connected, msg) =>
+            {
+                if (connected)
+                    Log.Information("IPC connected: {Msg}", msg);
+                else
+                {
+                    Log.Warning("IPC disconnected: {Msg}", msg);
+                    ConnectionStatus = "已断开 (" + msg + ")";
+                    IsConnected = false;
+                }
+            };
+            _ipcService.Start();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "IPC service init failed");
+            IsConnected = false;
+            ConnectionStatus = $"IPC 初始化失败: {ex.Message}";
+        }
         _timer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
@@ -40,21 +86,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         try
         {
-            if (_sharedMemory.Initialize())
-            {
-                IsConnected = true;
-                ConnectionStatus = "已连接";
-                WindowTitle = "系统硬件监视器";
-                _timer.Start();
-                Log.Information("Started monitoring");
-            }
-            else
-            {
-                IsConnected = false;
-                ConnectionStatus = $"连接失败: {_sharedMemory.LastError}";
-                WindowTitle = "系统硬件监视器 - 未连接";
-                ShowDisconnectedState();
-            }
+            ConnectionStatus = "连接中...";
+            WindowTitle = "系统硬件监视器";
+            _timer.Start();
+            Log.Information("Started monitoring via IPC");
         }
         catch (Exception ex)
         {
@@ -83,21 +118,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void Reconnect()
     {
         _consecutiveErrors = 0;
+        ConnectionStatus = "重新连接中...";
+        _ipcService?.Dispose();
         try
         {
-            _sharedMemory.Dispose();
-            if (_sharedMemory.Initialize())
-            {
-                IsConnected = true;
-                ConnectionStatus = "已连接";
-                WindowTitle = "系统硬件监视器";
-                Log.Information("Reconnected to shared memory");
-            }
-            else
-            {
-                IsConnected = false;
-                ConnectionStatus = $"重连失败: {_sharedMemory.LastError}";
-            }
+            _ipcService = new IPCService();
+            _ipcService.Start();
         }
         catch (Exception ex)
         {
@@ -131,23 +157,28 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         try
         {
-            var info = _sharedMemory.ReadSystemInfo();
-            if (info != null)
+            if (_ipcService != null && _ipcService.IsMemoryOpen)
             {
-                _consecutiveErrors = 0;
-                if (!IsConnected)
+                var info = IPCSystemInfoMapper.Read(_ipcService);
+                if (info != null)
                 {
-                    IsConnected = true;
-                    ConnectionStatus = "已连接";
-                    WindowTitle = "系统硬件监视器";
+                    _consecutiveErrors = 0;
+                    if (!IsConnected)
+                    {
+                        IsConnected = true;
+                        ConnectionStatus = "已连接 (IPC)";
+                        WindowTitle = "系统硬件监视器";
+                    }
+                    UpdateSystemData(info);
+                    LastUpdate = DateTime.Now;
+                    return;
                 }
-                UpdateSystemData(info);
-                LastUpdate = DateTime.Now;
             }
-            else
+
+            _consecutiveErrors++;
+            if (_consecutiveErrors >= MaxConsecutiveErrors)
             {
-                _consecutiveErrors++;
-                if (_consecutiveErrors >= MaxConsecutiveErrors && IsConnected)
+                if (IsConnected)
                 {
                     IsConnected = false;
                     ConnectionStatus = "连接已断开";
@@ -203,7 +234,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 if (restored != null) SelectedGpu = restored;
             }
         }
-        // Ensure selected is never null - create dummy if needed
         if (SelectedGpu == null && GpuList.Count == 0)
         {
             GpuList.Add(new GpuData { Name = "等待数据..." });
@@ -230,7 +260,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ?? NetworkList.FirstOrDefault(a => !string.IsNullOrEmpty(a.IpAddress))
                 ?? NetworkList[0];
         }
-        // Ensure selected is never null - create dummy if needed
         if (SelectedNetwork == null && NetworkList.Count == 0)
         {
             NetworkList.Add(new NetworkAdapterData { Name = "等待数据..." });
@@ -253,7 +282,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         if (SelectedDisk == null && DiskList.Count > 0)
             SelectedDisk = DiskList[0];
-        // Ensure selected is never null - create dummy if needed
         if (SelectedDisk == null && DiskList.Count == 0)
         {
             DiskList.Add(new DiskData { Letter = '?' });
@@ -267,6 +295,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         // TPM - 确保不为 null
         TpmInfo = info.Tpm ?? new TpmData { Manufacturer = "", Status = "未检测到" };
+        OsVersion = string.IsNullOrWhiteSpace(info.OsVersion) ? "未知" : info.OsVersion;
+        BatteryPercent = info.BatteryPercent;
+        AcOnline = info.AcOnline;
+        OnPropertyChanged(nameof(HasBattery));
+        OnPropertyChanged(nameof(BatteryLabel));
+
+        // WiFi
+        WifiSSID = info.WifiSSID ?? "";
+        WifiRSSI = info.WifiRSSI;
+        WifiChannel = info.WifiChannel;
+        WifiSecurity = info.WifiSecurity ?? "";
+        OnPropertyChanged(nameof(HasWiFi));
+        OnPropertyChanged(nameof(WifiDisplay));
+
+        // Bluetooth
+        HasBluetooth = info.HasBluetooth;
+        BtPowerOn = info.BtPowerOn;
+        BtDeviceCount = info.BtDeviceCount;
+        OnPropertyChanged(nameof(BtDisplay));
+
         Log.Debug("TPM 更新: {Manuf}, {Status}", TpmInfo.Manufacturer, TpmInfo.Status);
     }
 
@@ -296,14 +344,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 if (!alive.Contains(PhysicalDiskList[i].Disk?.SerialNumber ?? ""))
                     PhysicalDiskList.RemoveAt(i);
             }
-// Ensure selected is never null - create dummy if needed
-            if (SelectedPhysicalDisk == null && PhysicalDiskList.Count == 0)
+            // Map logical volumes to first physical disk (APFS shares one device)
+            if (PhysicalDiskList.Count > 0)
             {
-                PhysicalDiskList.Add(new PhysicalDiskView());
-                SelectedPhysicalDisk = PhysicalDiskList.First();
+                var firstPhys = PhysicalDiskList[0];
+                firstPhys.Partitions.Clear();
+                foreach (var d in DiskList)
+                    firstPhys.Partitions.Add(d);
+                if (SelectedPhysicalDisk == null) SelectedPhysicalDisk = firstPhys;
+                OnPropertyChanged(nameof(SelectedPhysicalDisk)); // refresh LettersDisplay
             }
-            else if (SelectedPhysicalDisk == null && PhysicalDiskList.Count > 0)
-                SelectedPhysicalDisk = PhysicalDiskList.First();
         }
         catch (Exception ex)
         {
@@ -506,12 +556,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private NetworkAdapterData? _selectedNetwork;
 
-    [ObservableProperty]
-    private string _networkDownloadSpeed = "N/A";
-
-    [ObservableProperty]
-    private string _networkUploadSpeed = "N/A";
-
     // Disk
     [ObservableProperty]
     private ObservableCollection<DiskData> _diskList = new();
@@ -529,6 +573,47 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     // TPM
     [ObservableProperty]
     private TpmData? _tpmInfo;
+
+    // OS Version
+    [ObservableProperty]
+    private string _osVersion = string.Empty;
+
+    // Battery
+    [ObservableProperty]
+    private int _batteryPercent = -1;
+
+    [ObservableProperty]
+    private bool _acOnline;
+
+    public bool HasBattery => BatteryPercent >= 0;
+    public string BatteryLabel => AcOnline ? "AC" : "BAT";
+
+    // WiFi
+    [ObservableProperty]
+    private string _wifiSSID = "";
+
+    [ObservableProperty]
+    private int _wifiRSSI;
+
+    [ObservableProperty]
+    private int _wifiChannel;
+
+    [ObservableProperty]
+    private string _wifiSecurity = "";
+
+    // Bluetooth
+    [ObservableProperty]
+    private bool _hasBluetooth;
+
+    [ObservableProperty]
+    private bool _btPowerOn;
+
+    [ObservableProperty]
+    private int _btDeviceCount;
+
+    public bool HasWiFi => !string.IsNullOrEmpty(WifiSSID);
+    public string WifiDisplay => HasWiFi ? $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}" : "";
+    public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";
 
     // Last update
     [ObservableProperty]
@@ -549,10 +634,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (_disposed) return;
         _timer.Stop();
-        _sharedMemory.Dispose();
+        _ipcService?.Dispose();
         _disposed = true;
         GC.SuppressFinalize(this);
     }
 
-    ~MainWindowViewModel() => Dispose();
 }

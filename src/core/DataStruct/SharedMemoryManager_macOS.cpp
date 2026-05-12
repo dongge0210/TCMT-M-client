@@ -161,6 +161,14 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             memset(pBuffer->temperatures[i].sensorName, 0, sizeof(pBuffer->temperatures[i].sensorName));
         }
 
+        // Battery / power
+        pBuffer->batteryPercent = systemInfo.batteryPercent;
+        pBuffer->acOnline = systemInfo.acOnline;
+
+        // OS version
+        SafeCopyWideString(pBuffer->osVersion, 128,
+                          Platform::StringConverter::Utf8ToChar16(systemInfo.osVersion));
+
         // CPU information
         SafeCopyWideString(pBuffer->cpuName, 128,
                           Platform::StringConverter::Utf8ToChar16(systemInfo.cpuName));
@@ -205,6 +213,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             SafeCopyFromWideArray(pBuffer->adapters[i].ipAddress, 64, src.ipAddress, 64);
             SafeCopyFromWideArray(pBuffer->adapters[i].adapterType, 32, src.adapterType, 32);
             pBuffer->adapters[i].speed = src.speed;
+            pBuffer->adapters[i].downloadSpeed = src.downloadSpeed;
+            pBuffer->adapters[i].uploadSpeed = src.uploadSpeed;
         }
         pBuffer->adapterCount = adapterWriteCount;
 

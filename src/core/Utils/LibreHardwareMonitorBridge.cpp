@@ -23,6 +23,8 @@ void LibreHardwareMonitorBridge::Initialize() {
         if (initialized) return;
         computer = gcnew Computer();
         computer->IsCpuEnabled = true;
+        computer->IsGpuEnabled = true;
+        computer->IsStorageEnabled = true;
         computer->Open();
         visitor = gcnew UpdateVisitor();
         initialized = true;

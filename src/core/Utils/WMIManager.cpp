@@ -92,7 +92,6 @@ void WmiManager::Cleanup() {
         pLoc->Release();
         pLoc = nullptr;
     }
-    CoUninitialize();
     initialized = false;
 }
 
@@ -130,6 +129,9 @@ ULONG STDMETHODCALLTYPE WmiManager::Release() {
 
 HRESULT STDMETHODCALLTYPE WmiManager::QueryService(REFGUID guidService, REFIID riid, void** ppvObject) {
     if (guidService == IID_IWbemServices) {
+        if (!pSvc) {
+            return E_FAIL;
+        }
         return pSvc->QueryInterface(riid, ppvObject);
     }
     *ppvObject = nullptr;

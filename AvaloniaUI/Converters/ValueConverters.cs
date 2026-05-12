@@ -5,6 +5,14 @@ using Avalonia.Media;
 
 namespace AvaloniaUI.Converters;
 
+internal static class ConverterColors
+{
+    public static readonly SolidColorBrush Green  = new SolidColorBrush(Color.Parse("#FF4CAF50"));
+    public static readonly SolidColorBrush Orange = new SolidColorBrush(Color.Parse("#FFFF9800"));
+    public static readonly SolidColorBrush Red    = new SolidColorBrush(Color.Parse("#FFF44336"));
+    public static readonly SolidColorBrush Gray   = new SolidColorBrush(Colors.Gray);
+}
+
 /// <summary>
 /// Converts null to default value, useful for binding errors
 /// </summary>
@@ -31,9 +39,9 @@ public class BoolToColorConverter : IValueConverter
     {
         if (value is bool isConnected)
         {
-            return isConnected ? new SolidColorBrush(Color.Parse("#FF4CAF50")) : new SolidColorBrush(Color.Parse("#FFF44336"));
+            return isConnected ? ConverterColors.Green : ConverterColors.Red;
         }
-        return new SolidColorBrush(Colors.Gray);
+        return ConverterColors.Gray;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -55,12 +63,12 @@ public class PercentToWarningColorConverter : IValueConverter
         if (value is double percent)
         {
             if (percent >= CriticalThreshold)
-                return new SolidColorBrush(Color.Parse("#FFF44336")); // Red
+                return ConverterColors.Red;
             if (percent >= WarningThreshold)
-                return new SolidColorBrush(Color.Parse("#FFFF9800")); // Orange
-            return new SolidColorBrush(Color.Parse("#FF4CAF50")); // Green
+                return ConverterColors.Orange;
+            return ConverterColors.Green;
         }
-        return new SolidColorBrush(Colors.Gray);
+        return ConverterColors.Gray;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -69,29 +77,3 @@ public class PercentToWarningColorConverter : IValueConverter
     }
 }
 
-/// <summary>
-/// Converts temperature to warning color (green -> orange -> red)
-/// </summary>
-public class TemperatureToWarningColorConverter : IValueConverter
-{
-    public double WarningThreshold { get; set; } = 70;
-    public double CriticalThreshold { get; set; } = 85;
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value is double temp)
-        {
-            if (temp >= CriticalThreshold)
-                return new SolidColorBrush(Color.Parse("#FFF44336")); // Red
-            if (temp >= WarningThreshold)
-                return new SolidColorBrush(Color.Parse("#FFFF9800")); // Orange
-            return new SolidColorBrush(Color.Parse("#FF4CAF50")); // Green
-        }
-        return new SolidColorBrush(Colors.Gray);
-    }
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
-}

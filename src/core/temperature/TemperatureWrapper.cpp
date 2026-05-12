@@ -31,7 +31,9 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
     if (initialized) {
         try {
             temps = LibreHardwareMonitorBridge::GetTemperatures();
-        } catch (...) {}
+        } catch (...) {
+            Logger::Warn("TemperatureWrapper::GetTemperatures: unknown exception caught");
+        }
     }
     return temps;
 }
@@ -617,8 +619,8 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         temps.push_back({"Battery", batTemp});
     }
 
-    // Priority 4: Apple Silicon ARM PMU temp sensors (no root, often empty)
-    if (temps.empty()) {
+    // Priority 4: Apple Silicon ARM PMU temp sensors (no root, Apple Silicon only)
+    {
         auto arm = iokit_arm_temp_sensors();
         temps.insert(temps.end(), arm.begin(), arm.end());
     }

@@ -82,7 +82,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>false</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(SolutionDir)src\third_party\LibreHardwareMonitor\LibreHardwareMonitorLib\obj\Debug\net472;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(SolutionDir)src\third_party\LibreHardwareMonitor\LibreHardwareMonitorLib\obj\Debug\net472;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>$(WindowsSDK_MetadataPath);$(FrameworkPathOverride);$(DOTNET_ReferenceAssemblyPath_472);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -99,7 +99,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)src\third_party\LibreHardwareMonitor\bin\Debug\net472;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\lib\x64\nvml.lib;wbemuuid.lib;pdcurses.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -120,7 +120,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <CLRSupport>true</CLRSupport>
-      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -128,10 +128,11 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)src\third_party\LibreHardwareMonitor\bin\Release\net472;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\lib\x64\nvml.lib;wbemuuid.lib;pdcurses.lib;msvcrt.lib;ucrt.lib;vcruntime.lib;tbs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrt.lib;ucrt.lib;vcruntime.lib;tbs.lib;wlanapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\core\Config\ConfigManager.h" />
     <ClInclude Include="src\core\cpu\CpuInfo.h" />
     <ClInclude Include="src\core\DataStruct\DataStruct.h" />
     <ClInclude Include="src\core\DataStruct\SharedMemoryManager.h" />
@@ -139,6 +140,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\gpu\GpuInfo.h" />
     <ClInclude Include="src\core\memory\MemoryInfo.h" />
     <ClInclude Include="src\core\network\NetworkAdapter.h" />
+    <ClInclude Include="src\core\power\PowerInfo.h" />
     <ClInclude Include="src\core\os\OSInfo.h" />
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
     <ClInclude Include="src\core\Utils\LibreHardwareMonitorBridge.h" />
@@ -147,20 +149,38 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\Utils\TimeUtils.h" />
     <ClInclude Include="src\core\Utils\WinUtils.h" />
     <ClInclude Include="src\core\Utils\WMIManager.h" />
+    <ClInclude Include="src\core\bluetooth\BluetoothInfo.h" />
+    <ClInclude Include="src\core\wifi\WiFiInfo.h" />
+    <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h" />
+    <ClInclude Include="src\core\ModuleCoordinator.h" />
+    <ClInclude Include="src\core\Utils\JThreadCompat.h" />
     <ClInclude Include="src\tui\TuiApp.h" />
     <ClInclude Include="src\tui\LogBuffer.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\core\Config\ConfigManager.cpp" />
     <ClCompile Include="src\core\cpu\CpuInfo.cpp" />
     <ClCompile Include="src\core\DataStruct\SharedMemoryManager.cpp" />
     <!-- SharedMemoryManager.cpp includes platform-specific implementation via #include -->
     <!-- SharedMemoryManager_Windows.cpp NOT needed here -->
     <ClCompile Include="src\core\disk\DiskInfo.cpp" />
     <ClCompile Include="src\core\gpu\GpuInfo.cpp" />
+    <ClCompile Include="src\core\history\HistoryLogger.cpp" />
+    <ClCompile Include="src\core\IPC\IPCClient.cpp" />
+    <ClCompile Include="src\core\IPC\IPCServer.cpp" />
+    <ClCompile Include="src\core\MCP\MCPServer.cpp" />
     <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
+    <ClCompile Include="src\core\power\PowerInfo.cpp" />
     <ClCompile Include="src\core\os\OSInfo.cpp" />
     <ClCompile Include="src\core\Platform\Platform_Windows.cpp" />
+    <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp" />
+    <ClCompile Include="src\core\usb\UsbInfo.cpp" />
+    <ClCompile Include="src\core\wifi\WiFiInfo.cpp" />
+    <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c" />
+    <ClCompile Include="src\core\ModuleCoordinator.cpp" />
+    <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp" />
+    <ClCompile Include="src\core\ModuleCoordinator_io.cpp" />
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>

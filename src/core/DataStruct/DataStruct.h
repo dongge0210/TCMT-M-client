@@ -104,7 +104,9 @@ struct NetworkAdapterData {
     WCHAR mac[32];      // MAC address
     WCHAR ipAddress[64]; // IP address
     WCHAR adapterType[32]; // Adapter type (wireless/wired)
-    uint64_t speed;       // Speed (bps)
+    uint64_t speed;       // Link speed (bps)
+    uint64_t downloadSpeed; // Download throughput (bytes/sec)
+    uint64_t uploadSpeed;   // Upload throughput (bytes/sec)
 };
 
 // Disk information
@@ -146,6 +148,8 @@ struct SystemInfo {
     std::vector<std::pair<std::string, double>> temperatures;
     std::vector<TpmInfo> tpms;           // TPM info
     std::string osVersion;
+    int batteryPercent = -1;        // -1 = no battery
+    bool acOnline = false;
     std::string gpuName;            // Added
     std::string gpuBrand;           // Added
     uint64_t gpuMemory;             // Added
@@ -165,14 +169,16 @@ struct SystemInfo {
 
 // Shared memory main struct
 struct SharedMemoryBlock {
+    uint32_t writeSequence;   // seqlock: odd=write in progress, even=complete
+
     WCHAR cpuName[128];       // CPU name - WCHAR array
     int physicalCores;        // Physical cores
     int logicalCores;         // Logical cores
     double cpuUsage;          // Changed to double type, improved precision
     int performanceCores;     // Performance cores
     int efficiencyCores;      // Efficiency cores
-    double pCoreFreq;         // Performance core frequency (GHz)
-    double eCoreFreq;         // Efficiency core frequency (GHz)
+    double pCoreFreq;         // Performance core frequency (MHz)
+    double eCoreFreq;         // Efficiency core frequency (MHz)
     bool hyperThreading;      // Hyperthreading enabled
     bool virtualization;      // Virtualization enabled
     uint64_t totalMemory;     // Total memory (bytes)
@@ -214,6 +220,30 @@ struct SharedMemoryBlock {
     // TPM info (1 TPM supported)
     TpmInfo tpm;
     uint8_t tpmCount;               // TPM count
+
+    // Battery / power info
+    int batteryPercent;             // 0-100, -1 = no battery
+    bool acOnline;                  // AC power connected
+
+    // OS version info
+    WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
+
+    // WiFi info for Avalonia
+    struct {
+        WCHAR ssid[32];
+        int32_t rssi;
+        int32_t channel;
+        WCHAR security[16];
+        bool powerOn;
+        bool isConnected;
+    } wifi;
+
+    // Bluetooth info for Avalonia
+    struct {
+        bool powerOn;
+        int32_t deviceCount;
+        WCHAR name[64];
+    } bluetooth;
 
     PlatformSystemTime lastUpdate;
     PlatformCriticalSection lock;

@@ -9,7 +9,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n h
 # AvaloniaUI (separate, reads SHM)
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 
-# ─── Windows (x64, VS 2022) ───
+# ─── Windows (x64, VS 2022/VS 2026 ) ───
 # Build order is critical (sln dependencies)
 git submodule update --init --recursive
 dotnet build src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472
@@ -20,20 +20,20 @@ cd AvaloniaUI && dotnet build AvaloniaUI.csproj -c Release
 
 ## Architecture
 
-- **IPC**: `SharedMemoryBlock` (packed C struct, 129KB) via POSIX shm_open (macOS) / MemoryMappedFile (Windows)
-- **UI**: AvaloniaUI (.NET 10.0, cross-platform) or ncurses TUI (macOS-only)
+- **IPC**: Schema-driven pipeline. `IPCServer` broadcasts field offsets over Unix socket (macOS) / NamedPipe (Windows). C# `IPCPipeClient` receives schema, `IPCMemoryReader` reads from shared memory (`IPCDataBlock` on macOS, `SharedMemoryBlock` on Windows).
+- **MCP**: `TCMT-M --mcp` — JSON-RPC 2.0 over stdio, 8 hardware tools. Reads from running TCMT via IPC or falls back to direct HW.
+- **UI**: AvaloniaUI (.NET 10.0, cross-platform) or ncurses TUI (cross-platform)
 - **C++ entry**: `src/main.cpp` (Windows), `src/main_mac.cpp` (macOS) — not interchangeable
-- **Build tooling**: `tcmt-build.json` + MCP server at `tools/mcp-build/` (run via `uv run --directory tools/mcp-build tcmt-build-mcp`)
 
-## Shared Memory (critical gotchas)
+## IPC Gotchas (critical)
 
-1. **macOS `wchar_t` is 4 bytes** — C# `ushort` expects 2 bytes. Fixed by `WCHAR` typedef in `DataStruct.h` (`char16_t` on non-Windows, `wchar_t` on Windows). Do NOT revert to plain `wchar_t` in shared memory structs.
-
-2. **C# `Marshal.SizeOf` ≠ C++ `sizeof`** — Differs by 24 bytes (C# `byte[40]` vs C++ `pthread_mutex_t` 64 bytes for the `lock` field). The `lock` is the last field, so earlier fields are at correct offsets, but `logicalCores` etc. must be validated after any struct change.
-
-3. **AvaloniaUI on macOS uses P/Invoke** — `SharedMemoryService.cs` calls `shm_open/mmap/munmap/close` directly via `[DllImport("libc")]`. The POSIX shared memory name transformation must match C++ `Platform_macOS.cpp`: strip `/`, truncate to 20 chars, prepend `/`.
-
-4. **Serilog is NOT configured** — `Log.Debug()/Information()` calls compile but produce no output. The `DIAG` output in `InitializeMacOS()` uses `Console.Error.WriteLine` to bypass this. Do not assume `Log.*` works without configuring a sink.
+1. **Windows shared memory name**: `Global\SystemMonitorSharedMemory` (with Local/no-prefix fallback). C# must try all 3.
+2. **Float64 first**: mapper must use `ReadFloat64` before `ReadFloat32` — the latter reads 4 bytes of an 8-byte double and blocks the fallback.
+3. **WString on Windows**: all string fields in SharedMemoryBlock are `wchar_t` (UTF-16). Use `ReadWString`, not `ReadString`.
+4. **Windows NamedPipe**: fire-and-forget (no handshake). C# skips HELLO/HELLO_ACK on Windows.
+5. **MCP mode**: NEVER starts IPCServer. External IPC first, direct HW fallback. Non-blocking connect (500ms timeout).
+6. **Schema MaxFields**: 200 (both `IPCData.h` and `IPCSchema.cs`). Keep in sync.
+7. **IPCServer**: multi-threaded (detached per client) on macOS; simple fire-and-forget on Windows.
 
 ## Submodules
 

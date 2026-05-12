@@ -91,7 +91,7 @@ bool SharedMemory::Create(const std::string& name, size_t size) {
     sa.bInheritHandle = FALSE;
 
     // Convert to wide string
-    std::wstring wname(name.begin(), name.end());
+    std::wstring wname = StringConverter::Utf8ToWide(name);
 
     // Try global namespace
     hMapFile_ = CreateFileMappingW(
@@ -140,7 +140,7 @@ bool SharedMemory::Create(const std::string& name, size_t size) {
 bool SharedMemory::Open(const std::string& name, size_t size) {
     Unmap();
 
-    std::wstring wname(name.begin(), name.end());
+    std::wstring wname = StringConverter::Utf8ToWide(name);
 
     // Try different namespaces
     hMapFile_ = OpenFileMappingW(
@@ -229,7 +229,7 @@ bool InterprocessMutex::Create(const std::string& name) {
         CloseHandle(mutex_);
     }
 
-    std::wstring wname(name.begin(), name.end());
+    std::wstring wname = StringConverter::Utf8ToWide(name);
     name_ = name;
 
     // Create security descriptor
@@ -272,7 +272,7 @@ bool InterprocessMutex::Open(const std::string& name) {
         CloseHandle(mutex_);
     }
 
-    std::wstring wname(name.begin(), name.end());
+    std::wstring wname = StringConverter::Utf8ToWide(name);
     name_ = name;
 
     mutex_ = OpenMutexW(MUTEX_ALL_ACCESS, FALSE, (L"Global\\" + wname).c_str());

@@ -6,7 +6,7 @@
 // NOTE: winsock2.h must be included BEFORE windows.h
 #include <winsock2.h>
 #include <windows.h>
-#include "../utils/WinUtils.h"
+#include "../Utils/WinUtils.h"
 #include <winternl.h>
 #include <ntstatus.h>
 #ifndef STATUS_SUCCESS

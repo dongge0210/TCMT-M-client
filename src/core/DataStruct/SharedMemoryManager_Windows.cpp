@@ -3,6 +3,7 @@
 #define NOMINMAX
 #endif
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 
 // winsock2.h must be before windows.h to avoid symbol redefinition
@@ -194,7 +195,7 @@ bool SharedMemoryManager::InitSharedMemory() {
         memset(pBuffer, 0, sizeof(SharedMemoryBlock));
     }
 
-    Logger::Info("Shared memory successfully initialized.");
+    Logger::Info("Shared memory successfully initialized, sizeof(SharedMemoryBlock)=" + std::to_string(sizeof(SharedMemoryBlock)));
     return true;
 }
 
@@ -221,10 +222,18 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
     }
 
     DWORD waitResult = WaitForSingleObject(g_hMutex, 5000);
-    if (waitResult != WAIT_OBJECT_0) {
+    if (waitResult != WAIT_OBJECT_0 && waitResult != WAIT_ABANDONED) {
         Logger::Critical("Failed to acquire shared memory mutex");
         return;
     }
+    if (waitResult == WAIT_ABANDONED) {
+        Logger::Warn("Acquired abandoned shared memory mutex - previous owner may have crashed");
+    }
+
+    // seqlock: mark write in progress (odd)
+    pBuffer->writeSequence++;
+    std::atomic_thread_fence(std::memory_order_release);
+
     auto SafeCopyWideString = [](wchar_t* dest, size_t destSize, const std::wstring& src) {
         try {
             if (dest == nullptr || destSize == 0) return;
@@ -251,6 +260,13 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         for (int i = 0; i < 2; ++i) { memset(pBuffer->gpus[i].name, 0, sizeof(pBuffer->gpus[i].name)); memset(pBuffer->gpus[i].brand, 0, sizeof(pBuffer->gpus[i].brand)); }
         for (int i = 0; i < 8; ++i) { memset(&pBuffer->disks[i], 0, sizeof(pBuffer->disks[i])); memset(&pBuffer->physicalDisks[i], 0, sizeof(pBuffer->physicalDisks[i])); }
         for (int i = 0; i < 10; ++i) { memset(pBuffer->temperatures[i].sensorName, 0, sizeof(pBuffer->temperatures[i].sensorName)); }
+
+        // Battery / power
+        pBuffer->batteryPercent = systemInfo.batteryPercent;
+        pBuffer->acOnline = systemInfo.acOnline;
+
+        // OS version
+        SafeCopyWideString(pBuffer->osVersion, 128, WinUtils::StringToWstring(systemInfo.osVersion));
 
         // CPU
         SafeCopyWideString(pBuffer->cpuName, 128, WinUtils::StringToWstring(systemInfo.cpuName));
@@ -293,6 +309,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             SafeCopyFromWideArray(pBuffer->adapters[i].ipAddress, 64, src.ipAddress, 64);
             SafeCopyFromWideArray(pBuffer->adapters[i].adapterType, 32, src.adapterType, 32);
             pBuffer->adapters[i].speed = src.speed;
+            pBuffer->adapters[i].downloadSpeed = src.downloadSpeed;
+            pBuffer->adapters[i].uploadSpeed = src.uploadSpeed;
         }
         pBuffer->adapterCount = adapterWriteCount;
         if (adapterWriteCount == 0 && !systemInfo.networkAdapterName.empty()) {
@@ -409,11 +427,24 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->lastUpdate = Platform::SystemTime::Now();
         Logger::Trace("Successfully wrote system/disk/SMART information to shared memory");
     } catch (const std::exception& e) {
+        // seqlock: mark write complete (even) despite failure
+        std::atomic_thread_fence(std::memory_order_release);
+        pBuffer->writeSequence++;
         lastError = std::string("Exception in WriteToSharedMemory: ") + e.what();
         Logger::Error(lastError);
+        ReleaseMutex(g_hMutex);
+        return;
     } catch (...) {
+        // seqlock: mark write complete (even) despite failure
+        std::atomic_thread_fence(std::memory_order_release);
+        pBuffer->writeSequence++;
         lastError = "Unknown exception in WriteToSharedMemory";
         Logger::Error(lastError);
+        ReleaseMutex(g_hMutex);
+        return;
     }
+    // seqlock: mark write complete (even)
+    std::atomic_thread_fence(std::memory_order_release);
+    pBuffer->writeSequence++;
     ReleaseMutex(g_hMutex);
 }

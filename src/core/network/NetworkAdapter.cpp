@@ -18,6 +18,67 @@
 #include <algorithm>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
+#include <netioapi.h>
+#include <map>
+#include <chrono>
+#include <tuple>
+
+// Static cache for network throughput delta calculation (key: normalized MAC address)
+// Stores {prev_rx_bytes, prev_tx_bytes, timestamp_ms}
+static std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> g_throughputCache;
+
+static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters) {
+    PMIB_IF_TABLE2 table = nullptr;
+    if (GetIfTable2(&table) != NO_ERROR) return;
+
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    for (size_t idx = 0; idx < adapters.size(); idx++) {
+        const auto& adapter = adapters[idx];
+        if (adapter.mac.empty() || adapter.mac == "00:00:00:00:00:00") continue;
+
+        // Normalize MAC: remove separators, lowercase
+        std::string macKey;
+        for (char c : adapter.mac) {
+            if (c != ':' && c != '-') macKey += static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+        }
+        if (macKey.length() != 12) continue;
+
+        // Find matching interface by physical address
+        for (UINT i = 0; i < table->NumEntries; i++) {
+            auto& row = table->Table[i];
+            if (row.PhysicalAddressLength == 0) continue;
+
+            // Convert row physical address to normalized string
+            std::string rowMac;
+            for (UINT b = 0; b < row.PhysicalAddressLength; b++) {
+                char hex[3];
+                snprintf(hex, sizeof(hex), "%02x", row.PhysicalAddress[b]);
+                rowMac += hex;
+            }
+            if (rowMac != macKey) continue;
+
+            uint64_t rx = row.InOctets;
+            uint64_t tx = row.OutOctets;
+
+            auto it = g_throughputCache.find(macKey);
+            if (it != g_throughputCache.end()) {
+                uint64_t prevRx = std::get<0>(it->second);
+                uint64_t prevTx = std::get<1>(it->second);
+                uint64_t prevTime = std::get<2>(it->second);
+                uint64_t dt = now - prevTime;
+                if (dt > 0) {
+                    adapters[idx].downloadSpeed = (rx - prevRx) * 1000 / dt; // bytes/sec
+                    adapters[idx].uploadSpeed = (tx - prevTx) * 1000 / dt;
+                }
+            }
+            g_throughputCache[macKey] = {rx, tx, now};
+            break;
+        }
+    }
+    FreeMibTable(table);
+}
 
 NetworkAdapter::NetworkAdapter(WmiManager& manager)
     : wmiManager(manager), initialized(false) {
@@ -48,6 +109,7 @@ void NetworkAdapter::Refresh() {
 void NetworkAdapter::QueryAdapterInfo() {
     QueryWmiAdapterInfo();
     UpdateAdapterAddresses();
+    UpdateThroughput(this->adapters);
 }
 
 bool NetworkAdapter::IsVirtualAdapter(const std::wstring& name) const {
@@ -207,6 +269,8 @@ const std::vector<NetworkAdapter::AdapterInfo>& NetworkAdapter::GetAdapters() co
 
 #elif defined(TCMT_MACOS)
 // ======================== macOS Implementation ========================
+// Forward declarations for macOS
+static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters);
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -217,6 +281,8 @@ const std::vector<NetworkAdapter::AdapterInfo>& NetworkAdapter::GetAdapters() co
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <chrono>
+#include <tuple>
 
 static std::string FormatMacAddr(const unsigned char* addr, size_t len) {
     std::stringstream ss;
@@ -399,6 +465,48 @@ void NetworkAdapter::QueryAdapterInfo() {
     }
 
     Logger::Debug("NetworkAdapter: found " + std::to_string(adapters.size()) + " adapters");
+    UpdateThroughput(this->adapters);
+}
+
+// macOS throughput delta static cache
+static std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> g_throughputCacheMac;
+
+static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters) {
+    struct ifaddrs* ifaddr = nullptr;
+    if (getifaddrs(&ifaddr) != 0) return;
+
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    for (auto& adapter : adapters) {
+        if (adapter.name.empty()) continue;
+
+        // Find matching interface by name for AF_LINK to get byte counters
+        for (struct ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+            if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_LINK) continue;
+            if (adapter.name != ifa->ifa_name) continue;
+            if (!ifa->ifa_data) continue;
+
+            struct if_data* ifData = reinterpret_cast<struct if_data*>(ifa->ifa_data);
+            uint64_t rx = ifData->ifi_ibytes;
+            uint64_t tx = ifData->ifi_obytes;
+
+            auto it = g_throughputCacheMac.find(adapter.name);
+            if (it != g_throughputCacheMac.end()) {
+                uint64_t prevRx = std::get<0>(it->second);
+                uint64_t prevTx = std::get<1>(it->second);
+                uint64_t prevTime = std::get<2>(it->second);
+                uint64_t dt = now - prevTime;
+                if (dt > 0) {
+                    adapter.downloadSpeed = (rx - prevRx) * 1000 / dt; // bytes/sec
+                    adapter.uploadSpeed = (tx - prevTx) * 1000 / dt;
+                }
+            }
+            g_throughputCacheMac[adapter.name] = {rx, tx, now};
+            break;
+        }
+    }
+    freeifaddrs(ifaddr);
 }
 
 void NetworkAdapter::UpdateAdapterAddresses() {

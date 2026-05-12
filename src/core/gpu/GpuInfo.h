@@ -19,9 +19,6 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <d3d11.h>
-// Auto-detect NVIDIA GPU support via NVML
-#include <nvml.h>
-#define SUPPORT_NVIDIA_GPU 1
 #if defined(SUPPORT_DIRECTX)
 #include <dxgi.h>
 #endif
@@ -54,6 +51,12 @@ public:
 
 #ifdef TCMT_WINDOWS
     GpuInfo(WmiManager& manager);
+    // Returns VRAM usage % (0-100) via NVML, or -1 if unavailable
+    static double GetVramUsagePercent();
+    // Returns GPU usage % (0-100) via NVML, or -1 if unavailable
+    static double GetGpuUsage();
+    // Returns GPU temperature (C) via NVML, or -1 if unavailable
+    static double GetGpuTemperature();
 #else
     GpuInfo();
 #endif
