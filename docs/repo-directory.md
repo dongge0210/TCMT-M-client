@@ -143,7 +143,7 @@ TCMT-Windows-client/
 |   |   |-- asio/                           -- [submodule] ASIO networking (unused/Does not exist)
 |   |   |-- curl/                           -- [submodule] libcurl HTTP (unused)
 |   |   |-- tpm2-tss/                       -- [submodule] TCG TPM 2.0 stack
-|   |   |-- websocketpp/                    -- [submodule] WebSocket++ (unused)
+|   |   |-- websocketpp/                    -- [submodule] WebSocket++ (unused/no one maintain)
 |   |   |-- zlib/                           -- [submodule] Compression (unused)
 |   |
 |   |-- tui/

@@ -340,12 +340,8 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         std::string btStr = data.btPowerOn
             ? "On (" + std::to_string(data.btDeviceCount) + " devices)"
             : "Off";
-        wattron(win, COLOR_PAIR(5));
-        mvwprintw(win, y + lines, x0 + 2, "BT: ");
-        wattroff(win, COLOR_PAIR(5));
-        wattron(win, COLOR_PAIR(2));
-        mvwprintw(win, y + lines, x0 + 7, "%.*s", maxW - 9, btStr.c_str());
-        wattroff(win, COLOR_PAIR(2));
+        lines++;  // blank line between WiFi and BT
+        mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
         lines++;
     }
 

@@ -306,6 +306,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         WifiRSSI = info.WifiRSSI;
         WifiChannel = info.WifiChannel;
         WifiSecurity = info.WifiSecurity ?? "";
+        HasWifiHardware = info.HasWiFi; // C++ wifi/powerOn via IPC
         OnPropertyChanged(nameof(HasWiFi));
         OnPropertyChanged(nameof(WifiDisplay));
 
@@ -344,16 +345,50 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 if (!alive.Contains(PhysicalDiskList[i].Disk?.SerialNumber ?? ""))
                     PhysicalDiskList.RemoveAt(i);
             }
-            // Map logical volumes to first physical disk (APFS shares one device)
-            if (PhysicalDiskList.Count > 0)
+            // Map logical volumes to physical disks by drive letter (Windows)
+            // On Windows each physical disk has its own partitions; on macOS APFS
+            // containers share one device, so fall back to first-disk mapping.
+            foreach (var phys in PhysicalDiskList)
+                phys.Partitions.Clear();
+
+            if (OperatingSystem.IsMacOS())
             {
-                var firstPhys = PhysicalDiskList[0];
-                firstPhys.Partitions.Clear();
-                foreach (var d in DiskList)
-                    firstPhys.Partitions.Add(d);
-                if (SelectedPhysicalDisk == null) SelectedPhysicalDisk = firstPhys;
-                OnPropertyChanged(nameof(SelectedPhysicalDisk)); // refresh LettersDisplay
+                // macOS APFS container: all volumes share the first physical disk
+                if (PhysicalDiskList.Count > 0)
+                {
+                    var firstPhys = PhysicalDiskList[0];
+                    foreach (var d in DiskList)
+                        firstPhys.Partitions.Add(d);
+                }
             }
+            else
+            {
+                // Windows: match logical disks to physical disks by drive letter
+                var dmap = DiskList.Where(d => d.Letter != ' ')
+                                   .ToDictionary(d => d.Letter, d => d);
+                foreach (var phys in PhysicalDiskList)
+                {
+                    for (int i = 0; i < phys.Disk.LogicalDriveLetters.Count; i++)
+                    {
+                        // LogicalDriveLetters is List<char> — each char is a drive letter
+                        var letter = phys.Disk.LogicalDriveLetters[i];
+                        if (dmap.TryGetValue(letter, out var disk))
+                            phys.Partitions.Add(disk);
+                    }
+                }
+                // Also attach any disks without letter (network/removable) to first phys
+                var unassigned = DiskList.Where(d => d.Letter == ' ').ToList();
+                if (unassigned.Count > 0 && PhysicalDiskList.Count > 0)
+                {
+                    var firstPhys = PhysicalDiskList[0];
+                    foreach (var d in unassigned)
+                        firstPhys.Partitions.Add(d);
+                }
+            }
+
+            if (PhysicalDiskList.Count > 0 && SelectedPhysicalDisk == null)
+                SelectedPhysicalDisk = PhysicalDiskList[0];
+            OnPropertyChanged(nameof(SelectedPhysicalDisk)); // refresh LettersDisplay
         }
         catch (Exception ex)
         {
@@ -588,7 +623,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool HasBattery => BatteryPercent >= 0;
     public string BatteryLabel => AcOnline ? "AC" : "BAT";
 
-    // WiFi
+    // WiFi hardware presence from C++ IPC (wifi/powerOn)
+    [ObservableProperty]
+    private bool _hasWifiHardware;
+
+    // WiFi raw data from C++ IPC
     [ObservableProperty]
     private string _wifiSSID = "";
 
@@ -601,7 +640,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _wifiSecurity = "";
 
-    // Bluetooth
+    // Bluetooth raw data from C++ IPC
     [ObservableProperty]
     private bool _hasBluetooth;
 
@@ -611,8 +650,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int _btDeviceCount;
 
-    public bool HasWiFi => !string.IsNullOrEmpty(WifiSSID);
-    public string WifiDisplay => HasWiFi ? $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}" : "";
+    // WiFi — show when a wireless adapter exists (follow adapter hardware state)
+    public bool HasWirelessAdapter => NetworkList.Any(a =>
+        !string.IsNullOrEmpty(a.AdapterType) &&
+        (a.AdapterType.Contains("Wireless", StringComparison.OrdinalIgnoreCase) ||
+         a.AdapterType.Contains("无线")));
+    // On Windows: check if any network adapter is wireless
+    // On macOS: use WiFi hardware presence from CoreWLAN (adapter types not reported)
+    public bool HasWiFi => IsMacOS ? HasWifiHardware : HasWirelessAdapter;
+    public string WifiDisplay
+    {
+        get
+        {
+            if (!HasWirelessAdapter) return "";
+            var cppWiFiOn = WifiSSID != "" || WifiRSSI != 0 || WifiChannel != 0;
+            if (!cppWiFiOn) return "WiFi: OFF";
+            return !string.IsNullOrEmpty(WifiSSID)
+                ? $"WiFi: CONNECTED — {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}"
+                : $"WiFi: DISCONNECTED";
+        }
+    }
     public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";
 
     // Last update
