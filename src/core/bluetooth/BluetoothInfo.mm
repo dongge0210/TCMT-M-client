@@ -25,17 +25,17 @@ void BluetoothInfo::Detect() {
         NSString* name = [ctrl nameAsString];
         if (name) data_.adapter.name = [name UTF8String];
 
-        // Paired devices — show all, not just connected
+        // Connected devices only
         NSArray* paired = [IOBluetoothDevice pairedDevices];
         if (paired) {
             for (IOBluetoothDevice* dev in paired) {
+                if (![dev isConnected]) continue;
                 BluetoothDeviceData d;
                 if ([dev name]) d.name = [[dev name] UTF8String];
                 if ([dev addressString]) d.address = [[dev addressString] UTF8String];
-                d.connected = [dev isConnected];
+                d.connected = true;
                 d.remembered = true;
-                // RSSI only valid when connected
-                if ([dev isConnected]) d.rssi = (int)[dev RSSI];
+                d.rssi = (int)[dev RSSI];
                 data_.devices.push_back(std::move(d));
             }
         }

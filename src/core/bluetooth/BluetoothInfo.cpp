@@ -94,14 +94,14 @@ void BluetoothInfo::Detect() {
     BluetoothFindRadioClose(hRadioFind);
 
     // -----------------------------------------------------------------------
-    // Step 2: enumerate connected + paired + remembered devices (fast, no scan)
+    // Step 2: enumerate connected devices only
     // -----------------------------------------------------------------------
     BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams;
     std::memset(&searchParams, 0, sizeof(searchParams));
     searchParams.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
     searchParams.fReturnConnected = TRUE;
-    searchParams.fReturnRemembered = TRUE;   // paired devices
-    searchParams.fReturnAuthenticated = TRUE;
+    searchParams.fReturnRemembered = FALSE;
+    searchParams.fReturnAuthenticated = FALSE;
     searchParams.fReturnUnknown = FALSE;
     searchParams.fIssueInquiry = FALSE;
     searchParams.cTimeoutMultiplier = 0;
@@ -111,9 +111,6 @@ void BluetoothInfo::Detect() {
     std::memset(&deviceInfo, 0, sizeof(deviceInfo));
     deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
 
-    // Track seen addresses to avoid duplicates across search passes
-    std::vector<std::string> seenAddresses;
-
     HBLUETOOTH_DEVICE_FIND hDeviceFind = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
     if (hDeviceFind != nullptr) {
         do {
@@ -122,7 +119,6 @@ void BluetoothInfo::Detect() {
             dev.address = FormatBtAddress(deviceInfo.Address);
             dev.connected = (deviceInfo.fConnected == TRUE);
             dev.remembered = (deviceInfo.fRemembered == TRUE);
-            seenAddresses.push_back(dev.address);
             data_.devices.push_back(std::move(dev));
 
             deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
