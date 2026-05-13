@@ -71,11 +71,11 @@ ConfigManager::~ConfigManager() = default;
 
 nlohmann::json& ConfigManager::GetData() {
     // The parser is always a JsonConfigParser in the current build.
-    return static_cast<JsonConfigParser*>(parser_.get())->data;
+    return static_cast<JsonConfigParser*>(parser_.get())->GetData();
 }
 
 const nlohmann::json& ConfigManager::GetData() const {
-    return static_cast<const JsonConfigParser*>(parser_.get())->data;
+    return static_cast<const JsonConfigParser*>(parser_.get())->GetData();
 }
 
 // =========================================================================

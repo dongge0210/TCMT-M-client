@@ -144,3 +144,4 @@ git submodule update --init --recursive
 
 ## User addition notices
 - **language analysis**: Use 'linguisto --json' to determine language percentages
+- **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.

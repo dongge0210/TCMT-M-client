@@ -43,8 +43,6 @@ TCMT-Windows-client/
 |   |-- CPP-parsers/                        -- [submodule] Multi-format config parsers
 |   |
 |   |-- core/
-|   |   |-- placeholder.cpp                 -- CMake scaffold stub
-|   |   |
 |   |   |-- Config/
 |   |   |   |-- ConfigManager.h             -- JSON config: typed getters/setters
 |   |   |   |-- ConfigManager.cpp           -- Config via nlohmann/json
@@ -141,12 +139,12 @@ TCMT-Windows-client/
 |   |   |-- LibreHardwareMonitor/           -- [submodule] .NET HW monitor lib
 |   |   |-- PDCurses/                       -- [submodule] Windows console curses
 |   |   |-- TC/                             -- [submodule] Terminal control
-|   |   |-- USBMonitor-cpp/                 -- [submodule] USB hotplug
-|   |   |-- asio/                           -- [submodule] ASIO networking
-|   |   |-- curl/                           -- [submodule] libcurl HTTP
+|   |   |-- USBMonitor-cpp/                 -- [submodule] USB hotplug (unused/Does not exist)
+|   |   |-- asio/                           -- [submodule] ASIO networking (unused/Does not exist)
+|   |   |-- curl/                           -- [submodule] libcurl HTTP (unused)
 |   |   |-- tpm2-tss/                       -- [submodule] TCG TPM 2.0 stack
-|   |   |-- websocketpp/                    -- [submodule] WebSocket++
-|   |   |-- zlib/                           -- [submodule] Compression
+|   |   |-- websocketpp/                    -- [submodule] WebSocket++ (unused)
+|   |   |-- zlib/                           -- [submodule] Compression (unused)
 |   |
 |   |-- tui/
 |       |-- LogBuffer.h                     -- 500-line thread-safe ring buffer
