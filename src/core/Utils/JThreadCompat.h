@@ -8,6 +8,7 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <algorithm>
 
 namespace tcmt::compat {
@@ -40,30 +41,32 @@ public:
 
     template<typename Callable, typename... Args>
     JThread(Callable&& f, Args&&... args) {
-        thread_ = std::thread([this,
+        src_ = std::make_shared<StopSource>();
+        // Lambda captures shared_ptr to keep StopSource alive regardless
+        // of whether this JThread object is moved or destroyed later.
+        thread_ = std::thread([src = src_,
                                f = std::forward<Callable>(f),
                                ...args = std::forward<Args>(args)]() mutable {
-            f(StopToken(&src_), std::move(args)...);
+            f(StopToken(src.get()), std::move(args)...);
         });
     }
 
     ~JThread() {
         if (joinable()) {
-            request_stop();
+            if (src_) src_->request_stop();
             join();
         }
     }
 
-    JThread(JThread&& other) noexcept : thread_(std::move(other.thread_)) {
-        if (other.src_.stop_requested()) src_.request_stop();
-    }
+    JThread(JThread&& other) noexcept
+        : src_(std::move(other.src_)), thread_(std::move(other.thread_)) {}
 
     JThread& operator=(JThread&& other) noexcept {
         if (joinable()) {
-            request_stop();
+            if (src_) src_->request_stop();
             join();
         }
-        if (other.src_.stop_requested()) src_.request_stop();
+        src_    = std::move(other.src_);
         thread_ = std::move(other.thread_);
         return *this;
     }
@@ -71,12 +74,12 @@ public:
     JThread(const JThread&) = delete;
     JThread& operator=(const JThread&) = delete;
 
-    void request_stop() { src_.request_stop(); }
+    void request_stop() { if (src_) src_->request_stop(); }
     [[nodiscard]] bool joinable() const { return thread_.joinable(); }
     void join() { thread_.join(); }
 
 private:
-    StopSource src_;
+    std::shared_ptr<StopSource> src_;
     std::thread thread_;
 };
 
