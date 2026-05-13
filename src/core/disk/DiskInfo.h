@@ -1,34 +1,42 @@
-﻿// DiskInfo.h
 #pragma once
 #include <string>
 #include <vector>
-#include <windows.h>
+#include <cstdint>
 #include <map>
 #include "../DataStruct/DataStruct.h"
 
-class WmiManager; // 前向声明，避免头文件依赖膨胀
+#ifdef TCMT_WINDOWS
+// winsock2.h must be before windows.h
+#include <winsock2.h>
+#include <windows.h>
+#endif
+
+class WmiManager;
 
 struct DriveInfo {
     char letter;
     uint64_t totalSize;
     uint64_t freeSpace;
     uint64_t usedSpace;
-    std::wstring label;
-    std::wstring fileSystem;
+    std::string label;
+    std::string fileSystem;
 };
 
 class DiskInfo {
 public:
-    DiskInfo(); // 无参数构造
+    DiskInfo();
     const std::vector<DriveInfo>& GetDrives() const;
     void Refresh();
-    std::vector<DiskData> GetDisks(); // 返回所有逻辑磁盘信息
+    std::vector<DiskData> GetDisks();
 
-    // 新增：收集物理磁盘及逻辑盘符映射（不含真正SMART，仅基础+映射）
+#ifdef TCMT_WINDOWS
     static void CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo);
+#endif
+
+    // Collect SMART data (placeholder on macOS, uses LibreHardwareMonitor on Windows)
+    static void CollectSmartData(SystemInfo& sysInfo);
 
 private:
     void QueryDrives();
     std::vector<DriveInfo> drives;
 };
-

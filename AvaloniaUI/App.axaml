@@ -1,0 +1,39 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:converters="clr-namespace:AvaloniaUI.Converters"
+             xmlns:controls="clr-namespace:AvaloniaUI.Controls"
+             xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
+             mc:Ignorable="d"
+             x:Class="AvaloniaUI.App"
+             x:DataType="vm:MainWindowViewModel"
+             RequestedThemeVariant="Dark">
+
+  <Application.Styles>
+    <FluentTheme />
+  </Application.Styles>
+
+  <Application.Resources>
+    <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+    <converters:BoolInvertConverter x:Key="BoolInvertConverter"/>
+    <converters:PercentToWarningColorConverter x:Key="PercentToWarningColorConverter"/>
+  </Application.Resources>
+
+  <TrayIcon.Icons>
+    <TrayIcons>
+      <TrayIcon Icon="/Assets/avalonia-logo.ico"
+                ToolTipText="TCMT - 系统硬件监视器"
+                Command="{Binding ShowWindowCommand}">
+        <TrayIcon.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="显示" Command="{Binding ShowWindowCommand}" />
+            <NativeMenuItemSeparator />
+            <NativeMenuItem Header="退出" Command="{Binding QuitCommand}" />
+          </NativeMenu>
+        </TrayIcon.Menu>
+      </TrayIcon>
+    </TrayIcons>
+  </TrayIcon.Icons>
+
+</Application>

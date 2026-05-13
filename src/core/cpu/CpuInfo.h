@@ -1,9 +1,18 @@
-﻿#pragma once
+#pragma once
 #include <string>
-#include <windows.h>
-#include <pdh.h>
-#include <queue>
 #include <vector>
+#include <cstdint>
+
+// Platform macro detection (if not defined in CMake)
+#if !defined(TCMT_WINDOWS) && !defined(TCMT_MACOS) && !defined(TCMT_LINUX)
+    #if defined(_WIN32) || defined(_WIN64)
+        #define TCMT_WINDOWS
+    #elif defined(__APPLE__) && defined(__MACH__)
+        #define TCMT_MACOS
+    #elif defined(__linux__)
+        #define TCMT_LINUX
+    #endif
+#endif
 
 class CpuInfo {
 public:
@@ -15,42 +24,50 @@ public:
     int GetTotalCores() const;
     int GetSmallCores() const;
     int GetLargeCores() const;
-    double GetLargeCoreSpeed() const;    // 新增：获取性能核心频率
-    double GetSmallCoreSpeed() const;    // 新增：获取能效核心频率
-    DWORD GetCurrentSpeed() const;       // 保持兼容性
+    double GetLargeCoreSpeed() const;    // Performance core frequency
+    double GetSmallCoreSpeed() const;    // Efficiency core frequency
+    uint32_t GetCurrentSpeed() const;    // Kept for compatibility
     bool IsHyperThreadingEnabled() const;
     bool IsVirtualizationEnabled() const;
 
-    // 新增：获取最近一次 CPU 使用率采样间隔（毫秒）
+    // Last CPU usage sample interval (ms)
     double GetLastSampleIntervalMs() const { return lastSampleIntervalMs; }
 
 private:
     void DetectCores();
     void InitializeCounter();
     void CleanupCounter();
-    void UpdateCoreSpeeds();             // 新增：更新核心频率
+    void UpdateCoreSpeeds();
     std::string GetNameFromRegistry();
     double updateUsage();
 
-    // 基本信息
+    // Basic info
     std::string cpuName;
     int totalCores;
     int smallCores;
     int largeCores;
     double cpuUsage;
 
-    // 频率信息
-    std::vector<DWORD> largeCoresSpeeds; // 性能核心频率
-    std::vector<DWORD> smallCoresSpeeds; // 能效核心频率
-    DWORD lastUpdateTime;                // 上次更新时间（频率）
+    // Frequency info
+    double largeCoreSpeed;
+    double smallCoreSpeed;
+    double lastSampleIntervalMs;
 
-    // 采样延迟追踪
-    DWORD lastSampleTick = 0;            // 上次成功采样 Tick
-    DWORD prevSampleTick = 0;            // 上一次之前的 Tick
-    double lastSampleIntervalMs = 0.0;   // 最近一次采样间隔(毫秒)
-
-    // PDH 计数器相关
-    PDH_HQUERY queryHandle;
-    PDH_HCOUNTER counterHandle;
+#ifdef TCMT_WINDOWS
+    void* queryHandle;       // PDH_HQUERY
+    void* counterHandle;     // PDH_HCOUNTER
     bool counterInitialized;
+    uint32_t lastUpdateTime;
+    uint32_t lastSampleTick;
+    uint32_t prevSampleTick;
+#endif
+
+#ifdef TCMT_MACOS
+    uint64_t prevTotalTicks;
+    uint64_t prevIdleTicks;
+    uint64_t prevSampleTimeMs;
+    // P-core / E-core grouped frequencies
+    std::vector<double> pCoreSpeeds;
+    std::vector<double> eCoreSpeeds;
+#endif
 };

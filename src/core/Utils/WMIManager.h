@@ -1,4 +1,9 @@
 #pragma once
+
+// NOTE: winsock2.h must be included BEFORE windows.h and wbemidl.h
+#include <winsock2.h>
+#include <windows.h>
+
 #include <wbemidl.h>
 #include <comdef.h>
 #include <servprov.h>
@@ -10,7 +15,7 @@ public:
     ~WmiManager();
     bool IsInitialized() const;
 
-    // IServiceProvider接口实现
+    // IServiceProvider interface implementation
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override;
     ULONG STDMETHODCALLTYPE AddRef() override;
     ULONG STDMETHODCALLTYPE Release() override;

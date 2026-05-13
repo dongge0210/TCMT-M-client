@@ -11,10 +11,14 @@
 #include <sstream>
 #include <stdexcept>
 
+#ifdef TCMT_WINDOWS
 // Windows specific includes
+// NOTE: winsock2.h must be included BEFORE windows.h to avoid symbol redefinition
+#include <winsock2.h>
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#endif
 
 // C++20 specific headers if needed
 #ifdef __cplusplus

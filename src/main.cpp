@@ -1,23 +1,27 @@
-﻿// 使用#pragma unmanaged确保main函数编译为本机代码
 #pragma unmanaged
 
-// ✅ 添加栈大小控制，防止栈溢出
-#pragma comment(linker, "/STACK:8388608")  // 设置栈大小为8MB
+#pragma comment(linker, "/STACK:8388608")  // Set stack size
 
 /*
-如果出现
-警告	MSB8077	某些文件设置为 C++/CLI，但未定义"为单个文件启用 CLR 支持"属性。有关更多详细信息，请参阅"高级属性页"文档。
-以上警告请忽视，这个项目的结构没法兼容这个情况
+If you see warning MSB8077: Some files are set to C++/CLI but "Enable CLR Support for Single File" property is not defined.
+Please ignore this warning - the project structure doesn't support this scenario
 */
-// 首先包含Windows头文件以避免宏重定义警告
+// Do NOT include winsock2.h here - it breaks other headers that include windows.h first
+// Network headers are included in the platform-specific source files instead
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#include <winsock2.h>
 #include <windows.h>
 #include <shellapi.h>
 #include <sddl.h>
 #include <Aclapi.h>
-#include <conio.h>   // 添加键盘输入支持
-#include <eh.h>      // 添加结构化异常处理支持
+#include <conio.h>
+#include <eh.h>
 
-// 然后包含标准库头文件
 #include <chrono>
 #include <iostream>
 #include <sstream>
@@ -26,54 +30,60 @@
 #include <thread>
 #include <io.h>
 #include <fcntl.h>
-#include <algorithm> // Include for std::transform
-#include <vector> // Include for std::vector
-#include <mutex>     // 添加线程同步支持
-#include <atomic>    // 添加原子操作支持
-#include <locale>   // 添加locale支持以使用setlocale
-#include <new>       // 添加内存分配异常支持
-#include <stdexcept> // 添加标准异常支持
+#include <algorithm>
+#include <vector>
+#include <mutex>
+#include <atomic>
+#include <locale>
+#include <new>
+#include <memory>
+#include <stdexcept>
 
-// 最后包含项目头文件
 #include "core/cpu/CpuInfo.h"
 #include "core/gpu/GpuInfo.h"
 #include "core/memory/MemoryInfo.h"
 #include "core/network/NetworkAdapter.h"
 #include "core/os/OSInfo.h"
-#include "core/utils/Logger.h"
-#include "core/utils/TimeUtils.h"
-#include "core/utils/WinUtils.h"
-#include "core/utils/WmiManager.h"
+#include "core/Utils/Logger.h"
+#include "core/Utils/TimeUtils.h"
+#include "core/Utils/WinUtils.h"
+#include "core/Utils/WmiManager.h"
 #include "core/disk/DiskInfo.h"
+#include "core/Utils/TpmBridge.h"
 #include "core/DataStruct/DataStruct.h"
-#include "core/DataStruct/SharedMemoryManager.h"  // Include the new shared memory manager
-#include "core/temperature/TemperatureWrapper.h"  // 使用TemperatureWrapper而不是直接调用LibreHardwareMonitorBridge
+#include "core/DataStruct/SharedMemoryManager.h"
+#include "core/IPC/IPCServer.h"
+#include "core/history/HistoryLogger.h"
+#include "core/usb/UsbInfo.h"
+#include "core/wifi/WiFiInfo.h"
+#include "core/bluetooth/BluetoothInfo.h"
+#include "core/MCP/MCPServer.h"
+#include "core/IPC/IPCClient.h"
+#include "core/temperature/TemperatureWrapper.h"
+#include "core/ModuleCoordinator.h"
+#include "tui/TuiApp.h"
+#include "core/Config/ConfigManager.h"
+#include <fstream>
+#include <cstdio>
 
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "user32.lib")
 
-// 全局变量
 std::atomic<bool> g_shouldExit{false};
 static std::atomic<bool> g_monitoringStarted{false};
 static std::atomic<bool> g_comInitialized{false};
 
-// 线程安全的控制台输出互斥锁
 static std::mutex g_consoleMutex;
 
-// 函数声明
 bool CheckForKeyPress();
 char GetKeyPress();
 void SafeExit(int exitCode);
 
-// 结构化异常处理函数
 void SEHTranslator(unsigned int u, EXCEPTION_POINTERS* pExp);
 std::string GetSEHExceptionName(DWORD exceptionCode);
 
-// 线程安全的控制台输出函数
 void SafeConsoleOutput(const std::string& message);
 void SafeConsoleOutput(const std::string& message, int color);
-
-// 信号处理函数 - 简化版本
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     switch (dwCtrlType) {
     case CTRL_C_EVENT:
@@ -81,45 +91,45 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     case CTRL_CLOSE_EVENT:
     case CTRL_LOGOFF_EVENT:
     case CTRL_SHUTDOWN_EVENT:
-        Logger::Info("接收到系统关闭信号，正在安全退出...");
+        Logger::Info("Received shutdown signal, exiting safely...");
         g_shouldExit = true;
-        SafeConsoleOutput("正在退出程序...\n", 14);
+        SafeConsoleOutput("Exiting program...\n", 14);
         return TRUE;
     }
     return FALSE;
 }
 
-// 线程安全的控制台输出函数实现
+// Thread-safe console output function implementation
 void SafeConsoleOutput(const std::string& message) {
     std::lock_guard<std::mutex> lock(g_consoleMutex);
     try {
-        // 统一使用UTF-8编码输出，确保中文显示正确
+        // Use UTF-8 encoding for output
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         if (hConsole != INVALID_HANDLE_VALUE) {
-            // 确保输入字符串不为空
+            // Ensure input string is not empty
             if (message.empty()) {
                 return;
             }
             
-            // 将UTF-8字符串转换为UTF-16 (Wide Character)
+            // Convert UTF-8 string to UTF-16 (Wide Character)
             int wideLength = MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nullptr, 0);
             if (wideLength > 0) {
                 std::vector<wchar_t> wideMessage(wideLength);
                 if (MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, wideMessage.data(), wideLength)) {
-                    // 使用WriteConsoleW直接输出Unicode文本
+                    // Use WriteConsoleW to output Unicode text directly
                     DWORD written;
                     WriteConsoleW(hConsole, wideMessage.data(), static_cast<DWORD>(wideLength - 1), &written, NULL);
                     return;
                 }
             }
             
-            // 如果UTF-8转换失败，回退到ASCII输出
+            // If UTF-8 conversion fails, fall back to ASCII output
             DWORD written;
             WriteConsoleA(hConsole, message.c_str(), static_cast<DWORD>(message.length()), &written, NULL);
         }
     }
     catch (...) {
-        // 忽略控制台输出错误，避免递归异常
+
     }
 }
 
@@ -128,159 +138,158 @@ void SafeConsoleOutput(const std::string& message, int color) {
     try {
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         if (hConsole != INVALID_HANDLE_VALUE) {
-            // 保存原始颜色
+            // Save original color
             CONSOLE_SCREEN_BUFFER_INFO csbi;
             GetConsoleScreenBufferInfo(hConsole, &csbi);
             WORD originalColor = csbi.wAttributes;
             
-            // 设置新颜色
             SetConsoleTextAttribute(hConsole, color);
             
-            // 确保输入字符串不为空
+            // Ensure input string is not empty
             if (!message.empty()) {
-                // 将UTF-8字符串转换为UTF-16 (Wide Character)
+                // Convert UTF-8 string to UTF-16 (Wide Character)
                 int wideLength = MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nullptr, 0);
                 if (wideLength > 0) {
                     std::vector<wchar_t> wideMessage(wideLength);
                     if (MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, wideMessage.data(), wideLength)) {
-                        // 使用WriteConsoleW直接输出Unicode文本
+                        // Use WriteConsoleW to output Unicode text directly
                         DWORD written;
                         WriteConsoleW(hConsole, wideMessage.data(), static_cast<DWORD>(wideLength - 1), &written, NULL);
                     } else {
-                        // 如果转换失败，回退到ASCII输出
+                        // If conversion fails, fall back to ASCII output
                         DWORD written;
                         WriteConsoleA(hConsole, message.c_str(), static_cast<DWORD>(message.length()), &written, NULL);
                     }
                 }
             }
             
-            // 恢复原始颜色
+            // Restore original color
             SetConsoleTextAttribute(hConsole, originalColor);
         }
     }
     catch (...) {
-        // 忽略控制台输出错误，避免递归异常
+        // Ignore console output errors to avoid recursive exceptions
     }
 }
 
-// 结构化异常处理实现
+// Structured exception handling implementation
 std::string GetSEHExceptionName(DWORD exceptionCode) {
     switch (exceptionCode) {
-        case EXCEPTION_ACCESS_VIOLATION: return "访问冲突";
-        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: return "数组越界";
-        case EXCEPTION_BREAKPOINT: return "断点异常";
-        case EXCEPTION_DATATYPE_MISALIGNMENT: return "数据类型对齐错误";
-        case EXCEPTION_FLT_DENORMAL_OPERAND: return "浮点数非正规操作数";
-        case EXCEPTION_FLT_DIVIDE_BY_ZERO: return "浮点数除零";
-        case EXCEPTION_FLT_INEXACT_RESULT: return "浮点数结果不精确";
-        case EXCEPTION_FLT_INVALID_OPERATION: return "浮点数无效操作";
-        case EXCEPTION_FLT_OVERFLOW: return "浮点数溢出";
-        case EXCEPTION_FLT_STACK_CHECK: return "浮点数栈检查";
-        case EXCEPTION_FLT_UNDERFLOW: return "浮点数下溢";
-        case EXCEPTION_ILLEGAL_INSTRUCTION: return "非法指令";
-        case EXCEPTION_IN_PAGE_ERROR: return "页面错误";
-        case EXCEPTION_INT_DIVIDE_BY_ZERO: return "整数除零";
-        case EXCEPTION_INT_OVERFLOW: return "整数溢出";
-        case EXCEPTION_INVALID_DISPOSITION: return "无效处置";
-        case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "不可继续异常";
-        case EXCEPTION_PRIV_INSTRUCTION: return "特权指令";
-        case EXCEPTION_SINGLE_STEP: return "单步异常";
-        case EXCEPTION_STACK_OVERFLOW: return "栈溢出";
-        default: return "未知系统异常 (0x" + std::to_string(exceptionCode) + ")";
+        case EXCEPTION_ACCESS_VIOLATION: return "Access Violation";
+        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: return "Array Bounds Exceeded";
+        case EXCEPTION_BREAKPOINT: return "Breakpoint";
+        case EXCEPTION_DATATYPE_MISALIGNMENT: return "Data Type Misalignment";
+        case EXCEPTION_FLT_DENORMAL_OPERAND: return "Float Denormal Operand";
+        case EXCEPTION_FLT_DIVIDE_BY_ZERO: return "Float Divide By Zero";
+        case EXCEPTION_FLT_INEXACT_RESULT: return "Float Inexact Result";
+        case EXCEPTION_FLT_INVALID_OPERATION: return "Float Invalid Operation";
+        case EXCEPTION_FLT_OVERFLOW: return "Float Overflow";
+        case EXCEPTION_FLT_STACK_CHECK: return "Float Stack Check";
+        case EXCEPTION_FLT_UNDERFLOW: return "Float Underflow";
+        case EXCEPTION_ILLEGAL_INSTRUCTION: return "Illegal Instruction";
+        case EXCEPTION_IN_PAGE_ERROR: return "In Page Error";
+        case EXCEPTION_INT_DIVIDE_BY_ZERO: return "Integer Divide By Zero";
+        case EXCEPTION_INT_OVERFLOW: return "Integer Overflow";
+        case EXCEPTION_INVALID_DISPOSITION: return "Invalid Disposition";
+        case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "Noncontinuable Exception";
+        case EXCEPTION_PRIV_INSTRUCTION: return "Privilege Instruction";
+        case EXCEPTION_SINGLE_STEP: return "Single Step";
+        case EXCEPTION_STACK_OVERFLOW: return "Stack Overflow";
+        default: return "Unknown System Exception (0x" + std::to_string(exceptionCode) + ")";
     }
 }
 
 void SEHTranslator(unsigned int u, EXCEPTION_POINTERS* pExp) {
     std::string exceptionName = GetSEHExceptionName(u);
     std::stringstream ss;
-    ss << "系统级异常: " << exceptionName << " (0x" << std::hex << u << ")";
+    ss << "System Exception: " << exceptionName << " (0x" << std::hex << u << ")";
     if (pExp && pExp->ExceptionRecord) {
-        ss << " 地址: 0x" << std::hex << pExp->ExceptionRecord->ExceptionAddress;
+        ss << " Address: 0x" << std::hex << pExp->ExceptionRecord->ExceptionAddress;
     }
     
-    // 尝试安全记录日志
+    // Try to safely log
     try {
         if (Logger::IsInitialized()) {
             Logger::Fatal(ss.str());
         } else {
-            // 如果日志系统未初始化，直接输出到控制台
+            // If logging system not initialized, output directly to console
             SafeConsoleOutput("FATAL: " + ss.str() + "\n");
         }
     } catch (...) {
-        // 最后的防线，直接输出
+        // Last resort, direct output
         SafeConsoleOutput("FATAL: " + ss.str() + "\n");
     }
     
     throw std::runtime_error(ss.str());
 }
 
-// 安全退出函数
+// Safe exit function
 void SafeExit(int exitCode) {
     try {
-        Logger::Info("开始程序清理流程");
+        Logger::Info("Starting cleanup process");
         
-        // 设置退出标志
+        // Set exit flag
         g_shouldExit = true;
         
-        // 清理硬件监控桥接
+        // Cleanup hardware monitoring bridge
         try {
             TemperatureWrapper::Cleanup();
-            Logger::Debug("硬件监控桥接清理完成");
+            Logger::Debug("Hardware monitoring bridge cleanup complete");
         }
         catch (const std::exception& e) {
-            Logger::Error("清理硬件监控桥接时发生错误: " + std::string(e.what()));
+            Logger::Error("Error cleaning up hardware monitoring bridge: " + std::string(e.what()));
         }
         
-        // 清理共享内存
+        // Cleanup shared memory
         try {
             SharedMemoryManager::CleanupSharedMemory();
-            Logger::Debug("共享内存清理完成");
+            Logger::Debug("Shared memory cleanup complete");
         }
         catch (const std::exception& e) {
-            Logger::Error("清理共享内存时发生错误: " + std::string(e.what()));
+            Logger::Error("Error cleaning up shared memory: " + std::string(e.what()));
         }
         
-        // 清理COM
+        // Cleanup COM
         if (g_comInitialized.load()) {
             try {
                 CoUninitialize();
                 g_comInitialized = false;
-                Logger::Debug("COM清理完成");
+                Logger::Debug("COM cleanup complete");
             }
             catch (...) {
-                Logger::Error("清理COM时发生未知错误");
+                Logger::Error("Unknown error cleaning up COM");
             }
         }
         
-        Logger::Info("程序清理完成，退出码: " + std::to_string(exitCode));
+        Logger::Info("Cleanup complete, exit code: " + std::to_string(exitCode));
         
-        // 给日志系统一点时间完成写入
+        // Give logging system time to complete writes
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     catch (...) {
-        // 最后的异常处理，避免在清理过程中崩溃
+        // Last exception handling to avoid crashing during cleanup
     }
     
     exit(exitCode);
 }
 
-//辅助函数
-// 硬件名称翻译
+// Helper functions
+// Hardware name translation
 std::string TranslateHardwareName(const std::string& name) {
-    if (name.find("CPU Package") != std::string::npos) return "CPU温度";
-    if (name.find("GPU Core") != std::string::npos) return "GPU温度";
+    if (name.find("CPU Package") != std::string::npos) return "CPU Temperature";
+    if (name.find("GPU Core") != std::string::npos) return "GPU Temperature";
     return name;
 }
 
-// 品牌判断
+// Brand detection
 std::string GetGpuBrand(const std::wstring& name) {
     if (name.find(L"NVIDIA") != std::wstring::npos) return "NVIDIA";
     if (name.find(L"AMD") != std::wstring::npos) return "AMD";
     if (name.find(L"Intel") != std::wstring::npos) return "Intel";
-    return "未知";
+    return "Unknown";
 }
 
-// 网络速度单位
+// Network speed unit
 std::string FormatNetworkSpeed(double speedBps) {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(1);
@@ -300,52 +309,52 @@ std::string FormatNetworkSpeed(double speedBps) {
     return ss.str();
 }
 
-// 时间格式化 - 增强异常处理
+// Time formatting - enhanced exception handling
 std::string FormatDateTime(const std::chrono::system_clock::time_point& tp) {
     try {
         auto time = std::chrono::system_clock::to_time_t(tp);
         struct tm timeinfo;
-        if (localtime_s(&timeinfo, &time) == 0) {  // 检查返回值
+        if (localtime_s(&timeinfo, &time) == 0) {  // Check return value
             std::stringstream ss;
             ss << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S");
             std::string result = ss.str();
             
-            // 验证结果的合理性
-            if (result.length() >= 19 && result.length() <= 25) {  // 基本长度检查
+            // Verify result reasonableness
+            if (result.length() >= 19 && result.length() <= 25) {  // Basic length check
                 return result;
             } else {
-                Logger::Warn("时间格式化结果长度异常: " + std::to_string(result.length()));
+                Logger::Warn("Time format result length abnormal: " + std::to_string(result.length()));
             }
         } else {
-            Logger::Error("localtime_s 调用失败");
+            Logger::Error("localtime_s call failed");
         }
     }
     catch (const std::exception& e) {
-        Logger::Error("时间格式化过程中发生异常: " + std::string(e.what()));
+        Logger::Error("Exception during time formatting: " + std::string(e.what()));
     }
     catch (...) {
-        Logger::Error("时间格式化过程中发生未知异常");
+        Logger::Error("Exception during time formatting - unknown exception");
     }
-    return "时间格式化失败";
+    return "Time Formatting Failed";
 }
 
 std::string FormatFrequency(double value) {
     try {
-        // 参数验证
+        // Parameter validation
         if (std::isnan(value) || std::isinf(value)) {
-            Logger::Warn("频率值无效: " + std::to_string(value));
+            Logger::Warn("Invalid frequency value: " + std::to_string(value));
             return "N/A";
         }
         
         if (value < 0) {
-            Logger::Warn("频率值为负数: " + std::to_string(value));
+            Logger::Warn("Frequency value is negative: " + std::to_string(value));
             return "N/A";
         }
         
-        // 合理性检查 - 频率通常不会超过10GHz
+        // Reasonableness check - frequency typically not exceeding 10GHz
         if (value > 10000) {
-            Logger::Warn("频率值异常: " + std::to_string(value) + "MHz");
-            return "异常值";
+            Logger::Warn("Frequency value abnormal: " + std::to_string(value) + "MHz");
+            return "Abnormal Value";
         }
         
         std::stringstream ss;
@@ -360,29 +369,29 @@ std::string FormatFrequency(double value) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("格式化频率时发生异常: " + std::string(e.what()));
-        return "格式化失败";
+        Logger::Error("Exception during frequency formatting: " + std::string(e.what()));
+        return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("格式化频率时发生未知异常");
-        return "格式化失败";
+        Logger::Error("Exception during frequency formatting - unknown exception");
+        return "Formatting Failed";
     }
 }
 
 std::string FormatPercentage(double value) {
     try {
-        // 参数验证
+        // Parameter validation
         if (std::isnan(value) || std::isinf(value)) {
-            Logger::Warn("百分比值无效: " + std::to_string(value));
+            Logger::Warn("Percentage value invalid: " + std::to_string(value));
             return "N/A";
         }
         
-        // 合理性检查 - 百分比通常在0-100之间，允许一些余量
+        // Reasonableness check - percentage typically between 0-100
         if (value < -1.0 || value > 105.0) {
-            Logger::Warn("百分比值异常: " + std::to_string(value));
+            Logger::Warn("Percentage value abnormal: " + std::to_string(value));
         }
         
-        // 限制在合理范围内
+        // Limit to reasonable range
         if (value < 0) value = 0;
         if (value > 100) value = 100;
         
@@ -391,41 +400,41 @@ std::string FormatPercentage(double value) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("格式化百分比时发生异常: " + std::string(e.what()));
-        return "格式化失败";
+        Logger::Error("Exception during percentage formatting: " + std::string(e.what()));
+        return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("格式化百分比时发生未知异常");
-        return "格式化失败";
+        Logger::Error("Exception during percentage formatting - unknown exception");
+        return "Formatting Failed";
     }
 }
 
 std::string FormatTemperature(double value) {
     try {
-        // 参数验证
+        // Parameter validation
         if (std::isnan(value) || std::isinf(value)) {
-            Logger::Warn("温度值无效: " + std::to_string(value));
+            Logger::Warn("Temperature value invalid: " + std::to_string(value));
             return "N/A";
         }
         
-        // 合理性检查 - 温度通常在-50°C到150°C之间
+        // Reasonableness check - temperature typically between -50C to 150C
         if (value < -50.0 || value > 150.0) {
-            Logger::Warn("温度值异常: " + std::to_string(value) + "°C");
-            if (value < -50.0) return "过低";
-            if (value > 150.0) return "过高";
+            Logger::Warn("Temperature value abnormal: " + std::to_string(value) + "°C");
+            if (value < -50.0) return "Too Low";
+            if (value > 150.0) return "Too High";
         }
         
         std::stringstream ss;
-        ss << static_cast<int>(value) << "°C";  // 显示整数温度
+        ss << static_cast<int>(value) << "°C";  // Display integer temperature
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("格式化温度时发生异常: " + std::string(e.what()));
-        return "格式化失败";
+        Logger::Error("Exception during temperature formatting: " + std::string(e.what()));
+        return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("格式化温度时发生未知异常");
-        return "格式化失败";
+        Logger::Error("Exception during temperature formatting - unknown exception");
+        return "Formatting Failed";
     }
 }
 
@@ -436,9 +445,9 @@ std::string FormatSize(uint64_t bytes, bool useBinary = true) {
         const double gb = mb * kb;
         const double tb = gb * kb;
 
-        // 参数验证 - 检查是否为最大值（通常表示错误）
+        // Parameter validation - check if at maximum value (usually indicates error)
         if (bytes == UINT64_MAX) {
-            Logger::Warn("字节数为最大值，可能表示错误状态");
+            Logger::Warn("Bytes at maximum value, may indicate error");
             return "N/A";
         }
 
@@ -454,12 +463,12 @@ std::string FormatSize(uint64_t bytes, bool useBinary = true) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("格式化大小时发生异常: " + std::string(e.what()));
-        return "格式化失败";
+        Logger::Error("Exception during size formatting: " + std::string(e.what()));
+        return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("格式化大小时发生未知异常");
-        return "格式化失败";
+        Logger::Error("Exception during size formatting - unknown exception");
+        return "Formatting Failed";
     }
 }
 
@@ -472,12 +481,12 @@ std::string FormatDiskUsage(uint64_t used, uint64_t total) {
 }
 
 static void PrintSectionHeader(const std::string& title) {
-    SafeConsoleOutput("\n=== " + title + " ===\n", 14); // 黄色
+    SafeConsoleOutput("\n=== " + title + " ===\n", 14); // Yellow
 }
 
 static void PrintInfoItem(const std::string& label, const std::string& value, int indent = 2) {
     std::string line = std::string(indent, ' ') + label;
-    // 格式化为固定宽度
+    // Format to fixed width
     if (line.length() < 27) {
         line += std::string(27 - line.length(), ' ');
     }
@@ -485,8 +494,7 @@ static void PrintInfoItem(const std::string& label, const std::string& value, in
     SafeConsoleOutput(line);
 }
 
-//主要函数
-// 检查是否以管理员身份运行
+// Main function
 bool IsRunAsAdmin() {
     BOOL isAdmin = FALSE;
     PSID adminGroup = NULL;
@@ -500,16 +508,17 @@ bool IsRunAsAdmin() {
     return isAdmin == TRUE;
 }
 
-// 线程安全的GPU信息缓存类
+// Thread-safe GPU info cache class
 class ThreadSafeGpuCache {
 private:
     mutable std::mutex mtx_;
     bool initialized_ = false;
-    std::string cachedGpuName_ = "未检测到GPU";
-    std::string cachedGpuBrand_ = "未知";
+    std::string cachedGpuName_ = "No GPU detected";
+    std::string cachedGpuBrand_ = "Unknown";
     uint64_t cachedGpuMemory_ = 0;
     uint32_t cachedGpuCoreFreq_ = 0;
     bool cachedGpuIsVirtual_ = false;
+    double cachedGpuUsage_ = 0.0;
 
 public:
     void Initialize(WmiManager& wmiManager) {
@@ -517,22 +526,14 @@ public:
         if (initialized_) return;
         
         try {
-            Logger::Info("正在初始化GPU信息");
+            Logger::Info("Initializing GPU info");
             
             GpuInfo gpuInfo(wmiManager);
             const auto& gpus = gpuInfo.GetGpuData();
+
+            // GpuInfo::DetectGpusViaWmi() already logs each GPU — no need to duplicate here
+            Logger::Debug("GPU cache: found " + std::to_string(gpus.size()) + " GPU(s) from WMI");
             
-            // 记录所有检测到的GPU
-            for (const auto& gpu : gpus) {
-                std::string gpuName = WinUtils::WstringToString(gpu.name);
-                Logger::Info("检测到GPU: " + gpuName + 
-                           " (虚拟: " + (gpu.isVirtual ? "是" : "否") + 
-                           ", NVIDIA: " + (gpuName.find("NVIDIA") != std::string::npos ? "是" : "否") + 
-                           ", 集成: " + (gpuName.find("Intel") != std::string::npos ||
-                                       gpuName.find("AMD") != std::string::npos ? "是" : "否") + ")");
-            }
-            
-            // 优先选择非虚拟GPU
             const GpuInfo::GpuData* selectedGpu = nullptr;
             for (const auto& gpu : gpus) {
                 if (!gpu.isVirtual) {
@@ -541,7 +542,6 @@ public:
                 }
             }
             
-            // 如果没有非虚拟GPU，选择第一个GPU
             if (!selectedGpu && !gpus.empty()) {
                 selectedGpu = &gpus[0];
             }
@@ -552,79 +552,392 @@ public:
                 cachedGpuMemory_ = selectedGpu->dedicatedMemory;
                 cachedGpuCoreFreq_ = static_cast<uint32_t>(selectedGpu->coreClock);
                 cachedGpuIsVirtual_ = selectedGpu->isVirtual;
+                cachedGpuUsage_ = selectedGpu->usage;  // Save GPU usage
                 
-                Logger::Info("选择主GPU: " + cachedGpuName_ + 
-                           " (虚拟: " + (cachedGpuIsVirtual_ ? "是" : "否") + ")");
+                Logger::Info("Selected primary GPU: " + cachedGpuName_ + 
+                           " (Virtual: " + (cachedGpuIsVirtual_ ? "Yes" : "No") + ")");
             } else {
-                Logger::Warn("未检测到任何GPU");
+                Logger::Warn("No GPU detected");
             }
             
             initialized_ = true;
-            Logger::Info("GPU信息初始化完成，后续循环将使用缓存信息");
+            // Logger::Info("GPU info initialization complete, subsequent loops will use cached info");
         }
         catch (const std::exception& e) {
-            Logger::Error("GPU信息初始化失败: " + std::string(e.what()));
-            // 保持默认值
-            initialized_ = true; // 标记为已初始化以避免重复尝试
+            Logger::Error("GPU info initialization failed: " + std::string(e.what()));
+            initialized_ = true;
         }
     }
     
     void GetCachedInfo(std::string& name, std::string& brand, uint64_t& memory, 
-                       uint32_t& coreFreq, bool& isVirtual) const {
+                       uint32_t& coreFreq, bool& isVirtual, double& usage) const {
         std::lock_guard<std::mutex> lock(mtx_);
         name = cachedGpuName_;
         brand = cachedGpuBrand_;
         memory = cachedGpuMemory_;
         coreFreq = cachedGpuCoreFreq_;
         isVirtual = cachedGpuIsVirtual_;
+        usage = cachedGpuUsage_;
     }
     
     bool IsInitialized() const {
         std::lock_guard<std::mutex> lock(mtx_);
         return initialized_;
     }
-}; // 添加缺少的分号
+};
 
-// 主函数 - 控制台模式
+// ======================== MCP Helpers ========================
+
+// Build schema describing SharedMemoryBlock fields (for IPCServer + ConnectDirect)
+static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
+                                   std::vector<tcmt::ipc::FieldDef>& fields) {
+    schemaHdr.totalSize = sizeof(SharedMemoryBlock);
+    auto addField = [&](const char* name, uint32_t offset, uint16_t size,
+                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
+                        uint32_t count = 0) {
+        tcmt::ipc::FieldDef f{};
+        f.offset = offset; f.size = size; f.type = type; f.count = count;
+        std::strncpy(f.name, name, tcmt::ipc::IPC_FIELD_NAME_LEN - 1);
+        fields.push_back(f);
+    };
+    using FT = tcmt::ipc::FieldType;
+    addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
+    addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
+    addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
+    addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
+    addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
+    addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
+    addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
+    addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
+    addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
+    for (int i = 0; i < 2; i++) {
+        char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
+        addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
+        addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
+        addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
+        addField((std::string(prefix)+"memoryPercent").c_str(), base + offsetof(GPUData, coreClock), 8);
+        addField((std::string(prefix)+"temperature").c_str(), offsetof(SharedMemoryBlock, gpuTemperature), 8);
+    }
+    addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
+    addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
+    addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+
+    // Network adapters (up to 4)
+    for (int i = 0; i < 4; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "net/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, adapters) + i * sizeof(NetworkAdapterData);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(NetworkAdapterData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(NetworkAdapterData, ipAddress), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(NetworkAdapterData, mac), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"type").c_str(), base + offsetof(NetworkAdapterData, adapterType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(NetworkAdapterData, speed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(NetworkAdapterData, downloadSpeed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(NetworkAdapterData, uploadSpeed), 8, (uint8_t)FT::UInt64);
+    }
+
+    // Disks (up to 8)
+    for (int i = 0; i < 8; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, disks) + i * sizeof(SharedMemoryBlock::SharedDiskData);
+        addField((std::string(pfx)+"label").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, label), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(SharedMemoryBlock::SharedDiskData, fileSystem), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"total").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, totalSize), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"used").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, usedSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"free").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, freeSpace), 8, (uint8_t)FT::UInt64);
+    }
+
+    // Temperature sensors (up to 10)
+    for (int i = 0; i < 10; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "sensor/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, temperatures) + i * sizeof(TemperatureData);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(TemperatureData, sensorName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
+    }
+
+    // Physical disks (SMART) (up to 2)
+    for (int i = 0; i < 2; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "phys/%d/", i);
+        uint32_t base = offsetof(SharedMemoryBlock, physicalDisks) + i * sizeof(PhysicalDiskSmartData);
+        addField((std::string(pfx)+"model").c_str(),       base + offsetof(PhysicalDiskSmartData, model), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(PhysicalDiskSmartData, serialNumber), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(PhysicalDiskSmartData, capacity), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(PhysicalDiskSmartData, interfaceType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
+        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
+        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
+    }
+
+    // WiFi
+    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifi.ssid), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
+    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
+    addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
+    addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
+    // Bluetooth
+    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
+    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
+    addField("bluetooth/name",        offsetof(SharedMemoryBlock, bluetooth.name), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+}
+
 int main(int argc, char* argv[]) {
-    // 设置结构化异常处理
     _set_se_translator(SEHTranslator);
     
-    // 设置内存分配失败处理
     std::set_new_handler([]() {
-        Logger::Fatal("内存分配失败 - 系统内存不足");
+        Logger::Fatal("Memory allocation failed - system out of memory");
         throw std::bad_alloc();
     });
     
-    // 设置控制台编码为UTF-8，确保中文显示正确
     SetConsoleCP(65001);
     SetConsoleOutputCP(65001);
     
-    // 设置本地化支持UTF-8
     setlocale(LC_ALL, "en_US.UTF-8");
     
-    // 设置控制台信号处理器
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
     
     try {
-        // 初始化日志系统
         try {
-            Logger::EnableConsoleOutput(true); // Enable console output for Logger
+            Logger::EnableConsoleOutput(true);
             Logger::Initialize("system_monitor.log");
-            Logger::SetLogLevel(LOG_DEBUG); // 设置日志等级为DEBUG，查看详细信息
-            Logger::Info("程序启动");
+            Logger::SetLogLevel(LOG_INFO);
+            Logger::Info("Program started");
         }
         catch (const std::exception& e) {
-            printf("日志系统初始化失败: %s\n", e.what());
+            printf("Logging system initialization failed: %s\n", e.what());
             return 1;
         }
 
-        // 检查管理员权限
+        // ======================== --json Mode ========================
+        bool jsonMode = false;
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--json") {
+                jsonMode = true;
+                break;
+            }
+        }
+
+        if (jsonMode) {
+            // One-shot JSON output for scripting
+            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            if (FAILED(hr)) {
+                Logger::Error("COM init failed for --json mode");
+                return 1;
+            }
+
+            auto wmiManager = std::make_unique<WmiManager>();
+            if (!wmiManager || !wmiManager->IsInitialized()) {
+                Logger::Error("WMI init failed for --json mode");
+                CoUninitialize();
+                return 1;
+            }
+
+
+            // Build JSON via ConfigManager, then dump to stdout via temp file
+            char tmpBuf[MAX_PATH];
+            GetTempPathA(MAX_PATH, tmpBuf);
+            std::string tmpPath = std::string(tmpBuf) + "tcmt_export.json";
+            std::remove(tmpPath.c_str());  // ensure clean start
+            ConfigManager cfg(tmpPath);
+            cfg.Load();  // starts with empty json::object
+
+            // OS
+            try {
+                OSInfo os;
+                cfg.SetString("os.version", os.GetVersion());
+            } catch (...) {}
+
+            // CPU
+            try {
+                auto cpu = std::make_unique<CpuInfo>();
+                cfg.SetString("cpu.name", cpu->GetName());
+                cfg.SetInt("cpu.cores.physical", cpu->GetLargeCores() + cpu->GetSmallCores());
+                cfg.SetInt("cpu.cores.logical", cpu->GetTotalCores());
+                cfg.SetDouble("cpu.usage", cpu->GetUsage());
+            } catch (...) {}
+
+            // Memory
+            try {
+                MemoryInfo mem;
+                cfg.SetUint64("memory.total", mem.GetTotalPhysical());
+                cfg.SetUint64("memory.available", mem.GetAvailablePhysical());
+                cfg.SetUint64("memory.used", mem.GetTotalPhysical() - mem.GetAvailablePhysical());
+            } catch (...) {}
+
+            // GPU
+            try {
+                GpuInfo gpuInfo(*wmiManager);
+                const auto& gpus = gpuInfo.GetGpuData();
+                if (!gpus.empty()) {
+                    cfg.SetString("gpu.name", WinUtils::WstringToString(gpus[0].name));
+                    cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
+                    cfg.SetDouble("gpu.usage", gpus[0].usage);
+                }
+            } catch (...) {}
+
+            // Network
+            try {
+                NetworkAdapter netAdapter(*wmiManager);
+                const auto& adapters = netAdapter.GetAdapters();
+                for (const auto& a : adapters) {
+                    nlohmann::json na;
+                    na["name"] = a.name;
+                    na["ip"] = a.ip;
+                    na["mac"] = a.mac;
+                    na["type"] = a.adapterType;
+                    na["speed"] = a.speed;
+                    cfg.AppendToArray("network.adapters", std::move(na));
+                }
+            } catch (...) {}
+
+            // Disks
+            try {
+                DiskInfo disk;
+                auto volumes = disk.GetDisks();
+                for (const auto& v : volumes) {
+                    nlohmann::json dj;
+                    dj["label"] = v.label;
+                    dj["fileSystem"] = v.fileSystem;
+                    dj["total"] = v.totalSize;
+                    dj["used"] = v.usedSpace;
+                    cfg.AppendToArray("disks", std::move(dj));
+                }
+            } catch (...) {}
+
+            // Temperatures
+            try {
+                auto temps = TemperatureWrapper::GetTemperatures();
+                nlohmann::json tempObj = nlohmann::json::object();
+                for (const auto& t : temps) {
+                    tempObj[t.first] = t.second;
+                }
+                cfg.SetJson("temperatures", std::move(tempObj));
+            } catch (...) {}
+
+            // Save to temp file, read back, print to stdout
+            if (cfg.Save()) {
+                std::ifstream in(tmpPath);
+                if (in) {
+                    std::cout << in.rdbuf();
+                }
+            }
+            std::cout << std::endl;
+            std::remove(tmpPath.c_str());
+
+            TemperatureWrapper::Cleanup();
+            CoUninitialize();
+            return 0;
+        }
+
+        // ======================== --mcp Mode ========================
+        bool mcpMode = false;
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--mcp") {
+                mcpMode = true;
+                break;
+            }
+        }
+        if (mcpMode) {
+#ifdef _WIN32
+            _setmode(_fileno(stdout), _O_BINARY);
+            _setmode(_fileno(stdin), _O_BINARY);
+#endif
+            tcmt::mcp::MCPServer server;
+
+            // Try IPC client first — like Avalonia, reuse running TCMT instance
+            tcmt::ipc::IPCClient ipc;
+            bool useIpc = ipc.Connect();
+            if (useIpc) {
+                Logger::Info("MCP: connected to running TCMT via IPC");
+                ipc.ClosePipe(); // free server slot for other clients (Avalonia)
+            } else {
+                Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+            }
+
+            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
+                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+                } else {
+                    CpuInfo cpu;
+                    j["name"] = cpu.GetName();
+                    j["usage"] = cpu.GetUsage();
+                    j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+                    j["temperature"] = 0.0;
+                }
+                return j;
+            });
+            server.RegisterTool("get_memory", "System memory statistics",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+                } else {
+                    MemoryInfo mem;
+                    j["total"] = mem.GetTotalPhysical();
+                    j["available"] = mem.GetAvailablePhysical();
+                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+                }
+                return j;
+            });
+            server.RegisterTool("get_gpu_status", "GPU usage and memory",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+                } else {
+                    // GPU fallback requires WmiManager — skip on Windows
+                }
+                return j;
+            });
+            server.RegisterTool("get_system_info", "OS version and hardware summary",
+            [&ipc, useIpc]() -> nlohmann::json {
+                nlohmann::json j;
+                if (useIpc) {
+                    j["os"] = ipc.ReadString("os/version").value_or("");
+                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+                } else {
+                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
+                    j["os"] = os.GetVersion();
+                    j["cpu"] = cpu.GetName();
+                    j["cores"] = cpu.GetTotalCores();
+                    j["memoryTotal"] = mem.GetTotalPhysical();
+                }
+                return j;
+            });
+
+            server.Run();
+            TemperatureWrapper::Cleanup();
+            return 0;
+        }
+
         if (!IsRunAsAdmin()) {
             wchar_t szPath[MAX_PATH];
             GetModuleFileNameW(NULL, szPath, MAX_PATH);
 
-            // 以管理员权限重启自身
             SHELLEXECUTEINFOW sei = { sizeof(sei) };
             sei.lpVerb = L"runas";
             sei.lpFile = szPath;
@@ -632,108 +945,171 @@ int main(int argc, char* argv[]) {
             sei.nShow = SW_NORMAL;
 
             if (ShellExecuteExW(&sei)) {
-                // 启动成功，退出当前进程
                 exit(0);
             } else {
-                // 启动失败，弹窗提示
-                MessageBoxW(NULL, L"自动提权失败，请右键以管理员身份运行。", L"权限不足", MB_OK | MB_ICONERROR);
+                MessageBoxW(NULL, L"Auto elevation failed, please right-click and run as administrator.", L"Insufficient Privileges", MB_OK | MB_ICONERROR);
                 SafeExit(1);
             }
         }
 
-        // 安全初始化COM为多线程模式
         try {
             HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
             if (FAILED(hr)) {
                 if (hr == RPC_E_CHANGED_MODE) {
-                    Logger::Warn("COM初始化模式冲突: 线程已初始化为不同的模式，尝试单线程模式");
-                    // 尝试单线程模式
+                    Logger::Warn("COM initialization mode conflict: thread already initialized in different mode, trying single-threaded mode");
                     hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
                     if (FAILED(hr)) {
-                        Logger::Error("COM初始化失败: 0x" + std::to_string(hr));
+                        Logger::Error("COM initialization failed: 0x" + std::to_string(hr));
                         return -1;
                     }
                 }
                 else {
-                    Logger::Error("COM初始化失败: 0x" + std::to_string(hr));
+                    Logger::Error("COM initialization failed: 0x" + std::to_string(hr));
                     return -1;
                 }
             }
             g_comInitialized = true;
-            Logger::Debug("COM初始化成功");
+            Logger::Debug("COM initialized successfully");
         }
         catch (const std::exception& e) {
-            Logger::Error("COM初始化过程中发生异常: " + std::string(e.what()));
+            Logger::Error("Exception during COM initialization: " + std::string(e.what()));
             return -1;
         }
 
-        // 初始化共享内存 - 增强错误处理
+#ifdef _WIN32
+        std::unique_ptr<tcmt::ipc::IPCServer> ipcServer;
+#endif
         try {
             if (!SharedMemoryManager::InitSharedMemory()) {
                 std::string error = SharedMemoryManager::GetLastError();
-                Logger::Error("共享内存初始化失败: " + error);
+                Logger::Error("Shared memory initialization failed: " + error);
                 
-                // 尝试重新初始化
-                Logger::Info("尝试重新初始化共享内存...");
+                Logger::Info("Attempting to reinitialize shared memory...");
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 
                 if (!SharedMemoryManager::InitSharedMemory()) {
-                    Logger::Critical("共享内存重新初始化失败，程序无法继续运行");
+                    Logger::Critical("Shared memory reinitialization failed, program cannot continue");
                     SafeExit(1);
                 }
             }
-            Logger::Info("共享内存初始化成功");
+            Logger::Info("Shared memory initialized successfully");
+
+            // IPC server — sends schema to C# Avalonia (Named Pipe on Windows, UDS on macOS)
+#ifdef _WIN32
+            ipcServer = std::make_unique<tcmt::ipc::IPCServer>();
+            {
+                tcmt::ipc::SchemaHeader schemaHdr;
+                std::vector<tcmt::ipc::FieldDef> fields;
+                BuildWindowsIpcSchema(schemaHdr, fields);
+                ipcServer->UpdateSchema(schemaHdr, fields);
+            }
+            if (ipcServer->Start()) {
+                Logger::Info("IPC server started (named pipe)");
+            } else {
+                Logger::Warn("IPC server failed: " + ipcServer->GetLastError());
+            }
+#endif
         }
         catch (const std::exception& e) {
-            Logger::Error("共享内存初始化过程中发生异常: " + std::string(e.what()));
+            Logger::Error("Exception during shared memory initialization: " + std::string(e.what()));
             SafeExit(1);
         }
 
-        // 创建WMI管理器并初始化 - 增强内存分配异常处理
+        // Create and initialize WMI manager - enhanced memory allocation exception handling
         std::unique_ptr<WmiManager> wmiManager;
         try {
             wmiManager = std::make_unique<WmiManager>();
             if (!wmiManager) {
-                Logger::Fatal("WMI管理器对象创建失败 - 内存分配返回null");
+                Logger::Fatal("WMI manager object creation failed - memory allocation returned null");
                 SafeExit(1);
             }
             if (!wmiManager->IsInitialized()) {
-                Logger::Error("WMI初始化失败");
-                MessageBoxA(NULL, "WMI初始化失败，无法获取系统信息。", "错误", MB_OK | MB_ICONERROR);
+                Logger::Error("WMI initialization failed");
+                MessageBoxA(NULL, "WMI initialization failed, cannot retrieve system information.", "Error", MB_OK | MB_ICONERROR);
                 SafeExit(1);
             }
-            Logger::Debug("WMI管理器初始化成功");
+            Logger::Debug("WMI manager initialized successfully");
         }
         catch (const std::bad_alloc& e) {
-            Logger::Fatal("WMI管理器创建失败 - 内存分配失败: " + std::string(e.what()));
+            Logger::Fatal("WMI manager creation failed - memory allocation failed: " + std::string(e.what()));
             SafeExit(1);
         }
         catch (const std::exception& e) {
-            Logger::Error("WMI管理器创建失败: " + std::string(e.what()));
+            Logger::Error("WMI manager creation failed: " + std::string(e.what()));
             SafeExit(1);
         }
         catch (...) {
-            Logger::Fatal("WMI管理器创建失败 - 未知异常");
+            Logger::Fatal("WMI manager creation failed - unknown exception");
             SafeExit(1);
         }
 
-        // 初始化硬件监控桥接
+        // Initialize hardware monitoring bridge (LHM for temperature sensors)
         try {
             TemperatureWrapper::Initialize();
-            Logger::Debug("硬件监控桥接初始化成功");
+            Logger::Info("Hardware monitoring bridge (LHM) initialized");
         }
         catch (const std::exception& e) {
-            Logger::Error("硬件监控桥接初始化失败: " + std::string(e.what()));
-            // 不退出程序，继续运行但温度数据可能不可用
+            Logger::Error("Hardware monitoring bridge initialization failed: " + std::string(e.what()));
+            // Do not exit program, continue running but temperature data may not be available
         }
 
-        Logger::Info("程序启动完成");
+        Logger::Info("Program startup complete");
         
-        // 初始化循环计数器，减少频繁的日志记录
-        int loopCounter = 1; // 从1开始计数，更符合人类习惯
-        bool isFirstRun = true; // 首次运行标志
+        // Start TUI (Windows version)
+        tcmt::TuiApp tuiApp;
+        tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
+        tuiApp.Start();
+        Logger::Info("TUI started");
+
+        // Initial USB detection (startup scan)
+        try {
+            UsbInfo usb;
+            usb.Detect();
+            const auto& devs = usb.GetDevices();
+            Logger::Info("USB: initial scan — " + std::to_string(devs.size()) + " device(s) found");
+            for (size_t di = 0; di < std::min(devs.size(), size_t(5)); ++di)
+                Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                            + " PID:" + std::to_string(devs[di].pid));
+        } catch (...) { Logger::Debug("USB: initial scan failed"); }
+
+        // History logger (SQLite)
+        HistoryLogger historyLogger;
+        historyLogger.SetRetentionDays(30);
+        {
+            std::string dbPath;
+#ifdef _WIN32
+            char envBuf[MAX_PATH];
+            DWORD envLen = GetEnvironmentVariableA("APPDATA", envBuf, sizeof(envBuf));
+            if (envLen > 0 && envLen < sizeof(envBuf))
+                dbPath = std::string(envBuf) + "\\TCMT\\history.db";
+            else
+                dbPath = std::string(getenv("TEMP") ? getenv("TEMP") : "C:\\TEMP") + "\\tcmt_history.db";
+            // Create directory tree
+            std::string dir = dbPath.substr(0, dbPath.find_last_of('\\'));
+            for (size_t i = 0; i < dir.size(); i++)
+                if (dir[i] == '\\' || dir[i] == '/') {
+                    dir[i] = '\0';
+                    CreateDirectoryA(dir.c_str(), nullptr);
+                    dir[i] = '\\';
+                }
+            CreateDirectoryA(dir.c_str(), nullptr);
+#else
+            dbPath = getenv("HOME") ? std::string(getenv("HOME")) + "/.tcmt/history.db" : "/tmp/tcmt_history.db";
+            {
+                std::string dir = dbPath.substr(0, dbPath.find_last_of('/'));
+                mkdir(dir.c_str(), 0755);
+            }
+#endif
+            if (historyLogger.Initialize(dbPath))
+                Logger::Info("HistoryLogger: " + dbPath);
+            else
+                Logger::Warn("HistoryLogger failed to initialize");
+        }
+
+        int loopCounter = 1;
+        bool isFirstRun = true;
         
-        // 缓存静态系统信息（只在首次获取）
+        // Cache static system info (only on first fetch)
         static std::atomic<bool> systemInfoCached{false};
         static std::string cachedOsVersion;
         static std::string cachedCpuName;
@@ -744,53 +1120,52 @@ int main(int argc, char* argv[]) {
         static bool cachedHyperThreading = false;
         static bool cachedVirtualization = false;
         
-        // 创建CPU对象一次，重复使用（避免重复初始化性能计数器）- 增强异常处理
         std::unique_ptr<CpuInfo> cpuInfo;
         try {
             cpuInfo = std::make_unique<CpuInfo>();
             if (!cpuInfo) {
-                Logger::Fatal("CPU信息对象创建失败 - 内存分配返回null");
+                Logger::Fatal("CPU info object creation failed - memory allocation returned null");
                 SafeExit(1);
             }
-            Logger::Debug("CPU信息对象创建成功");
+            Logger::Debug("CPU info object created successfully");
         }
         catch (const std::bad_alloc& e) {
-            Logger::Fatal("CPU信息对象创建失败 - 内存分配失败: " + std::string(e.what()));
+            Logger::Fatal("CPU info object creation failed - memory allocation failed: " + std::string(e.what()));
             SafeExit(1);
         }
         catch (const std::exception& e) {
-            Logger::Error("CPU信息对象创建失败: " + std::string(e.what()));
+            Logger::Error("CPU info object creation failed: " + std::string(e.what()));
             SafeExit(1);
         }
         catch (...) {
-            Logger::Fatal("CPU信息对象创建失败 - 未知异常");
+            Logger::Fatal("CPU info object creation failed - unknown exception");
             SafeExit(1);
         }
         
-        // 线程安全的GPU缓存
         ThreadSafeGpuCache gpuCache;
-        
+
+        // Start ModuleCoordinator background collection threads
+        ModuleCoordinator coordinator;
+        coordinator.Start();
+
         while (!g_shouldExit.load()) {
             try {
                 auto loopStart = std::chrono::high_resolution_clock::now();
                 
-                // 只在每5次循环记录一次详细信息（约5秒）
-                bool isDetailedLogging = (loopCounter % 5 == 1); // 第1, 6, 11, 16, 21... 次循环
+                bool isDetailedLogging = (loopCounter % 5 == 1);
                 
                 if (isDetailedLogging) {
-                    Logger::Debug("开始执行主监控循环第 #" + std::to_string(loopCounter) + " 次迭代");
+                    Logger::Debug("Starting main monitoring loop iteration #" + std::to_string(loopCounter));
                 }
                 
-                // 在第5次循环后，监控已稳定运行
                 if (loopCounter == 5) {
                     g_monitoringStarted = true;
-                    Logger::Info("程序已稳定运行");
+                    Logger::Info("Program is running stable");
                 }
                 
-                // 获取系统信息
-                SystemInfo sysInfo;
-                
-                // 安全初始化所有字段以避免未定义行为 - 增强异常处理
+                SystemInfo sysInfo{};
+                sysInfo.compressedMemory = 0; // Windows: no compressed memory
+
                 try {
                     sysInfo.cpuUsage = 0.0;
                     sysInfo.performanceCoreFreq = 0.0;
@@ -802,34 +1177,28 @@ int main(int argc, char* argv[]) {
                     sysInfo.gpuCoreFreq = 0.0;
                     sysInfo.gpuIsVirtual = false;
                     sysInfo.networkAdapterSpeed = 0;
-                    // 安全地初始化 SYSTEMTIME 结构
-                    ZeroMemory(&sysInfo.lastUpdate, sizeof(sysInfo.lastUpdate));
-                    GetSystemTime(&sysInfo.lastUpdate); // 设置当前时间
+                    sysInfo.lastUpdate = Platform::SystemTime::Now();
                     
-                    // 验证系统时间是否合理
-                    if (sysInfo.lastUpdate.wYear < 2020 || sysInfo.lastUpdate.wYear > 2050) {
-                        Logger::Warn("系统时间异常: " + std::to_string(sysInfo.lastUpdate.wYear));
+                    if (sysInfo.lastUpdate.year < 2020 || sysInfo.lastUpdate.year > 2050) {
+                        Logger::Warn("Abnormal system time: " + std::to_string(sysInfo.lastUpdate.year));
                     }
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("SystemInfo初始化失败: " + std::string(e.what()));
-                    continue; // 跳过当前循环
+                    Logger::Error("SystemInfo initialization failed: " + std::string(e.what()));
+                    continue;
                 }
                 catch (...) {
-                    Logger::Error("SystemInfo初始化失败 - 未知异常");
-                    continue; // 跳过当前循环
+                    Logger::Error("SystemInfo initialization failed - unknown exception");
+                    continue;
                 }
 
-                // 静态系统信息（只在首次获取）
                 if (!systemInfoCached.load()) {
                     try {
-                        Logger::Info("正在初始化系统信息");
+                        Logger::Info("Initializing system information");
                         
-                        // 操作系统信息
                         OSInfo os;
                         cachedOsVersion = os.GetVersion();
 
-                        // CPU基本信息（使用cpuInfo对象）
                         if (cpuInfo) {
                             cachedCpuName = cpuInfo->GetName();
                             cachedPhysicalCores = cpuInfo->GetLargeCores() + cpuInfo->GetSmallCores();
@@ -841,18 +1210,16 @@ int main(int argc, char* argv[]) {
                         }
                         
                         systemInfoCached = true;
-                        Logger::Info("系统信息初始化完成");
+                        Logger::Info("System information initialized");
                     }
                     catch (const std::exception& e) {
-                        Logger::Error("系统信息初始化失败: " + std::string(e.what()));
-                        // 设置默认值
-                        cachedOsVersion = "未知";
-                        cachedCpuName = "未知";
-                        systemInfoCached = true; // 防止重复尝试
+                        Logger::Error("System info initialization failed: " + std::string(e.what()));
+                        cachedOsVersion = "Unknown";
+                        cachedCpuName = "Unknown";
+                        systemInfoCached = true;
                     }
                 }
                 
-                // 使用缓存的静态信息
                 sysInfo.osVersion = cachedOsVersion;
                 sysInfo.cpuName = cachedCpuName;
                 sysInfo.physicalCores = cachedPhysicalCores;
@@ -862,71 +1229,59 @@ int main(int argc, char* argv[]) {
                 sysInfo.hyperThreading = cachedHyperThreading;
                 sysInfo.virtualization = cachedVirtualization;
 
-                // 动态CPU信息（每次循环都需要获取）
-                try {
-                    if (cpuInfo) {
-                        sysInfo.cpuUsage = cpuInfo->GetUsage();
-                        sysInfo.performanceCoreFreq = cpuInfo->GetLargeCoreSpeed();
-                        sysInfo.efficiencyCoreFreq = cpuInfo->GetSmallCoreSpeed() * 0.8;
-                        sysInfo.cpuUsageSampleIntervalMs = cpuInfo->GetLastSampleIntervalMs();
-                    }
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("获取CPU动态信息失败: " + std::string(e.what()));
-                    // 保持默认值
+                // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
+                {
+                    tcmt::TuiData tempTui;
+                    coordinator.Snapshot(sysInfo, tempTui);
                 }
 
-                // 内存信息（每次循环都获取以确保数据实时性）
-                try {
-                    MemoryInfo mem;
-                    sysInfo.totalMemory = mem.GetTotalPhysical();
-                    sysInfo.usedMemory = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                    sysInfo.availableMemory = mem.GetAvailablePhysical();
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("获取内存信息失败: " + std::string(e.what()));
-                    // 保持默认值
-                }
-
-                // GPU信息 - 使用线程安全的缓存机制
                 if (!gpuCache.IsInitialized()) {
                     try {
                         gpuCache.Initialize(*wmiManager);
                     }
                     catch (const std::exception& e) {
-                        Logger::Error("GPU缓存初始化失败: " + std::string(e.what()));
+                        Logger::Error("GPU cache initialization failed: " + std::string(e.what()));
                     }
                 }
                 
-                // 获取缓存的GPU信息
                 try {
                     std::string cachedGpuName, cachedGpuBrand;
                     uint64_t cachedGpuMemory;
                     uint32_t cachedGpuCoreFreq;
                     bool cachedGpuIsVirtual;
+                    double cachedGpuUsage;
                     
                     gpuCache.GetCachedInfo(cachedGpuName, cachedGpuBrand, cachedGpuMemory, 
-                                          cachedGpuCoreFreq, cachedGpuIsVirtual);
+                                          cachedGpuCoreFreq, cachedGpuIsVirtual, cachedGpuUsage);
                     
                     sysInfo.gpuName = cachedGpuName;
                     sysInfo.gpuBrand = cachedGpuBrand;
                     sysInfo.gpuMemory = cachedGpuMemory;
                     sysInfo.gpuCoreFreq = cachedGpuCoreFreq;
                     sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
+                    sysInfo.gpuUsage = cachedGpuUsage;
 
-                    // 修复GPU数组填充 - 添加数据验证和清理
+                    // Override with NVML real-time data (NVIDIA GPUs only)
+                    double nvmlUsage  = GpuInfo::GetGpuUsage();
+                    double nvmlTemp   = GpuInfo::GetGpuTemperature();
+                    double nvmlVramPct = GpuInfo::GetVramUsagePercent();
+                    if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
+                    if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
+                    if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
+
+                    // Fix GPU array population - add data validation and cleanup
                     sysInfo.gpus.clear();
-                    if (!cachedGpuName.empty() && cachedGpuName != "未检测到GPU") {
+                    if (!cachedGpuName.empty() && cachedGpuName != "No GPU detected") {
                         GPUData gpu;
                         
-                        // 初始化GPU结构体以避免垃圾数据
+                        // Initialize GPU struct to avoid garbage data
                         memset(&gpu, 0, sizeof(GPUData));
                         
-                        // 安全地复制GPU名称和品牌到wchar_t数组
+                        // Safely copy GPU name and brand to wchar_t arrays
                         std::wstring gpuNameW = WinUtils::StringToWstring(cachedGpuName);
                         std::wstring gpuBrandW = WinUtils::StringToWstring(cachedGpuBrand);
                         
-                        // 限制字符串长度以防止缓冲区溢出
+                        // Limit string length to prevent buffer overflow
                         if (gpuNameW.length() >= sizeof(gpu.name)/sizeof(wchar_t)) {
                             gpuNameW = gpuNameW.substr(0, sizeof(gpu.name)/sizeof(wchar_t) - 1);
                         }
@@ -937,73 +1292,72 @@ int main(int argc, char* argv[]) {
                         wcsncpy_s(gpu.name, sizeof(gpu.name)/sizeof(wchar_t), gpuNameW.c_str(), _TRUNCATE);
                         wcsncpy_s(gpu.brand, sizeof(gpu.brand)/sizeof(wchar_t), gpuBrandW.c_str(), _TRUNCATE);
                         
-                        // 验证和清理GPU数据 - 避免异常值
+                        // Validate and clean GPU data - avoid abnormal values
                         gpu.memory = (cachedGpuMemory > 0 && cachedGpuMemory < UINT64_MAX) ? cachedGpuMemory : 0;
                         
-                        // 修复GPU核心频率 - 确保在合理范围内
+                        // Fix GPU core clock - ensure it's in reasonable range
                         if (cachedGpuCoreFreq > 0 && cachedGpuCoreFreq < 10000) {
                             gpu.coreClock = cachedGpuCoreFreq;
                         } else {
-                            gpu.coreClock = 0; // 设置为0而不是异常值
+                            gpu.coreClock = 0; // Set to 0 instead of abnormal value
                             if (isFirstRun && cachedGpuCoreFreq > 10000) {
-                                Logger::Warn("GPU核心频率异常: " + std::to_string(cachedGpuCoreFreq) + "MHz，已重置为0");
+                                Logger::Warn("GPU core clock abnormal: " + std::to_string(cachedGpuCoreFreq) + "MHz, reset to 0");
                             }
                         }
                         
                         gpu.isVirtual = cachedGpuIsVirtual;
+                        gpu.usage = cachedGpuUsage;  // GPU usage
                         
                         sysInfo.gpus.push_back(gpu);
                         
                         if (isFirstRun) {
-                            Logger::Debug("已添加GPU到数组: " + cachedGpuName + 
-                                         " (内存: " + FormatSize(cachedGpuMemory) + 
-                                         ", 频率: " + std::to_string(gpu.coreClock) + "MHz" +
-                                         ", 虚拟: " + (cachedGpuIsVirtual ? "是" : "否") + ")");
+                            Logger::Debug("Added GPU to array: " + cachedGpuName + 
+                                         " (Memory: " + FormatSize(cachedGpuMemory) + 
+                                         ", Clock: " + std::to_string(gpu.coreClock) + "MHz" +
+                                         ", Virtual: " + (cachedGpuIsVirtual ? "Yes" : "No") + ")");
                         }
                     } else {
                         if (isFirstRun) {
-                            Logger::Debug("未检测到有效GPU，跳过GPU数据填充");
+                            Logger::Debug("No valid GPU detected, skipping GPU data population");
                         }
                     }
                 }
                 catch (const std::bad_alloc& e) {
-                    Logger::Error("GPU缓存信息处理失败 - 内存不足: " + std::string(e.what()));
-                    // 清空GPU数据以避免显示错误信息
+                    Logger::Error("GPU cache info processing failed - Out of memory: " + std::string(e.what()));
                     sysInfo.gpus.clear();
-                    sysInfo.gpuName = "内存不足";
-                    sysInfo.gpuBrand = "未知";
+                    sysInfo.gpuName = "Out of memory";
+                    sysInfo.gpuBrand = "Unknown";
                     sysInfo.gpuMemory = 0;
                     sysInfo.gpuCoreFreq = 0;
                     sysInfo.gpuIsVirtual = false;
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("获取GPU缓存信息失败: " + std::string(e.what()));
-                    // 清空GPU数据以避免显示错误信息
+                    Logger::Error("Failed to get GPU cache info: " + std::string(e.what()));
                     sysInfo.gpus.clear();
-                    sysInfo.gpuName = "GPU信息获取失败";
-                    sysInfo.gpuBrand = "未知";
+                    sysInfo.gpuName = "Failed to get GPU info";
+                    sysInfo.gpuBrand = "Unknown";
                     sysInfo.gpuMemory = 0;
                     sysInfo.gpuCoreFreq = 0;
                     sysInfo.gpuIsVirtual = false;
                 }
                 catch (...) {
-                    Logger::Error("获取GPU缓存信息失败 - 未知异常");
+                    Logger::Error("Failed to get GPU cache info - Unknown exception");
                     sysInfo.gpus.clear();
-                    sysInfo.gpuName = "未知异常";
-                    sysInfo.gpuBrand = "未知";
+                    sysInfo.gpuName = "Unknown exception";
+                    sysInfo.gpuBrand = "Unknown";
                     sysInfo.gpuMemory = 0;
                     sysInfo.gpuCoreFreq = 0;
                     sysInfo.gpuIsVirtual = false;
                 }
 
-                // 初始化网络适配器信息（避免无效数据导致崩溃）
-                sysInfo.networkAdapterName = "未检测到网络适配器";
+                // Initialize network adapter info (avoid crash due to invalid data)
+                sysInfo.networkAdapterName = "No network adapter detected";
                 sysInfo.networkAdapterMac = "00-00-00-00-00-00";
                 sysInfo.networkAdapterSpeed = 0;
-                sysInfo.networkAdapterIp = "N/A"; // 添加默认IP地址
-                sysInfo.networkAdapterType = "未知"; // 添加默认网卡类型
+                sysInfo.networkAdapterIp = "N/A";
+                sysInfo.networkAdapterType = "Unknown";
 
-                // 填充所有网络适配器信息
+                // Populate all network adapter info
                 try {
                     sysInfo.adapters.clear();
                     NetworkAdapter netAdapter(*wmiManager);
@@ -1011,161 +1365,125 @@ int main(int argc, char* argv[]) {
                     if (!adapters.empty()) {
                         for (const auto& adapter : adapters) {
                             NetworkAdapterData data;
-                            // 名称、MAC、IP和类型为wstring，需转为wchar_t数组
-                            wcsncpy_s(data.name, adapter.name.c_str(), _TRUNCATE);
-                            wcsncpy_s(data.mac, adapter.mac.c_str(), _TRUNCATE);
-                            wcsncpy_s(data.ipAddress, adapter.ip.c_str(), _TRUNCATE); // 添加IP地址
-                            wcsncpy_s(data.adapterType, adapter.adapterType.c_str(), _TRUNCATE); // 添加网卡类型
+                            // Zero initialize to avoid garbage data
+                            memset(&data, 0, sizeof(NetworkAdapterData));
+                            
+                            // Convert std::string to std::wstring before copying to wchar_t arrays
+                            std::wstring nameW = WinUtils::StringToWstring(adapter.name);
+                            std::wstring macW = WinUtils::StringToWstring(adapter.mac);
+                            std::wstring ipW = WinUtils::StringToWstring(adapter.ip);
+                            std::wstring typeW = WinUtils::StringToWstring(adapter.adapterType);
+                            
+                            // Use 4-argument version: dest, source, size, count
+                            wcsncpy_s(data.name, nameW.c_str(), 128);
+                            wcsncpy_s(data.mac, macW.c_str(), 32);
+                            wcsncpy_s(data.ipAddress, ipW.c_str(), 64);
+                            wcsncpy_s(data.adapterType, typeW.c_str(), 32);
                             data.speed = adapter.speed;
+                            data.downloadSpeed = adapter.downloadSpeed;
+                            data.uploadSpeed = adapter.uploadSpeed;
                             sysInfo.adapters.push_back(data);
                         }
-                        // 兼容旧字段，取第一个适配器
-                        sysInfo.networkAdapterName = WinUtils::WstringToString(adapters[0].name);
-                        sysInfo.networkAdapterMac = WinUtils::WstringToString(adapters[0].mac);
-                        sysInfo.networkAdapterIp = WinUtils::WstringToString(adapters[0].ip); // 添加IP地址
-                        sysInfo.networkAdapterType = WinUtils::WstringToString(adapters[0].adapterType); // 添加网卡类型
+                        sysInfo.networkAdapterName = adapters[0].name;
+                        sysInfo.networkAdapterMac = adapters[0].mac;
+                        sysInfo.networkAdapterIp = adapters[0].ip;
+                        sysInfo.networkAdapterType = adapters[0].adapterType;
                         sysInfo.networkAdapterSpeed = adapters[0].speed;
                     } else {
-                        sysInfo.networkAdapterName = "未检测到网络适配器";
+                        sysInfo.networkAdapterName = "No network adapter detected";
                         sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                        sysInfo.networkAdapterIp = "N/A"; // 添加默认IP地址
-                        sysInfo.networkAdapterType = "未知"; // 添加默认网卡类型
+                        sysInfo.networkAdapterIp = "N/A";
+                        sysInfo.networkAdapterType = "Unknown";
                         sysInfo.networkAdapterSpeed = 0;
                     }
                 } catch (const std::bad_alloc& e) {
-                    Logger::Error("获取网络适配器信息失败 - 内存不足: " + std::string(e.what()));
+                    Logger::Error("Failed to get network adapter info - Out of memory: " + std::string(e.what()));
                     sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "内存不足";
+                    sysInfo.networkAdapterName = "Out of memory";
                     sysInfo.networkAdapterMac = "00-00-00-00-00-00";
                     sysInfo.networkAdapterIp = "N/A"; 
-                    sysInfo.networkAdapterType = "未知";
+                    sysInfo.networkAdapterType = "Unknown";
                     sysInfo.networkAdapterSpeed = 0;
                 } catch (const std::exception& e) {
-                    Logger::Error("获取网络适配器信息失败: " + std::string(e.what()));
+                    Logger::Error("Failed to get network adapter info: " + std::string(e.what()));
                     sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "未检测到网络适配器";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A"; // 添加默认IP地址
-                    sysInfo.networkAdapterType = "未知"; // 添加默认网卡类型
-                    sysInfo.networkAdapterSpeed = 0;
-                } catch (...) {
-                    Logger::Error("获取网络适配器信息失败 - 未知异常");
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "未知异常";
+                    sysInfo.networkAdapterName = "No network adapter detected";
                     sysInfo.networkAdapterMac = "00-00-00-00-00-00";
                     sysInfo.networkAdapterIp = "N/A";
-                    sysInfo.networkAdapterType = "未知";
+                    sysInfo.networkAdapterType = "Unknown";
+                    sysInfo.networkAdapterSpeed = 0;
+                } catch (...) {
+                    Logger::Error("Failed to get network adapter info - Unknown exception");
+                    sysInfo.adapters.clear();
+                    sysInfo.networkAdapterName = "Unknown exception";
+                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
+                    sysInfo.networkAdapterIp = "N/A";
+                    sysInfo.networkAdapterType = "Unknown";
                     sysInfo.networkAdapterSpeed = 0;
                 }
 
-                // 添加温度数据采集（每次循环都获取以确保数据实时性）
+                // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
+
+                // Physical disk (SMART) and TPM collection (coordinator handles logical disks)
                 try {
-                    auto temperatures = TemperatureWrapper::GetTemperatures();
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                    for (const auto& temp : temperatures) {
-                        std::string nameLower = temp.first;
-                        std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
-                        if (nameLower.find("gpu") != std::string::npos || nameLower.find("graphics") != std::string::npos) {
-                            sysInfo.gpuTemperature = temp.second;
-                            sysInfo.temperatures.push_back({"GPU", temp.second});
-                        } else if (nameLower.find("cpu") != std::string::npos || nameLower.find("package") != std::string::npos) {
-                            sysInfo.cpuTemperature = temp.second;
-                            sysInfo.temperatures.push_back({"CPU", temp.second});
-                        } else {
-                            sysInfo.temperatures.push_back(temp);
+                    // Collect physical disks (cached — WMI is slow, re-query every 60s)
+                    static std::vector<PhysicalDiskSmartData> cachedPhysDisks;
+                    static auto lastPhysQuery = std::chrono::steady_clock::now() - std::chrono::seconds(61);
+                    auto now = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysQuery).count() >= 60) {
+                        if (wmiManager) {
+                            DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
+                            if (!sysInfo.physicalDisks.empty())
+                                cachedPhysDisks = sysInfo.physicalDisks;
+                            lastPhysQuery = now; // always update — avoid retry flood on empty result
                         }
                     }
-                    if (isFirstRun) {
-                        Logger::Debug("收集到 " + std::to_string(temperatures.size()) + " 个温度读数");
-                        // 添加详细的温度传感器信息输出
-                        for (const auto& temp : sysInfo.temperatures) {
-                            Logger::Debug("温度传感器: " + temp.first + " = " + std::to_string(temp.second) + "°C");
+                    if (!cachedPhysDisks.empty())
+                        sysInfo.physicalDisks = cachedPhysDisks;
+
+                    // Collect TPM data
+                    {
+                        TpmInfo tpmInfo = {};
+                        if (TpmBridge::GetTpmInfo(tpmInfo)) {
+                            sysInfo.tpms.clear();
+                            sysInfo.tpms.push_back(tpmInfo);
+                            Logger::Debug("TPM data collected, isPresent=" + std::to_string(tpmInfo.isPresent));
                         }
-                        Logger::Debug("CPU温度: " + std::to_string(sysInfo.cpuTemperature) + ", GPU温度: " + std::to_string(sysInfo.gpuTemperature));
                     }
                 }
                 catch (const std::bad_alloc& e) {
-                    Logger::Error("获取温度数据失败 - 内存不足: " + std::string(e.what()));
-                    // 清空温度数据以避免显示过时数据
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("获取温度数据失败: " + std::string(e.what()));
-                    // 清空温度数据以避免显示过时数据
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-                catch (...) {
-                    Logger::Error("获取温度数据失败 - 未知异常");
-                    sysInfo.temperatures.clear();
-                    sysInfo.cpuTemperature = 0;
-                    sysInfo.gpuTemperature = 0;
-                }
-
-                // 添加磁盘信息采集（每次循环都获取以确保数据实时性）
-                try {
-                    DiskInfo diskInfo;
-                    auto disks = diskInfo.GetDisks();
-                    if (disks.size() > 8) {
-                        Logger::Error("磁盘数量超过最大允许值（8）。跳过磁盘数据更新。");
-                        sysInfo.disks.clear();
-                    } else {
-                        sysInfo.disks = disks;
-                        if (isFirstRun) {
-                            Logger::Debug("收集到 " + std::to_string(disks.size()) + " 个磁盘条目");
-                            for (size_t i = 0; i < disks.size(); ++i) {
-                                const auto& disk = disks[i];
-                                Logger::Debug("磁盘 " + std::to_string(i) + ": 标签=" + disk.label + ", 文件系统=" + disk.fileSystem);
-                            }
-                        }
-                    }
-                    // 采集物理磁盘并建立逻辑盘映射
-                    if (wmiManager) {
-                        DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
-                    }
-                }
-                catch (const std::bad_alloc& e) {
-                    Logger::Error("获取磁盘/物理磁盘数据失败 - 内存不足: " + std::string(e.what()));
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data - Out of memory: " + std::string(e.what()));
                     sysInfo.physicalDisks.clear();
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("获取磁盘/物理磁盘数据失败: " + std::string(e.what()));
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data: " + std::string(e.what()));
                     sysInfo.physicalDisks.clear();
                 }
                 catch (...) {
-                    Logger::Error("获取磁盘/物理磁盘数据失败 - 未知异常");
-                    sysInfo.disks.clear();
+                    Logger::Error("Failed to get physical disk / TPM data - Unknown exception");
                     sysInfo.physicalDisks.clear();
                 }
 
-                // 写入共享内存前验证数据 - 增强数据验证
+                // Validate data before writing to shared memory - enhanced data validation
                 try {
-                    // CPU使用率验证
+                    // CPU usage validation
                     if (sysInfo.cpuUsage < 0.0 || sysInfo.cpuUsage > 100.0) {
-                        Logger::Warn("CPU使用率数据异常: " + std::to_string(sysInfo.cpuUsage) + "%, 重置为0");
+                        Logger::Warn("CPU usage data abnormal: " + std::to_string(sysInfo.cpuUsage) + "%, resetting to 0");
                         sysInfo.cpuUsage = 0.0;
                     }
                     
-                    // 内存数据验证
                     if (sysInfo.totalMemory > 0) {
                         if (sysInfo.usedMemory > sysInfo.totalMemory) {
-                            Logger::Warn("已用内存超过总内存，数据异常");
+                            Logger::Warn("Used memory exceeds total memory, data abnormal");
                             sysInfo.usedMemory = sysInfo.totalMemory;
                         }
                         if (sysInfo.availableMemory > sysInfo.totalMemory) {
-                            Logger::Warn("可用内存超过总内存，数据异常");
+                            Logger::Warn("Available memory exceeds total memory, data abnormal");
                             sysInfo.availableMemory = sysInfo.totalMemory;
                         }
                     }
                     
-                    // 频率数据验证
+                    // Frequency data validation
                     if (std::isnan(sysInfo.performanceCoreFreq) || std::isinf(sysInfo.performanceCoreFreq)) {
                         sysInfo.performanceCoreFreq = 0.0;
                     }
@@ -1176,7 +1494,7 @@ int main(int argc, char* argv[]) {
                         sysInfo.gpuCoreFreq = 0.0;
                     }
                     
-                    // 温度数据验证
+                    // Temperature data validation
                     if (std::isnan(sysInfo.cpuTemperature) || std::isinf(sysInfo.cpuTemperature)) {
                         sysInfo.cpuTemperature = 0.0;
                     }
@@ -1184,81 +1502,187 @@ int main(int argc, char* argv[]) {
                         sysInfo.gpuTemperature = 0.0;
                     }
                     
-                    // 网络速度验证
-                    if (sysInfo.networkAdapterSpeed > 1000000000000ULL) { // 大于1TB/s可能异常
-                        Logger::Warn("网络适配器速度异常: " + std::to_string(sysInfo.networkAdapterSpeed));
+                    // Network speed validation
+                    if (sysInfo.networkAdapterSpeed > 1000000000000ULL) {
+                        Logger::Warn("Network adapter speed abnormal: " + std::to_string(sysInfo.networkAdapterSpeed));
                         sysInfo.networkAdapterSpeed = 0;
                     }
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("数据验证过程中发生异常: " + std::string(e.what()));
+                    Logger::Error("Exception during data validation: " + std::string(e.what()));
                 }
                 catch (...) {
-                    Logger::Error("数据验证过程中发生未知异常");
+                    Logger::Error("Unknown exception during data validation");
                 }
 
-                // 写入共享内存 - 增强异常处理
+                // Write to shared memory - enhanced exception handling
                 try {
                     if (SharedMemoryManager::GetBuffer()) {
                         SharedMemoryManager::WriteToSharedMemory(sysInfo);
                         if (isDetailedLogging) {
-                            Logger::Debug("成功更新共享内存");
+                            Logger::Debug("Successfully updated shared memory");
                         }
                     } else {
-                        Logger::Error("共享内存缓冲区不可用");
-                        // 尝试重新初始化
+                        Logger::Error("Shared memory buffer unavailable");
                         if (SharedMemoryManager::InitSharedMemory()) {
                             SharedMemoryManager::WriteToSharedMemory(sysInfo);
                             if (isDetailedLogging) {
-                                Logger::Info("重新初始化并更新共享内存");
+                                Logger::Info("Reinitialized and updated shared memory");
                             }
                         } else {
-                            Logger::Error("重新初始化共享内存失败: " + SharedMemoryManager::GetLastError());
+                            Logger::Error("Failed to reinitialize shared memory: " + SharedMemoryManager::GetLastError());
                         }
                     }
                     
                     if (isDetailedLogging) {
-                        Logger::Debug("系统信息已更新到共享内存");
+                        Logger::Debug("System info updated to shared memory");
                     }
                 }
                 catch (const std::bad_alloc& e) {
-                    Logger::Error("处理系统信息时内存不足: " + std::string(e.what()));
+                    Logger::Error("Out of memory while processing system info: " + std::string(e.what()));
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("处理系统信息时发生异常: " + std::string(e.what()));
+                    Logger::Error("Exception while processing system info: " + std::string(e.what()));
                 }
                 catch (...) {
-                    Logger::Error("处理系统信息时发生未知异常");
+                    Logger::Error("Unknown exception while processing system info");
+                }
+                
+                // Update TUI with current data
+                try {
+                    tcmt::TuiData tuiData;
+                    tuiData.cpuName = sysInfo.cpuName;
+                    tuiData.cpuUsage = sysInfo.cpuUsage;
+                    tuiData.physicalCores = sysInfo.physicalCores;
+                    tuiData.performanceCores = sysInfo.performanceCores;
+                    tuiData.efficiencyCores = sysInfo.efficiencyCores;
+                    tuiData.pCoreFreq = sysInfo.performanceCoreFreq;
+                    tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
+                    tuiData.cpuTemp = sysInfo.cpuTemperature;
+                    tuiData.totalMemory = sysInfo.totalMemory;
+                    tuiData.usedMemory = sysInfo.usedMemory;
+                    tuiData.availableMemory = sysInfo.availableMemory;
+                    
+                    if (!sysInfo.gpus.empty()) {
+                        tuiData.gpuName = sysInfo.gpuName;
+                        tuiData.gpuMemory = sysInfo.gpuMemory;
+                        tuiData.gpuUsage = sysInfo.gpuUsage;
+                        tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
+                    }
+                    tuiData.gpuTemp = sysInfo.gpuTemperature;
+                    
+                    // Disks
+                    for (const auto& disk : sysInfo.disks) {
+                        tcmt::TuiData::DiskInfo di;
+                        di.label = disk.label;
+                        di.totalSize = disk.totalSize;
+                        di.usedSpace = disk.usedSpace;
+                        di.fileSystem = disk.fileSystem;
+                        tuiData.disks.push_back(di);
+                    }
+                    
+                    // Network adapters
+                    for (const auto& adapter : sysInfo.adapters) {
+                        tcmt::TuiData::NetInfo ni;
+                        // Convert wchar_t[] arrays to std::string
+                        ni.name = WinUtils::WstringToString(adapter.name);
+                        ni.ip = WinUtils::WstringToString(adapter.ipAddress);
+                        ni.mac = WinUtils::WstringToString(adapter.mac);
+                        ni.type = WinUtils::WstringToString(adapter.adapterType);
+                        ni.speed = adapter.speed;
+                        ni.downloadSpeed = adapter.downloadSpeed;
+                        ni.uploadSpeed = adapter.uploadSpeed;
+                        tuiData.adapters.push_back(ni);
+                    }
+                    
+                    tuiData.osVersion = sysInfo.osVersion;
+                    tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
+                    if (ipcServer) {
+                        auto ct = ipcServer->GetClientTypes();
+                        tuiData.clientTypes.clear();
+                        for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
+                    }
+                    tuiData.temperatures = sysInfo.temperatures;
+                    if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
+                        auto& tpm = sysInfo.tpms[0];
+                        tuiData.tpmInfo = WinUtils::WstringToString(tpm.manufacturer)
+                                        + " v" + WinUtils::WstringToString(tpm.firmwareVersion);
+                        if (!tpm.isEnabled) tuiData.tpmInfo += " (Disabled)";
+                        else if (!tpm.isActive) tuiData.tpmInfo += " (Inactive)";
+                    } else {
+                        tuiData.tpmInfo = "No TPM";
+                    }
+
+                    // WiFi & Bluetooth (every ~3 seconds)
+                    { static int wbCtr = 0;
+                      static WiFiInfo s_wifi;
+                      static BluetoothInfo s_bt;
+                      if (++wbCtr >= 3) { wbCtr = 0;
+                          try { s_wifi.Detect(); } catch (...) {}
+                          try { s_bt.Detect(); } catch (...) {}
+                      }
+                      const auto& wd = s_wifi.GetData();
+                      tuiData.hasWiFi = wd.powerOn;
+                      tuiData.wifiSSID = wd.ssid;
+                      tuiData.wifiRSSI = wd.rssi;
+                      tuiData.wifiChannel = wd.channel;
+                      tuiData.wifiSecurity = wd.security;
+                      const auto& bd = s_bt.GetData();
+                      tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
+                      tuiData.btPowerOn = bd.adapter.powerOn;
+                      tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+
+                      // Write WiFi & Bluetooth to shared memory block
+                      if (auto* buf = SharedMemoryManager::GetBuffer()) {
+                          memset(&buf->wifi, 0, sizeof(buf->wifi));
+                          buf->wifi.powerOn = wd.powerOn;
+                          buf->wifi.isConnected = wd.isConnected;
+                          buf->wifi.rssi = wd.rssi;
+                          buf->wifi.channel = wd.channel;
+                          wcsncpy_s(buf->wifi.ssid, 32, WinUtils::StringToWstring(wd.ssid).c_str(), _TRUNCATE);
+                          wcsncpy_s(buf->wifi.security, 16, WinUtils::StringToWstring(wd.security).c_str(), _TRUNCATE);
+
+                          memset(&buf->bluetooth, 0, sizeof(buf->bluetooth));
+                          buf->bluetooth.powerOn = bd.adapter.powerOn;
+                          buf->bluetooth.deviceCount = static_cast<int32_t>(bd.devices.size());
+                          wcsncpy_s(buf->bluetooth.name, 64, WinUtils::StringToWstring(bd.adapter.name).c_str(), _TRUNCATE);
+                      }
+                    }
+
+                    tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
+                    
+                    tuiApp.UpdateData(tuiData);
+                }
+                catch (const std::exception& e) {
+                    Logger::Warn("TUI data update failed: " + std::string(e.what()));
                 }
 
-                // 计算循环执行时间并自适应休眠 - 优化刷新速度，增强异常处理
+                // Calculate loop execution time and adaptive sleep - optimize refresh speed, enhanced exception handling
                 try {
                     auto loopEnd = std::chrono::high_resolution_clock::now();
                     auto loopDuration = std::chrono::duration_cast<std::chrono::milliseconds>(loopEnd - loopStart);
                     
-                    // 1秒循环时间
+                    // 1 second cycle time
                     int targetCycleTime = 1000;
-                    int sleepTime = (std::max)(targetCycleTime - static_cast<int>(loopDuration.count()), 100); // 最少休眠100ms
+                    int sleepTime = (std::max)(targetCycleTime - static_cast<int>(loopDuration.count()), 100); // Min sleep 100ms
                     
                     if (isDetailedLogging) {
-                        // 将毫秒转换为秒，保留2位小数
                         double loopTimeSeconds = loopDuration.count() / 1000.0;
                         double sleepTimeSeconds = sleepTime / 1000.0;
                         
-                        // 验证计算结果的合理性
                         if (loopTimeSeconds < 0 || loopTimeSeconds > 60) {
-                            Logger::Warn("循环时间计算异常: " + std::to_string(loopTimeSeconds) + "秒");
+                            Logger::Warn("Loop time calculation abnormal: " + std::to_string(loopTimeSeconds) + " seconds");
                         }
                         
                         std::stringstream ss;
                         ss << std::fixed << std::setprecision(2);
-                        ss << "主监控循环第 #" << loopCounter << " 次执行耗时 " 
-                           << loopTimeSeconds << "秒，将休眠 " << sleepTimeSeconds << "秒";
+                        ss << "Main monitoring loop #" << loopCounter << " executed in " 
+                           << loopTimeSeconds << "s, will sleep for " << sleepTimeSeconds << "s";
                         
                         Logger::Debug(ss.str());
                     }
                     
-                    // 休眠时检查退出标志 - 使用更短的检查间隔提升响应性
+                    // Check exit flag during sleep - use shorter check interval for better responsiveness
                     auto sleepStart = std::chrono::high_resolution_clock::now();
                     while (!g_shouldExit.load()) {
                         try {
@@ -1267,137 +1691,175 @@ int main(int argc, char* argv[]) {
                             if (elapsed.count() >= sleepTime) {
                                 break;
                             }
-                            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 50ms检查间隔
+                            std::this_thread::sleep_for(std::chrono::milliseconds(50));
                         }
                         catch (const std::exception& e) {
-                            Logger::Warn("休眠过程中发生异常: " + std::string(e.what()));
-                            break; // 退出休眠循环
+                            Logger::Warn("Exception during sleep: " + std::string(e.what()));
+                            break;
                         }
                         catch (...) {
-                            Logger::Warn("休眠过程中发生未知异常");
+                            Logger::Warn("Unknown exception during sleep");
                             break;
                         }
                     }
                 }
                 catch (const std::exception& e) {
-                    Logger::Error("计算循环时间时发生异常: " + std::string(e.what()));
-                    // 使用默认休眠时间
+                    Logger::Error("Exception while calculating loop time: " + std::string(e.what()));
                     try {
                         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                     } catch (...) {
-                        // 如果连休眠都失败，记录错误但继续执行
-                        Logger::Fatal("系统休眠功能异常");
+                        Logger::Fatal("System sleep function abnormal");
                     }
                 }
                 catch (...) {
-                    Logger::Error("计算循环时间时发生未知异常");
+                    Logger::Error("Unknown exception while calculating loop time");
                     try {
                         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                     } catch (...) {
-                        Logger::Fatal("系统休眠功能异常");
+                        Logger::Fatal("System sleep function abnormal");
                     }
                 }
                 
-                // 安全增加循环计数器
+                // Safely increment loop counter
                 try {
+                    // Push sensor history
+                    if (historyLogger.IsRunning()) {
+                        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        std::vector<SensorSnapshot> snapshots;
+                        snapshots.push_back({"cpu/usage", sysInfo.cpuUsage, "%", (uint64_t)nowMs});
+                        snapshots.push_back({"cpu/temperature", sysInfo.cpuTemperature, "C", (uint64_t)nowMs});
+                        snapshots.push_back({"gpu/usage", sysInfo.gpuUsage, "%", (uint64_t)nowMs});
+                        snapshots.push_back({"gpu/temperature", sysInfo.gpuTemperature, "C", (uint64_t)nowMs});
+                        if (sysInfo.totalMemory > 0) {
+                            double memPct = 100.0 * sysInfo.usedMemory / sysInfo.totalMemory;
+                            snapshots.push_back({"memory/percent", memPct, "%", (uint64_t)nowMs});
+                        }
+                        if (sysInfo.batteryPercent >= 0)
+                            snapshots.push_back({"battery/percent", (double)sysInfo.batteryPercent, "%", (uint64_t)nowMs});
+                        // USB detection (every ~10 seconds)
+                        static int usbCheckCounter = 0;
+                        if (++usbCheckCounter >= 20) {
+                            usbCheckCounter = 0;
+                            try {
+                                UsbInfo usb;
+                                usb.Detect();
+                                const auto& devs = usb.GetDevices();
+                                if (!devs.empty()) {
+                                    Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                                    for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
+                                        Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                                                    + " PID:" + std::to_string(devs[di].pid));
+                                }
+                            } catch (...) {}
+                        }
+
+                        historyLogger.WriteBatch(snapshots);
+                    }
+
                     loopCounter++;
                     
-                    // 防止循环计数器溢出（虽然几乎不可能发生）
                     if (loopCounter < 0 || loopCounter > 2000000000) {
-                        Logger::Warn("循环计数器异常，重置为1");
+                        Logger::Warn("Loop counter abnormal, resetting to 1");
                         loopCounter = 1;
                     }
                 }
                 catch (...) {
-                    Logger::Error("循环计数器更新失败");
-                    loopCounter = 1; // 重置为安全值
+                    Logger::Error("Failed to update loop counter");
+                    loopCounter = 1;
                 }
                 
-                // 首次运行后设置标志
+                // Set flag after first run
                 if (isFirstRun) {
                     isFirstRun = false;
                 }
             }
             catch (const std::bad_alloc& e) {
-                Logger::Critical("主循环中发生内存分配异常: " + std::string(e.what()));
-                // 继续循环而不是退出，增强程序稳定性
+                Logger::Critical("Memory allocation exception in main loop: " + std::string(e.what()));
                 try {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2000)); // 更长的休眠以缓解内存压力
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
                 } catch (...) {
-                    Logger::Fatal("无法执行休眠，系统严重异常");
+                    Logger::Fatal("Cannot execute sleep, system severe exception");
                 }
                 continue;
             }
             catch (const std::exception& e) {
-                Logger::Critical("主循环中发生异常: " + std::string(e.what()));
-                // 继续循环而不是退出，增强程序稳定性
+                Logger::Critical("Exception in main loop: " + std::string(e.what()));
                 try {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 } catch (...) {
-                    Logger::Fatal("无法执行休眠，系统严重异常");
+                    Logger::Fatal("Cannot execute sleep, system severe exception");
                 }
                 continue;
             }
             catch (...) {
-                Logger::Fatal("主循环中发生未知异常");
-                // 继续循环而不是退出，增强程序稳定性
+                Logger::Fatal("Unknown exception in main loop");
                 try {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 } catch (...) {
-                    // 如果连休眠都失败，程序可能处于严重异常状态
                     SafeExit(1);
                 }
                 continue;
             }
         }
         
-        Logger::Info("程序收到退出信号，开始清理");
+        Logger::Info("Program received exit signal, starting cleanup");
+        
+        // Stop TUI before cleanup
+        try {
+            tuiApp.Stop();
+            Logger::Debug("TUI stopped");
+        }
+        catch (const std::exception& e) {
+            Logger::Error("Error stopping TUI: " + std::string(e.what()));
+        }
+        
+        historyLogger.Shutdown();
+        Logger::Info("HistoryLogger stopped");
         SafeExit(0);
     }
     catch (const std::exception& e) {
-        Logger::Fatal("程序发生致命错误: " + std::string(e.what()));
+        Logger::Fatal("Program fatal error: " + std::string(e.what()));
         SafeExit(1);
     }
     catch (...) {
-        Logger::Fatal("程序发生未知致命错误");
+        Logger::Fatal("Program unknown fatal error");
         SafeExit(1);
     }
 }
 
-// 检查是否有按键输入（非阻塞）- 增强异常处理
+// Check for key press (non-blocking) - enhanced exception handling
 bool CheckForKeyPress() {
     try {
         return _kbhit() != 0;
     }
     catch (const std::exception& e) {
-        Logger::Warn("检查按键输入时发生异常: " + std::string(e.what()));
+        Logger::Warn("Exception while checking key press: " + std::string(e.what()));
         return false;
     }
     catch (...) {
-        Logger::Warn("检查按键输入时发生未知异常");
+        Logger::Warn("Unknown exception while checking key press");
         return false;
     }
 }
 
-// 获取按键（非阻塞）- 增强异常处理
 char GetKeyPress() {
     try {
         if (_kbhit()) {
             char key = _getch();
-            // 验证按键值的合理性
-            if (key >= 0 && key <= 127) { // ASCII范围
+            if (key >= 0 && key <= 127) {
                 return key;
             } else {
-                Logger::Warn("检测到异常按键值: " + std::to_string(static_cast<int>(key)));
+                Logger::Warn("Detected abnormal key value: " + std::to_string(static_cast<int>(key)));
                 return 0;
             }
         }
     }
     catch (const std::exception& e) {
-        Logger::Warn("获取按键时发生异常: " + std::string(e.what()));
+        Logger::Warn("Exception while getting key press: " + std::string(e.what()));
     }
     catch (...) {
-        Logger::Warn("获取按键时发生未知异常");
+        Logger::Warn("Unknown exception while getting key press");
     }
     return 0;
 }

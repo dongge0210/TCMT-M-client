@@ -12,8 +12,7 @@ x86/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/
-Project1/Project1/
-Project1/x64/
+[Bb]uild/
 
 # Visual Studio files
 *.vsidx
@@ -88,6 +87,30 @@ Project1/x64/
 UI_README.md
 
 # Local IDE configurations
-.codemap/main-panel.json
-claude.md
-CLAUDE.md
+.codemap/
+cmake-build/
+
+
+# Superpowers docs (local specs)
+docs/superpowers/
+system_monitor.json
+TODO.md
+build-debug/
+knowledge/
+vault/
+inbox/
+.remember/
+.obsidian/
+.cache/
+.litho/
+.claude/settings.local.json
+swarmvault.schema.md
+swarmvault.config.json
+compile_commands.json
+.claude/settings.local.json
+.cursor/
+litho.docs
+litho.toml
+litho.toml.bak
+.claude/settings.local.json
+src/third_party/sqlite3/sqlite-amalgamation.zip

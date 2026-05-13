@@ -1,9 +1,9 @@
-[submodule "src/third_party/FFmpeg-7.1"]
-	path = src/third_party/FFmpeg-7.1
-	url = https://github.com/FFmpeg/FFmpeg
+[submodule "src/third_party/FFmpeg"]
+	path = src/third_party/FFmpeg
+	url = https://github.com/dongge0210/FFmpeg
 [submodule "src/third_party/LibreHardwareMonitor"]
 	path = src/third_party/LibreHardwareMonitor
-	url = https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+	url = https://github.com/dongge0210/LibreHardwareMonitor
 [submodule "src/CPP-parsers"]
 	path = src/CPP-parsers
 	url = https://github.com/dongge0210/CPP-parsers.git
@@ -25,3 +25,6 @@
 [submodule "src/third_party/tpm2-tss"]
 	path = src/third_party/tpm2-tss
 	url = https://github.com/dongge0210/tpm2-tss.git
+[submodule "src/third_party/zlib"]
+	path = src/third_party/zlib
+	url = https://github.com/dongge0210/zlib.git

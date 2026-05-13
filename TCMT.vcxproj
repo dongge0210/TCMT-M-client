@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{EB8E0379-D5D5-45E8-9F90-73216725C93A}</ProjectGuid>
+    <RootNamespace>TCMT</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <WindowsTargetPlatformMinVersion>10.0.26100.0</WindowsTargetPlatformMinVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <CppCliTargetPlatform>x64</CppCliTargetPlatform>
+    <CLRSupport>true</CLRSupport>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>Unicode</CharacterSet>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ManagedAssembly>false</ManagedAssembly>
+    <CLRSupport>true</CLRSupport>
+    <IncludePath>$(IncludePath)</IncludePath>
+    <LibraryPath>$(WindowsSDK_LibraryPath_x64);$(LibraryPath)</LibraryPath>
+    <ExcludePath>$(WindowsSDK_MetadataPath);$(ExcludePath)</ExcludePath>
+    <ExternalIncludePath>$(CUDA_PATH)\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ManagedAssembly>false</ManagedAssembly>
+    <CLRSupport>true</CLRSupport>
+    <IncludePath>$(CUDA_PATH)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WindowsSDK_LibraryPath_x64);$(LibraryPath)</LibraryPath>
+    <ExcludePath>$(WindowsSDK_MetadataPath);$(ExcludePath)</ExcludePath>
+    <ExternalIncludePath>$(CUDA_PATH)\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>EnableAllWarnings</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;WIN32_LEAN_AND_MEAN;TCMT_WINDOWS;
+NOMINMAX;
+_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <CompileAsManaged>false</CompileAsManaged>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(SolutionDir)src\third_party\LibreHardwareMonitor\LibreHardwareMonitorLib\obj\Debug\net472;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalUsingDirectories>$(WindowsSDK_MetadataPath);$(FrameworkPathOverride);$(DOTNET_ReferenceAssemblyPath_472);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <AdditionalOptions>/Zc:__cplusplus /wd4005 /wd4244 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
+      <ExceptionHandling>Async</ExceptionHandling>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <Optimization>Disabled</Optimization>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <CLRSupport>true</CLRSupport>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)src\third_party\LibreHardwareMonitor\bin\Debug\net472;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;TCMT_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ExceptionHandling>Async</ExceptionHandling>
+      <AdditionalOptions>/Zc:__cplusplus /wd4005 /wd4244 /utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <CLRSupport>true</CLRSupport>
+      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)src\third_party\LibreHardwareMonitor\bin\Release\net472;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrt.lib;ucrt.lib;vcruntime.lib;tbs.lib;wlanapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="src\core\Config\ConfigManager.h" />
+    <ClInclude Include="src\core\cpu\CpuInfo.h" />
+    <ClInclude Include="src\core\DataStruct\DataStruct.h" />
+    <ClInclude Include="src\core\DataStruct\SharedMemoryManager.h" />
+    <ClInclude Include="src\core\disk\DiskInfo.h" />
+    <ClInclude Include="src\core\gpu\GpuInfo.h" />
+    <ClInclude Include="src\core\memory\MemoryInfo.h" />
+    <ClInclude Include="src\core\network\NetworkAdapter.h" />
+    <ClInclude Include="src\core\power\PowerInfo.h" />
+    <ClInclude Include="src\core\os\OSInfo.h" />
+    <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
+    <ClInclude Include="src\core\Utils\LibreHardwareMonitorBridge.h" />
+    <ClInclude Include="src\core\Utils\Logger.h" />
+    <ClInclude Include="src\core\Utils\stdafx.h" />
+    <ClInclude Include="src\core\Utils\TimeUtils.h" />
+    <ClInclude Include="src\core\Utils\WinUtils.h" />
+    <ClInclude Include="src\core\Utils\WMIManager.h" />
+    <ClInclude Include="src\core\bluetooth\BluetoothInfo.h" />
+    <ClInclude Include="src\core\wifi\WiFiInfo.h" />
+    <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h" />
+    <ClInclude Include="src\core\ModuleCoordinator.h" />
+    <ClInclude Include="src\core\Utils\JThreadCompat.h" />
+    <ClInclude Include="src\tui\TuiApp.h" />
+    <ClInclude Include="src\tui\LogBuffer.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\core\Config\ConfigManager.cpp" />
+    <ClCompile Include="src\core\cpu\CpuInfo.cpp" />
+    <ClCompile Include="src\core\DataStruct\SharedMemoryManager.cpp" />
+    <!-- SharedMemoryManager.cpp includes platform-specific implementation via #include -->
+    <!-- SharedMemoryManager_Windows.cpp NOT needed here -->
+    <ClCompile Include="src\core\disk\DiskInfo.cpp" />
+    <ClCompile Include="src\core\gpu\GpuInfo.cpp" />
+    <ClCompile Include="src\core\history\HistoryLogger.cpp" />
+    <ClCompile Include="src\core\IPC\IPCClient.cpp" />
+    <ClCompile Include="src\core\IPC\IPCServer.cpp" />
+    <ClCompile Include="src\core\MCP\MCPServer.cpp" />
+    <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
+    <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
+    <ClCompile Include="src\core\power\PowerInfo.cpp" />
+    <ClCompile Include="src\core\os\OSInfo.cpp" />
+    <ClCompile Include="src\core\Platform\Platform_Windows.cpp" />
+    <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp" />
+    <ClCompile Include="src\core\usb\UsbInfo.cpp" />
+    <ClCompile Include="src\core\wifi\WiFiInfo.cpp" />
+    <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c" />
+    <ClCompile Include="src\core\ModuleCoordinator.cpp" />
+    <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp" />
+    <ClCompile Include="src\core\ModuleCoordinator_io.cpp" />
+    <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Default</BasicRuntimeChecks>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</CompileAsManaged>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</CompileAsManaged>
+    </ClCompile>
+    <ClCompile Include="src\core\Utils\LibreHardwareMonitorBridge.cpp">
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Default</BasicRuntimeChecks>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</CompileAsManaged>
+      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</CompileAsManaged>
+    </ClCompile>
+    <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp" />
+    <ClCompile Include="src\core\Utils\Logger.cpp" />
+    <ClCompile Include="src\core\Utils\TimeUtils.cpp" />
+    <ClCompile Include="src\core\Utils\WinUtils.cpp" />
+    <ClCompile Include="src\core\Utils\WMIManager.cpp" />
+    <ClCompile Include="src\core\Utils\TpmBridge.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\tui\TuiApp.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="mscorlib">
+      <HintPath>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="System">
+      <HintPath>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll</HintPath>
+    </Reference>
+    <Reference Include="HidSharp">
+      <HintPath>$(ProjectDir)src\third_party\LibreHardwareMonitor\bin\Release\net472\HidSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="LibreHardwareMonitorLib">
+      <HintPath>$(ProjectDir)src\third_party\LibreHardwareMonitor\bin\Release\net472\LibreHardwareMonitorLib.dll</HintPath>
+    </Reference>
+    <Reference Include="System.CodeDom">
+      <HintPath>$(ProjectDir)src\third_party\LibreHardwareMonitor\bin\Release\net472\System.CodeDom.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
