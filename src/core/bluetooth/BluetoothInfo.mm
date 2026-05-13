@@ -8,17 +8,6 @@
 
 #import <IOBluetooth/IOBluetooth.h>
 
-// Simple delegate for IOBluetoothDeviceInquiry
-@interface TCMTInquiryDelegate : NSObject <IOBluetoothDeviceInquiryDelegate>
-@property BOOL done;
-@end
-
-@implementation TCMTInquiryDelegate
-- (void)deviceInquiryComplete:(IOBluetoothDeviceInquiry *)sender error:(IOReturn)error aborted:(BOOL)aborted {
-    _done = YES;
-}
-@end
-
 void BluetoothInfo::Detect() {
     Clear();
 
@@ -50,44 +39,10 @@ void BluetoothInfo::Detect() {
                 data_.devices.push_back(std::move(d));
             }
         }
-
-        // Inquiry scan for nearby/discoverable devices (~3s)
-        TCMTInquiryDelegate* delegate = [[TCMTInquiryDelegate alloc] init];
-        delegate.done = NO;
-        IOBluetoothDeviceInquiry* inquiry = [IOBluetoothDeviceInquiry inquiryWithDelegate:delegate];
-        inquiry.inquiryLength = 3;
-        inquiry.updateNewDeviceNames = YES;
-        [inquiry start];
-
-        // Spin run loop until complete or 5s timeout
-        NSDate* timeout = [NSDate dateWithTimeIntervalSinceNow:5.0];
-        while (!delegate.done && [timeout timeIntervalSinceNow] > 0) {
-            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
-                                      beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
-        }
-        [inquiry stop];
-
-        NSArray* found = [inquiry foundDevices];
-        if (found) {
-            for (IOBluetoothDevice* dev in found) {
-                NSString* addr = [dev addressString];
-                if (!addr) continue;
-                std::string addrStr = [addr UTF8String];
-                // Skip if already in paired list
-                bool dup = false;
-                for (const auto& d : data_.devices) {
-                    if (d.address == addrStr) { dup = true; break; }
-                }
-                if (dup) continue;
-                BluetoothDeviceData d;
-                if ([dev name]) d.name = [[dev name] UTF8String];
-                d.address = addrStr;
-                d.connected = [dev isConnected];
-                d.remembered = false;
-                if ([dev isConnected]) d.rssi = (int)[dev RSSI];
-                data_.devices.push_back(std::move(d));
-            }
-        }
+        // NOTE: Inquiry scan (IOBluetoothDeviceInquiry) is NOT performed here
+        // because it blocks for 3-5 seconds per call and Detect() runs every
+        // ~3 seconds.  If a nearby-device scan is needed it should be a
+        // separate one-shot API, not part of the periodic collection loop.
 
         Logger::Debug("BluetoothInfo: " + data_.adapter.name +
                       " devices=" + std::to_string(data_.devices.size()));
