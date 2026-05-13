@@ -7,6 +7,10 @@ on:
     branches: [ main, dev ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build-windows:
     name: Windows (MSBuild + CUDA)
