@@ -175,7 +175,7 @@ public static class IPCSystemInfoMapper
             if (reader.HasField("phys/0/model"))
             {
                 int idx = 0;
-                while (reader.HasField($"phys/{idx}/model") && idx < 2)
+                while (reader.HasField($"phys/{idx}/model") && idx < 8)
                 {
                     var model = reader.ReadWString($"phys/{idx}/model") ?? "";
                     var serial = reader.ReadWString($"phys/{idx}/serial") ?? "";

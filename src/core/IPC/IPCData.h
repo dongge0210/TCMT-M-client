@@ -172,7 +172,7 @@ struct IPCDataBlock {
         float    healthPercent       = 0;
         bool     smartSupported      = false;
     };
-    PhysDiskSlot physicalDisks[2]    = {};
+    PhysDiskSlot physicalDisks[8]    = {};
     uint8_t  physDiskCount           = 0;
 
     // WiFi

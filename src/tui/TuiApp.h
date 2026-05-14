@@ -60,6 +60,7 @@ struct TuiData {
 
     // Disk
     struct DiskInfo {
+        char letter = 0;        // Drive letter (e.g. 'C')
         std::string label;
         uint64_t totalSize = 0;
         uint64_t usedSpace = 0;

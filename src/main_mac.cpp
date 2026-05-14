@@ -147,8 +147,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
         addF((std::string(p)+"value").c_str(), base + offsetof(B::TempSlot, value));
     }
 
-    // Physical disks (up to 2)
-    for (int i = 0; i < 2; ++i) {
+    // Physical disks (up to 8)
+    for (int i = 0; i < 8; ++i) {
         char p[32]; snprintf(p, sizeof(p), "phys/%d/", i);
         uint32_t base = offsetof(B, physicalDisks) + i * sizeof(B::PhysDiskSlot);
         addS((std::string(p)+"model").c_str(),       base + offsetof(B::PhysDiskSlot, model), 64);
@@ -437,7 +437,7 @@ int main(int argc, char* argv[]) {
                     dv["used"]  = ipc.ReadUInt64("disk/" + std::to_string(i) + "/used").value_or(0);
                     j["volumes"].push_back(dv);
                 }
-                for (int i = 0; i < 2; i++) {
+                for (int i = 0; i < 8; i++) {
                     auto model = ipc.ReadString("phys/" + std::to_string(i) + "/model");
                     if (!model || model->empty()) continue;
                     nlohmann::json pj;
@@ -827,7 +827,7 @@ int main(int argc, char* argv[]) {
                             } catch (...) {}
                         }
                         b->physDiskCount = 0;
-                        for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(2)); ++pi) {
+                        for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
                             auto& pd = b->physicalDisks[pi];
                             const auto& src = cachedSmart[pi];
                             for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)

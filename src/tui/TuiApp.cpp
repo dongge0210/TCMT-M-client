@@ -262,8 +262,16 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         auto label = TrimRight(d.label.empty() ? "Untitled" : d.label, 14);
         double upct = (d.totalSize > 0) ? 100.0 * d.usedSpace / d.totalSize : 0;
         auto usedStr = FormatSize(d.usedSpace);
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, label.c_str());
-        int barCol = x0 + 2 + static_cast<int>(label.size()) + 1;
+        // Show drive letter
+        char letterBuf[16];
+        int letterPrefix = 0;
+        if (d.letter && d.letter != '\0') {
+            snprintf(letterBuf, sizeof(letterBuf), "[%c:] ", d.letter);
+            letterPrefix = static_cast<int>(strlen(letterBuf));
+            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
+        }
+        mvwprintw(win, y + lines, x0 + 2 + letterPrefix, "%.*s", maxW - 2 - letterPrefix, label.c_str());
+        int barCol = x0 + 2 + letterPrefix + static_cast<int>(label.size()) + 1;
         if (barCol + bw + 2 < x0 + maxW) {
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, barCol, "%.*s", bw, FormatBar(upct, bw).c_str());

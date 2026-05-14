@@ -665,8 +665,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
     }
 
-    // Physical disks (SMART) (up to 2)
-    for (int i = 0; i < 2; i++) {
+    // Physical disks (SMART) (up to 8)
+    for (int i = 0; i < 8; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "phys/%d/", i);
         uint32_t base = offsetof(SharedMemoryBlock, physicalDisks) + i * sizeof(PhysicalDiskSmartData);
         addField((std::string(pfx)+"model").c_str(),       base + offsetof(PhysicalDiskSmartData, model), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
