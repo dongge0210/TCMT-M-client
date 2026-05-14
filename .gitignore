@@ -115,3 +115,4 @@ litho.toml.bak
 .claude/settings.local.json
 src/third_party/sqlite3/sqlite-amalgamation.zip
 docs/API.txt
+docs/docs_architecture_and_protocol_plan_v0.14_full_Version11.md
