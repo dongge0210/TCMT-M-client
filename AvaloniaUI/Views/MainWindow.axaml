@@ -202,7 +202,7 @@
                         </StackPanel>
                         <!-- WiFi -->
                         <TextBlock Text="{Binding WifiDisplay}" Foreground="#FFB3B3B3" FontSize="11"
-                                   IsVisible="{Binding HasWiFi}" Margin="0,3,0,0"/>
+                                   Margin="0,3,0,0"/>
                         <!-- Bluetooth -->
                         <TextBlock Text="{Binding BtDisplay}" Foreground="#FFB3B3B3" FontSize="11"
                                    IsVisible="{Binding HasBluetooth}" Margin="0,2,0,0"/>

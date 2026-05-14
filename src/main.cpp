@@ -649,6 +649,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     for (int i = 0; i < 8; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
         uint32_t base = offsetof(SharedMemoryBlock, disks) + i * sizeof(SharedMemoryBlock::SharedDiskData);
+        addField((std::string(pfx)+"letter").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, letter), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"label").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, label), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
         addField((std::string(pfx)+"fs").c_str(),    base + offsetof(SharedMemoryBlock::SharedDiskData, fileSystem), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
         addField((std::string(pfx)+"total").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, totalSize), 8, (uint8_t)FT::UInt64);
@@ -675,6 +676,12 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
         addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
+        // logical drive letters (up to 8 letters, stored as individual bytes + count)
+        for (int j = 0; j < 8; j++) {
+            char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);
+            addField(fn, base + offsetof(PhysicalDiskSmartData, logicalDriveLetters) + j, 1, (uint8_t)FT::UInt8);
+        }
+        addField((std::string(pfx)+"letterCount").c_str(), base + offsetof(PhysicalDiskSmartData, logicalDriveCount), 4, (uint8_t)FT::Int32);
     }
 
     // WiFi

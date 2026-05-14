@@ -132,6 +132,7 @@ public static class IPCSystemInfoMapper
                 {
                     var label = reader.ReadWString($"disk/{idx}/label") ?? "";
                     var total = reader.ReadUInt64($"disk/{idx}/total") ?? 0;
+                    var letter = (char)(reader.ReadUInt8($"disk/{idx}/letter") ?? 0);
                     var used = reader.ReadUInt64($"disk/{idx}/used") ?? 0;
                     var free = reader.ReadUInt64($"disk/{idx}/free") ?? 0;
                     var fs = reader.ReadWString($"disk/{idx}/fs") ?? "";
@@ -140,7 +141,7 @@ public static class IPCSystemInfoMapper
                     {
                         info.Disks.Add(new DiskData
                         {
-                            Letter = '\0', // no drive letters on macOS
+                            Letter = letter,
                             Label = label,
                             FileSystem = fs,
                             TotalSize = total,
@@ -184,6 +185,15 @@ public static class IPCSystemInfoMapper
                     var health = reader.ReadUInt8($"phys/{idx}/health") ?? 0;
                     var supported = reader.ReadBool($"phys/{idx}/smartSupported") ?? false;
 
+                    // Read logical drive letters
+                    var driveLetters = new System.Collections.Generic.List<char>();
+                    int letterCount = reader.ReadInt32($"phys/{idx}/letterCount") ?? 0;
+                    for (int j = 0; j < 8; j++)
+                    {
+                        byte b = reader.ReadUInt8($"phys/{idx}/letter{j}") ?? 0;
+                        if (b >= (byte)'A' && b <= (byte)'Z') driveLetters.Add((char)b);
+                    }
+
                     if (capacity > 0)
                     {
                         info.PhysicalDisks.Add(new PhysicalDiskSmartData
@@ -194,7 +204,8 @@ public static class IPCSystemInfoMapper
                             InterfaceType = iface,
                             Temperature = temp,
                             HealthPercentage = health,
-                            SmartSupported = supported
+                            SmartSupported = supported,
+                            LogicalDriveLetters = driveLetters
                         });
                     }
                     idx++;

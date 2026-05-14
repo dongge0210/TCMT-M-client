@@ -657,12 +657,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
          a.AdapterType.Contains("无线")));
     // On Windows: check if any network adapter is wireless
     // On macOS: use WiFi hardware presence from CoreWLAN (adapter types not reported)
-    public bool HasWiFi => IsMacOS ? HasWifiHardware : HasWirelessAdapter;
+    public bool HasWiFi => true; // Always show WiFi status
     public string WifiDisplay
     {
         get
         {
-            if (!HasWirelessAdapter) return "";
+            if (!HasWirelessAdapter && !IsMacOS) return "WiFi: OFF";
+            if (!HasWifiHardware && IsMacOS) return "WiFi: OFF";
             var cppWiFiOn = WifiSSID != "" || WifiRSSI != 0 || WifiChannel != 0;
             if (!cppWiFiOn) return "WiFi: OFF";
             return !string.IsNullOrEmpty(WifiSSID)
