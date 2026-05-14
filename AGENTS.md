@@ -65,5 +65,4 @@ Do NOT hardcode build output paths. Use the MCP server's inference:
 - macOS requires `brew install ncurses` — true, but `find_package(Curses)` in CMake handles it
 
 ## User additional notices
-- **language analysis**: Use 'linguisto --json' to determine language percentages
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.

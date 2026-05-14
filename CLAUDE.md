@@ -143,5 +143,4 @@ git submodule update --init --recursive
 - **Config**: nlohmann/json (header-only, bundled in CPP-parsers submodule)
 
 ## User addition notices
-- **language analysis**: Use 'linguisto --json' to determine language percentages
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
