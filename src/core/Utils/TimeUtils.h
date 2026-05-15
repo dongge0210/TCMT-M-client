@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <string>
 #include <chrono>
 
@@ -10,7 +10,6 @@ public:
     static std::string GetBootTimeUtc();
     static std::string GetUptime();
     static uint64_t GetUptimeMilliseconds();
-    static std::string GetCurrentLocalTime();  // 新增：获取当前本地时间
-    static std::string GetCurrentUtcTime();    // 新增：获取当前UTC时间
+    static std::string GetCurrentLocalTime();  // Added: Get current local time
+    static std::string GetCurrentUtcTime();    // Added: Get current UTC time
 };
-

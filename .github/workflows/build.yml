@@ -1,50 +1,91 @@
-name: Build TCMT Windows Client
+name: Build TCMT-M
 
 on:
-  push:
-    branches: [ main, develop ]
+  #push:
+    #branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
-env:
-  SOLUTION_FILE_PATH: Project1/Project1.sln
-  BUILD_CONFIGURATION: Release
-  BUILD_PLATFORM: x64
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  build:
-    runs-on: windows-2022
-    
+  build-windows:
+    name: Windows (MSBuild + CUDA)
+    runs-on: windows-2025
+
+    env:
+      SOLUTION_FILE_PATH: TCMT.sln
+      BUILD_CONFIGURATION: Release
+      BUILD_PLATFORM: x64
+
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         submodules: recursive
         fetch-depth: 0
 
-    # CUDA Toolkit 缓存
-    - name: Cache CUDA Toolkit
-      uses: actions/cache@v4
+    - name: Cache CUDA
+      id: cache-cuda
+      uses: actions/cache/restore@v4
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
-        key: cuda-12.6.0
+        key: cuda-13.2.0
+        restore-keys: |
+          cuda-13.2-
 
-    - name: Setup CUDA 12.6
+    - name: Check CUDA exists
+      id: check-cuda
+      run: |
+        if (Test-Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin\nvcc.exe") {
+          Write-Host "CUDA found"
+          echo "cuda_found=true" >> $env:GITHUB_OUTPUT
+        } elseif (Test-Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2.0\bin\nvcc.exe") {
+          Write-Host "CUDA found at v13.2.0"
+          echo "cuda_found=true" >> $env:GITHUB_OUTPUT
+        } else {
+          Write-Host "CUDA not found"
+          echo "cuda_found=false" >> $env:GITHUB_OUTPUT
+        }
+
+    - name: Setup CUDA 13.2
+      if: steps.check-cuda.outputs.cuda_found != 'true'
       uses: Jimver/cuda-toolkit@v0.2.35
       with:
-        cuda: '12.6.0'
-        method: 'network'
+        cuda: '13.2.0'
 
-    - name: Show CUDA directory contents
-      run: dir "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+    - name: Set CUDA_PATH
+      run: |
+        $env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2"
+        if (!(Test-Path "$env:CUDA_PATH\bin\nvcc.exe")) {
+          $env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2.0"
+        }
+        if (!(Test-Path "$env:CUDA_PATH\bin\nvcc.exe")) {
+          $env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1.0"
+        }
+        if (Test-Path "$env:CUDA_PATH\bin\nvcc.exe") {
+          echo "CUDA_PATH=$env:CUDA_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "CUDA_PATH=$env:CUDA_PATH"
+        } else {
+          Write-Host "Warning: CUDA not found, setting empty path"
+          echo "CUDA_PATH=" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
+
+    - name: Save CUDA cache
+      if: steps.check-cuda.outputs.cuda_found != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
+        key: cuda-13.2.0
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v3
 
-    # .NET tools 缓存
     - name: Cache .NET tools
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.dotnet/tools
         key: dotnet-tools-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
@@ -53,7 +94,6 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x64
-        # toolset: 14.3 # 云端不用写死，自动选最新
 
     - name: Setup .NET Framework
       uses: actions/setup-dotnet@v5
@@ -72,10 +112,10 @@ jobs:
       run: |
         msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
-    - name: Build WPF-UI1
+    - name: Build AvaloniaUI
       run: |
-        cd WPF-UI1
-        dotnet build WPF-UI1.csproj -c Release
+        cd AvaloniaUI
+        dotnet build AvaloniaUI.csproj -c Release
 
     - name: Build main project
       run: |
@@ -84,8 +124,36 @@ jobs:
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: TCMT-Windows-Client-${{ env.BUILD_PLATFORM }}-${{ env.BUILD_CONFIGURATION }}
+        name: TCMT-Windows-x64-Release
         path: |
-          Project1/x64/${{ env.BUILD_CONFIGURATION }}/*.exe
-          Project1/x64/${{ env.BUILD_CONFIGURATION }}/*.dll
-          Project1/x64/${{ env.BUILD_CONFIGURATION }}/*.pdb
+          x64/${{ env.BUILD_CONFIGURATION }}/*.exe
+          x64/${{ env.BUILD_CONFIGURATION }}/*.dll
+          x64/${{ env.BUILD_CONFIGURATION }}/*.pdb
+
+  build-macos:
+    name: macOS (CMake + Clang)
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Install dependencies
+      run: brew install ncurses
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: |
+        cmake --build build -j$(sysctl -n hw.ncpu)
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: TCMT-macOS-arm64-Release
+        path: build/src/TCMT-M

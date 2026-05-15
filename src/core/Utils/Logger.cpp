@@ -1,201 +1,426 @@
-﻿#include "stdafx.h"
 #include "Logger.h"
+
+#if defined(TCMT_MACOS) || defined(_WIN32)
+#include "../../tui/LogBuffer.h"
+#endif
+
+#include <filesystem>
+
+std::ofstream Logger::logFile;
+std::mutex Logger::logMutex;
+bool Logger::consoleOutputEnabled = true;
+LogLevel Logger::currentLogLevel = LOG_DEBUG;
+#ifdef TCMT_WINDOWS
+void* Logger::hConsole = nullptr;
+#else
+void* Logger::hConsole = nullptr;
+#endif
+
+// Async logging members
+std::vector<std::string> Logger::logQueue;
+std::condition_variable Logger::queueCV;
+std::thread Logger::workerThread;
+std::atomic<bool> Logger::shutdownFlag{false};
+std::atomic<bool> Logger::logFileOpen{false};
+
+#if defined(TCMT_MACOS) || defined(_WIN32)
+// Global TUI log buffer (for TUI mode)
+static tcmt::LogBuffer g_tuiLogBuffer;
+#endif
+
+// ======================== Async Worker Thread ========================
+void Logger::WorkerThreadFunc() {
+    std::vector<std::string> localQueue;
+    while (true) {
+        {
+            std::unique_lock<std::mutex> lock(logMutex);
+            queueCV.wait(lock, [] { return shutdownFlag.load() || !logQueue.empty(); });
+            localQueue.swap(logQueue);
+        }
+
+        // Write batch to file
+        for (const auto& entry : localQueue) {
+            logFile.write(entry.c_str(), entry.size());
+        }
+        localQueue.clear();
+
+        if (shutdownFlag.load()) {
+            // Check for entries that arrived between swap and flag check
+            std::lock_guard<std::mutex> lock(logMutex);
+            if (logQueue.empty()) break;
+            localQueue.swap(logQueue);
+        }
+    }
+
+    // Final drain of localQueue (from the shutdown-path swap above)
+    for (const auto& entry : localQueue) {
+        logFile.write(entry.c_str(), entry.size());
+    }
+    localQueue.clear();
+
+    logFile.flush();
+}
+
+// Cleanup guard for static destruction ordering: ensures the worker
+// thread is joined before its static members are destroyed.
+namespace {
+    struct LogTerminator {
+        ~LogTerminator() {
+            Logger::Shutdown();
+        }
+    } logTerminator;
+}
+
+#ifdef TCMT_WINDOWS
+// ======================== Windows Implementation ========================
+// NOTE: winsock2.h must be included BEFORE windows.h
+#include <winsock2.h>
+#include <windows.h>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
-#include <io.h>
-#include <fcntl.h>
-#include <windows.h> // For MultiByteToWideChar
-#include <algorithm> // For std::transform
-#include <vector> // For std::vector used in UTF-8 to UTF-16 conversion
-
-std::ofstream Logger::logFile;
-std::mutex Logger::logMutex;
-bool Logger::consoleOutputEnabled = true; // Initialize console output flag
-LogLevel Logger::currentLogLevel = LOG_DEBUG; // 默认日志等级为INFO
-HANDLE Logger::hConsole = GetStdHandle(STD_OUTPUT_HANDLE); // 初始化控制台句柄
+#include <algorithm>
+#include <vector>
 
 void Logger::Initialize(const std::string& logFilePath) {
+    // Rotate log if it exceeds ~10 MB
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(logFilePath, ec);
+    if (!ec && fileSize > 10 * 1024 * 1024) {
+        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
+        (void)ec;
+    }
     logFile.open(logFilePath, std::ios::binary | std::ios::app);
     if (!logFile.is_open()) {
-        throw std::runtime_error("无法打开日志文件");
+        throw std::runtime_error("Cannot open log file");
     }
-
-    // Write UTF-8 BOM if the file is empty
     if (logFile.tellp() == 0) {
         const unsigned char bom[] = {0xEF, 0xBB, 0xBF};
         logFile.write(reinterpret_cast<const char*>(bom), sizeof(bom));
     }
-
-    // 设置控制台编码为UTF-8，确保中文显示正确
     SetConsoleCP(65001);
     SetConsoleOutputCP(65001);
-    
-    // 启用控制台虚拟终端序列处理（如果支持）
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOut != INVALID_HANDLE_VALUE) {
-        DWORD dwMode = 0;
-        GetConsoleMode(hOut, &dwMode);
-        dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-        SetConsoleMode(hOut, dwMode);
-    }
+    hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    // Start async worker thread
+    logFileOpen.store(true);
+    workerThread = std::thread(WorkerThreadFunc);
 }
 
-void Logger::EnableConsoleOutput(bool enable) {
-    consoleOutputEnabled = enable;
-}
-
-void Logger::SetLogLevel(LogLevel level) {
-    currentLogLevel = level;
-}
-
-LogLevel Logger::GetLogLevel() {
-    return currentLogLevel;
-}
-
-[[nodiscard]] bool Logger::IsInitialized() {
-    return logFile.is_open();
-}
+void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
+void Logger::SetLogLevel(LogLevel level) { currentLogLevel = level; }
+LogLevel Logger::GetLogLevel() { return currentLogLevel; }
+bool Logger::IsInitialized() { return logFile.is_open(); }
 
 void Logger::SetConsoleColor(ConsoleColor color) {
-    if (hConsole != INVALID_HANDLE_VALUE) {
-        SetConsoleTextAttribute(hConsole, static_cast<WORD>(color));
-    }
+    if (hConsole != nullptr && hConsole != INVALID_HANDLE_VALUE)
+        SetConsoleTextAttribute((HANDLE)hConsole, static_cast<WORD>(color));
 }
 
 void Logger::ResetConsoleColor() {
-    if (hConsole != INVALID_HANDLE_VALUE) {
-        SetConsoleTextAttribute(hConsole, static_cast<WORD>(7)); // 默认白色，显式转换WORD，消除C4365
-    }
+    if (hConsole != nullptr && hConsole != INVALID_HANDLE_VALUE)
+        SetConsoleTextAttribute((HANDLE)hConsole, 7);
 }
 
-std::wstring Logger::ConvertToWideString(const std::string& utf8Str) {
-    // Handle empty string case
-    if (utf8Str.empty()) {
-        return std::wstring();
-    }
-    // Get required buffer size
-    int bufferSize = MultiByteToWideChar(
-        CP_UTF8, 0, utf8Str.c_str(), static_cast<int>(utf8Str.length()), nullptr, 0);
-    if (bufferSize == 0) {
-        throw std::runtime_error("Failed to convert UTF-8 string to wide string");
-    }
-    // Create buffer to hold the wide string
-    std::wstring wideStr(bufferSize, L'\0');
-    // Convert the string
-    if (!MultiByteToWideChar(
-        CP_UTF8, 0, utf8Str.c_str(), static_cast<int>(utf8Str.length()), &wideStr[0], bufferSize)) {
-        throw std::runtime_error("Failed to convert UTF-8 string to wide string");
-    }
-    return wideStr;
-}
-
-void Logger::WriteLog(const std::string& level, const std::string& message, LogLevel msgLevel, ConsoleColor color) {
-    // 检查日志等级过滤
-    if (msgLevel < currentLogLevel) {
-        return; // 跳过低于当前等级的日志
-    }
-    std::lock_guard<std::mutex> lock(logMutex);
-    // 限制日志消息长度，防止极端内存占用
+void Logger::WriteLog(const std::string& level, const std::string& message,
+                      LogLevel msgLevel, ConsoleColor color) {
+    if (msgLevel < currentLogLevel) return;
     constexpr size_t MAX_LOG_LENGTH = 4096;
-    if (message.empty()) {
-        throw std::invalid_argument("日志消息不能为空");
+    if (message.empty() || message.length() > MAX_LOG_LENGTH) return;
+
+    auto now = std::chrono::system_clock::now();
+    auto time_now = std::chrono::system_clock::to_time_t(now);
+    std::tm timeinfo;
+    if (localtime_s(&timeinfo, &time_now) != 0) return;
+
+    std::stringstream ss;
+    ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
+       << "[" << level << "] " << message << "\n";
+    std::string logEntry = ss.str();
+
+    // Push to TUI buffer before moving string to async queue
+#if defined(TCMT_MACOS) || defined(_WIN32)
+    g_tuiLogBuffer.Push(logEntry);
+#endif
+
+    // Push to async queue (non-blocking for caller)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logFileOpen.load()) return;
+        logQueue.push_back(std::move(logEntry));
     }
-    if (message.length() > MAX_LOG_LENGTH) {
-        throw std::invalid_argument("日志消息过长");
+    queueCV.notify_one();
+
+    if (consoleOutputEnabled && hConsole != INVALID_HANDLE_VALUE) {
+        HANDLE hCon = (HANDLE)hConsole;
+        DWORD written = 0;
+#ifdef TCMT_MACOS
+        std::string timeStr = "[" + std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") + "]";
+#else
+        char timeBuf[32];
+        strftime(timeBuf, sizeof(timeBuf), "[%Y-%m-%d %H:%M:%S]", &timeinfo);
+        std::string timeStr = std::string("[") + timeBuf + "]";
+#endif
+        WriteFile(hCon, timeStr.c_str(), (DWORD)timeStr.size(), &written, nullptr);
+        SetConsoleColor(color);
+        std::string levelTag = "[" + level + "] ";
+        WriteFile(hCon, levelTag.c_str(), (DWORD)levelTag.size(), &written, nullptr);
+        ResetConsoleColor();
+        WriteFile(hCon, message.c_str(), (DWORD)message.size(), &written, nullptr);
+        WriteFile(hCon, "\n", 1, &written, nullptr);
     }
+}
+
+void Logger::Trace(const std::string& message)    { WriteLog("TRACE", message, LOG_TRACE, ConsoleColor::PURPLE); }
+void Logger::Debug(const std::string& message)    { WriteLog("DEBUG", message, LOG_DEBUG, ConsoleColor::PURPLE); }
+void Logger::Info(const std::string& message)     { WriteLog("INFO",  message, LOG_INFO,  ConsoleColor::LIGHT_GREEN); }
+void Logger::Warn(const std::string& message)     { WriteLog("WARN",  message, LOG_WARNING, ConsoleColor::YELLOW); }
+void Logger::Error(const std::string& message)    { WriteLog("ERROR", message, LOG_ERROR, ConsoleColor::ORANGE); }
+void Logger::Critical(const std::string& message){ WriteLog("CRITICAL", message, LOG_CRITICAL, ConsoleColor::RED); }
+void Logger::Fatal(const std::string& message)   { WriteLog("FATAL", message, LOG_FATAL, ConsoleColor::DARK_RED); }
+
+#elif defined(TCMT_MACOS)
+// ======================== macOS Implementation ========================
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <iostream>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+// ANSI color codes for macOS terminal
+#define ANSI_RESET   "\033[0m"
+#define ANSI_FG_BLACK   "\033[30m"
+#define ANSI_FG_RED     "\033[31m"
+#define ANSI_FG_GREEN   "\033[32m"
+#define ANSI_FG_YELLOW  "\033[33m"
+#define ANSI_FG_BLUE    "\033[34m"
+#define ANSI_FG_MAGENTA "\033[35m"
+#define ANSI_FG_CYAN    "\033[36m"
+#define ANSI_FG_WHITE   "\033[37m"
+#define ANSI_FG_BRIGHT_BLACK   "\033[90m"
+#define ANSI_FG_BRIGHT_RED     "\033[91m"
+#define ANSI_FG_BRIGHT_GREEN   "\033[92m"
+#define ANSI_FG_BRIGHT_YELLOW  "\033[93m"
+#define ANSI_FG_BRIGHT_BLUE    "\033[94m"
+#define ANSI_FG_BRIGHT_MAGENTA "\033[95m"
+#define ANSI_FG_BRIGHT_CYAN    "\033[96m"
+#define ANSI_FG_BRIGHT_WHITE   "\033[97m"
+
+// Check if stdout is a TTY (supports colors)
+static bool IsTTY() {
+    return isatty(fileno(stdout)) == 1;
+}
+
+void Logger::Initialize(const std::string& logFilePath) {
+    // Rotate log if it exceeds ~10 MB
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(logFilePath, ec);
+    if (!ec && fileSize > 10 * 1024 * 1024) {
+        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
+        (void)ec;
+    }
+    logFile.open(logFilePath, std::ios::binary | std::ios::app);
+    if (!logFile.is_open()) {
+        throw std::runtime_error("Cannot open log file: " + logFilePath);
+    }
+    if (logFile.tellp() == 0) {
+        const unsigned char bom[] = {0xEF, 0xBB, 0xBF};
+        logFile.write(reinterpret_cast<const char*>(bom), sizeof(bom));
+    }
+    consoleOutputEnabled = IsTTY();
+
+    // Start async worker thread
+    logFileOpen.store(true);
+    workerThread = std::thread(WorkerThreadFunc);
+}
+
+void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
+void Logger::SetLogLevel(LogLevel level) { currentLogLevel = level; }
+LogLevel Logger::GetLogLevel() { return currentLogLevel; }
+bool Logger::IsInitialized() { return logFile.is_open(); }
+
+void Logger::SetConsoleColor(ConsoleColor /*color*/) {
+    // No-op for macOS; color handled in WriteLog using ANSI codes
+}
+void Logger::ResetConsoleColor() {
+    if (consoleOutputEnabled) printf("%s", ANSI_RESET);
+}
+
+void Logger::WriteLog(const std::string& level, const std::string& message,
+                      LogLevel msgLevel, ConsoleColor /*color*/) {
+    if (msgLevel < currentLogLevel) return;
+    constexpr size_t MAX_LOG_LENGTH = 4096;
+    if (message.empty() || message.length() > MAX_LOG_LENGTH) return;
+
+    auto now = std::chrono::system_clock::now();
+    auto time_now = std::chrono::system_clock::to_time_t(now);
+    std::tm timeinfo;
+    localtime_r(&time_now, &timeinfo);
+
+    std::stringstream ss;
+    ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
+       << "[" << level << "] " << message << "\n";
+    std::string logEntry = ss.str();
+
+    // Push to TUI log buffer before moving string to async queue
+    g_tuiLogBuffer.Push(logEntry);
+
+    // Push to async queue (non-blocking for caller)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logFileOpen.load()) return;
+        logQueue.push_back(std::move(logEntry));
+    }
+    queueCV.notify_one();
+
+    if (consoleOutputEnabled) {
+        const char* colorCode = ANSI_RESET;
+        if (msgLevel <= LOG_DEBUG) colorCode = ANSI_FG_BRIGHT_MAGENTA;
+        else if (msgLevel == LOG_INFO) colorCode = ANSI_FG_BRIGHT_GREEN;
+        else if (msgLevel == LOG_WARNING) colorCode = ANSI_FG_BRIGHT_YELLOW;
+        else if (msgLevel == LOG_ERROR) colorCode = ANSI_FG_BRIGHT_RED;
+        else colorCode = ANSI_FG_RED;
+
+        char timeBuf[64];
+        strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        printf("%s[%s]%s[%s] %s%s%s\n",
+               ANSI_FG_BRIGHT_BLACK, timeBuf,
+               ANSI_RESET, colorCode,
+               level.c_str(),
+               ANSI_RESET,
+               message.c_str());
+        fflush(stdout);
+    }
+}
+
+void Logger::Trace(const std::string& message)    { WriteLog("TRACE",   message, LOG_TRACE,   ConsoleColor::PURPLE); }
+void Logger::Debug(const std::string& message)     { WriteLog("DEBUG",   message, LOG_DEBUG,   ConsoleColor::PURPLE); }
+void Logger::Info(const std::string& message)     { WriteLog("INFO",    message, LOG_INFO,    ConsoleColor::GREEN); }
+void Logger::Warn(const std::string& message)     { WriteLog("WARN",    message, LOG_WARNING, ConsoleColor::YELLOW); }
+void Logger::Error(const std::string& message)    { WriteLog("ERROR",   message, LOG_ERROR,   ConsoleColor::ORANGE); }
+void Logger::Critical(const std::string& message) { WriteLog("CRITICAL",message, LOG_CRITICAL,ConsoleColor::RED); }
+void Logger::Fatal(const std::string& message)    { WriteLog("FATAL",   message, LOG_FATAL,   ConsoleColor::RED); }
+
+#else
+// ======================== Linux / Fallback ========================
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#include <iostream>
+
+void Logger::Initialize(const std::string& logFilePath) {
+    // Rotate log if it exceeds ~10 MB
+    std::error_code ec;
+    auto fileSize = std::filesystem::file_size(logFilePath, ec);
+    if (!ec && fileSize > 10 * 1024 * 1024) {
+        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
+        (void)ec;
+    }
+    logFile.open(logFilePath, std::ios::binary | std::ios::app);
+    if (!logFile.is_open()) {
+        throw std::runtime_error("Cannot open log file");
+    }
+    consoleOutputEnabled = true;
+
+    // Start async worker thread
+    logFileOpen.store(true);
+    workerThread = std::thread(WorkerThreadFunc);
+}
+void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
+void Logger::SetLogLevel(LogLevel level) { currentLogLevel = level; }
+LogLevel Logger::GetLogLevel() { return currentLogLevel; }
+bool Logger::IsInitialized() { return logFile.is_open(); }
+void Logger::SetConsoleColor(ConsoleColor) {}
+void Logger::ResetConsoleColor() {}
+
+void Logger::WriteLog(const std::string& level, const std::string& message,
+                      LogLevel msgLevel, ConsoleColor) {
+    if (msgLevel < currentLogLevel) return;
+    auto now = std::chrono::system_clock::now();
+    auto time_now = std::chrono::system_clock::to_time_t(now);
+    std::tm timeinfo;
+    localtime_r(&time_now, &timeinfo);
+    std::stringstream ss;
+    ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
+       << "[" << level << "] " << message << "\n";
+    std::string logEntry = ss.str();
+
+    // Console output before moving logEntry to queue
+    if (consoleOutputEnabled) {
+        printf("%s", logEntry.c_str());
+        fflush(stdout);
+    }
+
+    // Push to async queue (non-blocking for caller)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logFileOpen.load()) return;
+        logQueue.push_back(std::move(logEntry));
+    }
+    queueCV.notify_one();
+}
+
+void Logger::Trace(const std::string& message)    { WriteLog("TRACE",   message, LOG_TRACE,   ConsoleColor::PURPLE); }
+void Logger::Debug(const std::string& message)    { WriteLog("DEBUG",   message, LOG_DEBUG,   ConsoleColor::PURPLE); }
+void Logger::Info(const std::string& message)     { WriteLog("INFO",    message, LOG_INFO,    ConsoleColor::GREEN); }
+void Logger::Warn(const std::string& message)     { WriteLog("WARN",    message, LOG_WARNING, ConsoleColor::YELLOW); }
+void Logger::Error(const std::string& message)    { WriteLog("ERROR",   message, LOG_ERROR,   ConsoleColor::ORANGE); }
+void Logger::Critical(const std::string& message) { WriteLog("CRITICAL",message, LOG_CRITICAL,ConsoleColor::RED); }
+void Logger::Fatal(const std::string& message)    { WriteLog("FATAL",   message, LOG_FATAL,   ConsoleColor::RED); }
+
+#endif
+
+void Logger::Flush() {
+    // Signal the worker to process any pending entries
+    queueCV.notify_one();
+
+    // Drain entries that the worker may not have picked up yet.
+    // We take a short lock, swap, then write synchronously.
+    std::vector<std::string> entries;
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        entries.swap(logQueue);
+    }
+    for (const auto& entry : entries) {
+        logFile.write(entry.c_str(), entry.size());
+    }
+    logFile.flush();
+}
+
+void Logger::Shutdown() {
+    shutdownFlag.store(true);
+    queueCV.notify_one();
+    if (workerThread.joinable()) {
+        workerThread.join();
+    }
+
+    // Drain any entries that arrived after the worker exited
+    std::vector<std::string> remaining;
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        remaining.swap(logQueue);
+    }
+    for (const auto& entry : remaining) {
+        logFile.write(entry.c_str(), entry.size());
+    }
+
+    logFile.flush();
+    logFileOpen.store(false);
     if (logFile.is_open()) {
-        if (!logFile.good()) {
-            throw std::runtime_error("日志文件流状态无效");
-        }
-        // Get current time
-        auto now = std::chrono::system_clock::now();
-        auto time_now = std::chrono::system_clock::to_time_t(now);
-        std::tm timeinfo;
-        if (localtime_s(&timeinfo, &time_now) != 0) {
-            throw std::runtime_error("localtime_s 失败");
-        }
-        std::stringstream ss;
-        ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
-           << "[" << level << "] "
-           << message
-           << std::endl;
-        std::string logEntry = ss.str();
-        try {
-            logFile.write(logEntry.c_str(), logEntry.size());
-            logFile.flush();
-        } catch (const std::exception& ex) {
-            // 日志写入异常，输出到标准错误
-            std::cerr << "日志写入异常: " << ex.what() << std::endl;
-        }
-        // Enhanced console output with proper UTF-8 support and selective coloring
-        if (consoleOutputEnabled) {
-            HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-            if (hConsole != INVALID_HANDLE_VALUE) {
-                std::stringstream timeStamp;
-                timeStamp << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]";
-                std::string timeStr = timeStamp.str();
-                std::string levelTag = "[" + level + "]";
-                DWORD written;
-                int timeWideLength = MultiByteToWideChar(CP_UTF8, 0, timeStr.c_str(), -1, nullptr, 0);
-                if (timeWideLength > 0) {
-                    std::vector<wchar_t> timeWideText(static_cast<size_t>(timeWideLength));
-                    if (MultiByteToWideChar(CP_UTF8, 0, timeStr.c_str(), -1, timeWideText.data(), timeWideLength)) {
-                        WriteConsoleW(hConsole, timeWideText.data(), static_cast<DWORD>(timeWideLength - 1), &written, NULL);
-                    }
-                }
-                SetConsoleColor(color);
-                int levelWideLength = MultiByteToWideChar(CP_UTF8, 0, levelTag.c_str(), -1, nullptr, 0);
-                if (levelWideLength > 0) {
-                    std::vector<wchar_t> levelWideText(static_cast<size_t>(levelWideLength));
-                    if (MultiByteToWideChar(CP_UTF8, 0, levelTag.c_str(), -1, levelWideText.data(), levelWideLength)) {
-                        WriteConsoleW(hConsole, levelWideText.data(), static_cast<DWORD>(levelWideLength - 1), &written, NULL);
-                    }
-                }
-                ResetConsoleColor();
-                WriteConsoleW(hConsole, L" ", 1, &written, NULL);
-                int msgWideLength = MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nullptr, 0);
-                if (msgWideLength > 0) {
-                    std::vector<wchar_t> msgWideText(static_cast<size_t>(msgWideLength));
-                    if (MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, msgWideText.data(), msgWideLength)) {
-                        WriteConsoleW(hConsole, msgWideText.data(), static_cast<DWORD>(msgWideLength - 1), &written, NULL);
-                    }
-                }
-                WriteConsoleW(hConsole, L"\n", 1, &written, NULL);
-            }
-        }
-    } else {
-        throw std::runtime_error("日志文件未打开");
+        logFile.close();
     }
 }
 
-void Logger::Trace(const std::string& message) {
-    WriteLog("TRACE", message, LOG_TRACE, ConsoleColor::PURPLE);
+#if defined(TCMT_MACOS) || defined(_WIN32)
+// GetTuiBuffer - returns global log buffer for TUI
+tcmt::LogBuffer& Logger::GetTuiBuffer() {
+    return g_tuiLogBuffer;
 }
-
-void Logger::Debug(const std::string& message) {
-    WriteLog("DEBUG", message, LOG_DEBUG, ConsoleColor::PURPLE);
-}
-
-void Logger::Info(const std::string& message) {
-    WriteLog("INFO", message, LOG_INFO, ConsoleColor::LIGHT_GREEN);
-}
-
-void Logger::Warn(const std::string& message) {
-    WriteLog("WARN", message, LOG_WARNING, ConsoleColor::YELLOW);
-}
-
-void Logger::Error(const std::string& message) {
-    WriteLog("ERROR", message, LOG_ERROR, ConsoleColor::ORANGE);
-}
-
-void Logger::Critical(const std::string& message) {
-    WriteLog("CRITICAL", message, LOG_CRITICAL, ConsoleColor::RED);//我不知道为什么Critical和Fatal意思一样，之前也看过，但是AI就是给它们分开了?
-}
-
-void Logger::Fatal(const std::string& message) {
-    WriteLog("FATAL", message, LOG_FATAL, ConsoleColor::DARK_RED);
-}
+#endif

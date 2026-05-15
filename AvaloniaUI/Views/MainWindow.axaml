@@ -1,0 +1,319 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
+        xmlns:controls="clr-namespace:AvaloniaUI.Controls"
+        mc:Ignorable="d"
+        x:Class="AvaloniaUI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Height="800" Width="1200"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="#FF353635">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        
+        <!-- 标题栏 -->
+        <Border Grid.Row="0" Margin="10,10,10,5" 
+               Background="#FF191919" Padding="15">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding WindowTitle}" 
+                             FontSize="18" FontWeight="Bold"
+                             Foreground="White"
+                             VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Background="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"
+                           CornerRadius="6" Padding="8,4">
+                        <TextBlock Text="{Binding ConnectionStatus}" 
+                                  Foreground="White" FontSize="12"/>
+                    </Border>
+                    <Button Content="重连"
+                           Command="{Binding ReconnectCommand}"
+                           Margin="10,0,0,0"/>
+                    <Button Content="退出"
+                           Command="{Binding QuitCommand}"
+                           Margin="5,0,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 主内容区域 — 断开时显示等待状态 -->
+        <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    IsVisible="{Binding IsConnected, Converter={StaticResource BoolInvertConverter}}">
+            <TextBlock Text="等待连接..." FontSize="18" Foreground="#FF666666"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" IsVisible="{Binding IsConnected}"
+                    VerticalScrollBarVisibility="Auto"
+                    Padding="10,5,10,5">
+            <StackPanel>
+                <!-- CPU和内存信息行 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- CPU信息 -->
+                    <Border Grid.Column="0" Margin="0,0,5,10" 
+                            Background="#FF191919" Padding="15">
+                        <StackPanel>
+                            <TextBlock Text="处理器信息" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                            <TextBlock Text="{Binding CpuName}" Foreground="White"/>
+                            <Grid Margin="0,5,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding PhysicalCores, StringFormat='物理核心: {0}'}" Foreground="#FFB3B3B3"/>
+                                    <TextBlock Text="{Binding LogicalCores, StringFormat='逻辑核心: {0}'}" Foreground="#FFB3B3B3"/>
+                                    <TextBlock Text="{Binding PerformanceCores, StringFormat='性能核心: {0}'}" Foreground="#FFB3B3B3"/>
+                                    <TextBlock Text="{Binding EfficiencyCores, StringFormat='效率核心: {0}'}" Foreground="#FFB3B3B3"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                    <TextBlock Text="{Binding CpuTemperature, StringFormat='温度: {0:F0}°C'}" Foreground="#FFB3B3B3" FontSize="13"/>
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="0,5,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" IsVisible="{Binding IsNotMacOS}">
+                                    <TextBlock Text="频率: " Foreground="#FF666666" FontSize="11"/>
+                                    <TextBlock Text="{Binding CpuFrequency}" Foreground="#FF666666" FontSize="11"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" IsVisible="{Binding IsNotMacOS}">
+                                    <TextBlock Text="超线程: " Foreground="#FF666666" FontSize="11"/>
+                                    <TextBlock Text="{Binding HyperThreading}" Foreground="{Binding HyperThreading, Converter={StaticResource BoolToColorConverter}}" FontSize="11"/>
+                                </StackPanel>
+                            </Grid>
+                            <ProgressBar Value="{Binding CpuUsage}" Maximum="100" Height="8" Margin="0,10,0,0" Foreground="{Binding CpuUsage, Converter={StaticResource PercentToWarningColorConverter}}"/>
+                            <Grid Margin="0,5,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding CpuUsage, StringFormat='使用率: {0:F1}%'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Grid.Column="1" Text="{Binding CpuUsage, StringFormat='峰值: {0:F1}%'}" Foreground="#FF4CAF50" FontSize="11"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 内存信息 -->
+                    <Border Grid.Column="1" Margin="5,0,0,10"
+                            Background="#FF191919" Padding="15">
+                        <StackPanel>
+                            <TextBlock Text="内存" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                            <TextBlock Text="{Binding UsedMemory, StringFormat='已用: {0}'}" Foreground="White"/>
+                            <TextBlock Text="{Binding TotalMemory, StringFormat='总计: {0}'}" Foreground="#FFB3B3B3"/>
+                            <TextBlock Text="{Binding AvailableMemory, StringFormat='可用: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                            <TextBlock Text="{Binding CompressedMemory, StringFormat='已压缩: {0}'}" Foreground="#FF666666" FontSize="11" IsVisible="{Binding CompressedMemory, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <ProgressBar Value="{Binding MemoryPercent}" Maximum="100" Height="8" Margin="0,10,0,0"/>
+                            <Grid Margin="0,5,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding MemoryPercent, StringFormat='使用率: {0:F1}%'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Grid.Column="1" Text="{Binding MemoryPercent, StringFormat='峰值: {0:F1}%'}" Foreground="#FF4CAF50" FontSize="11"/>
+                            </Grid>
+                            <controls:LineChart Values="{Binding MemoryHistory}" Height="60" Margin="0,8,0,0"
+                                                LineBrush="#FF4CAF50" FillBrush="#334CAF50" IsVisible="False"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- GPU信息 -->
+                <Border Margin="0,0,0,10" Background="#FF191919" Padding="15">
+                    <StackPanel>
+                        <TextBlock Text="显卡信息" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                        <ComboBox ItemsSource="{Binding GpuList}" SelectedItem="{Binding SelectedGpu}" DisplayMemberBinding="{Binding DisplayName}"
+                                HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding SelectedGpu.Name, TargetNullValue='未检测到'}" Foreground="White"/>
+                        <Grid Margin="0,5,0,0" IsVisible="{Binding IsNotMacOS}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{Binding SelectedGpu.MemoryDisplay, TargetNullValue='N/A', StringFormat='显存: {0}'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Text="{Binding SelectedGpu.MemoryUsedDisplay, TargetNullValue='N/A', StringFormat='已用: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                                <TextBlock Text="{Binding SelectedGpu.Brand, TargetNullValue='N/A', StringFormat='品牌: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding GpuTemperature, StringFormat='温度: {0:F0}°C'}" Foreground="#FFB3B3B3"/>
+                            </StackPanel>
+                        </Grid>
+                        <ProgressBar Value="{Binding SelectedGpu.Usage, TargetNullValue=0}" Maximum="100" Height="6" Margin="0,8,0,0" Foreground="#FF4CAF50"/>
+                        <TextBlock Text="{Binding SelectedGpu.Usage, TargetNullValue=0, StringFormat='GPU使用率: {0:F1}%'}" Foreground="#FFB3B3B3" FontSize="11"/>
+                        <StackPanel IsVisible="{Binding IsNotMacOS}">
+                            <ProgressBar Value="{Binding SelectedGpu.CoreClock, TargetNullValue=0}" Maximum="100" Height="6" Margin="0,4,0,0" Foreground="#FFFF9800"/>
+                            <TextBlock Text="{Binding SelectedGpu.CoreClock, TargetNullValue=0, StringFormat='显存占用: {0:F1}%'}" Foreground="#FFB3B3B3" FontSize="11"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 网络信息 -->
+                <Border Margin="0,0,0,10" Background="#FF191919" Padding="15">
+                    <StackPanel>
+                        <TextBlock Text="网络适配器" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                        <ComboBox ItemsSource="{Binding NetworkList}" SelectedItem="{Binding SelectedNetwork}" DisplayMemberBinding="{Binding DisplayName}" 
+                                HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding SelectedNetwork.Name, TargetNullValue='未检测到'}" Foreground="White"/>
+                        <TextBlock Text="{Binding SelectedNetwork.IpAddress, TargetNullValue='N/A', StringFormat='IP: {0}'}" Foreground="#FFB3B3B3"/>
+<Grid Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="MAC: " Foreground="#FF666666" FontSize="11"/>
+                                <TextBlock Text="{Binding SelectedNetwork.Mac, TargetNullValue='N/A'}" Foreground="#FF666666" FontSize="11"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Text="类型: " Foreground="#FF666666" FontSize="11"/>
+                                <TextBlock Text="{Binding SelectedNetwork.AdapterType, TargetNullValue='N/A'}" Foreground="#FF666666" FontSize="11"/>
+                            </StackPanel>
+                        </Grid>
+                        <Grid Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="↓ " Foreground="#FF4CAF50" FontSize="11"/>
+                                <TextBlock Text="{Binding SelectedNetwork.DownloadDisplay, TargetNullValue='N/A'}" Foreground="#FF4CAF50"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Text="↑ " Foreground="#FF2196F3" FontSize="11"/>
+                                <TextBlock Text="{Binding SelectedNetwork.UploadDisplay, TargetNullValue='N/A'}" Foreground="#FF2196F3"/>
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                            <TextBlock Text="标称速率: " Foreground="#FF666666" FontSize="11"/>
+                            <TextBlock Text="{Binding SelectedNetwork.SpeedDisplay, TargetNullValue='N/A'}" Foreground="#FFB3B3B3" FontSize="11"/>
+                        </StackPanel>
+                        <!-- WiFi -->
+                        <TextBlock Text="{Binding WifiDisplay}" Foreground="#FFB3B3B3" FontSize="11"
+                                   Margin="0,3,0,0"/>
+                        <!-- Bluetooth -->
+                        <TextBlock Text="{Binding BtDisplay}" Foreground="#FFB3B3B3" FontSize="11"
+                                   IsVisible="{Binding HasBluetooth}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 磁盘信息 -->
+                <Border Margin="0,0,0,10" Background="#FF191919" Padding="15">
+                    <StackPanel>
+                        <TextBlock Text="存储设备" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                        <ComboBox ItemsSource="{Binding DiskList}" SelectedItem="{Binding SelectedDisk}" DisplayMemberBinding="{Binding DisplayName}"
+                                HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                        <TextBlock IsVisible="{Binding IsNotMacOS}" Text="{Binding SelectedDisk.Letter, TargetNullValue='?', StringFormat='驱动器 {0}:'}" Foreground="White"/>
+                        <TextBlock Text="{Binding SelectedDisk.Label, TargetNullValue='无卷标', StringFormat='卷标: {0}'}" Foreground="#FFB3B3B3"/>
+                        <TextBlock Text="{Binding SelectedDisk.FileSystem, TargetNullValue='N/A', StringFormat='文件系统: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                        <ProgressBar Value="{Binding SelectedDisk.UsagePercent, TargetNullValue=0}" Maximum="100" Height="8" Margin="0,10,0,0"/>
+                        <Grid Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding SelectedDisk.UsageDisplay, TargetNullValue='0%', StringFormat='使用率: {0}'}" Foreground="#FFB3B3B3"/>
+                            <TextBlock Grid.Column="1" Text="{Binding SelectedDisk.FreeSpaceDisplay, TargetNullValue='N/A', StringFormat='可用: {0}'}" Foreground="#FF666666" FontSize="11" Margin="10,0,0,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding SelectedDisk.TotalSizeDisplay, TargetNullValue='N/A', StringFormat='总计: {0}'}" Foreground="#FF666666" FontSize="11" Margin="10,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 物理磁盘 SMART 信息 -->
+                <Border Margin="0,0,0,10" Background="#FF191919" Padding="15">
+                    <StackPanel>
+                        <TextBlock Text="物理磁盘 (SMART)" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                        <ComboBox ItemsSource="{Binding PhysicalDiskList}" SelectedItem="{Binding SelectedPhysicalDisk}" DisplayMemberBinding="{Binding DisplayName}" 
+                                HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding SelectedPhysicalDisk.DisplayName, TargetNullValue='未检测到'}" Foreground="White"/>
+                        <TextBlock Text="{Binding SelectedPhysicalDisk.LettersDisplay, TargetNullValue=''}" Foreground="#FF666666" FontSize="11" Margin="0,2,0,0"/>
+                        <Grid Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{Binding SelectedPhysicalDisk.Disk.Capacity, TargetNullValue='N/A', StringFormat='容量: {0}'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Text="{Binding SelectedPhysicalDisk.Disk.SerialNumber, TargetNullValue='N/A', StringFormat='序列号: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding SelectedPhysicalDisk.Disk.Temperature, TargetNullValue='N/A', StringFormat='温度: {0}°C'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Text="{Binding SelectedPhysicalDisk.Disk.HealthPercentage, TargetNullValue='0%', StringFormat='健康度: {0}%'}" Foreground="{Binding SelectedPhysicalDisk.Disk.HealthPercentage, Converter={StaticResource PercentToWarningColorConverter}}" FontSize="11"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- TPM 信息 -->
+                <Border Margin="0,0,0,10" Background="#FF191919" Padding="15"
+                        IsVisible="{Binding IsNotMacOS}">
+                    <StackPanel>
+                        <TextBlock Text="TPM 安全芯片" FontSize="16" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding TpmInfo.DisplayName, TargetNullValue='未检测到 TPM'}" Foreground="White"/>
+                        <Grid Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{Binding TpmInfo.FirmwareVersion, TargetNullValue='N/A', StringFormat='固件版本: {0}'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Text="{Binding TpmInfo.Status, TargetNullValue='N/A', StringFormat='状态: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding TpmInfo.SelfTestStatus, TargetNullValue='N/A', StringFormat='自检: {0}'}" Foreground="#FFB3B3B3"/>
+                                <TextBlock Text="{Binding TpmInfo.IsEnabled, TargetNullValue='N/A', StringFormat='已启用: {0}'}" Foreground="#FF666666" FontSize="11"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 状态栏 -->
+        <Border Grid.Row="2" Margin="10,5,10,10" IsVisible="{Binding IsConnected}" 
+                Background="#FF191919" Padding="15,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="●" Foreground="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}" 
+                               FontSize="10" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                    <TextBlock Text="{Binding ConnectionStatus}" Foreground="#FFB3B3B3" VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                <TextBlock Grid.Column="1" Text="{Binding OsVersion}"
+                          Foreground="#FF666666" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" IsVisible="{Binding HasBattery}"
+                            VerticalAlignment="Center" Margin="10,0,0,0">
+                    <TextBlock Text="{Binding BatteryPercent, StringFormat={}{0}%}"
+                               Foreground="#FF4CAF50" FontSize="11"/>
+                    <TextBlock Text="{Binding BatteryLabel, StringFormat=' {0}'}" Foreground="#FF666666" FontSize="11"/>
+                </StackPanel>
+
+                <TextBlock Grid.Column="3" Text="{Binding LastUpdate, StringFormat={}{0:HH:mm:ss}}"
+                          Foreground="#FF666666" FontSize="11" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+    </Grid>
+</Window>

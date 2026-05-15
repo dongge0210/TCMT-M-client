@@ -2,10 +2,23 @@
 #include <string>
 #include <fstream>
 #include <mutex>
-#include <algorithm> // Added for std::transform
-#include <windows.h> // For console color support
+#include <thread>
+#include <condition_variable>
+#include <atomic>
+#include <vector>
+#include <algorithm>
+#ifdef TCMT_WINDOWS
+// winsock2.h must be before windows.h
+#include <winsock2.h>
+#include <windows.h>
+#endif
 
-// 日志等级枚举
+// Include LogBuffer for TUI support (macOS and Windows)
+#if defined(TCMT_MACOS) || defined(TCMT_WINDOWS)
+#include "../tui/LogBuffer.h"
+#endif
+
+// Log level enumeration
 enum LogLevel {
     LOG_TRACE = 0,
     LOG_DEBUG = 1,
@@ -16,57 +29,57 @@ enum LogLevel {
     LOG_FATAL = 6
 };
 
-// 控制台颜色枚举
+// Console color enumeration
 enum class ConsoleColor {
-    BLACK = 0,           // 黑色
-    DARK_BLUE = 1,       // 深蓝色
-    DARK_GREEN = 2,      // 深绿色
-    DARK_CYAN = 3,       // 深青色
-    DARK_RED = 4,        // 深红色
-    DARK_MAGENTA = 5,    // 深洋红色
-    DARK_YELLOW = 6,     // 深黄色
-    LIGHT_GRAY = 7,      // 浅灰色
-    DARK_GRAY = 8,       // 深灰色
-    LIGHT_BLUE = 9,      // 亮蓝色
-    LIGHT_GREEN = 10,    // 亮绿色
-    LIGHT_CYAN = 11,     // 亮青色
-    LIGHT_RED = 12,      // 亮红色
-    LIGHT_MAGENTA = 13,  // 亮洋红色
-    YELLOW = 14,         // 黄色
-    WHITE = 15,          // 白色
-    
-    // 特殊用途别名
-    PURPLE = 13,         // 紫色 - TRACE & DEBUG (使用亮洋红色)
-    GREEN = 10,          // 绿色 - INFO
-    ORANGE = 12,         // 橙色 - ERROR (使用亮红色)
-    RED = 12             // 红色 - CRITICAL
+    BLACK = 0, DARK_BLUE = 1, DARK_GREEN = 2, DARK_CYAN = 3,
+    DARK_RED = 4, DARK_MAGENTA = 5, DARK_YELLOW = 6, LIGHT_GRAY = 7,
+    DARK_GRAY = 8, LIGHT_BLUE = 9, LIGHT_GREEN = 10, LIGHT_CYAN = 11,
+    LIGHT_RED = 12, LIGHT_MAGENTA = 13, YELLOW = 14, WHITE = 15,
+    PURPLE = 13, GREEN = 10, ORANGE = 12, RED = 12
 };
 
 class Logger {
 private:
     static std::ofstream logFile;
     static std::mutex logMutex;
-    static bool consoleOutputEnabled; // Flag for console output
-    static LogLevel currentLogLevel; // 当前日志等级过滤器
-    static HANDLE hConsole; // 控制台句柄
+    static bool consoleOutputEnabled;
+    static LogLevel currentLogLevel;
+#ifdef TCMT_WINDOWS
+    static void* hConsole;
+#else
+    static void* hConsole;
+#endif
+
+    // Async logging members
+    static std::vector<std::string> logQueue;
+    static std::condition_variable queueCV;
+    static std::thread workerThread;
+    static std::atomic<bool> shutdownFlag;
+    static std::atomic<bool> logFileOpen;
+
+    static void WorkerThreadFunc();
     static void WriteLog(const std::string& level, const std::string& message, LogLevel msgLevel, ConsoleColor color);
-    static std::wstring ConvertToWideString(const std::string& utf8Str); // Helper for UTF-8 to wide string conversion
-    static void SetConsoleColor(ConsoleColor color); // 设置控制台颜色
-    static void ResetConsoleColor(); // 重置控制台颜色
+    static void SetConsoleColor(ConsoleColor color);
+    static void ResetConsoleColor();
 
 public:
     static void Initialize(const std::string& logFilePath);
-    static void EnableConsoleOutput(bool enable); // Method to enable/disable console output
-    static void SetLogLevel(LogLevel level); // 设置日志等级过滤器
-    static LogLevel GetLogLevel(); // 获取当前日志等级
-    static bool IsInitialized(); // 检查Logger是否已初始化
-    
-    // Log level methods (ordered by severity: Trace < Debug < Info < Warning < Error < Critical < Fatal)
-    static void Trace(const std::string& message);   // 最详细的信息，通常只在调试时使用 (白色)
-    static void Debug(const std::string& message);   // 调试信息 (绿色)
-    static void Info(const std::string& message);    // 一般信息 (绿色)
-    static void Warn(const std::string& message);    // 警告信息 (黄色)
-    static void Error(const std::string& message);   // 错误信息 (橙色)
-    static void Critical(const std::string& message); // 严重错误 (红色)
-    static void Fatal(const std::string& message);   // 致命错误 (深红色)
+    static void EnableConsoleOutput(bool enable);
+    static void SetLogLevel(LogLevel level);
+    static LogLevel GetLogLevel();
+    static bool IsInitialized();
+    static void Trace(const std::string& message);
+    static void Debug(const std::string& message);
+    static void Info(const std::string& message);
+    static void Warn(const std::string& message);
+    static void Error(const std::string& message);
+    static void Critical(const std::string& message);
+    static void Fatal(const std::string& message);
+    static void Flush();
+    static void Shutdown();
+
+#if defined(TCMT_MACOS) || defined(_WIN32)
+    // Get the TUI log buffer (for TUI mode)
+    static tcmt::LogBuffer& GetTuiBuffer();
+#endif
 };

@@ -99,9 +99,6 @@
       <Project>{EB8E0379-D5D5-45E8-9F90-73216725C93A}</Project>
     </ProjectReference>
   </ItemGroup>
-  <ItemGroup>
-    <None Include="vcpkg.json" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VcpkgRoot)\scripts\buildsystems\msbuild\vcpkg.targets" Condition="HasTrailingSlash('$(VcpkgRoot)') and Exists('$(VcpkgRoot)\scripts\buildsystems\msbuild\vcpkg.targets')" />

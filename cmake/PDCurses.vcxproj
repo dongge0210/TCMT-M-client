@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{7A8B9C0D-1E2F-3A4B-5C6D-7E8F9A0B1C2D}</ProjectGuid>
+    <RootNamespace>PDCurses</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;_CRT_SECURE_NO_WARNINGS;PDC_WIDE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4244;4267;4996</DisableSpecificWarnings>
+      <AdditionalIncludeDirectories>$(SolutionDir)src\third_party\PDCurses;$(SolutionDir)src\third_party\PDCurses\wincon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;_CRT_SECURE_NO_WARNINGS;PDC_WIDE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DisableSpecificWarnings>4244;4267;4996</DisableSpecificWarnings>
+      <AdditionalIncludeDirectories>$(SolutionDir)src\third_party\PDCurses;$(SolutionDir)src\third_party\PDCurses\wincon;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\addch.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\addchstr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\addstr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\attr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\beep.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\bkgd.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\border.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\clear.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\color.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\debug.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\delch.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\deleteln.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\getch.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\getstr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\getyx.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\inch.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\inchstr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\initscr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\inopts.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\insch.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\insstr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\instr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\kernel.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\keyname.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\mouse.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\move.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\outopts.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\overlay.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\pad.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\panel.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\printw.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\refresh.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\scanw.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\scr_dump.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\scroll.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\slk.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\termattr.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\touch.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\util.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\pdcurses\window.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcclip.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcdisp.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcgetsc.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdckbd.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcscrn.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcsetsc.c" />
+    <ClCompile Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcutil.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="$(SolutionDir)src\third_party\PDCurses\curses.h" />
+    <ClInclude Include="$(SolutionDir)src\third_party\PDCurses\curspriv.h" />
+    <ClInclude Include="$(SolutionDir)src\third_party\PDCurses\panel.h" />
+    <ClInclude Include="$(SolutionDir)src\third_party\PDCurses\wincon\pdcwin.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

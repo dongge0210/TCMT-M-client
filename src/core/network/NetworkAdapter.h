@@ -1,28 +1,53 @@
-﻿#pragma once
+#pragma once
 
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <iphlpapi.h>
 #include <string>
 #include <vector>
-#include "WmiManager.h"
+#include <cstdint>
+
+#ifdef TCMT_WINDOWS
+#include <winsock2.h>
+#include <windows.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <unknwn.h>  // IUnknown
+#else
+// Define DWORD for non-Windows platforms
+typedef uint32_t DWORD;
+#endif
+
+#ifdef TCMT_MACOS
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <net/if_dl.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <map>
+#endif
+
+class WmiManager;
 
 class NetworkAdapter {
 public:
     struct AdapterInfo {
-        std::wstring name;
-        std::wstring mac;
-        std::wstring ip;
-        std::wstring description;
-        std::wstring adapterType; // 新增：网卡类型（无线/有线）
+        std::string name;
+        std::string mac;
+        std::string ip;
+        std::string description;
+        std::string adapterType; // Wireless/Ethernet
         bool isEnabled;
         bool isConnected;
         uint64_t speed;
-        std::wstring speedString;
+        uint64_t downloadSpeed = 0;
+        uint64_t uploadSpeed = 0;
+        std::string speedString;
     };
 
+#ifdef TCMT_WINDOWS
     explicit NetworkAdapter(WmiManager& manager);
+#elif defined(TCMT_MACOS)
+    NetworkAdapter();
+#endif
     ~NetworkAdapter();
 
     const std::vector<AdapterInfo>& GetAdapters() const;
@@ -32,15 +57,19 @@ private:
     void Initialize();
     void Cleanup();
     void QueryAdapterInfo();
-    void QueryWmiAdapterInfo();
     void UpdateAdapterAddresses();
-    std::wstring FormatMacAddress(const unsigned char* address, size_t length) const;
-    std::wstring FormatSpeed(uint64_t bitsPerSecond) const;  // 添加声明
+    std::string FormatMacAddress(const unsigned char* address, size_t length) const;
+    std::string FormatSpeed(uint64_t bitsPerSecond) const;
+    bool IsVirtualAdapter(const std::string& name) const;
     bool IsVirtualAdapter(const std::wstring& name) const;
-    std::wstring DetermineAdapterType(const std::wstring& name, const std::wstring& description, DWORD ifType) const; // 新增：网卡类型识别
-    void SafeRelease(IUnknown* pInterface);
 
+#ifdef TCMT_WINDOWS
+    std::string DetermineAdapterType(const std::wstring& name, const std::wstring& description, DWORD ifType) const;
+    void QueryWmiAdapterInfo();
+    void SafeRelease(IUnknown* pInterface);
     WmiManager& wmiManager;
+#endif
+
     std::vector<AdapterInfo> adapters;
     bool initialized;
 };

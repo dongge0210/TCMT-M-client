@@ -3,19 +3,21 @@
 #include <string>
 #include <vector>
 #include <utility>
-#include <vcclr.h> // 必须包含以使用 gcroot
+#include <vcclr.h>
+#include "../DataStruct/DataStruct.h"
 
-// 使用相对路径，并统一使用net472版本以匹配项目配置
-#using "..\src\third_party\LibreHardwareMonitor\bin\Debug\net472\LibreHardwareMonitorLib.dll"
+// Relative path from TCMT.vcxproj (project root) to the .NET assembly
+// "src\third_party\LibreHardwareMonitor\bin\Release\net472\LibreHardwareMonitorLib.dll"
+#using "src\\third_party\\LibreHardwareMonitor\\bin\\Release\\net472\\LibreHardwareMonitorLib.dll"
 
-// 添加对 .NET 类型的前向声明
+// Add forward declaration for .NET types
 namespace LibreHardwareMonitor {
     namespace Hardware {
-        ref class Computer; // 前向声明 Computer
+        ref class Computer; // Forward declaration of Computer
     }
 }
 
-// 定义 UpdateVisitor 类
+// Define UpdateVisitor class
 ref class UpdateVisitor : public LibreHardwareMonitor::Hardware::IVisitor {
 public:
     virtual void VisitComputer(LibreHardwareMonitor::Hardware::IComputer^ computer) {
@@ -33,11 +35,13 @@ class LibreHardwareMonitorBridge {
 public:
     static void Initialize();
     static void Cleanup();
-    // 日志语义优化：温度传感器数量
+    // Log semantic optimization: temperature sensor count
     static std::vector<std::pair<std::string, double>> GetTemperatures();
+    // Added: Get physical disk SMART data
+    static std::vector<PhysicalDiskSmartData> GetPhysicalDisks();
 
 private:
     static bool initialized;
-    static gcroot<LibreHardwareMonitor::Hardware::Computer^> computer; // 使用 gcroot 包装 Computer
-    static gcroot<UpdateVisitor^> visitor; // 使用 gcroot 包装 UpdateVisitor
+    static gcroot<LibreHardwareMonitor::Hardware::Computer^> computer; // Use gcroot to wrap Computer
+    static gcroot<UpdateVisitor^> visitor; // Use gcroot to wrap UpdateVisitor
 };
