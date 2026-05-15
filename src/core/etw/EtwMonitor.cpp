@@ -120,7 +120,7 @@ bool EtwMonitor::Start() {
     };
 
     TRACEHANDLE th = OpenTraceW(&logfile);
-    if (th == INVALID_PROCESSTRACE_HANDLE_VALUE) {
+    if (th == static_cast<TRACEHANDLE>(INVALID_HANDLE_VALUE)) {
         status = GetLastError();
         std::ostringstream oss;
         oss << "OpenTraceW failed: " << status;
@@ -135,14 +135,14 @@ bool EtwMonitor::Start() {
 
     // ---------- Launch background thread ----------
     running_.store(true, std::memory_order_release);
-    traceThread_ = std::make_unique<tcmt::compat::JThread>([this](tcmt::compat::StopToken /*st*/) {
+    traceThread_.reset(new tcmt::compat::JThread([this](tcmt::compat::StopToken /*st*/) {
         TRACEHANDLE thLocal = reinterpret_cast<TRACEHANDLE>(this->traceHandle_);
         ULONG result = ProcessTrace(&thLocal, 1, nullptr, nullptr);
         if (result != ERROR_SUCCESS && result != ERROR_CANCELLED) {
             Logger::Warn("EtwMonitor: ProcessTrace returned " + std::to_string(result));
         }
         this->running_.store(false, std::memory_order_release);
-    });
+    }));
 
     Logger::Info("EtwMonitor: session started");
     return true;

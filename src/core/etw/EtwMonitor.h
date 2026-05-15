@@ -4,8 +4,7 @@
 #include <string>
 #include <atomic>
 #include <memory>
-
-namespace tcmt { namespace compat { class JThread; } }
+#include "../Utils/JThreadCompat.h"
 
 namespace tcmt { namespace etw {
 
