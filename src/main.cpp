@@ -1367,70 +1367,8 @@ int main(int argc, char* argv[]) {
                 sysInfo.networkAdapterIp = "N/A";
                 sysInfo.networkAdapterType = "Unknown";
 
-                // Populate all network adapter info
-                try {
-                    sysInfo.adapters.clear();
-                    NetworkAdapter netAdapter(*wmiManager);
-                    const auto& adapters = netAdapter.GetAdapters();
-                    if (!adapters.empty()) {
-                        for (const auto& adapter : adapters) {
-                            NetworkAdapterData data;
-                            // Zero initialize to avoid garbage data
-                            memset(&data, 0, sizeof(NetworkAdapterData));
-                            
-                            // Convert std::string to std::wstring before copying to wchar_t arrays
-                            std::wstring nameW = WinUtils::StringToWstring(adapter.name);
-                            std::wstring macW = WinUtils::StringToWstring(adapter.mac);
-                            std::wstring ipW = WinUtils::StringToWstring(adapter.ip);
-                            std::wstring typeW = WinUtils::StringToWstring(adapter.adapterType);
-                            
-                            // Use 4-argument version: dest, source, size, count
-                            wcsncpy_s(data.name, nameW.c_str(), 128);
-                            wcsncpy_s(data.mac, macW.c_str(), 32);
-                            wcsncpy_s(data.ipAddress, ipW.c_str(), 64);
-                            wcsncpy_s(data.adapterType, typeW.c_str(), 32);
-                            data.speed = adapter.speed;
-                            data.downloadSpeed = adapter.downloadSpeed;
-                            data.uploadSpeed = adapter.uploadSpeed;
-                            sysInfo.adapters.push_back(data);
-                        }
-                        sysInfo.networkAdapterName = adapters[0].name;
-                        sysInfo.networkAdapterMac = adapters[0].mac;
-                        sysInfo.networkAdapterIp = adapters[0].ip;
-                        sysInfo.networkAdapterType = adapters[0].adapterType;
-                        sysInfo.networkAdapterSpeed = adapters[0].speed;
-                    } else {
-                        sysInfo.networkAdapterName = "No network adapter detected";
-                        sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                        sysInfo.networkAdapterIp = "N/A";
-                        sysInfo.networkAdapterType = "Unknown";
-                        sysInfo.networkAdapterSpeed = 0;
-                    }
-                } catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get network adapter info - Out of memory: " + std::string(e.what()));
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "Out of memory";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A"; 
-                    sysInfo.networkAdapterType = "Unknown";
-                    sysInfo.networkAdapterSpeed = 0;
-                } catch (const std::exception& e) {
-                    Logger::Error("Failed to get network adapter info: " + std::string(e.what()));
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "No network adapter detected";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A";
-                    sysInfo.networkAdapterType = "Unknown";
-                    sysInfo.networkAdapterSpeed = 0;
-                } catch (...) {
-                    Logger::Error("Failed to get network adapter info - Unknown exception");
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "Unknown exception";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A";
-                    sysInfo.networkAdapterType = "Unknown";
-                    sysInfo.networkAdapterSpeed = 0;
-                }
+                // Network adapter info now populated by ModuleCoordinator::Snapshot()
+                // (was duplicated here — removed to avoid redundant WMI queries)
 
                 // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
 
@@ -1623,13 +1561,14 @@ int main(int argc, char* argv[]) {
                         tuiData.tpmInfo = "No TPM";
                     }
 
-                    // WiFi & Bluetooth (every ~3 seconds)
+                    // WiFi & Bluetooth (every ~3s, or immediate on ETW event)
                     { static int wbCtr = 0;
                       static WiFiInfo s_wifi;
                       static BluetoothInfo s_bt;
-                      if (++wbCtr >= 3) { wbCtr = 0;
+                      bool forcePoll = coordinator.IsWifiDirty() || coordinator.IsBtDirty();
+                      if (++wbCtr >= 3 || forcePoll) { wbCtr = 0;
                           try { s_wifi.Detect(); } catch (...) {}
-                          if (s_btNotify.Poll()) { try { s_bt.Detect(); } catch (...) {} }
+                          if (s_btNotify.Poll() || forcePoll) { try { s_bt.Detect(); } catch (...) {} }
                       }
                       const auto& wd = s_wifi.GetData();
                       tuiData.hasWiFi = wd.powerOn;

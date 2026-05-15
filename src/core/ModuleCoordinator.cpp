@@ -1,6 +1,7 @@
 #include "ModuleCoordinator.h"
 #include "temperature/TemperatureWrapper.h"
 #include "Utils/Logger.h"
+#include "Utils/WinUtils.h"
 #include <algorithm>
 #include <cctype>
 
@@ -164,7 +165,22 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     // Network
     {
         std::lock_guard<std::mutex> lock(data_.netMutex);
+#ifdef TCMT_WINDOWS
+        sysInfo.adapters.clear();
+#endif
         for (const auto& n : data_.adapters) {
+#ifdef TCMT_WINDOWS
+            NetworkAdapterData sysAd;
+            memset(&sysAd, 0, sizeof(sysAd));
+            wcsncpy_s(sysAd.name, WinUtils::StringToWstring(n.name).c_str(), _TRUNCATE);
+            wcsncpy_s(sysAd.mac, WinUtils::StringToWstring(n.mac).c_str(), _TRUNCATE);
+            wcsncpy_s(sysAd.ipAddress, WinUtils::StringToWstring(n.ip).c_str(), _TRUNCATE);
+            wcsncpy_s(sysAd.adapterType, WinUtils::StringToWstring(n.type).c_str(), _TRUNCATE);
+            sysAd.speed = n.speed;
+            sysAd.downloadSpeed = n.dl;
+            sysAd.uploadSpeed = n.ul;
+            sysInfo.adapters.push_back(sysAd);
+#endif
             tcmt::TuiData::NetInfo ni;
             ni.name = n.name;
             ni.ip = n.ip;
@@ -175,6 +191,15 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
             ni.uploadSpeed = n.ul;
             tuiData.adapters.push_back(ni);
         }
+#ifdef TCMT_WINDOWS
+        if (!data_.adapters.empty()) {
+            sysInfo.networkAdapterName = data_.adapters[0].name;
+            sysInfo.networkAdapterMac = data_.adapters[0].mac;
+            sysInfo.networkAdapterIp = data_.adapters[0].ip;
+            sysInfo.networkAdapterType = data_.adapters[0].type;
+            sysInfo.networkAdapterSpeed = data_.adapters[0].speed;
+        }
+#endif
     }
 
     // Power
