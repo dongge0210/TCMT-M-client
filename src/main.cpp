@@ -57,6 +57,7 @@ Please ignore this warning - the project structure doesn't support this scenario
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
 #include "core/bluetooth/BluetoothInfo.h"
+#include "core/DeviceChangeNotifier.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/temperature/TemperatureWrapper.h"
@@ -1623,10 +1624,12 @@ int main(int argc, char* argv[]) {
                     // WiFi & Bluetooth (every ~3 seconds)
                     { static int wbCtr = 0;
                       static WiFiInfo s_wifi;
+                      static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+                      static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
                       static BluetoothInfo s_bt;
                       if (++wbCtr >= 3) { wbCtr = 0;
                           try { s_wifi.Detect(); } catch (...) {}
-                          try { s_bt.Detect(); } catch (...) {}
+                          if (s_btNotify.Poll()) { try { s_bt.Detect(); } catch (...) {} }
                       }
                       const auto& wd = s_wifi.GetData();
                       tuiData.hasWiFi = wd.powerOn;
@@ -1748,6 +1751,7 @@ int main(int argc, char* argv[]) {
                         static int usbCheckCounter = 0;
                         if (++usbCheckCounter >= 20) {
                             usbCheckCounter = 0;
+                            if (s_usbNotify.Poll()) {
                             try {
                                 UsbInfo usb;
                                 usb.Detect();
@@ -1759,6 +1763,7 @@ int main(int argc, char* argv[]) {
                                                     + " PID:" + std::to_string(devs[di].pid));
                                 }
                             } catch (...) {}
+                            } // s_usbNotify.Poll()
                         }
 
                         historyLogger.WriteBatch(snapshots);
