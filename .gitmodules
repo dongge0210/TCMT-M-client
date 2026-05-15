@@ -25,3 +25,6 @@
 [submodule "src/third_party/tpm2-tss"]
 	path = src/third_party/tpm2-tss
 	url = https://github.com/dongge0210/tpm2-tss.git
+[submodule "src/third_party/zlib"]
+	path = src/third_party/zlib
+	url = https://github.com/madler/zlib.git
