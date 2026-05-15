@@ -21,6 +21,7 @@
 CpuInfo::CpuInfo()
     : totalCores(0), largeCores(0), smallCores(0), cpuUsage(0.0),
       pCoreFreqHandle(nullptr), eCoreFreqHandle(nullptr),
+      pCoreBaseFreq(0.0), eCoreBaseFreq(0.0),
       counterInitialized(false), lastUpdateTime(0),
       lastSampleTick(0), prevSampleTick(0), lastSampleIntervalMs(0.0) {
     try {
@@ -60,23 +61,47 @@ void CpuInfo::InitializeCounter() {
         return;
     }
 
-    // P-core frequency: always instance "0,0" (core 0 is always P-core on Intel)
+    // P-core: % Processor Performance (relative to nominal)
     status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh,
-        L"\\Processor Information(0,0)\\Processor Frequency", 0,
+        L"\\Processor Information(0,0)\\% Processor Performance", 0,
         (PDH_HCOUNTER*)pch);
     if (status != ERROR_SUCCESS) {
-        Logger::Warn("Cannot add P-core frequency counter (err=" + std::to_string(status) + ")");
+        Logger::Warn("Cannot add P-core % performance counter (err=" + std::to_string(status) + ")");
     }
 
-    // E-core frequency: use first E-core logical processor index
+    // E-core: % Processor Performance
     if (smallCores > 0) {
         int htRatio = (totalCores > (largeCores + smallCores)) ? 2 : 1;
         int firstECoreIdx = largeCores * htRatio;
         wchar_t eCorePath[128];
-        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\Processor Frequency", firstECoreIdx);
+        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\% Processor Performance", firstECoreIdx);
         status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh, eCorePath, 0, (PDH_HCOUNTER*)ech);
         if (status != ERROR_SUCCESS) {
-            Logger::Warn("Cannot add E-core frequency counter (err=" + std::to_string(status) + ")");
+            Logger::Warn("Cannot add E-core % performance counter (err=" + std::to_string(status) + ")");
+        }
+    }
+// Read nominal base frequencies from registry (MHz)
+    // P-core (processor 0)
+    {
+        DWORD speed = 0, size = sizeof(speed);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE,
+            L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+            L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
+            pCoreBaseFreq = static_cast<double>(speed);
+        }
+    }
+    // E-core (first E-core logical processor)
+    if (smallCores > 0) {
+        int htRatio = (totalCores > (largeCores + smallCores)) ? 2 : 1;
+        int firstECoreIdx = largeCores * htRatio;
+        wchar_t keyPath[128];
+        swprintf_s(keyPath, 128, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\%d", firstECoreIdx);
+        DWORD speed = 0, size = sizeof(speed);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, keyPath,
+            L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
+            eCoreBaseFreq = static_cast<double>(speed);
+        } else {
+            eCoreBaseFreq = pCoreBaseFreq; // fallback
         }
     }
 
@@ -91,38 +116,33 @@ void CpuInfo::InitializeCounter() {
     counterInitialized = true;
 }
 
-static double ReadPdhFreqValue(void* handle) {
+static double ReadPdhPctValue(void* handle) {
     if (!handle) return 0.0;
     PDH_FMT_COUNTERVALUE v;
     PDH_STATUS s = PdhGetFormattedCounterValue(
         (PDH_HCOUNTER)handle, PDH_FMT_DOUBLE, NULL, &v);
     if (s == ERROR_SUCCESS &&
         (v.CStatus == PDH_CSTATUS_VALID_DATA || v.CStatus == PDH_CSTATUS_NEW_DATA)) {
-        return v.doubleValue; // MHz
+        return v.doubleValue; // percentage (0-100+, >100 = turbo)
     }
     return 0.0;
 }
 
 double CpuInfo::GetLargeCoreSpeed() const {
-    // Try PDH per-core counter first (real-time frequency)
-    double freq = ReadPdhFreqValue(pCoreFreqHandle);
-    if (freq > 0.0) return freq;
+    // % Processor Performance × base frequency = real-time MHz
+    double pct = ReadPdhPctValue(pCoreFreqHandle);
+    if (pct > 0.0 && pCoreBaseFreq > 0.0)
+        return pCoreBaseFreq * (pct / 100.0);
 
     // Fallback: registry base frequency
-    DWORD speed = 0;
-    DWORD size = sizeof(speed);
-    if (RegGetValueW(HKEY_LOCAL_MACHINE,
-        L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-        L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
-        return static_cast<double>(speed);
-    }
-    return 0.0;
+    return pCoreBaseFreq;
 }
 
 double CpuInfo::GetSmallCoreSpeed() const {
-    // Try PDH per-core counter first (real-time E-core frequency)
-    double freq = ReadPdhFreqValue(eCoreFreqHandle);
-    if (freq > 0.0) return freq;
+    // % Processor Performance × base frequency = real-time MHz
+    double pct = ReadPdhPctValue(eCoreFreqHandle);
+    if (pct > 0.0 && eCoreBaseFreq > 0.0)
+        return eCoreBaseFreq * (pct / 100.0);
 
     // Fallback: P-core frequency as approximation
     return GetLargeCoreSpeed();

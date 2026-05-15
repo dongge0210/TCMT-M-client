@@ -66,3 +66,4 @@ Do NOT hardcode build output paths. Use the MCP server's inference:
 
 ## User additional notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
+- **sessions**: change `docs/session.md` when current status changed also you see current status from that file.

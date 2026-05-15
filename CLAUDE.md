@@ -144,3 +144,4 @@ git submodule update --init --recursive
 
 ## User addition notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
+- **sessions**: change `docs/session.md` when current status changed also you see current status from that file.

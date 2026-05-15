@@ -56,8 +56,10 @@ private:
 #ifdef TCMT_WINDOWS
     void* queryHandle;       // PDH_HQUERY
     void* counterHandle;     // PDH_HCOUNTER (CPU usage)
-    void* pCoreFreqHandle;   // PDH_HCOUNTER (P-core frequency)
-    void* eCoreFreqHandle;   // PDH_HCOUNTER (E-core frequency)
+    void* pCoreFreqHandle;   // PDH_HCOUNTER (P-core % perf)
+    void* eCoreFreqHandle;   // PDH_HCOUNTER (E-core % perf)
+    double pCoreBaseFreq;    // nominal MHz (registry)
+    double eCoreBaseFreq;    // nominal MHz (registry)
     bool counterInitialized;
     uint32_t lastUpdateTime;
     uint32_t lastSampleTick;
