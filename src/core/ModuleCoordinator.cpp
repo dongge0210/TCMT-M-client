@@ -39,6 +39,35 @@ void ModuleCoordinator::Start() {
     }, this);
 
     Logger::Info("ModuleCoordinator: started all collection threads");
+
+    // ETW trace session — kernel event notifications
+    etwMonitor_.SetPowerCallback([this](bool acOnline) {
+        data_.acOnline.store(acOnline);
+        data_.powerDirty.store(true);
+    });
+    etwMonitor_.SetBatteryCallback([this](int pct) {
+        if (pct >= 0 && pct <= 100) data_.batteryPercent.store(pct);
+        data_.powerDirty.store(true);
+    });
+    etwMonitor_.SetNetworkCallback([this]() {
+        data_.networkDirty.store(true);
+    });
+    etwMonitor_.SetWifiCallback([this]() {
+        data_.wifiDirty.store(true);
+    });
+    etwMonitor_.SetBluetoothCallback([this]() {
+        data_.btDirty.store(true);
+    });
+    etwMonitor_.SetUsbCallback([this]() {
+        data_.usbDirty.store(true);
+    });
+    etwMonitor_.SetCpuFreqCallback([this]() {
+        data_.cpuFreqDirty.store(true);
+    });
+    if (!etwMonitor_.Start()) {
+        Logger::Warn("ModuleCoordinator: EtwMonitor start failed — " +
+                     etwMonitor_.GetLastError() + " (falling back to polling)");
+    }
 }
 
 void ModuleCoordinator::Stop() {
@@ -60,6 +89,7 @@ void ModuleCoordinator::Stop() {
     if (tempThread_.joinable())   tempThread_.join();
     if (powerThread_.joinable())  powerThread_.join();
 
+    etwMonitor_.Stop();
     Logger::Info("ModuleCoordinator: all collection threads stopped");
 }
 
