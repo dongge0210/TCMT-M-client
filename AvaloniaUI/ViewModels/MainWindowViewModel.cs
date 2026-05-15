@@ -663,11 +663,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         get
         {
             if (!HasWifiHardware) return "WiFi: OFF";
-            var cppWiFiOn = WifiSSID != "" || WifiRSSI != 0 || WifiChannel != 0;
-            if (!cppWiFiOn) return "WiFi: OFF";
-            return !string.IsNullOrEmpty(WifiSSID)
-                ? $"WiFi: CONNECTED — {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}"
-                : $"WiFi: DISCONNECTED";
+            if (!string.IsNullOrEmpty(WifiSSID))
+                return $"WiFi: CONNECTED — {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
+            if (WifiRSSI != 0 || WifiChannel != 0)
+                return $"WiFi: ON  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
+            return "WiFi: DISCONNECTED";
         }
     }
     public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";

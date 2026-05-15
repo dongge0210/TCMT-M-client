@@ -329,7 +329,8 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     int lines = 0;
 
     if (data.hasWiFi) {
-        std::string wifiStr = "On";
+        bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
+        std::string wifiStr = hasData ? "On" : "Disconnected";
         if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
         if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
         if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
