@@ -1157,6 +1157,8 @@ int main(int argc, char* argv[]) {
         coordinator.Start();
 
         while (!g_shouldExit.load()) {
+            static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+            static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
             try {
                 auto loopStart = std::chrono::high_resolution_clock::now();
                 
@@ -1624,8 +1626,6 @@ int main(int argc, char* argv[]) {
                     // WiFi & Bluetooth (every ~3 seconds)
                     { static int wbCtr = 0;
                       static WiFiInfo s_wifi;
-                      static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
-                      static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
                       static BluetoothInfo s_bt;
                       if (++wbCtr >= 3) { wbCtr = 0;
                           try { s_wifi.Detect(); } catch (...) {}
