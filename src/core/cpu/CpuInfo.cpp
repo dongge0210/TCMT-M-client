@@ -74,7 +74,7 @@ void CpuInfo::InitializeCounter() {
         int htRatio = (totalCores > (largeCores + smallCores)) ? 2 : 1;
         int firstECoreIdx = largeCores * htRatio;
         wchar_t eCorePath[128];
-        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\% Processor Performance", firstECoreIdx);
+        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\%% Processor Performance", firstECoreIdx);
         status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh, eCorePath, 0, (PDH_HCOUNTER*)ech);
         if (status != ERROR_SUCCESS) {
             Logger::Warn("Cannot add E-core % performance counter (err=" + std::to_string(status) + ")");
