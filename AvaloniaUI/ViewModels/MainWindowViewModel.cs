@@ -662,8 +662,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (!HasWirelessAdapter && !IsMacOS) return "WiFi: OFF";
-            if (!HasWifiHardware && IsMacOS) return "WiFi: OFF";
+            if (!HasWifiHardware) return "WiFi: OFF";
             var cppWiFiOn = WifiSSID != "" || WifiRSSI != 0 || WifiChannel != 0;
             if (!cppWiFiOn) return "WiFi: OFF";
             return !string.IsNullOrEmpty(WifiSSID)
