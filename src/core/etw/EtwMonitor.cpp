@@ -121,7 +121,7 @@ bool EtwMonitor::Start() {
 
     TRACEHANDLE th = OpenTraceW(&logfile);
     if (th == reinterpret_cast<TRACEHANDLE>(INVALID_HANDLE_VALUE)) {
-        ULONG err = GetLastError();
+        ULONG err = ::GetLastError();
         std::ostringstream oss;
         oss << "OpenTraceW failed: " << err;
         lastError_ = oss.str();
