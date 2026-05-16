@@ -175,7 +175,14 @@ bool WlanDetect(WlanData* out) {
                 }
                 for (DWORD i = 0; i < pBssList->dwNumberOfItems; i++) {
                     if (memcmp(target, pBssList->wlanBssEntries[i].dot11Bssid, 6) == 0) {
-                        out->channel = (int32_t)pBssList->wlanBssEntries[i].dot11Channel;
+                        ULONG freqKhz = pBssList->wlanBssEntries[i].ulChCenterFrequency;
+                        // Convert frequency (kHz) to channel number
+                        if (freqKhz >= 2412000 && freqKhz <= 2484000)
+                            out->channel = (int32_t)((freqKhz / 1000 - 2407) / 5);
+                        else if (freqKhz >= 5000000)
+                            out->channel = (int32_t)((freqKhz / 1000) / 5);
+                        else if (freqKhz > 0)
+                            out->channel = (int32_t)freqKhz; // raw value
                         break;
                     }
                 }
