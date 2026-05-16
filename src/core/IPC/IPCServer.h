@@ -31,9 +31,9 @@ public:
 #endif
 
     // Client tracking
-    int GetClientCount() const;
-    bool HasClients() const;
-    std::vector<ClientType> GetClientTypes() const;
+    int GetClientCount();
+    bool HasClients();
+    std::vector<ClientType> GetClientTypes();
 
     // Broadcast schema to all connected clients
     void UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields);

@@ -261,7 +261,7 @@ void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<Field
 #endif
 }
 
-int IPCServer::GetClientCount() const {
+int IPCServer::GetClientCount() {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     for (auto it = clients_.begin(); it != clients_.end(); ) {
         DWORD avail = 0;
@@ -275,9 +275,9 @@ int IPCServer::GetClientCount() const {
     return static_cast<int>(clients_.size());
 }
 
-bool IPCServer::HasClients() const { return GetClientCount() > 0; }
+bool IPCServer::HasClients() { return GetClientCount() > 0; }
 
-std::vector<ClientType> IPCServer::GetClientTypes() const {
+std::vector<ClientType> IPCServer::GetClientTypes() {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     for (auto it = clients_.begin(); it != clients_.end(); ) {
         DWORD avail = 0;
@@ -512,16 +512,16 @@ void IPCServer::HandleClient(int clientFd) {
     Logger::Info("IPC: client disconnected, " + std::to_string(GetClientCount()) + " client(s) total");
 }
 
-int IPCServer::GetClientCount() const {
+int IPCServer::GetClientCount() {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     return static_cast<int>(clients_.size());
 }
 
-bool IPCServer::HasClients() const {
+bool IPCServer::HasClients() {
     return GetClientCount() > 0;
 }
 
-std::vector<ClientType> IPCServer::GetClientTypes() const {
+std::vector<ClientType> IPCServer::GetClientTypes() {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     std::vector<ClientType> types;
     for (const auto& c : clients_)
