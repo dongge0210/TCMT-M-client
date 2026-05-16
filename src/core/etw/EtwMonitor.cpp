@@ -68,7 +68,7 @@ bool EtwMonitor::Start() {
     props->BufferSize          = 64;  // KB
     props->MinimumBuffers      = 2;
     props->MaximumBuffers      = 8;
-    props->LogFileMode         = EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_SYSTEM_LOGGER_MODE;
+    props->LogFileMode         = EVENT_TRACE_REAL_TIME_MODE;
     props->LoggerNameOffset    = sizeof(EVENT_TRACE_PROPERTIES);
     props->FlushTimer          = 1;
 
