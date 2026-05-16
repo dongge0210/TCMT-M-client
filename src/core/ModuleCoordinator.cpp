@@ -41,6 +41,7 @@ void ModuleCoordinator::Start() {
 
     Logger::Info("ModuleCoordinator: started all collection threads");
 
+#ifdef TCMT_WINDOWS
     // ETW trace session — kernel event notifications
     etwMonitor_.SetPowerCallback([this](bool acOnline) {
         data_.acOnline.store(acOnline);
@@ -69,6 +70,7 @@ void ModuleCoordinator::Start() {
         Logger::Warn("ModuleCoordinator: EtwMonitor start failed — " +
                      etwMonitor_.GetLastError() + " (falling back to polling)");
     }
+#endif
 }
 
 void ModuleCoordinator::Stop() {
@@ -90,7 +92,9 @@ void ModuleCoordinator::Stop() {
     if (tempThread_.joinable())   tempThread_.join();
     if (powerThread_.joinable())  powerThread_.join();
 
+#ifdef TCMT_WINDOWS
     etwMonitor_.Stop();
+#endif
     Logger::Info("ModuleCoordinator: all collection threads stopped");
 }
 
