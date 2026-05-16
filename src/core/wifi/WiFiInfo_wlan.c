@@ -137,11 +137,11 @@ bool WlanDetect(WlanData* out) {
     // --- Channel ---
     {
         ULONG channel = 0;
-        DWORD channelSize = sizeof(channel);
+        DWORD channelSizeOut = sizeof(channel);
         WLAN_OPCODE_VALUE_TYPE chOpCode = wlan_opcode_value_type_query_only;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
-                                      NULL, &channelSize, (PVOID*)&channel, &chOpCode);
-        if (dwResult == ERROR_SUCCESS && channelSize == 4) {
+                                      NULL, &channelSizeOut, (PVOID*)&channel, &chOpCode);
+        if (dwResult == ERROR_SUCCESS) {
             if (channel >= 1 && channel <= 255) {
                 out->channel = (int32_t)channel;
             } else {
