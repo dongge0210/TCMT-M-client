@@ -1607,8 +1607,15 @@ int main(int argc, char* argv[]) {
                     }
 
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
-                    
+
                     tuiApp.UpdateData(tuiData);
+
+                    // Write to shared memory (after WiFi/BT data populated)
+                    try {
+                        if (SharedMemoryManager::GetBuffer()) {
+                            SharedMemoryManager::WriteToSharedMemory(sysInfo);
+                        }
+                    } catch (...) {}
                 }
                 catch (const std::exception& e) {
                     Logger::Warn("TUI data update failed: " + std::string(e.what()));
