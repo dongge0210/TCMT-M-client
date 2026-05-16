@@ -107,18 +107,32 @@ bool WlanDetect(WlanData* out) {
     }
 
     // --- RSSI (dBm) ---
-    LONG rssi = 0;
-    DWORD rssiSize = sizeof(rssi);
-    dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
-                                  NULL, &rssiSize, (PVOID*)&rssi, &opCode);
-    if (dwResult == ERROR_SUCCESS) out->rssi = (int32_t)rssi;
+    {
+        LONG rssi = 0;
+        DWORD rssiSize = sizeof(rssi);
+        WLAN_OPCODE_VALUE_TYPE rssiOpCode = wlan_opcode_value_type_query_only;
+        dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
+                                      NULL, &rssiSize, (PVOID*)&rssi, &rssiOpCode);
+        if (dwResult == ERROR_SUCCESS) {
+            // WLAN API may return RSSI as LONG (4 bytes) or as ULONG/DWORD.
+            // If rssiSize == 4 and value is in valid dBm range (-100..-10), use it.
+            // Otherwise treat as unsigned and leave at 0 (try reading from
+            // wlanSignalQuality in connection attributes instead).
+            if (rssiSize == sizeof(rssi) && (int32_t)rssi < 0)
+                out->rssi = (int32_t)rssi;
+        }
+    }
 
     // --- Channel ---
-    ULONG channel = 0;
-    DWORD channelSize = sizeof(channel);
-    dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
-                                  NULL, &channelSize, (PVOID*)&channel, &opCode);
-    if (dwResult == ERROR_SUCCESS) out->channel = (int32_t)channel;
+    {
+        ULONG channel = 0;
+        DWORD channelSize = sizeof(channel);
+        WLAN_OPCODE_VALUE_TYPE chOpCode = wlan_opcode_value_type_query_only;
+        dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
+                                      NULL, &channelSize, (PVOID*)&channel, &chOpCode);
+        if (dwResult == ERROR_SUCCESS && channelSize == sizeof(channel))
+            out->channel = (int32_t)channel;
+    }
 
     WlanFreeMemory(pIfList);
     WlanCloseHandle(hClient, NULL);
