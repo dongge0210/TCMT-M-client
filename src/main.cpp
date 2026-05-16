@@ -1525,6 +1525,7 @@ int main(int argc, char* argv[]) {
                     // Disks
                     for (const auto& disk : sysInfo.disks) {
                         tcmt::TuiData::DiskInfo di;
+                        di.letter = disk.letter;
                         di.label = disk.label;
                         di.totalSize = disk.totalSize;
                         di.usedSpace = disk.usedSpace;
