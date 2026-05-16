@@ -24,6 +24,7 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/DiskInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp

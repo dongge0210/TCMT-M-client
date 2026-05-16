@@ -1,5 +1,6 @@
 #include "DiskInfo.h"
 #include "../Utils/Logger.h"
+#include "SmartReader.h"
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
@@ -208,6 +209,8 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 data.temperature = -1;
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
+                // Try DeviceIoControl SMART
+                SmartReader::Read(idx, tempDisks[idx]);
             }
             VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
             VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);

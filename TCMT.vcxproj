@@ -165,6 +165,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <!-- SharedMemoryManager.cpp includes platform-specific implementation via #include -->
     <!-- SharedMemoryManager_Windows.cpp NOT needed here -->
     <ClCompile Include="src\core\disk\DiskInfo.cpp" />
+    <ClCompile Include="src\core\disk\SmartReader.cpp" />
     <ClCompile Include="src\core\gpu\GpuInfo.cpp" />
     <ClCompile Include="src\core\history\HistoryLogger.cpp" />
     <ClCompile Include="src\core\IPC\IPCClient.cpp" />
