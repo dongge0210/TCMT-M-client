@@ -482,7 +482,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string FormatFrequency(double frequency)
     {
         if (frequency <= 0) return "N/A";
-        return frequency >= 1000 ? $"{frequency / 1000.0:F1} GHz" : $"{frequency:F0} MHz";
+        return $"{frequency:F0} MHz";
     }
 
     private string FormatNetworkSpeed(ulong speedBps)
