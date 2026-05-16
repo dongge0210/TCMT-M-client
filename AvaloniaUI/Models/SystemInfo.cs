@@ -100,6 +100,8 @@ namespace AvaloniaUI.Models
         public int WifiRSSI { get; set; }
         public int WifiChannel { get; set; }
         public string WifiSecurity { get; set; } = "";
+        public string WifiBand { get; set; } = "";
+        public string WifiGen { get; set; } = "";
 
         // Bluetooth — populated by C++ side, not via IPC schema yet
         public bool HasBluetooth { get; set; }

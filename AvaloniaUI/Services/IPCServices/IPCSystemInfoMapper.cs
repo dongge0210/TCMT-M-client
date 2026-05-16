@@ -220,6 +220,8 @@ public static class IPCSystemInfoMapper
                 info.WifiRSSI = reader.ReadInt32("wifi/rssi") ?? 0;
                 info.WifiChannel = reader.ReadInt32("wifi/channel") ?? 0;
                 info.WifiSecurity = ipc.ReadWString("wifi/security") ?? reader.ReadString("wifi/security") ?? "";
+                info.WifiBand = ipc.ReadWString("wifi/band") ?? reader.ReadString("wifi/band") ?? "";
+                info.WifiGen = ipc.ReadWString("wifi/gen") ?? reader.ReadString("wifi/gen") ?? "";
                 Log.Debug("IPC WiFi: hasField powerOn={Pwr} ssid={Ssid} rssi={Rssi} ch={Ch}",
                     info.HasWiFi, info.WifiSSID, info.WifiRSSI, info.WifiChannel);
             }

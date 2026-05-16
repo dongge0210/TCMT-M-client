@@ -86,8 +86,10 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal" IsVisible="{Binding IsNotMacOS}">
-                                    <TextBlock Text="频率: " Foreground="#FF666666" FontSize="11"/>
-                                    <TextBlock Text="{Binding CpuFrequency}" Foreground="#FF666666" FontSize="11"/>
+                                    <TextBlock Text="P-core: " Foreground="#FF666666" FontSize="11"/>
+                                    <TextBlock Text="{Binding CpuFrequency}" Foreground="#FFB3B3B3" FontSize="11"/>
+                                    <TextBlock Text="  E-core: " Foreground="#FF666666" FontSize="11" Margin="8,0,0,0"/>
+                                    <TextBlock Text="{Binding CpuEfficiencyFrequency}" Foreground="#FFB3B3B3" FontSize="11"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" IsVisible="{Binding IsNotMacOS}">
                                     <TextBlock Text="超线程: " Foreground="#FF666666" FontSize="11"/>

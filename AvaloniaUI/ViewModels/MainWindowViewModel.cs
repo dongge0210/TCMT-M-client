@@ -306,6 +306,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         WifiRSSI = info.WifiRSSI;
         WifiChannel = info.WifiChannel;
         WifiSecurity = info.WifiSecurity ?? "";
+        WifiBand = info.WifiBand ?? "";
+        WifiGen = info.WifiGen ?? "";
         HasWifiHardware = info.HasWiFi; // C++ wifi/powerOn via IPC
         Log.Debug("VM WiFi: HasWifiHardware={Hw} SSID={Ssid} RSSI={Rssi} Ch={Ch}",
             HasWifiHardware, WifiSSID, WifiRSSI, WifiChannel);
@@ -642,6 +644,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _wifiSecurity = "";
 
+    [ObservableProperty]
+    private string _wifiBand = "";
+
+    [ObservableProperty]
+    private string _wifiGen = "";
+
     // Bluetooth raw data from C++ IPC
     [ObservableProperty]
     private bool _hasBluetooth;
@@ -668,10 +676,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (!hasHw) return "WiFi: No adapter";
             if (!HasWifiHardware && HasWirelessAdapter)
                 return "WiFi: OFF";  // wireless adapter present but C++ module reports radio off
+            var extra = "";
+            if (!string.IsNullOrEmpty(WifiBand)) extra += "  " + WifiBand;
+            if (!string.IsNullOrEmpty(WifiGen)) extra += "  " + WifiGen;
             if (!string.IsNullOrEmpty(WifiSSID))
-                return $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
+                return $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}{extra}";
             if (WifiRSSI != 0 || WifiChannel != 0)
-                return $"WiFi: On  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
+                return $"WiFi: On  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}{extra}";
             return "WiFi: Disconnected";
         }
     }
