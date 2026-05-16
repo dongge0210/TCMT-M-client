@@ -307,6 +307,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         WifiChannel = info.WifiChannel;
         WifiSecurity = info.WifiSecurity ?? "";
         HasWifiHardware = info.HasWiFi; // C++ wifi/powerOn via IPC
+        Log.Debug("VM WiFi: HasWifiHardware={Hw} SSID={Ssid} RSSI={Rssi} Ch={Ch}",
+            HasWifiHardware, WifiSSID, WifiRSSI, WifiChannel);
         OnPropertyChanged(nameof(HasWiFi));
         OnPropertyChanged(nameof(WifiDisplay));
 
