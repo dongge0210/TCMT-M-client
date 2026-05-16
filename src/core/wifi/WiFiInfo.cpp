@@ -17,12 +17,17 @@ void WiFiInfo::Detect() {
 
     WlanData wd;
     if (!WlanDetect(&wd)) {
-        Logger::Warn("WiFiInfo: WlanDetect failed");
+        Logger::Info("WiFiInfo: WlanDetect failed");
         return;
     }
 
     data_.powerOn     = wd.powerOn;
     data_.isConnected = wd.isConnected;
+    Logger::Info("WiFiInfo: powerOn=" + std::to_string(wd.powerOn) +
+                 " isConnected=" + std::to_string(wd.isConnected) +
+                 " ssid=" + std::string(wd.ssid) +
+                 " rssi=" + std::to_string(wd.rssi) +
+                 " channel=" + std::to_string(wd.channel));
     data_.ssid        = wd.ssid;
     data_.bssid       = wd.bssid;
     data_.rssi        = wd.rssi;
