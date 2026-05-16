@@ -665,7 +665,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             bool hasHw = HasWiFi;
             if (!hasHw) return "WiFi: No adapter";
             if (!HasWifiHardware && HasWirelessAdapter)
-                return "WiFi: ???";  // wireless adapter exists but C++ module not reporting
+                return "WiFi: OFF";  // wireless adapter present but C++ module reports radio off
             if (!string.IsNullOrEmpty(WifiSSID))
                 return $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
             if (WifiRSSI != 0 || WifiChannel != 0)
