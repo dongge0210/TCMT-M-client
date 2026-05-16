@@ -1532,6 +1532,22 @@ int main(int argc, char* argv[]) {
                         di.fileSystem = disk.fileSystem;
                         tuiData.disks.push_back(di);
                     }
+
+                    // Physical disks (SMART)
+                    for (const auto& pd : sysInfo.physicalDisks) {
+                        tcmt::TuiData::PhysicalDiskInfo pi;
+                        pi.model = WinUtils::WstringToString(pd.model);
+                        pi.serial = WinUtils::WstringToString(pd.serialNumber);
+                        pi.interfaceType = WinUtils::WstringToString(pd.interfaceType);
+                        pi.diskType = WinUtils::WstringToString(pd.diskType);
+                        pi.capacity = pd.capacity;
+                        pi.temperature = pd.temperature;
+                        pi.healthPct = pd.healthPercentage;
+                        pi.smartSupported = pd.smartSupported;
+                        pi.powerOnHours = pd.powerOnHours;
+                        pi.wearLeveling = pd.wearLeveling;
+                        tuiData.physicalDisks.push_back(pi);
+                    }
                     
                     // Network adapters
                     for (const auto& adapter : sysInfo.adapters) {

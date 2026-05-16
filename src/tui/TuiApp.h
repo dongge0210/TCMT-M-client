@@ -68,6 +68,20 @@ struct TuiData {
     };
     std::vector<DiskInfo> disks;
 
+    struct PhysicalDiskInfo {
+        std::string model;
+        std::string serial;
+        std::string interfaceType;
+        std::string diskType;    // "SSD" / "HDD"
+        uint64_t capacity = 0;
+        double temperature = 0;
+        uint8_t healthPct = 0;
+        bool smartSupported = false;
+        uint64_t powerOnHours = 0;
+        double wearLeveling = 0;
+    };
+    std::vector<PhysicalDiskInfo> physicalDisks;
+
     // Network
     struct NetInfo {
         std::string name;
@@ -146,6 +160,7 @@ private:
     int DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility

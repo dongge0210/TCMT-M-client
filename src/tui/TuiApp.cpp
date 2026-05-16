@@ -375,6 +375,44 @@ int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     return 2;
 }
 
+int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10 || data.physicalDisks.empty()) return 0;
+    int lines = 0;
+
+    for (const auto& pd : data.physicalDisks) {
+        if (y + lines >= LINES - 5) break;
+        std::string line;
+        // Model (trimmed)
+        auto model = pd.model;
+        if (model.size() > 24) model = model.substr(0, 22) + "..";
+        line = model;
+        // Type
+        if (!pd.diskType.empty()) line += "  " + pd.diskType;
+        // Health
+        if (pd.smartSupported) {
+            char hbuf[8];
+            snprintf(hbuf, sizeof(hbuf), " %d%%", pd.healthPct);
+            line += hbuf;
+        }
+        // Temperature
+        if (pd.temperature > 0) {
+            char tbuf[12];
+            snprintf(tbuf, sizeof(tbuf), " %.0fC", pd.temperature);
+            line += tbuf;
+        }
+        // Wear
+        if (pd.wearLeveling > 0) {
+            char wbuf[12];
+            snprintf(wbuf, sizeof(wbuf), " w%.1f%%", pd.wearLeveling * 100.0);
+            line += wbuf;
+        }
+        line = TrimRight(line, maxW - 2);
+        mvwprintw(win, y + lines, x0, "%.*s", maxW, line.c_str());
+        lines++;
+    }
+    return lines;
+}
+
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -527,6 +565,9 @@ void TuiApp::Run() {
         int ry = 2;
         if (ry < maxY) {
             ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
+            if (ry < maxY) {
+                ry += DrawPhysicalDiskPanel(stdscr, data, ry, rx, rightW);
+            }
             if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
             }
