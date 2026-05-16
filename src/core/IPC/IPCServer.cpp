@@ -261,33 +261,15 @@ void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<Field
 #endif
 }
 
-int IPCServer::GetClientCount() {
+int IPCServer::GetClientCount() const {
     std::lock_guard<std::mutex> lock(clientsMutex_);
-    for (auto it = clients_.begin(); it != clients_.end(); ) {
-        DWORD avail = 0;
-        if (!PeekNamedPipe(static_cast<HANDLE>(it->hPipe), nullptr, 0,
-                           nullptr, &avail, nullptr) &&
-            ::GetLastError() == ERROR_BROKEN_PIPE) {
-            CloseHandle(static_cast<HANDLE>(it->hPipe));
-            it = clients_.erase(it);
-        } else { ++it; }
-    }
     return static_cast<int>(clients_.size());
 }
 
-bool IPCServer::HasClients() { return GetClientCount() > 0; }
+bool IPCServer::HasClients() const { return GetClientCount() > 0; }
 
 std::vector<ClientType> IPCServer::GetClientTypes() {
     std::lock_guard<std::mutex> lock(clientsMutex_);
-    for (auto it = clients_.begin(); it != clients_.end(); ) {
-        DWORD avail = 0;
-        if (!PeekNamedPipe(static_cast<HANDLE>(it->hPipe), nullptr, 0,
-                           nullptr, &avail, nullptr) &&
-            ::GetLastError() == ERROR_BROKEN_PIPE) {
-            CloseHandle(static_cast<HANDLE>(it->hPipe));
-            it = clients_.erase(it);
-        } else { ++it; }
-    }
     std::vector<ClientType> types;
     for (const auto& c : clients_)
         types.push_back(c.type);
@@ -512,16 +494,16 @@ void IPCServer::HandleClient(int clientFd) {
     Logger::Info("IPC: client disconnected, " + std::to_string(GetClientCount()) + " client(s) total");
 }
 
-int IPCServer::GetClientCount() {
+int IPCServer::GetClientCount() const {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     return static_cast<int>(clients_.size());
 }
 
-bool IPCServer::HasClients() {
+bool IPCServer::HasClients() const {
     return GetClientCount() > 0;
 }
 
-std::vector<ClientType> IPCServer::GetClientTypes() {
+std::vector<ClientType> IPCServer::GetClientTypes() const {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     std::vector<ClientType> types;
     for (const auto& c : clients_)
