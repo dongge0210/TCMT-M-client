@@ -132,9 +132,17 @@ bool WlanDetect(WlanData* out) {
         WLAN_OPCODE_VALUE_TYPE chOpCode = wlan_opcode_value_type_query_only;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
                                       NULL, &channelSize, (PVOID*)&channel, &chOpCode);
-        if (dwResult == ERROR_SUCCESS && channelSize == sizeof(channel)
-            && channel >= 1 && channel <= 200)
-            out->channel = (int32_t)channel;
+        if (dwResult == ERROR_SUCCESS) {
+            if (channelSize == sizeof(channel) && channel >= 1 && channel <= 255)
+                out->channel = (int32_t)channel;
+            // else: API returned unexpected type/size, try as float
+            else if (channelSize == sizeof(float)) {
+                float fch;
+                memcpy(&fch, &channel, sizeof(fch));
+                if (fch >= 1.0f && fch <= 255.0f)
+                    out->channel = (int32_t)fch;
+            }
+        }
     }
 
     WlanFreeMemory(pIfList);
