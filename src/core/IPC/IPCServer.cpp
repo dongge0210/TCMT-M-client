@@ -268,7 +268,7 @@ int IPCServer::GetClientCount() const {
 
 bool IPCServer::HasClients() const { return GetClientCount() > 0; }
 
-std::vector<ClientType> IPCServer::GetClientTypes() {
+std::vector<ClientType> IPCServer::GetClientTypes() const {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     std::vector<ClientType> types;
     for (const auto& c : clients_)

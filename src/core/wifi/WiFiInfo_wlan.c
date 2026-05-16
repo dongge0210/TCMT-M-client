@@ -151,13 +151,36 @@ bool WlanDetect(WlanData* out) {
                     out->channel = (int32_t)fch;
             }
         }
-        // OutputDebugString for diagnosis
-        if (out->channel == 0) {
-            char dbg[128];
-            snprintf(dbg, sizeof(dbg),
-                "WlanDetect CH: dwResult=0x%lX sizeOut=%lu raw=0x%lX rawSigned=%ld\n",
-                dwResult, channelSizeOut, channel, (int32_t)channel);
-            OutputDebugStringA(dbg);
+    }
+
+    // --- Channel fallback via BSS list ---
+    if (out->channel == 0 && out->isConnected && out->ssid[0] != '\0') {
+        DOT11_SSID dot11Ssid;
+        memset(&dot11Ssid, 0, sizeof(dot11Ssid));
+        int ssidLen = (int)strlen(out->ssid);
+        if (ssidLen > (int)DOT11_SSID_MAX_LENGTH) ssidLen = DOT11_SSID_MAX_LENGTH;
+        dot11Ssid.uSSIDLength = (ULONG)ssidLen;
+        memcpy(dot11Ssid.ucSSID, out->ssid, ssidLen);
+
+        PWLAN_BSS_LIST pBssList = NULL;
+        dwResult = WlanGetNetworkBssList(hClient, pGuid, &dot11Ssid,
+                                          dot11_BSS_type_infrastructure,
+                                          FALSE, NULL, &pBssList);
+        if (dwResult == ERROR_SUCCESS && pBssList && pBssList->dwNumberOfItems > 0) {
+            if (strlen(out->bssid) == 17) {
+                UCHAR target[6];
+                for (int i = 0; i < 6; i++) {
+                    char h[3] = {out->bssid[i*3], out->bssid[i*3+1], '\0'};
+                    target[i] = (UCHAR)strtoul(h, NULL, 16);
+                }
+                for (DWORD i = 0; i < pBssList->dwNumberOfItems; i++) {
+                    if (memcmp(target, pBssList->wlanBssEntries[i].dot11Bssid, 6) == 0) {
+                        out->channel = (int32_t)pBssList->wlanBssEntries[i].dot11Channel;
+                        break;
+                    }
+                }
+            }
+            WlanFreeMemory(pBssList);
         }
     }
 
