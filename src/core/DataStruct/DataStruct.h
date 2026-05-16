@@ -164,6 +164,18 @@ struct SystemInfo {
     double cpuTemperature; // CPU temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs = 0.0; // CPU usage sample interval (ms)
+    // WiFi
+    bool wifiPowerOn = false;
+    bool wifiIsConnected = false;
+    std::string wifiSSID;
+    int wifiRSSI = 0;
+    int wifiChannel = 0;
+    std::string wifiSecurity;
+
+    // Bluetooth
+    bool btPowerOn = false;
+    int btDeviceCount = 0;
+
     PlatformSystemTime lastUpdate;
 };
 

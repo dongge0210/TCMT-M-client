@@ -1576,10 +1576,18 @@ int main(int argc, char* argv[]) {
                       tuiData.wifiRSSI = wd.rssi;
                       tuiData.wifiChannel = wd.channel;
                       tuiData.wifiSecurity = wd.security;
+                      sysInfo.wifiPowerOn = wd.powerOn;
+                      sysInfo.wifiIsConnected = wd.isConnected;
+                      sysInfo.wifiSSID = wd.ssid;
+                      sysInfo.wifiRSSI = wd.rssi;
+                      sysInfo.wifiChannel = wd.channel;
+                      sysInfo.wifiSecurity = wd.security;
                       const auto& bd = s_bt.GetData();
                       tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
                       tuiData.btPowerOn = bd.adapter.powerOn;
                       tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+                      sysInfo.btPowerOn = bd.adapter.powerOn;
+                      sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
 
                       // Write WiFi & Bluetooth to shared memory block
                       if (auto* buf = SharedMemoryManager::GetBuffer()) {

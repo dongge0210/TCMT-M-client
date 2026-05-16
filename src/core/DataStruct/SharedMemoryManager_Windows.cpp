@@ -424,6 +424,18 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->tpmCount = 1;
         }
 
+        // WiFi
+        pBuffer->wifi.powerOn = systemInfo.wifiPowerOn;
+        pBuffer->wifi.isConnected = systemInfo.wifiIsConnected;
+        pBuffer->wifi.rssi = systemInfo.wifiRSSI;
+        pBuffer->wifi.channel = systemInfo.wifiChannel;
+        SafeCopyWideString(pBuffer->wifi.ssid, 32, WinUtils::StringToWstring(systemInfo.wifiSSID));
+        SafeCopyWideString(pBuffer->wifi.security, 16, WinUtils::StringToWstring(systemInfo.wifiSecurity));
+
+        // Bluetooth
+        pBuffer->bluetooth.powerOn = systemInfo.btPowerOn;
+        pBuffer->bluetooth.deviceCount = systemInfo.btDeviceCount;
+
         pBuffer->lastUpdate = Platform::SystemTime::Now();
         Logger::Trace("Successfully wrote system/disk/SMART information to shared memory");
     } catch (const std::exception& e) {
