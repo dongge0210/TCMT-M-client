@@ -141,7 +141,7 @@ bool WlanDetect(WlanData* out) {
         WLAN_OPCODE_VALUE_TYPE chOpCode = wlan_opcode_value_type_query_only;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
                                       NULL, &channelSizeOut, (PVOID*)&channel, &chOpCode);
-        if (dwResult == ERROR_SUCCESS) {
+        if (dwResult == ERROR_SUCCESS && channelSizeOut == sizeof(channel)) {
             if (channel >= 1 && channel <= 255) {
                 out->channel = (int32_t)channel;
             } else {
@@ -150,6 +150,14 @@ bool WlanDetect(WlanData* out) {
                 if (fch >= 1.0f && fch <= 255.0f)
                     out->channel = (int32_t)fch;
             }
+        }
+        // OutputDebugString for diagnosis
+        if (out->channel == 0) {
+            char dbg[128];
+            snprintf(dbg, sizeof(dbg),
+                "WlanDetect CH: dwResult=0x%lX sizeOut=%lu raw=0x%lX rawSigned=%ld\n",
+                dwResult, channelSizeOut, channel, (int32_t)channel);
+            OutputDebugStringA(dbg);
         }
     }
 
