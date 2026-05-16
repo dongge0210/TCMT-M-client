@@ -1465,12 +1465,13 @@ int main(int argc, char* argv[]) {
 
                 // Write to shared memory - enhanced exception handling
                 try {
-                    if (SharedMemoryManager::GetBuffer()) {
+                    // Shared memory write moved after TUI block (WiFi/BT data)
+                    if (false && SharedMemoryManager::GetBuffer()) {
                         SharedMemoryManager::WriteToSharedMemory(sysInfo);
                         if (isDetailedLogging) {
                             Logger::Debug("Successfully updated shared memory");
                         }
-                    } else {
+                    } else if (false) {
                         Logger::Error("Shared memory buffer unavailable");
                         if (SharedMemoryManager::InitSharedMemory()) {
                             SharedMemoryManager::WriteToSharedMemory(sysInfo);
