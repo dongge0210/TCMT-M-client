@@ -267,13 +267,11 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         int letterPrefix = 0;
         if (d.letter >= 'A' && d.letter <= 'Z') {
             snprintf(letterBuf, sizeof(letterBuf), "[%c:] ", d.letter);
-            letterPrefix = static_cast<int>(strlen(letterBuf));
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
-        } else if (d.letter != 0) {
-            snprintf(letterBuf, sizeof(letterBuf), "[?%d] ", (int)d.letter);
-            letterPrefix = static_cast<int>(strlen(letterBuf));
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
+        } else {
+            snprintf(letterBuf, sizeof(letterBuf), "[%d] ", (int)d.letter);
         }
+        letterPrefix = static_cast<int>(strlen(letterBuf));
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
         mvwprintw(win, y + lines, x0 + 2 + letterPrefix, "%.*s", maxW - 2 - letterPrefix, label.c_str());
         int barCol = x0 + 2 + letterPrefix + static_cast<int>(label.size()) + 1;
         if (barCol + bw + 2 < x0 + maxW) {
