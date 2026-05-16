@@ -23,7 +23,7 @@ void WiFiInfo::Detect() {
 
     data_.powerOn     = wd.powerOn;
     data_.isConnected = wd.isConnected;
-    Logger::Info("WiFiInfo: powerOn=" + std::to_string(wd.powerOn) +
+    Logger::Warn("WiFiInfo: powerOn=" + std::to_string(wd.powerOn) +
                  " isConnected=" + std::to_string(wd.isConnected) +
                  " ssid=" + std::string(wd.ssid) +
                  " rssi=" + std::to_string(wd.rssi) +
