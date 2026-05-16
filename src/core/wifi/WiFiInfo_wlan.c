@@ -176,13 +176,6 @@ bool WlanDetect(WlanData* out) {
         dwResult = WlanGetNetworkBssList(hClient, pGuid, &dot11Ssid,
                                           dot11_BSS_type_infrastructure,
                                           FALSE, NULL, &pBssList);
-        {
-            char dbg[128];
-            snprintf(dbg, sizeof(dbg),
-                "WlanDetect BSS: dwResult=0x%lX items=%lu bssid=%s\n",
-                dwResult, pBssList ? pBssList->dwNumberOfItems : 0, out->bssid);
-            OutputDebugStringA(dbg);
-        }
         if (dwResult == ERROR_SUCCESS && pBssList && pBssList->dwNumberOfItems > 0) {
             if (strlen(out->bssid) == 17) {
                 UCHAR target[6];

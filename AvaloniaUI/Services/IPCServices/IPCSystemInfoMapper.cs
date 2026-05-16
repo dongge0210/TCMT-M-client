@@ -222,12 +222,6 @@ public static class IPCSystemInfoMapper
                 info.WifiSecurity = ipc.ReadWString("wifi/security") ?? reader.ReadString("wifi/security") ?? "";
                 info.WifiBand = ipc.ReadWString("wifi/band") ?? reader.ReadString("wifi/band") ?? "";
                 info.WifiGen = ipc.ReadWString("wifi/gen") ?? reader.ReadString("wifi/gen") ?? "";
-                Log.Debug("IPC WiFi: hasField powerOn={Pwr} ssid={Ssid} rssi={Rssi} ch={Ch}",
-                    info.HasWiFi, info.WifiSSID, info.WifiRSSI, info.WifiChannel);
-            }
-            else
-            {
-                Log.Warning("IPC WiFi: wifi/powerOn field NOT in schema!");
             }
 
             // Bluetooth (optional fields — may not exist in older schema)
