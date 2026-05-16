@@ -120,6 +120,29 @@ bool WlanDetect(WlanData* out) {
                                   NULL, &channelSize, (PVOID*)&channel, &opCode);
     if (dwResult == ERROR_SUCCESS) out->channel = (int32_t)channel;
 
+    // --- Radio state (ON/OFF) ---
+    // wlan_intf_opcode_radio_state returns a WLAN_RADIO_STATE struct.
+    // This gives the actual hardware/software radio state, which is more
+    // accurate than inferring from interface state alone.
+    {
+        DWORD radioSize = 0;
+        PWLAN_RADIO_STATE pRadio = NULL;
+        dwResult = WlanQueryInterface(hClient, pGuid,
+                                       wlan_intf_opcode_radio_state,
+                                       NULL, &radioSize, (PVOID*)&pRadio, &opCode);
+        if (dwResult == ERROR_SUCCESS && pRadio) {
+            BOOL anyOn = FALSE;
+            for (DWORD i = 0; i < pRadio->dwNumberOfPhys && !anyOn; ++i) {
+                if (pRadio->PhyRadioState[i].dot11SoftwareRadioState == dot11_radio_state_on ||
+                    pRadio->PhyRadioState[i].dot11HardwareRadioState == dot11_radio_state_on)
+                    anyOn = TRUE;
+            }
+            if (!anyOn && pRadio->dwNumberOfPhys > 0)
+                out->powerOn = FALSE;
+            WlanFreeMemory(pRadio);
+        }
+    }
+
     WlanFreeMemory(pIfList);
     WlanCloseHandle(hClient, NULL);
     return true;

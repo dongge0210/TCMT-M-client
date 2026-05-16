@@ -655,19 +655,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         !string.IsNullOrEmpty(a.AdapterType) &&
         (a.AdapterType.Contains("Wireless", StringComparison.OrdinalIgnoreCase) ||
          a.AdapterType.Contains("无线")));
-    // On Windows: check if any network adapter is wireless
-    // On macOS: use WiFi hardware presence from CoreWLAN (adapter types not reported)
-    public bool HasWiFi => true; // Always show WiFi status
+    // WiFi hardware presence: prefers C++ wifi/powerOn via IPC.
+    // Falls back to wireless adapter check if IPC data not available.
+    public bool HasWiFi => HasWifiHardware || HasWirelessAdapter;
     public string WifiDisplay
     {
         get
         {
-            if (!HasWifiHardware) return "WiFi: OFF";
+            bool hasHw = HasWiFi;
+            if (!hasHw) return "WiFi: No adapter";
+            if (!HasWifiHardware && HasWirelessAdapter)
+                return "WiFi: ???";  // wireless adapter exists but C++ module not reporting
             if (!string.IsNullOrEmpty(WifiSSID))
-                return $"WiFi: CONNECTED — {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
+                return $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
             if (WifiRSSI != 0 || WifiChannel != 0)
-                return $"WiFi: ON  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
-            return "WiFi: DISCONNECTED";
+                return $"WiFi: On  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}";
+            return "WiFi: Disconnected";
         }
     }
     public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";
