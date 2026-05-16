@@ -1597,6 +1597,12 @@ int main(int argc, char* argv[]) {
                           buf->wifi.isConnected = wd.isConnected;
                           buf->wifi.rssi = wd.rssi;
                           buf->wifi.channel = wd.channel;
+                          Logger::Warn("WiFi SHM write: rssi=" + std::to_string(wd.rssi) +
+                                       " channel=" + std::to_string(wd.channel) +
+                                       " ssid=" + wd.ssid + " sec=" + wd.security +
+                                       " powerOn=" + std::to_string(wd.powerOn) +
+                                       " shm[rssi]=" + std::to_string(buf->wifi.rssi) +
+                                       " shm[ch]=" + std::to_string(buf->wifi.channel));
                           wcsncpy_s(buf->wifi.ssid, 32, WinUtils::StringToWstring(wd.ssid).c_str(), _TRUNCATE);
                           wcsncpy_s(buf->wifi.security, 16, WinUtils::StringToWstring(wd.security).c_str(), _TRUNCATE);
 
