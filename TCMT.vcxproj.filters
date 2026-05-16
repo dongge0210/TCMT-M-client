@@ -84,6 +84,12 @@
     <ClInclude Include="src\core\bluetooth\BluetoothInfo.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\etw\EtwMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\power\PowerInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Utils\Logger.cpp">
@@ -174,6 +180,12 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\power\PowerInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\etw\EtwMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
