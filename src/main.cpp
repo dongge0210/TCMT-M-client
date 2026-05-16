@@ -690,6 +690,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
     addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
     addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/band",     offsetof(SharedMemoryBlock, wifi.band), 8*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/gen",      offsetof(SharedMemoryBlock, wifi.wifiGen), 12*(int)sizeof(WCHAR), (uint8_t)FT::WString);
     addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
     addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
     // Bluetooth
@@ -1577,12 +1579,16 @@ int main(int argc, char* argv[]) {
                       tuiData.wifiRSSI = wd.rssi;
                       tuiData.wifiChannel = wd.channel;
                       tuiData.wifiSecurity = wd.security;
+                      tuiData.wifiBand = wd.band;
+                      tuiData.wifiGen = wd.wifiGen;
                       sysInfo.wifiPowerOn = wd.powerOn;
                       sysInfo.wifiIsConnected = wd.isConnected;
                       sysInfo.wifiSSID = wd.ssid;
                       sysInfo.wifiRSSI = wd.rssi;
                       sysInfo.wifiChannel = wd.channel;
                       sysInfo.wifiSecurity = wd.security;
+                      sysInfo.wifiBand = wd.band;
+                      sysInfo.wifiGen = wd.wifiGen;
                       const auto& bd = s_bt.GetData();
                       tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
                       tuiData.btPowerOn = bd.adapter.powerOn;

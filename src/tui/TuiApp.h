@@ -103,6 +103,8 @@ struct TuiData {
     int wifiRSSI = 0;
     int wifiChannel = 0;
     std::string wifiSecurity;
+    std::string wifiBand;
+    std::string wifiGen;
     double wifiTxRate = 0;
     // Bluetooth (optional)
     bool hasBluetooth = false;

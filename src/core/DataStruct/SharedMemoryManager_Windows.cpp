@@ -431,6 +431,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->wifi.channel = systemInfo.wifiChannel;
         SafeCopyWideString(pBuffer->wifi.ssid, 32, WinUtils::StringToWstring(systemInfo.wifiSSID));
         SafeCopyWideString(pBuffer->wifi.security, 16, WinUtils::StringToWstring(systemInfo.wifiSecurity));
+        SafeCopyWideString(pBuffer->wifi.band, 8, WinUtils::StringToWstring(systemInfo.wifiBand));
+        SafeCopyWideString(pBuffer->wifi.wifiGen, 12, WinUtils::StringToWstring(systemInfo.wifiGen));
 
         // Bluetooth
         pBuffer->bluetooth.powerOn = systemInfo.btPowerOn;

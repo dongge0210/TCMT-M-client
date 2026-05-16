@@ -102,6 +102,19 @@ bool WlanDetect(WlanData* out) {
                          pConn->wlanSecurityAttributes.dot11AuthAlgorithm);
                 break;
             }
+
+            // Band from channel (set after channel is populated later)
+            // WiFi generation from PHY type
+            {
+                DOT11_PHY_TYPE phy = pConn->wlanAssociationAttributes.dot11PhyType;
+                switch (phy) {
+                case dot11_phy_type_ht:  snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 4"); break;
+                case dot11_phy_type_vht: snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 5"); break;
+                case dot11_phy_type_he:  snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 6"); break;
+                case dot11_phy_type_eht: snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 7"); break;
+                default: out->wifiGen[0] = '\0'; break;
+                }
+            }
         }
         WlanFreeMemory(pConn);
     }
@@ -193,6 +206,16 @@ bool WlanDetect(WlanData* out) {
             }
             WlanFreeMemory(pBssList);
         }
+    }
+
+    // Derive band from channel
+    if (out->channel > 0) {
+        if (out->channel <= 14)
+            snprintf(out->band, sizeof(out->band), "2.4GHz");
+        else if (out->channel <= 165)
+            snprintf(out->band, sizeof(out->band), "5GHz");
+        else
+            snprintf(out->band, sizeof(out->band), "6GHz");
     }
 
     WlanFreeMemory(pIfList);

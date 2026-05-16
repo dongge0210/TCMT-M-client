@@ -171,6 +171,8 @@ struct SystemInfo {
     int wifiRSSI = 0;
     int wifiChannel = 0;
     std::string wifiSecurity;
+    std::string wifiBand;
+    std::string wifiGen;
 
     // Bluetooth
     bool btPowerOn = false;
@@ -246,6 +248,8 @@ struct SharedMemoryBlock {
         int32_t rssi;
         int32_t channel;
         WCHAR security[16];
+        WCHAR band[8];
+        WCHAR wifiGen[12];
         bool powerOn;
         bool isConnected;
     } wifi;
