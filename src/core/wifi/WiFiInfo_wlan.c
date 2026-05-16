@@ -113,12 +113,21 @@ bool WlanDetect(WlanData* out) {
         WLAN_OPCODE_VALUE_TYPE rssiOpCode = wlan_opcode_value_type_query_only;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
                                       NULL, &rssiSize, (PVOID*)&rssi, &rssiOpCode);
-        if (dwResult == ERROR_SUCCESS) {
-            if (rssiSize == sizeof(rssi) && (int32_t)rssi < 0)
-                out->rssi = (int32_t)rssi;
+        if (dwResult == ERROR_SUCCESS && rssiSize == 4) {
+            // Some drivers return RSSI as a float (4 bytes), not LONG.
+            // Check if value looks like a valid negative dBm first;
+            // if not, reinterpret the same bytes as float.
+            int32_t raw = (int32_t)rssi;
+            if (raw < 0 && raw > -100) {
+                out->rssi = raw;
+            } else {
+                float frssi;
+                memcpy(&frssi, &rssi, sizeof(frssi));
+                if (frssi < 0.0f && frssi > -100.0f)
+                    out->rssi = (int32_t)frssi;
+            }
         }
-        // Fallback: use wlanSignalQuality (0-100%) from connection attributes,
-        // map to approximate dBm (-100 = 0%, -30 = 100%)
+        // Fallback: use wlanSignalQuality (0-100%) from connection attributes
         if (out->rssi == 0 && out->isConnected && pConn) {
             ULONG sq = pConn->wlanAssociationAttributes.wlanSignalQuality;
             if (sq <= 100) out->rssi = -100 + (int32_t)sq * 70 / 100;
@@ -132,11 +141,10 @@ bool WlanDetect(WlanData* out) {
         WLAN_OPCODE_VALUE_TYPE chOpCode = wlan_opcode_value_type_query_only;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
                                       NULL, &channelSize, (PVOID*)&channel, &chOpCode);
-        if (dwResult == ERROR_SUCCESS) {
-            if (channelSize == sizeof(channel) && channel >= 1 && channel <= 255)
+        if (dwResult == ERROR_SUCCESS && channelSize == 4) {
+            if (channel >= 1 && channel <= 255) {
                 out->channel = (int32_t)channel;
-            // else: API returned unexpected type/size, try as float
-            else if (channelSize == sizeof(float)) {
+            } else {
                 float fch;
                 memcpy(&fch, &channel, sizeof(fch));
                 if (fch >= 1.0f && fch <= 255.0f)
