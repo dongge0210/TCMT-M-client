@@ -7,7 +7,7 @@ namespace tcmt::ipc {
 // === Protocol Constants ===
 constexpr uint32_t IPC_MAGIC          = 0x54434D54; // "TCMT"
 constexpr uint8_t  IPC_VERSION        = 1;
-constexpr uint32_t IPC_MAX_FIELDS     = 200;
+constexpr uint32_t IPC_MAX_FIELDS     = 300;
 constexpr uint32_t IPC_FIELD_NAME_LEN = 32;
 constexpr uint32_t IPC_FIELD_UNITS_LEN = 16;
 constexpr uint32_t IPC_SCHEMA_HEADER_SIZE = 16;
