@@ -108,25 +108,22 @@ bool WlanDetect(WlanData* out) {
 
     // --- RSSI (dBm) ---
     {
-        LONG rssi = 0;
-        DWORD rssiSize = sizeof(rssi);
-        WLAN_OPCODE_VALUE_TYPE rssiOpCode = wlan_opcode_value_type_query_only;
+        LONG* pRssi = NULL;
+        DWORD rssiSize = 0;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
-                                      NULL, &rssiSize, (PVOID*)&rssi, &rssiOpCode);
-        if (dwResult == ERROR_SUCCESS && rssiSize == 4) {
-            // Some drivers return RSSI as a float (4 bytes), not LONG.
-            // Check if value looks like a valid negative dBm first;
-            // if not, reinterpret the same bytes as float.
-            int32_t raw = (int32_t)rssi;
+                                      NULL, &rssiSize, (PVOID*)&pRssi, NULL);
+        if (dwResult == ERROR_SUCCESS && pRssi && rssiSize >= sizeof(LONG)) {
+            int32_t raw = (int32_t)(*pRssi);
             if (raw < 0 && raw > -100) {
                 out->rssi = raw;
             } else {
                 float frssi;
-                memcpy(&frssi, &rssi, sizeof(frssi));
+                memcpy(&frssi, pRssi, sizeof(frssi));
                 if (frssi < 0.0f && frssi > -100.0f)
                     out->rssi = (int32_t)frssi;
             }
         }
+        if (pRssi) WlanFreeMemory(pRssi);
         // Fallback: use wlanSignalQuality (0-100%) from connection attributes
         if (out->rssi == 0 && out->isConnected && pConn) {
             ULONG sq = pConn->wlanAssociationAttributes.wlanSignalQuality;
@@ -136,21 +133,21 @@ bool WlanDetect(WlanData* out) {
 
     // --- Channel ---
     {
-        ULONG channel = 0;
-        DWORD channelSizeOut = sizeof(channel);
-        WLAN_OPCODE_VALUE_TYPE chOpCode = wlan_opcode_value_type_query_only;
+        ULONG* pChannel = NULL;
+        DWORD channelSize = 0;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
-                                      NULL, &channelSizeOut, (PVOID*)&channel, &chOpCode);
-        if (dwResult == ERROR_SUCCESS && channelSizeOut == sizeof(channel)) {
-            if (channel >= 1 && channel <= 255) {
-                out->channel = (int32_t)channel;
+                                      NULL, &channelSize, (PVOID*)&pChannel, NULL);
+        if (dwResult == ERROR_SUCCESS && pChannel && channelSize >= sizeof(ULONG)) {
+            if (*pChannel >= 1 && *pChannel <= 255) {
+                out->channel = (int32_t)(*pChannel);
             } else {
                 float fch;
-                memcpy(&fch, &channel, sizeof(fch));
+                memcpy(&fch, pChannel, sizeof(fch));
                 if (fch >= 1.0f && fch <= 255.0f)
                     out->channel = (int32_t)fch;
             }
         }
+        if (pChannel) WlanFreeMemory(pChannel);
     }
 
     // --- Channel fallback via BSS list ---
