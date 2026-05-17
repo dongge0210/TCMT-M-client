@@ -59,11 +59,12 @@ typedef struct _SENDCMDOUTPARAMS {
 #define SMART_GET_VERSION       CTL_CODE(IOCTL_DISK_BASE, 0x0020, METHOD_BUFFERED, FILE_READ_ACCESS)
 #define SMART_RCV_DRIVE_DATA    CTL_CODE(IOCTL_DISK_BASE, 0x0022, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 #define SMART_CMD               CTL_CODE(IOCTL_DISK_BASE, 0x0021, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+#endif // !SMART_RCV_DRIVE_DATA
 
+// These constants are NOT in the SDK — always define
 #define READ_ATTRIBUTES         0xD0
 #define SMART_READ_DATA         0xD0
 #define ID_CMD                  0xEC
-#endif
 
 // ====================================================================
 // Read SMART for one physical disk
