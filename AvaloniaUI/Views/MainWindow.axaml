@@ -88,6 +88,7 @@
                                 <StackPanel Orientation="Horizontal" IsVisible="{Binding IsNotMacOS}">
                                     <TextBlock Text="P-core: " Foreground="#FF666666" FontSize="11"/>
                                     <TextBlock Text="{Binding CpuFrequency}" Foreground="#FFB3B3B3" FontSize="11"/>
+                                    <TextBlock Text="{Binding PCoreBaseFreq, StringFormat='(base {0:F0}MHz)'}" Foreground="#FF888888" FontSize="10" Margin="4,0,0,0"/>
                                     <TextBlock Text="  E-core: " Foreground="#FF666666" FontSize="11" Margin="8,0,0,0"/>
                                     <TextBlock Text="{Binding CpuEfficiencyFrequency}" Foreground="#FFB3B3B3" FontSize="11"/>
                                 </StackPanel>

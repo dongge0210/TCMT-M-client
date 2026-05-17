@@ -213,6 +213,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CpuTemperature = ValidateDouble(info.CpuTemperature);
         CpuFrequency = FormatFrequency(info.PerformanceCoreFreq);
         CpuEfficiencyFrequency = FormatFrequency(info.EfficiencyCoreFreq);
+        PCoreBaseFreq = info.PCoreBaseFreq;
+        ECoreBaseFreq = info.ECoreBaseFreq;
 
         // Memory
         TotalMemory = info.TotalMemory > 0 ? FormatBytes(info.TotalMemory) : "未检测到";
@@ -553,6 +555,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _cpuEfficiencyFrequency = "N/A";
+
+    [ObservableProperty]
+    private double _pCoreBaseFreq;
+
+    [ObservableProperty]
+    private double _eCoreBaseFreq;
 
     // Memory
     [ObservableProperty]

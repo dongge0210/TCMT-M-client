@@ -135,6 +135,8 @@ struct SystemInfo {
     int efficiencyCores;
     double performanceCoreFreq;
     double efficiencyCoreFreq;
+    double pCoreBaseFreq = 0;     // Nominal P-core frequency (MHz)
+    double eCoreBaseFreq = 0;     // Nominal E-core frequency (MHz)
     bool hyperThreading;
     bool virtualization;
     uint64_t totalMemory;
@@ -193,6 +195,8 @@ struct SharedMemoryBlock {
     int efficiencyCores;      // Efficiency cores
     double pCoreFreq;         // Performance core frequency (MHz)
     double eCoreFreq;         // Efficiency core frequency (MHz)
+    double pCoreBaseFreq;     // Nominal P-core base frequency (MHz)
+    double eCoreBaseFreq;     // Nominal E-core base frequency (MHz)
     bool hyperThreading;      // Hyperthreading enabled
     bool virtualization;      // Virtualization enabled
     uint64_t totalMemory;     // Total memory (bytes)
