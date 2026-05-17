@@ -59,8 +59,7 @@ namespace AvaloniaUI.Models
         public int EfficiencyCores { get; set; }
         public double PerformanceCoreFreq { get; set; }
         public double EfficiencyCoreFreq { get; set; }
-        public double PCoreBaseFreq { get; set; }
-        public double ECoreBaseFreq { get; set; }
+        public double CpuBaseFreq { get; set; }
         public bool HyperThreading { get; set; }
         public bool Virtualization { get; set; }
         

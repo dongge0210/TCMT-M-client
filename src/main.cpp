@@ -610,8 +610,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
     addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
     addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
-    addField("cpu/freq/pCoreBase", offsetof(SharedMemoryBlock, pCoreBaseFreq), 8);
-    addField("cpu/freq/eCoreBase", offsetof(SharedMemoryBlock, eCoreBaseFreq), 8);
+    addField("cpu/freq/base", offsetof(SharedMemoryBlock, cpuBaseFreq), 8);
     addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
     addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
     addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
@@ -1131,10 +1130,9 @@ int main(int argc, char* argv[]) {
         static uint32_t cachedEfficiencyCores = 0;
         static bool cachedHyperThreading = false;
         static bool cachedVirtualization = false;
-        static double cachedPBaseFreq = 0.0;
-        static double cachedEBaseFreq = 0.0;
+        static double cachedBaseFreq = 0.0;
         // WMI: Win32_Processor.MaxClockSpeed (MHz) — read once
-        if (cachedPBaseFreq == 0.0 && wmiManager && wmiManager->IsInitialized()) {
+        if (cachedBaseFreq == 0.0 && wmiManager && wmiManager->IsInitialized()) {
             IEnumWbemClassObject* pEnumCpu = nullptr;
             HRESULT hr = wmiManager->GetWmiService()->ExecQuery(
                 _bstr_t("WQL"), _bstr_t("SELECT MaxClockSpeed FROM Win32_Processor"),
@@ -1142,20 +1140,14 @@ int main(int argc, char* argv[]) {
             if (SUCCEEDED(hr) && pEnumCpu) {
                 IWbemClassObject* pObj = nullptr;
                 ULONG ret = 0;
-                double maxSpeed = 0.0, minSpeed = 99999.0;
                 while (pEnumCpu->Next(WBEM_INFINITE, 1, &pObj, &ret) == S_OK) {
                     VARIANT vt; VariantInit(&vt);
-                    if (SUCCEEDED(pObj->Get(L"MaxClockSpeed", 0, &vt, 0, 0)) && vt.vt == VT_I4) {
-                        double mhz = (double)vt.intVal;
-                        if (mhz > maxSpeed) maxSpeed = mhz;
-                        if (mhz < minSpeed) minSpeed = mhz;
-                    }
+                    if (SUCCEEDED(pObj->Get(L"MaxClockSpeed", 0, &vt, 0, 0)) && vt.vt == VT_I4)
+                        cachedBaseFreq = (double)vt.intVal;
                     VariantClear(&vt);
                     pObj->Release();
                 }
                 pEnumCpu->Release();
-                cachedPBaseFreq = maxSpeed;
-                cachedEBaseFreq = (minSpeed < 99999.0 && minSpeed < maxSpeed) ? minSpeed : maxSpeed;
             }
         }
         
@@ -1269,8 +1261,7 @@ int main(int argc, char* argv[]) {
                 sysInfo.efficiencyCores = cachedEfficiencyCores;
                 sysInfo.hyperThreading = cachedHyperThreading;
                 sysInfo.virtualization = cachedVirtualization;
-                sysInfo.pCoreBaseFreq = cachedPBaseFreq;
-                sysInfo.eCoreBaseFreq = cachedEBaseFreq;
+                sysInfo.cpuBaseFreq = cachedBaseFreq;
 
                 // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
                 {
@@ -1540,8 +1531,7 @@ int main(int argc, char* argv[]) {
                     tuiData.efficiencyCores = sysInfo.efficiencyCores;
                     tuiData.pCoreFreq = sysInfo.performanceCoreFreq;
                     tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
-                    tuiData.pCoreBaseFreq = sysInfo.pCoreBaseFreq;
-                    tuiData.eCoreBaseFreq = sysInfo.eCoreBaseFreq;
+                    tuiData.cpuBaseFreq = sysInfo.cpuBaseFreq;
                     tuiData.cpuTemp = sysInfo.cpuTemperature;
                     tuiData.totalMemory = sysInfo.totalMemory;
                     tuiData.usedMemory = sysInfo.usedMemory;

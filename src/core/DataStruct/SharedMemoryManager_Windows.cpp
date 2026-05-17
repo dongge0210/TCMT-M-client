@@ -277,8 +277,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->efficiencyCores = systemInfo.efficiencyCores;
         pBuffer->pCoreFreq = systemInfo.performanceCoreFreq;
         pBuffer->eCoreFreq = systemInfo.efficiencyCoreFreq;
-        pBuffer->pCoreBaseFreq = systemInfo.pCoreBaseFreq;
-        pBuffer->eCoreBaseFreq = systemInfo.eCoreBaseFreq;
+        pBuffer->cpuBaseFreq = systemInfo.cpuBaseFreq;
         pBuffer->hyperThreading = systemInfo.hyperThreading;
         pBuffer->virtualization = systemInfo.virtualization;
 
