@@ -120,31 +120,25 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
             success = true;
 
             // --- Temperature ---
-            // Most drives report temperature at SMART attribute 194 or 190.
-            // In the raw data (512 bytes), attributes start at offset 2.
-            // Each attribute is 12 bytes: ID(1), Flags(2), Current(1), Worst(1),
-            //   RawValue(6), Reserved(1)
-            // Temperature is typically in attribute 194 (0xC2) raw byte 5 or 0
-            // For SSDs, attribute 190 (0xBE) may have temperature.
-            // Simpler: raw byte 115 is the "airflow temperature" on many drives.
-            int tempRead = -1;
+            // Most drives: attribute 194 (temp) or 190 (airflow for SSD)
+            // Raw value bytes 5-10 (6 bytes LE); temp is often in byte 5 or 9
+            double tempRead = -1;
             for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
                 if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
                 int attrId = raw[attrOff];
-                // Attribute 194 (0xC2): Temperature
-                // Attribute 190 (0xBE): Airflow Temperature (SSD)
                 if (attrId == 0xBE || attrId == 0xC2) {
-                    // Raw value is at offset 5-10 (6 bytes), but normalized temp
-                    // is often in the first byte of raw or current value.
-                    int val = raw[attrOff + 3]; // Current value (normalized)
-                    // Some drives put raw temp in raw[attrOff+5] or raw[attrOff+9]
-                    int rawTemp = raw[attrOff + 5];
-                    if (rawTemp > 0 && rawTemp < 128) tempRead = rawTemp;
-                    else if (val > 0 && val < 128) tempRead = val;
+                    for (int bo = 5; bo <= 9; bo += 4) {
+                        int t = raw[attrOff + bo];
+                        if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
+                    }
+                    if (tempRead < 0) {
+                        // Some drives encode temp in upper byte of raw
+                        int hi = (raw[attrOff + 7] << 8) | raw[attrOff + 6];
+                        if (hi >= 15 && hi <= 120) tempRead = (double)hi;
+                    }
                 }
             }
-            if (tempRead > 0 && tempRead < 128)
-                smartData.temperature = static_cast<double>(tempRead);
+            if (tempRead > 0) smartData.temperature = tempRead;
 
             // --- Health percentage ---
             // Check critical attributes: 5 (Reallocated), 196 (Reallocated Event),

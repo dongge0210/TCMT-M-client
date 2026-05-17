@@ -250,8 +250,6 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
 
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 22, 20);
-    bw = std::max(bw, 4);
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(win, y, x0, "%.*s", maxW, "Disks");
@@ -259,26 +257,22 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     for (const auto& d : data.disks) {
-        auto label = TrimRight(d.label.empty() ? "Untitled" : d.label, 14);
+        // Compact single-line format: [C:] Label  92% 210G/228G
+        char lineBuf[128];
+        int off = 0;
+        if (d.letter >= 'A' && d.letter <= 'Z')
+            off = snprintf(lineBuf, sizeof(lineBuf), "[%c:] ", d.letter);
+        auto label = d.label.empty() ? "?" : d.label;
+        if (label.size() > 10) label = label.substr(0, 8) + "..";
         double upct = (d.totalSize > 0) ? 100.0 * d.usedSpace / d.totalSize : 0;
         auto usedStr = FormatSize(d.usedSpace);
-        // Show drive letter
-        char letterBuf[16];
-        int letterPrefix = 0;
-        if (d.letter >= 'A' && d.letter <= 'Z') {
-            snprintf(letterBuf, sizeof(letterBuf), "[%c:] ", d.letter);
-            letterPrefix = static_cast<int>(strlen(letterBuf));
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
-        }
-        mvwprintw(win, y + lines, x0 + 2 + letterPrefix, "%.*s", maxW - 2 - letterPrefix, label.c_str());
-        int barCol = x0 + 2 + letterPrefix + static_cast<int>(label.size()) + 1;
-        if (barCol + bw + 2 < x0 + maxW) {
-            wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol, "%.*s", bw, FormatBar(upct, bw).c_str());
-            wattroff(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol + bw + 1, "%d%% %.*s",
-                      static_cast<int>(upct), maxW - (barCol + bw + 1 - x0), usedStr.c_str());
-        }
+        auto totalStr = FormatSize(d.totalSize);
+        off += snprintf(lineBuf + off, sizeof(lineBuf) - off,
+                       "%s  %d%% %s/%s",
+                       label.c_str(), static_cast<int>(upct),
+                       usedStr.c_str(), totalStr.c_str());
+        lineBuf[off] = '\0';
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, lineBuf);
         lines++;
     }
     return lines;
