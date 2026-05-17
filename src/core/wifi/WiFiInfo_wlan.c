@@ -119,8 +119,8 @@ bool WlanDetect(WlanData* out) {
         WlanFreeMemory(pConn);
     }
 
-    // --- RSSI (dBm) ---
-    {
+    // --- RSSI (dBm) — only valid when connected ---
+    if (out->isConnected) {
         LONG* pRssi = NULL;
         DWORD rssiSize = 0;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
@@ -144,8 +144,8 @@ bool WlanDetect(WlanData* out) {
         }
     }
 
-    // --- Channel ---
-    {
+    // --- Channel — only valid when connected ---
+    if (out->isConnected) {
         ULONG* pChannel = NULL;
         DWORD channelSize = 0;
         dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
