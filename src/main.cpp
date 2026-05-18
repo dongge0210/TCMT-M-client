@@ -678,7 +678,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
         addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
-        addField((std::string(pfx)+"attrs").c_str(),          base + offsetof(PhysicalDiskSmartData, attrsJson), 4096, (uint8_t)FT::String);
+        addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(PhysicalDiskSmartData, attributeCount), 4, (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(PhysicalDiskSmartData, attrsJson), 4096, (uint8_t)FT::String);
         // logical drive letters (up to 8 letters, stored as individual bytes + count)
         for (int j = 0; j < 8; j++) {
             char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);

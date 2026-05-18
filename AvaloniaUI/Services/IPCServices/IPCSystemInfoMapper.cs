@@ -210,8 +210,9 @@ public static class IPCSystemInfoMapper
                         };
 
                         // Read SMART attributes JSON
-                        var attrsJson = reader.ReadString($"phys/{idx}/attrs") ?? "";
-                        if (!string.IsNullOrEmpty(attrsJson) && supported)
+                        var attrCount = reader.ReadInt32($"phys/{idx}/attrCount") ?? 0;
+                        var attrsJson = reader.ReadString($"phys/{idx}/attrsJson") ?? "";
+                        if (attrCount > 0 && !string.IsNullOrEmpty(attrsJson))
                         {
                             try
                             {
