@@ -299,8 +299,37 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 // Critical warning set indicates serious drive issue
                 if (raw[0] > 0)
                     smartData.healthPercentage = (std::min)(smartData.healthPercentage, uint8_t(30));
+
+                // Populate NVMe health data as pseudo SMART attributes for display
+                smartData.attributeCount = 0;
+                auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal) {
+                    if (smartData.attributeCount >= 32) return;
+                    auto& a = smartData.attributes[smartData.attributeCount++];
+                    a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = 0;
+                };
+                addAttr(200, raw[0], raw[0]);                                    // CriticalWarning
+                addAttr(201, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,           // Temperature °C
+                            raw[1] | (raw[2] << 8));
+                addAttr(202, raw[3], raw[3]);                                    // AvailableSpare %
+                addAttr(203, raw[4], raw[4]);                                    // AvailableSpareThresh
+                addAttr(204, raw[5], raw[5]);                                    // PercentageUsed
+                uint64_t nvmeHours = 0;
+                memcpy(&nvmeHours, raw + 32, sizeof(uint64_t));
+                addAttr(209, 0, nvmeHours);                                      // PowerOnHours
+
+                Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe ok: tempC=" +
+                    std::to_string((int)(raw[1] | (raw[2] << 8)) - 273) +
+                    " used=" + std::to_string((int)raw[5]) + "%");
+            } else {
+                DWORD nvmeErr = GetLastError();
+                Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe IOCTL fail err=" +
+                    std::to_string(nvmeErr));
             }
             CloseHandle(hNvme);
+        } else {
+            DWORD nvmeOpenErr = GetLastError();
+            Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe open fail err=" +
+                std::to_string(nvmeOpenErr));
         }
     }
 
