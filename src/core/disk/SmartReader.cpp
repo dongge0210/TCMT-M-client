@@ -132,9 +132,13 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                                          outBuf, sizeof(outBuf),
                                          &bytesReturned, nullptr);
             if (!rcvOk) rcvErr = GetLastError();
+            size_t minSz = offsetof(SENDCMDOUTPARAMS, bBuffer) + 512;
             Logger::Info("SMART disk" + std::to_string(diskIndex) +
                 " RCV: ok=" + std::to_string(rcvOk) +
                 " sz=" + std::to_string(bytesReturned) +
+                " minSz=" + std::to_string(minSz) +
+                " bBufOff=" + std::to_string(offsetof(SENDCMDOUTPARAMS, bBuffer)) +
+                " sizeofSCOP=" + std::to_string(sizeof(SENDCMDOUTPARAMS)) +
                 " err=" + std::to_string(rcvErr));
 
             // Driver may return 528 bytes (16-byte header + 512 data) without padding
