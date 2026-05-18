@@ -83,124 +83,128 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                                   GENERIC_READ | GENERIC_WRITE,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE,
                                   nullptr, OPEN_EXISTING, 0, nullptr);
-    if (hDevice == INVALID_HANDLE_VALUE) return false;
-
     bool success = false;
     DWORD bytesReturned = 0;
 
-    // Step 1: Get SMART version / capabilities
-    GETVERSIONINPARAMS gvp{};
-    if (DeviceIoControl(hDevice, SMART_GET_VERSION,
-                        nullptr, 0,
-                        &gvp, sizeof(gvp),
-                        &bytesReturned, nullptr) &&
-        bytesReturned >= sizeof(GETVERSIONINPARAMS) &&
-        (gvp.fCapabilities & 1)) {  // SMART supported
-
-        smartData.smartSupported = true;
-        smartData.smartEnabled = true;
-
-        // Step 2: Send SMART_READ_DATA command
-        BYTE sendBuf[sizeof(SENDCMDINPARAMS) + 512 - 1] = {};
-        auto* scip = reinterpret_cast<SENDCMDINPARAMS*>(sendBuf);
-        scip->cBufferSize = 512;
-        scip->irDriveRegs.bFeaturesReg = READ_ATTRIBUTES;
-        scip->irDriveRegs.bSectorCountReg = 1;
-        scip->irDriveRegs.bSectorNumberReg = 1;
-        scip->irDriveRegs.bCylLowReg = SMART_READ_DATA;
-        scip->irDriveRegs.bCylHighReg = 0xC2; // magic
-        scip->irDriveRegs.bCommandReg = ID_CMD;
-        scip->bDriveNumber = static_cast<BYTE>(diskIndex);
-
-        BYTE outBuf[sizeof(SENDCMDOUTPARAMS) + 512 - 1] = {};
-
-        if (DeviceIoControl(hDevice, SMART_RCV_DRIVE_DATA,
-                            sendBuf, sizeof(sendBuf),
-                            outBuf, sizeof(outBuf),
+    // ATA path — only try if we got a handle (NVMe drives reject GENERIC_WRITE)
+    if (hDevice != INVALID_HANDLE_VALUE) {
+        // Step 1: Get SMART version / capabilities
+        GETVERSIONINPARAMS gvp{};
+        if (DeviceIoControl(hDevice, SMART_GET_VERSION,
+                            nullptr, 0,
+                            &gvp, sizeof(gvp),
                             &bytesReturned, nullptr) &&
-            bytesReturned >= sizeof(SENDCMDOUTPARAMS) + 512) {
+            bytesReturned >= sizeof(GETVERSIONINPARAMS) &&
+            (gvp.fCapabilities & 1)) {  // SMART supported
 
-            auto* scop = reinterpret_cast<SENDCMDOUTPARAMS*>(outBuf);
-            const BYTE* raw = scop->bBuffer;  // 512 bytes of SMART attributes
+            smartData.smartSupported = true;
+            smartData.smartEnabled = true;
 
-            success = true;
+            // Step 2: Send SMART_READ_DATA command
+            BYTE sendBuf[sizeof(SENDCMDINPARAMS) + 512 - 1] = {};
+            auto* scip = reinterpret_cast<SENDCMDINPARAMS*>(sendBuf);
+            scip->cBufferSize = 512;
+            scip->irDriveRegs.bFeaturesReg = READ_ATTRIBUTES;
+            scip->irDriveRegs.bSectorCountReg = 1;
+            scip->irDriveRegs.bSectorNumberReg = 1;
+            scip->irDriveRegs.bCylLowReg = SMART_READ_DATA;
+            scip->irDriveRegs.bCylHighReg = 0xC2; // magic
+            scip->irDriveRegs.bCommandReg = ID_CMD;
+            scip->bDriveNumber = static_cast<BYTE>(diskIndex);
 
-            // Determine disk type: check for SSD wear leveling attributes
-            bool isSSD = false;
+            BYTE outBuf[sizeof(SENDCMDOUTPARAMS) + 512 - 1] = {};
 
-            // --- Temperature ---
-            // Most drives: attribute 194 (temp) or 190 (airflow for SSD)
-            // Raw value bytes 5-10 (6 bytes LE); temp is often in byte 5 or 9
-            double tempRead = -1;
-            for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
-                if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
-                int attrId = raw[attrOff];
-                if (attrId == 0xBE || attrId == 0xC2) {
-                    for (int bo = 5; bo <= 9; bo += 4) {
-                        int t = raw[attrOff + bo];
-                        if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
-                    }
-                    if (tempRead < 0) {
-                        // Some drives encode temp in upper byte of raw
-                        int hi = (raw[attrOff + 7] << 8) | raw[attrOff + 6];
-                        if (hi >= 15 && hi <= 120) tempRead = (double)hi;
+            if (DeviceIoControl(hDevice, SMART_RCV_DRIVE_DATA,
+                                sendBuf, sizeof(sendBuf),
+                                outBuf, sizeof(outBuf),
+                                &bytesReturned, nullptr) &&
+                bytesReturned >= sizeof(SENDCMDOUTPARAMS) + 512) {
+
+                auto* scop = reinterpret_cast<SENDCMDOUTPARAMS*>(outBuf);
+                const BYTE* raw = scop->bBuffer;  // 512 bytes of SMART attributes
+
+                success = true;
+
+                // Determine disk type: check for SSD wear leveling attributes
+                bool isSSD = false;
+
+                // --- Temperature ---
+                double tempRead = -1;
+                for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
+                    if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
+                    int attrId = raw[attrOff];
+                    if (attrId == 0xBE || attrId == 0xC2) {
+                        // Try all 6 raw value bytes for temperature (0-128°C)
+                        for (int bo = 5; bo <= 10; bo++) {
+                            int t = raw[attrOff + bo];
+                            if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
+                        }
+                        if (tempRead < 0) {
+                            // Try normalized value (byte 3) as temperature
+                            int nv = raw[attrOff + 3];
+                            if (nv >= 15 && nv <= 120) tempRead = (double)nv;
+                        }
+                        if (tempRead < 0) {
+                            // Try 16-bit LE at raw[0-1] and raw[1-2]
+                            int hi1 = raw[attrOff + 5] | (raw[attrOff + 6] << 8);
+                            if (hi1 >= 15 && hi1 <= 120) tempRead = (double)hi1;
+                            int hi2 = (raw[attrOff + 7] << 8) | raw[attrOff + 6];
+                            if (hi2 >= 15 && hi2 <= 120) tempRead = (double)hi2;
+                        }
                     }
                 }
+                if (tempRead > 0) smartData.temperature = tempRead;
+
+                // --- Health percentage ---
+                int health = 100;
+                for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
+                    if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
+                    int attrId = raw[attrOff];
+                    if (attrId == 5 || attrId == 196 || attrId == 197 || attrId == 198) {
+                        uint64_t rawVal = 0;
+                        for (int j = 0; j < 6; j++)
+                            rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
+                        if (rawVal > 0) {
+                            if (attrId == 5 && rawVal > 0) health = (std::min)(health, 95);
+                            if (attrId == 5 && rawVal > 10) health = (std::min)(health, 80);
+                            if (attrId == 197 && rawVal > 0) health = (std::min)(health, 90);
+                            if (attrId == 198 && rawVal > 0) health = (std::min)(health, 85);
+                            if (attrId == 5) smartData.reallocatedSectorCount = rawVal;
+                            if (attrId == 197) smartData.currentPendingSector = rawVal;
+                            if (attrId == 198) smartData.uncorrectableErrors = rawVal;
+                        }
+                    }
+                    // Power-on hours (ID 9)
+                    if (attrId == 9) {
+                        uint64_t hours = 0;
+                        for (int j = 0; j < 6; j++)
+                            hours |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
+                        if (hours < 100000000)
+                            smartData.powerOnHours = hours;
+                    }
+                    // Wear leveling count (SSD) — ID 177, 230, 233
+                    if (attrId == 177 || attrId == 230 || attrId == 233) {
+                        int wear = raw[attrOff + 3];
+                        if (wear > 0 && wear <= 100) {
+                            smartData.wearLeveling = 1.0 - (wear / 100.0);
+                            isSSD = true;
+                        }
+                    }
+                }
+                smartData.healthPercentage = static_cast<uint8_t>(health);
+
+                wcsncpy_s(smartData.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
             }
-            if (tempRead > 0) smartData.temperature = tempRead;
-
-            // --- Health percentage ---
-            // Check critical attributes: 5 (Reallocated), 196 (Reallocated Event),
-            // 197 (Current Pending), 198 (Uncorrectable)
-            int health = 100;
-            for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
-                if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
-                int attrId = raw[attrOff];
-                if (attrId == 5 || attrId == 196 || attrId == 197 || attrId == 198) {
-                    // Raw value is 6 bytes LE at offset 5-10
-                    uint64_t rawVal = 0;
-                    for (int j = 0; j < 6; j++)
-                        rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
-                    if (rawVal > 0) {
-                        if (attrId == 5 && rawVal > 0) health = std::min(health, 95);
-                        if (attrId == 5 && rawVal > 10) health = std::min(health, 80);
-                        if (attrId == 197 && rawVal > 0) health = std::min(health, 90);
-                        if (attrId == 198 && rawVal > 0) health = std::min(health, 85);
-                        // Store reallocated
-                        if (attrId == 5) smartData.reallocatedSectorCount = rawVal;
-                        if (attrId == 197) smartData.currentPendingSector = rawVal;
-                        if (attrId == 198) smartData.uncorrectableErrors = rawVal;
-                    }
-                }
-                // Power-on hours (ID 9)
-                if (attrId == 9) {
-                    uint64_t hours = 0;
-                    for (int j = 0; j < 6; j++)
-                        hours |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
-                    if (hours < 100000000)  // sanity check
-                        smartData.powerOnHours = hours;
-                }
-                // Wear leveling count (SSD) — ID 177, 230, 233
-                if (attrId == 177 || attrId == 230 || attrId == 233) {
-                    int wear = raw[attrOff + 3]; // current normalized value
-                    if (wear > 0 && wear <= 100) {
-                        smartData.wearLeveling = 1.0 - (wear / 100.0);
-                        isSSD = true;
-                    }
-                }
-            }
-            smartData.healthPercentage = static_cast<uint8_t>(health);
-
-            wcsncpy_s(smartData.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
         }
-    }
 
-    CloseHandle(hDevice);
+        CloseHandle(hDevice);
+    }
 
     if (!success) {
         // NVMe path: IOCTL_STORAGE_QUERY_PROPERTY + StorageDeviceProtocolSpecificProperty
         // Query NVME_LOG_PAGE_HEALTH_INFO (log page 0x02) — does NOT require admin rights
-        HANDLE hNvme = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        HANDLE hNvme = CreateFileW(path, FILE_READ_ATTRIBUTES,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
         if (hNvme != INVALID_HANDLE_VALUE) {
             BYTE nvmeBuf[sizeof(STORAGE_PROPERTY_QUERY) + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA) + 512] = {};
@@ -279,7 +283,8 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     if (!success) {
         // Fallback: try StorageDeviceTemperatureProperty (Windows 10+)
         success = false;
-        HANDLE hDev2 = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        HANDLE hDev2 = CreateFileW(path, FILE_READ_ATTRIBUTES,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
         if (hDev2 != INVALID_HANDLE_VALUE) {
             // STORAGE_TEMPERATURE_DATA_DESCRIPTOR layout:
