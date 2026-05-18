@@ -197,7 +197,7 @@ public static class IPCSystemInfoMapper
 
                     if (capacity > 0)
                     {
-                        info.PhysicalDisks.Add(new PhysicalDiskSmartData
+                        var pd = new PhysicalDiskSmartData
                         {
                             Model = model,
                             SerialNumber = serial,
@@ -207,7 +207,31 @@ public static class IPCSystemInfoMapper
                             HealthPercentage = health,
                             SmartSupported = supported,
                             LogicalDriveLetters = driveLetters
-                        });
+                        };
+
+                        // Read SMART attributes JSON
+                        var attrsJson = reader.ReadString($"phys/{idx}/attrs") ?? "";
+                        if (!string.IsNullOrEmpty(attrsJson) && supported)
+                        {
+                            try
+                            {
+                                // Parse compact JSON: [{"id":5,"cur":100,"worst":100,"raw":0},...]
+                                var doc = System.Text.Json.JsonDocument.Parse(attrsJson);
+                                foreach (var el in doc.RootElement.EnumerateArray())
+                                {
+                                    pd.Attributes.Add(new SmartAttributeData
+                                    {
+                                        Id = el.TryGetProperty("id", out var id) ? (byte)id.GetUInt32() : (byte)0,
+                                        Current = el.TryGetProperty("cur", out var cur) ? (byte)cur.GetUInt32() : (byte)0,
+                                        Worst = el.TryGetProperty("worst", out var worst) ? (byte)worst.GetUInt32() : (byte)0,
+                                        RawValue = el.TryGetProperty("raw", out var raw) ? raw.GetUInt64() : 0UL
+                                    });
+                                }
+                            }
+                            catch { /* ignore parse errors */ }
+                        }
+
+                        info.PhysicalDisks.Add(pd);
                     }
                     idx++;
                 }

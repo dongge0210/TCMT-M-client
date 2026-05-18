@@ -611,6 +611,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private PhysicalDiskView? _selectedPhysicalDisk;
 
+    [ObservableProperty]
+    private bool _smartDetailVisible;
+
+    [RelayCommand]
+    private void ToggleSmartDetail()
+    {
+        SmartDetailVisible = !SmartDetailVisible;
+    }
+
     // TPM
     [ObservableProperty]
     private TpmData? _tpmInfo;
