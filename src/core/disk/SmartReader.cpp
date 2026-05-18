@@ -282,7 +282,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
         HANDLE hDev2 = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
         if (hDev2 != INVALID_HANDLE_VALUE) {
-            // STORAGE_TEMPERATURE_DATA_DESCRIPTOR
+            // STORAGE_TEMPERATURE_DATA_DESCRIPTOR layout:
+            //   Version(4) + Size(4) + TemperatureInfo[0..N]
+            // Each TemperatureInfo: Identifier(4) + Temperature(4, signed, tenths °C)
             BYTE tempBuf[64] = {};
             STORAGE_PROPERTY_QUERY query{};
             query.PropertyId = StorageDeviceTemperatureProperty;
@@ -291,11 +293,12 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                                 &query, sizeof(query),
                                 tempBuf, sizeof(tempBuf),
                                 &bytesReturned, nullptr) &&
-                bytesReturned >= 8) {
-                // First 8 bytes: Version(4) + Size(4), then STORAGE_TEMPERATURE_INFO array
-                int temp = static_cast<int>(*(SHORT*)(tempBuf + 8));
-                if (temp > 0 && temp < 128) {
-                    smartData.temperature = static_cast<double>(temp);
+                bytesReturned >= 16) {
+                // Temperature at offset 12 (after Version+Size+Identifier = 4+4+4)
+                LONG tempTenthsC = *(LONG*)(tempBuf + 12);
+                double tempC = static_cast<double>(tempTenthsC) / 10.0;
+                if (tempC > 0.0 && tempC < 128.0) {
+                    smartData.temperature = tempC;
                     success = true;
                 }
             }
