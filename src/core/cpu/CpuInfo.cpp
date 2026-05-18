@@ -4,6 +4,7 @@
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
 // NOTE: winsock2.h must be included BEFORE windows.h
+#define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
 #include <intrin.h>
