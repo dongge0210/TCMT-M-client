@@ -146,6 +146,17 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 success = true;
 
+                // Debug: log first 8 bytes of raw SMART data
+                static int rawDumpCount = 0;
+                if (rawDumpCount < 3) {
+                    char hex[128];
+                    snprintf(hex, sizeof(hex),
+                        "SMART raw[0..7]: %02X %02X %02X %02X %02X %02X %02X %02X",
+                        raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]);
+                    Logger::Info(hex);
+                    rawDumpCount++;
+                }
+
                 // Parse all SMART attributes in a single pass
                 bool isSSD = false;
                 double tempRead = -1;
