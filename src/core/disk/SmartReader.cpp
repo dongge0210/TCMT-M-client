@@ -67,6 +67,11 @@ typedef struct _SENDCMDOUTPARAMS {
 #define SMART_READ_DATA         0xD0
 #define ID_CMD                  0xEC
 
+// NVME_LOG_PAGE_HEALTH_INFO — may be missing in older SDKs
+#ifndef NVME_LOG_PAGE_HEALTH_INFO
+#define NVME_LOG_PAGE_HEALTH_INFO    0x02
+#endif
+
 // ====================================================================
 // Read SMART for one physical disk
 // ====================================================================
@@ -205,7 +210,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
             protocolData->ProtocolDataRequestValue = NVME_LOG_PAGE_HEALTH_INFO;
             protocolData->ProtocolDataRequestSubValue = 0;
             protocolData->ProtocolDataOffset = sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA);
-            protocolData->ProtocolDataLength = sizeof(NVME_HEALTH_INFO_LOG);
+            protocolData->ProtocolDataLength = 512;  // NVMe health log is 512 bytes
 
             DWORD nvmeBytesReturned = 0;
             if (DeviceIoControl(hNvme, IOCTL_STORAGE_QUERY_PROPERTY,
@@ -215,45 +220,48 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 auto* desc = reinterpret_cast<STORAGE_PROTOCOL_DATA_DESCRIPTOR*>(nvmeBuf);
                 auto* retProtocolData = &desc->ProtocolSpecificData;
-                auto* healthLog = reinterpret_cast<NVME_HEALTH_INFO_LOG*>(
-                    reinterpret_cast<BYTE*>(retProtocolData) + retProtocolData->ProtocolDataOffset);
+                const BYTE* raw = reinterpret_cast<const BYTE*>(retProtocolData)
+                                + retProtocolData->ProtocolDataOffset;
 
                 smartData.smartSupported = true;
                 smartData.smartEnabled = true;
                 success = true;
 
+                // NVMe SMART / Health Information Log layout (NVM Express 1.4 §5.14.1.2):
+                // Offset 0:   CriticalWarning (1 byte)
+                // Offset 1:   Temperature[2] (composite temp, uint16 LE, Kelvin)
+                // Offset 3:   AvailableSpare
+                // Offset 4:   AvailableSpareThreshold
+                // Offset 5:   PercentageUsed
+                // Offset 32:  PowerOnHours[16] (first 8 bytes LE)
+
                 // Temperature: composite temp (2 bytes LE, Kelvin) → Celsius
-                USHORT tempKelvin = healthLog->Temperature[0] | (healthLog->Temperature[1] << 8);
-                if (tempKelvin > 0) {
+                USHORT tempKelvin = raw[1] | (raw[2] << 8);
+                if (tempKelvin > 273) {
                     int tempC = static_cast<int>(tempKelvin) - 273;
-                    if (tempC > 0 && tempC < 128) {
-                        smartData.temperature = static_cast<double>(tempC);
-                    }
+                    if (tempC < 128) smartData.temperature = static_cast<double>(tempC);
                 }
 
                 // Health percentage (100 - PercentageUsed)
-                uint8_t pctUsed = healthLog->PercentageUsed;
+                uint8_t pctUsed = raw[5];
                 if (pctUsed <= 100) {
                     smartData.healthPercentage = static_cast<uint8_t>(100 - pctUsed);
                     smartData.wearLeveling = pctUsed / 100.0;
                 }
 
-                // Power-on hours (128-bit field at byte offset 32, read first 8 bytes)
+                // Power-on hours (offset 32, first 8 bytes LE)
                 uint64_t hours = 0;
-                memcpy(&hours, reinterpret_cast<const BYTE*>(healthLog) + 32, sizeof(uint64_t));
-                if (hours > 0 && hours < 100000000) {
+                memcpy(&hours, raw + 32, sizeof(uint64_t));
+                if (hours > 0 && hours < 100000000)
                     smartData.powerOnHours = hours;
-                }
 
                 // AvailableSpare below threshold indicates degraded health
-                if (healthLog->AvailableSpare < healthLog->AvailableSpareThreshold) {
+                if (raw[3] < raw[4])
                     smartData.healthPercentage = (std::min)(smartData.healthPercentage, uint8_t(50));
-                }
 
                 // Critical warning set indicates serious drive issue
-                if (healthLog->CriticalWarning > 0) {
+                if (raw[0] > 0)
                     smartData.healthPercentage = (std::min)(smartData.healthPercentage, uint8_t(30));
-                }
             }
             CloseHandle(hNvme);
         }
