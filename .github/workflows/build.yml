@@ -150,7 +150,7 @@ jobs:
 
     - name: Build
       run: |
-        cmake --build build -j8
+        cmake --build build -j$(sysctl -n hw.ncpu)
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v7
