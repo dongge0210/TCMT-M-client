@@ -678,6 +678,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
         addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
+        addField((std::string(pfx)+"attrs").c_str(),          base + offsetof(PhysicalDiskSmartData, attrsJson), 4096, (uint8_t)FT::String);
         // logical drive letters (up to 8 letters, stored as individual bytes + count)
         for (int j = 0; j < 8; j++) {
             char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);
@@ -1412,6 +1413,25 @@ int main(int argc, char* argv[]) {
                     }
                     if (!cachedPhysDisks.empty())
                         sysInfo.physicalDisks = cachedPhysDisks;
+
+                    // Serialize SMART attributes to JSON for each physical disk
+                    for (auto& pd : sysInfo.physicalDisks) {
+                        if (pd.attributeCount > 0 && pd.attributeCount <= 32) {
+                            std::string json = "[";
+                            for (int ai = 0; ai < pd.attributeCount; ai++) {
+                                if (ai > 0) json += ",";
+                                auto& a = pd.attributes[ai];
+                                char buf[128];
+                                snprintf(buf, sizeof(buf),
+                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu}",
+                                    a.id, a.current, a.worst, a.rawValue);
+                                json += buf;
+                            }
+                            json += "]";
+                            strncpy_s(pd.attrsJson, json.c_str(), sizeof(pd.attrsJson) - 1);
+                            pd.attrsJson[sizeof(pd.attrsJson) - 1] = '\0';
+                        }
+                    }
 
                     // Collect TPM data
                     {

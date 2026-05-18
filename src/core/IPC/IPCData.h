@@ -171,6 +171,7 @@ struct IPCDataBlock {
         float    temperature         = 0;
         float    healthPercent       = 0;
         bool     smartSupported      = false;
+        char     attrsJson[4096]     = {}; // SMART attributes as JSON array
     };
     PhysDiskSlot physicalDisks[8]    = {};
     uint8_t  physDiskCount           = 0;

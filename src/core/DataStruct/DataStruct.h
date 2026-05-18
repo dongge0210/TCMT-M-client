@@ -66,6 +66,8 @@ struct PhysicalDiskSmartData {
 
     // Partition volume labels
     WCHAR partitionLabels[8][32]; // Volume label for each partition
+    // SMART attributes serialized as JSON array (pipe-delimited for C# parse)
+    char attrsJson[4096];
 
     PlatformSystemTime lastScanTime;       // Last scan time
 };

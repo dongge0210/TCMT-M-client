@@ -370,79 +370,21 @@ int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     return 2;
 }
 
-static const char* GetAttrName(uint8_t id) {
-    switch (id) {
-    case   1: return "RawRdErr";   case   2: return "Throughput";
-    case   3: return "SpinUp";     case   4: return "StartStop";
-    case   5: return "Realloc";    case   7: return "SeekErr";
-    case   8: return "SeekPerf";   case   9: return "PwrOnHrs";
-    case  10: return "SpinRetry";  case  12: return "PwrCycles";
-    case 170: return "GrownBlk";   case 171: return "PrgFail";
-    case 172: return "ErsFail";    case 173: return "WearLvl";
-    case 174: return "UnsafePwr";  case 175: return "PrgFailC";
-    case 177: return "WearRange";  case 179: return "UsedRsvd";
-    case 180: return "UnusedRsvd"; case 181: return "PrgFailT";
-    case 182: return "ErsFailT";   case 183: return "SataDnShft";
-    case 184: return "End2End";    case 187: return "UncorrErr";
-    case 188: return "CmdTimeout"; case 189: return "HiFlyWr";
-    case 190: return "AirflowT";   case 191: return "G-Sense";
-    case 192: return "OffRetract"; case 193: return "LoadCycle";
-    case 194: return "Temp";       case 195: return "HwEccRcvd";
-    case 196: return "RealEvnt";   case 197: return "PendSect";
-    case 198: return "UncorSect";  case 199: return "UDmaCRC";
-    case 200: return "MultiZone";  case 201: return "SoftRdE";
-    case 202: return "AddrMark";   case 206: return "WrErrRate";
-    case 230: return "GmrAmpl";    case 231: return "LifeLeft";
-    case 232: return "Endurance";  case 233: return "MediaWear";
-    case 234: return "AvgErs";     case 241: return "LBAsWrtn";
-    case 242: return "LBAsRead";
-    default: return nullptr;
-    }
-}
-
-static std::string FmtRaw(uint64_t raw) {
-    char b[32];
-    if (raw <= 0xFFFFFF) snprintf(b, sizeof(b), "%llu", raw);
-    else snprintf(b, sizeof(b), "0x%llX", raw);
-    return b;
-}
-
 int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10 || data.physicalDisks.empty()) return 0;
     int lines = 0;
 
     for (const auto& pd : data.physicalDisks) {
-        if (y + lines >= LINES - 3) break;
-
-        // Header line
+        if (y + lines >= LINES - 5) break;
         auto model = pd.model;
         if (model.size() > 20) model = model.substr(0, 18) + "..";
-        std::string hdr = model;
-        if (!pd.diskType.empty()) hdr += " " + pd.diskType;
-        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); hdr += b; }
-        if (pd.temperature > 0) { char b[12]; snprintf(b, sizeof(b), " %.0fC", pd.temperature); hdr += b; }
-        if (pd.wearLeveling > 0) { char b[16]; snprintf(b, sizeof(b), " w%.1f%%", pd.wearLeveling * 100); hdr += b; }
-        mvwprintw(win, y + lines++, x0, "%.*s", maxW, TrimRight(hdr, maxW - 1).c_str());
-
-        // Attribute table (compact)
-        if (pd.smartSupported && !pd.attributes.empty()) {
-            wattron(win, A_DIM);
-            mvwprintw(win, y + lines++, x0, "%.*s", maxW, " ID Name        Cur Wrst Raw");
-            wattroff(win, A_DIM);
-            for (const auto& a : pd.attributes) {
-                if (y + lines >= LINES - 1) break;
-                const char* nm = GetAttrName(a.id);
-                char row[64];
-                if (nm)
-                    snprintf(row, sizeof(row), "%3u %-10s %3u %3u %s",
-                             a.id, nm, a.current, a.worst, FmtRaw(a.rawValue).c_str());
-                else
-                    snprintf(row, sizeof(row), "%3u %03d             %3u %3u %s",
-                             a.id, a.id, a.current, a.worst, FmtRaw(a.rawValue).c_str());
-                mvwprintw(win, y + lines++, x0, "%.*s", maxW, row);
-            }
-        }
-        lines++;
+        std::string line = model;
+        if (!pd.diskType.empty()) line += " " + pd.diskType;
+        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
+        if (pd.temperature > 0) { char b[12]; snprintf(b, sizeof(b), " %.0fC", pd.temperature); line += b; }
+        if (pd.wearLeveling > 0) { char b[16]; snprintf(b, sizeof(b), " w%.1f%%", pd.wearLeveling * 100); line += b; }
+        line = TrimRight(line, maxW - 2);
+        mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
     }
     return lines;
 }
