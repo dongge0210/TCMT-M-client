@@ -69,6 +69,14 @@ struct TuiData {
     };
     std::vector<DiskInfo> disks;
 
+    struct SmAttributeInfo {
+        uint8_t id = 0;
+        uint8_t current = 0;
+        uint8_t worst = 0;
+        uint64_t rawValue = 0;
+        std::string name;
+    };
+
     struct PhysicalDiskInfo {
         std::string model;
         std::string serial;
@@ -80,6 +88,7 @@ struct TuiData {
         bool smartSupported = false;
         uint64_t powerOnHours = 0;
         double wearLeveling = 0;
+        std::vector<SmAttributeInfo> attributes;
     };
     std::vector<PhysicalDiskInfo> physicalDisks;
 

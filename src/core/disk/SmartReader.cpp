@@ -125,45 +125,48 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 success = true;
 
-                // Determine disk type: check for SSD wear leveling attributes
+                // Parse all SMART attributes in a single pass
                 bool isSSD = false;
-
-                // --- Temperature ---
                 double tempRead = -1;
-                for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
+                int health = 100;
+                int attrIdx = 0;
+
+                for (int attrOff = 2; attrOff < 512 - 12 && attrIdx < 32; attrOff += 12) {
                     if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
                     int attrId = raw[attrOff];
+                    uint64_t rawVal = 0;
+                    for (int j = 0; j < 6; j++)
+                        rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
+
+                    // Populate attribute entry
+                    auto& attr = smartData.attributes[attrIdx];
+                    attr.id = static_cast<uint8_t>(attrId);
+                    attr.flags = static_cast<uint8_t>(raw[attrOff + 1]);
+                    attr.current = raw[attrOff + 3];
+                    attr.worst = raw[attrOff + 4];
+                    attr.threshold = raw[attrOff + 0];  // threshold not in raw data, use 0
+                    attr.rawValue = rawVal;
+                    attr.threshold = 0;  // threshold not directly available in standard SMART read
+                    attrIdx++;
+
+                    // Temperature (190=Airflow, 194=Temperature)
                     if (attrId == 0xBE || attrId == 0xC2) {
-                        // Try all 6 raw value bytes for temperature (0-128°C)
                         for (int bo = 5; bo <= 10; bo++) {
                             int t = raw[attrOff + bo];
                             if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
                         }
                         if (tempRead < 0) {
-                            // Try normalized value (byte 3) as temperature
                             int nv = raw[attrOff + 3];
                             if (nv >= 15 && nv <= 120) tempRead = (double)nv;
                         }
                         if (tempRead < 0) {
-                            // Try 16-bit LE at raw[0-1] and raw[1-2]
-                            int hi1 = raw[attrOff + 5] | (raw[attrOff + 6] << 8);
-                            if (hi1 >= 15 && hi1 <= 120) tempRead = (double)hi1;
-                            int hi2 = (raw[attrOff + 7] << 8) | raw[attrOff + 6];
-                            if (hi2 >= 15 && hi2 <= 120) tempRead = (double)hi2;
+                            int hi = raw[attrOff + 5] | (raw[attrOff + 6] << 8);
+                            if (hi >= 15 && hi <= 120) tempRead = (double)hi;
                         }
                     }
-                }
-                if (tempRead > 0) smartData.temperature = tempRead;
 
-                // --- Health percentage ---
-                int health = 100;
-                for (int attrOff = 2; attrOff < 512 - 12; attrOff += 12) {
-                    if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
-                    int attrId = raw[attrOff];
+                    // Health-critical attributes: 5, 196, 197, 198
                     if (attrId == 5 || attrId == 196 || attrId == 197 || attrId == 198) {
-                        uint64_t rawVal = 0;
-                        for (int j = 0; j < 6; j++)
-                            rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
                         if (rawVal > 0) {
                             if (attrId == 5 && rawVal > 0) health = (std::min)(health, 95);
                             if (attrId == 5 && rawVal > 10) health = (std::min)(health, 80);
@@ -174,25 +177,24 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                             if (attrId == 198) smartData.uncorrectableErrors = rawVal;
                         }
                     }
+
                     // Power-on hours (ID 9)
-                    if (attrId == 9) {
-                        uint64_t hours = 0;
-                        for (int j = 0; j < 6; j++)
-                            hours |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
-                        if (hours < 100000000)
-                            smartData.powerOnHours = hours;
-                    }
-                    // Wear leveling count (SSD) — ID 177, 230, 233
+                    if (attrId == 9 && rawVal < 100000000)
+                        smartData.powerOnHours = rawVal;
+
+                    // Wear leveling (SSD) — ID 177, 230, 233
                     if (attrId == 177 || attrId == 230 || attrId == 233) {
-                        int wear = raw[attrOff + 3];
-                        if (wear > 0 && wear <= 100) {
-                            smartData.wearLeveling = 1.0 - (wear / 100.0);
+                        int cur = raw[attrOff + 3];
+                        if (cur > 0 && cur <= 100) {
+                            smartData.wearLeveling = 1.0 - (cur / 100.0);
                             isSSD = true;
                         }
                     }
                 }
-                smartData.healthPercentage = static_cast<uint8_t>(health);
 
+                smartData.attributeCount = attrIdx;
+                if (tempRead > 0) smartData.temperature = tempRead;
+                smartData.healthPercentage = static_cast<uint8_t>(health);
                 wcsncpy_s(smartData.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
             }
         }

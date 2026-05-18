@@ -1569,6 +1569,15 @@ int main(int argc, char* argv[]) {
                         pi.smartSupported = pd.smartSupported;
                         pi.powerOnHours = pd.powerOnHours;
                         pi.wearLeveling = pd.wearLeveling;
+                        for (int ai = 0; ai < pd.attributeCount && ai < 32; ai++) {
+                            const auto& sa = pd.attributes[ai];
+                            tcmt::TuiData::SmAttributeInfo ai2;
+                            ai2.id = sa.id;
+                            ai2.current = sa.current;
+                            ai2.worst = sa.worst;
+                            ai2.rawValue = sa.rawValue;
+                            pi.attributes.push_back(ai2);
+                        }
                         tuiData.physicalDisks.push_back(pi);
                     }
                     
