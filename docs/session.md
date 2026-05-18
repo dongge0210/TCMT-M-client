@@ -32,7 +32,7 @@
 ## 构建命令 (macOS)
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DASIO_INCLUDE_DIR=src/third_party/asio/asio/include
-cmake --build build -j$(sysctl -n hw.ncpu)
+cmake --build build -j8
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 ./build/src/TCMT-M --json
 ```

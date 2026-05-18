@@ -415,8 +415,17 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
                 else if (sv.is_string()) try { pd.capacity = std::stoull(sv.get<std::string>()); } catch(...) {}
             }
             sysInfo.physicalDisks.push_back(pd);
+
+            // Extract disk index from bsd_name (e.g., "disk0" → 0)
+            std::string bsd = item.value("bsd_name", "");
+            int diskIdx = 0;
+            if (bsd.rfind("disk", 0) == 0) {
+                try { diskIdx = std::stoi(bsd.substr(4)); } catch(...) {}
+            }
+            SmartReader::Read(diskIdx, sysInfo.physicalDisks.back());
         }
     }
+
     Logger::Debug("DiskInfo: SMART collected " + std::to_string(sysInfo.physicalDisks.size()) + " disks");
 }
 

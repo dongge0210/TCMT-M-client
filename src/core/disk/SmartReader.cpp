@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <winioctl.h>
 #include <ntdddisk.h>
+#include <ntddstor.h>
 #include <stdio.h>
 
 // SMART_RCV_DRIVE_DATA structure
@@ -186,6 +187,79 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     CloseHandle(hDevice);
 
     if (!success) {
+        // NVMe path: IOCTL_STORAGE_QUERY_PROPERTY + StorageDeviceProtocolSpecificProperty
+        // Query NVME_LOG_PAGE_HEALTH_INFO (log page 0x02) — does NOT require admin rights
+        HANDLE hNvme = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                    nullptr, OPEN_EXISTING, 0, nullptr);
+        if (hNvme != INVALID_HANDLE_VALUE) {
+            BYTE nvmeBuf[sizeof(STORAGE_PROPERTY_QUERY) + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA) + 512] = {};
+
+            auto* query = reinterpret_cast<STORAGE_PROPERTY_QUERY*>(nvmeBuf);
+            query->PropertyId = StorageDeviceProtocolSpecificProperty;
+            query->QueryType = PropertyStandardQuery;
+
+            auto* protocolData = reinterpret_cast<STORAGE_PROTOCOL_SPECIFIC_DATA*>(
+                nvmeBuf + sizeof(STORAGE_PROPERTY_QUERY));
+            protocolData->ProtocolType = ProtocolTypeNvme;
+            protocolData->DataType = NVMeDataTypeLogPage;
+            protocolData->ProtocolDataRequestValue = NVME_LOG_PAGE_HEALTH_INFO;
+            protocolData->ProtocolDataRequestSubValue = 0;
+            protocolData->ProtocolDataOffset = sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA);
+            protocolData->ProtocolDataLength = sizeof(NVME_HEALTH_INFO_LOG);
+
+            DWORD nvmeBytesReturned = 0;
+            if (DeviceIoControl(hNvme, IOCTL_STORAGE_QUERY_PROPERTY,
+                                nvmeBuf, sizeof(STORAGE_PROPERTY_QUERY) + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA),
+                                nvmeBuf, sizeof(nvmeBuf),
+                                &nvmeBytesReturned, nullptr)) {
+
+                auto* desc = reinterpret_cast<STORAGE_PROTOCOL_DATA_DESCRIPTOR*>(nvmeBuf);
+                auto* retProtocolData = &desc->ProtocolSpecificData;
+                auto* healthLog = reinterpret_cast<NVME_HEALTH_INFO_LOG*>(
+                    reinterpret_cast<BYTE*>(retProtocolData) + retProtocolData->ProtocolDataOffset);
+
+                smartData.smartSupported = true;
+                smartData.smartEnabled = true;
+                success = true;
+
+                // Temperature: composite temp (2 bytes LE, Kelvin) → Celsius
+                USHORT tempKelvin = healthLog->Temperature[0] | (healthLog->Temperature[1] << 8);
+                if (tempKelvin > 0) {
+                    int tempC = static_cast<int>(tempKelvin) - 273;
+                    if (tempC > 0 && tempC < 128) {
+                        smartData.temperature = static_cast<double>(tempC);
+                    }
+                }
+
+                // Health percentage (100 - PercentageUsed)
+                uint8_t pctUsed = healthLog->PercentageUsed;
+                if (pctUsed <= 100) {
+                    smartData.healthPercentage = static_cast<uint8_t>(100 - pctUsed);
+                    smartData.wearLeveling = pctUsed / 100.0;
+                }
+
+                // Power-on hours (128-bit field at byte offset 32, read first 8 bytes)
+                uint64_t hours = 0;
+                memcpy(&hours, reinterpret_cast<const BYTE*>(healthLog) + 32, sizeof(uint64_t));
+                if (hours > 0 && hours < 100000000) {
+                    smartData.powerOnHours = hours;
+                }
+
+                // AvailableSpare below threshold indicates degraded health
+                if (healthLog->AvailableSpare < healthLog->AvailableSpareThreshold) {
+                    smartData.healthPercentage = (std::min)(smartData.healthPercentage, uint8_t(50));
+                }
+
+                // Critical warning set indicates serious drive issue
+                if (healthLog->CriticalWarning > 0) {
+                    smartData.healthPercentage = (std::min)(smartData.healthPercentage, uint8_t(30));
+                }
+            }
+            CloseHandle(hNvme);
+        }
+    }
+
+    if (!success) {
         // Fallback: try StorageDeviceTemperatureProperty (Windows 10+)
         success = false;
         HANDLE hDev2 = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -216,6 +290,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 }
 
 #else
-// Non-Windows stub
-bool SmartReader::Read(int, PhysicalDiskSmartData&) { return false; }
+// macOS/Linux stub — delegates to platform implementation
+extern "C" bool SmartReaderMacRead(int diskIndex, PhysicalDiskSmartData& smartData);
+bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
+    return SmartReaderMacRead(diskIndex, smartData);
+}
 #endif

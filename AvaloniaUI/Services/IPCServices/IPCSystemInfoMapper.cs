@@ -27,7 +27,6 @@ public static class IPCSystemInfoMapper
             info.CpuUsage = reader.ReadFloat64("cpu/usage") ?? (double?)reader.ReadFloat32("cpu/usage") ?? 0;
             info.PerformanceCoreFreq = reader.ReadFloat64("cpu/freq/pCore") ?? (double?)reader.ReadFloat32("cpu/freq/pCore") ?? 0;
             info.EfficiencyCoreFreq = reader.ReadFloat64("cpu/freq/eCore") ?? (double?)reader.ReadFloat32("cpu/freq/eCore") ?? 0;
-            info.PCoreBaseFreq = reader.ReadFloat64("cpu/freq/pCoreBase") ?? (double?)reader.ReadFloat32("cpu/freq/pCoreBase") ?? 0;
             info.CpuBaseFreq = reader.ReadFloat64("cpu/freq/base") ?? (double?)reader.ReadFloat32("cpu/freq/base") ?? 0;
             info.HyperThreading = reader.ReadBool("cpu/hyperThreading") ?? false;
             info.Virtualization = reader.ReadBool("cpu/virtualization") ?? false;

@@ -38,6 +38,7 @@ if(TCMT_MACOS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
     )
 endif()
 

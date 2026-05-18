@@ -5,7 +5,7 @@
 ```bash
 # ─── macOS (Apple Silicon) ───
 # C++ core (TCMT-M, ncurses TUI)
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n hw.ncpu)
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
 # AvaloniaUI (separate, reads SHM)
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 
