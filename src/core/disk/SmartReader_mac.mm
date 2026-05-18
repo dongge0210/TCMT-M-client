@@ -210,10 +210,25 @@ static bool ReadATASmart(int diskIndex, PhysicalDiskSmartData &out) {
 // ====================================================================
 
 extern "C" bool SmartReaderMacRead(int diskIndex, PhysicalDiskSmartData &smartData) {
-    memset(&smartData, 0, sizeof(smartData));
+    // Do NOT memset the struct — caller has already populated model/serial/capacity.
+    // Only fill in the SMART-specific fields.
 
-    if (ReadNVMeSmart(diskIndex, smartData)) return true;
-    if (ReadATASmart(diskIndex, smartData)) return true;
+    if (ReadNVMeSmart(diskIndex, smartData)) {
+        smartData.diskType[0] = u'S'; smartData.diskType[1] = u'S';
+        smartData.diskType[2] = u'D'; smartData.diskType[3] = u'\0';
+        return true;
+    }
+
+    if (ReadATASmart(diskIndex, smartData)) {
+        if (smartData.wearLeveling > 0.0) {
+            smartData.diskType[0] = u'S'; smartData.diskType[1] = u'S';
+            smartData.diskType[2] = u'D'; smartData.diskType[3] = u'\0';
+        } else {
+            smartData.diskType[0] = u'H'; smartData.diskType[1] = u'D';
+            smartData.diskType[2] = u'D'; smartData.diskType[3] = u'\0';
+        }
+        return true;
+    }
 
     return false;
 }

@@ -125,6 +125,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
             success = true;
 
+            // Determine disk type: check for SSD wear leveling attributes
+            bool isSSD = false;
+
             // --- Temperature ---
             // Most drives: attribute 194 (temp) or 190 (airflow for SSD)
             // Raw value bytes 5-10 (6 bytes LE); temp is often in byte 5 or 9
@@ -182,10 +185,13 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     int wear = raw[attrOff + 3]; // current normalized value
                     if (wear > 0 && wear <= 100) {
                         smartData.wearLeveling = 1.0 - (wear / 100.0);
+                        isSSD = true;
                     }
                 }
             }
             smartData.healthPercentage = static_cast<uint8_t>(health);
+
+            wcsncpy_s(smartData.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
         }
     }
 
@@ -226,6 +232,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 smartData.smartSupported = true;
                 smartData.smartEnabled = true;
                 success = true;
+
+                // NVMe drives are always SSDs
+                wcsncpy_s(smartData.diskType, L"SSD", _TRUNCATE);
 
                 // NVMe SMART / Health Information Log layout (NVM Express 1.4 §5.14.1.2):
                 // Offset 0:   CriticalWarning (1 byte)
