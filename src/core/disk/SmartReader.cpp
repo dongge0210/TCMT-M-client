@@ -90,10 +90,22 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     if (hDevice != INVALID_HANDLE_VALUE) {
         // Step 1: Get SMART version / capabilities
         GETVERSIONINPARAMS gvp{};
-        if (DeviceIoControl(hDevice, SMART_GET_VERSION,
-                            nullptr, 0,
-                            &gvp, sizeof(gvp),
-                            &bytesReturned, nullptr) &&
+        DWORD gvpErr = 0;
+        bool gvpOk = DeviceIoControl(hDevice, SMART_GET_VERSION,
+                                     nullptr, 0,
+                                     &gvp, sizeof(gvp),
+                                     &bytesReturned, nullptr);
+        if (!gvpOk) gvpErr = GetLastError();
+        static int diagCount2 = 0;
+        if (diagCount2 < 5) {
+            Logger::Info("SMART disk" + std::to_string(diskIndex) +
+                " ATA: handleOk gvp=" + std::to_string(gvpOk) +
+                " sz=" + std::to_string(bytesReturned) +
+                " caps=" + std::to_string(gvp.fCapabilities) +
+                " err=" + std::to_string(gvpErr));
+            diagCount2++;
+        }
+        if (gvpOk &&
             bytesReturned >= sizeof(GETVERSIONINPARAMS) &&
             (gvp.fCapabilities & 1)) {  // SMART supported
 
@@ -114,10 +126,18 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
             BYTE outBuf[sizeof(SENDCMDOUTPARAMS) + 512 - 1] = {};
 
-            if (DeviceIoControl(hDevice, SMART_RCV_DRIVE_DATA,
-                                sendBuf, sizeof(sendBuf),
-                                outBuf, sizeof(outBuf),
-                                &bytesReturned, nullptr) &&
+            DWORD rcvErr = 0;
+            bool rcvOk = DeviceIoControl(hDevice, SMART_RCV_DRIVE_DATA,
+                                         sendBuf, sizeof(sendBuf),
+                                         outBuf, sizeof(outBuf),
+                                         &bytesReturned, nullptr);
+            if (!rcvOk) rcvErr = GetLastError();
+            Logger::Info("SMART disk" + std::to_string(diskIndex) +
+                " RCV: ok=" + std::to_string(rcvOk) +
+                " sz=" + std::to_string(bytesReturned) +
+                " err=" + std::to_string(rcvErr));
+
+            if (rcvOk &&
                 bytesReturned >= sizeof(SENDCMDOUTPARAMS) + 512) {
 
                 auto* scop = reinterpret_cast<SENDCMDOUTPARAMS*>(outBuf);
@@ -205,6 +225,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     if (!success) {
         // NVMe path: IOCTL_STORAGE_QUERY_PROPERTY + StorageDeviceProtocolSpecificProperty
         // Query NVME_LOG_PAGE_HEALTH_INFO (log page 0x02) — does NOT require admin rights
+        Logger::Info("SMART disk" + std::to_string(diskIndex) + " trying NVMe path...");
         HANDLE hNvme = CreateFileW(path, FILE_READ_ATTRIBUTES,
                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
