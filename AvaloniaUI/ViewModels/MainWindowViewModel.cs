@@ -75,6 +75,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsConnected = false;
             ConnectionStatus = $"IPC 初始化失败: {ex.Message}";
         }
+        // Initialize placeholders to avoid Avalonia binding errors before IPC data arrives
+        SelectedGpu = new GpuData { Name = "等待数据..." };
+        SelectedNetwork = new NetworkAdapterData { Name = "等待数据..." };
+        SelectedDisk = new DiskData { Label = "等待数据..." };
+
         _timer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
@@ -109,9 +114,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NetworkList.Clear();
         DiskList.Clear();
         PhysicalDiskList.Clear();
-        SelectedGpu = null;
-        SelectedNetwork = null;
-        SelectedDisk = null;
+        SelectedGpu = new GpuData { Name = "未连接" };
+        SelectedNetwork = new NetworkAdapterData { Name = "未连接" };
+        SelectedDisk = new DiskData { Label = "未连接" };
     }
 
     [RelayCommand]
@@ -169,6 +174,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                         ConnectionStatus = "已连接 (IPC)";
                         WindowTitle = "系统硬件监视器";
                     }
+
+                    // Reset placeholders to null so auto‑selection logic in UpdateSystemData works
+                    if (SelectedGpu?.Name == "等待数据..." || SelectedGpu?.Name == "未连接")
+                        SelectedGpu = null;
+                    if (SelectedNetwork?.Name == "等待数据..." || SelectedNetwork?.Name == "未连接")
+                        SelectedNetwork = null;
+                    if (SelectedDisk?.Label == "等待数据..." || SelectedDisk?.Label == "未连接")
+                        SelectedDisk = null;
+
                     UpdateSystemData(info);
                     LastUpdate = DateTime.Now;
                     return;
