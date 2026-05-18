@@ -161,15 +161,18 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     rawDumpCount++;
                 }
 
-                // Parse all SMART attributes in a single pass
+                // Parse all SMART attributes in a single pass.
+                // Scan ALL 512 bytes (not just starting at offset 2) — some SSDs
+                // have non-standard layout with vendor data before attributes.
                 bool isSSD = false;
                 double tempRead = -1;
                 int health = 100;
                 int attrIdx = 0;
 
-                for (int attrOff = 2; attrOff < 512 - 12 && attrIdx < 32; attrOff += 12) {
-                    if (raw[attrOff] == 0 || raw[attrOff] == 0xFF) break;
+                for (int attrOff = 0; attrOff < 512 - 12 && attrIdx < 32; attrOff += 12) {
                     int attrId = raw[attrOff];
+                    // Skip invalid IDs (0=empty, 0xFF=gap) but don't break — keep scanning
+                    if (attrId == 0 || attrId == 0xFF) continue;
                     uint64_t rawVal = 0;
                     for (int j = 0; j < 6; j++)
                         rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
