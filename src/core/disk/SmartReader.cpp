@@ -249,14 +249,21 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
         if (hNvme != INVALID_HANDLE_VALUE) {
-            BYTE nvmeBuf[sizeof(STORAGE_PROPERTY_QUERY) + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA) + 512] = {};
+            // Input: STORAGE_PROPERTY_QUERY header + STORAGE_PROTOCOL_SPECIFIC_DATA
+            // Use offsetof to avoid padding / flexible-array issues
+            const DWORD inSize = offsetof(STORAGE_PROPERTY_QUERY, AdditionalParameters)
+                               + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA);
+            // Output: STORAGE_PROTOCOL_DATA_DESCRIPTOR + health log data
+            const DWORD outSize = sizeof(STORAGE_PROTOCOL_DATA_DESCRIPTOR) + 512;
+            BYTE inBuf[256] = {};
+            BYTE outBuf[1024] = {};
 
-            auto* query = reinterpret_cast<STORAGE_PROPERTY_QUERY*>(nvmeBuf);
+            auto* query = reinterpret_cast<STORAGE_PROPERTY_QUERY*>(inBuf);
             query->PropertyId = StorageDeviceProtocolSpecificProperty;
             query->QueryType = PropertyStandardQuery;
 
             auto* protocolData = reinterpret_cast<STORAGE_PROTOCOL_SPECIFIC_DATA*>(
-                nvmeBuf + sizeof(STORAGE_PROPERTY_QUERY));
+                inBuf + offsetof(STORAGE_PROPERTY_QUERY, AdditionalParameters));
             protocolData->ProtocolType = ProtocolTypeNvme;
             protocolData->DataType = NVMeDataTypeLogPage;
             protocolData->ProtocolDataRequestValue = NVME_LOG_PAGE_HEALTH_INFO;
@@ -265,12 +272,15 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
             protocolData->ProtocolDataLength = 512;  // NVMe health log is 512 bytes
 
             DWORD nvmeBytesReturned = 0;
+            Logger::Info("SMART disk" + std::to_string(diskIndex) +
+                " NVMe: inSize=" + std::to_string(inSize) + " outSize=" + std::to_string(outSize));
+
             if (DeviceIoControl(hNvme, IOCTL_STORAGE_QUERY_PROPERTY,
-                                nvmeBuf, sizeof(STORAGE_PROPERTY_QUERY) + sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA),
-                                nvmeBuf, sizeof(nvmeBuf),
+                                inBuf, inSize,
+                                outBuf, outSize,
                                 &nvmeBytesReturned, nullptr)) {
 
-                auto* desc = reinterpret_cast<STORAGE_PROTOCOL_DATA_DESCRIPTOR*>(nvmeBuf);
+                auto* desc = reinterpret_cast<STORAGE_PROTOCOL_DATA_DESCRIPTOR*>(outBuf);
                 auto* retProtocolData = &desc->ProtocolSpecificData;
                 const BYTE* raw = reinterpret_cast<const BYTE*>(retProtocolData)
                                 + retProtocolData->ProtocolDataOffset;
