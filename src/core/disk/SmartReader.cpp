@@ -137,8 +137,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 " sz=" + std::to_string(bytesReturned) +
                 " err=" + std::to_string(rcvErr));
 
+            // Driver may return 528 bytes (16-byte header + 512 data) without padding
             if (rcvOk &&
-                bytesReturned >= sizeof(SENDCMDOUTPARAMS) + 512) {
+                bytesReturned >= offsetof(SENDCMDOUTPARAMS, bBuffer) + 512) {
 
                 auto* scop = reinterpret_cast<SENDCMDOUTPARAMS*>(outBuf);
                 const BYTE* raw = scop->bBuffer;  // 512 bytes of SMART attributes
