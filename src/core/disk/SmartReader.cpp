@@ -205,8 +205,11 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     return hi == 0x0 || hi == 0xA || hi == 0xB || hi == 0xC || hi == 0xE || hi == 0xF;
                 };
 
+                // Try multiple offsets: some drivers prepend 8-byte IDE
+                // register block before SMART data (offset 10 = 8+2), others
+                // start directly (offset 2 = version header, 0 = raw).
                 int bestScore = 0, bestOff = 2;
-                for (int tryOff : {2, 0}) {
+                for (int tryOff : {10, 2, 0, 8}) {
                     int score = 0, n = 0;
                     for (int off = tryOff; off < 512 - 12; off += 12) {
                         int id = raw[off];
