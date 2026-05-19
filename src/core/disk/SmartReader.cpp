@@ -173,10 +173,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 for (int off = 0; off < 512 - 1; off++) {
                     int b = raw[off];
                     if (b == 0xBE || b == 0xC2 || b == 0xE7) {
-                        // Found a temp attr ID byte — check if surrounding data is plausible
                         if (off + 6 >= 512) continue;
-                        int fl = raw[off + 1];
-                        if (fl == 0 || fl == 0xFF) continue;  // implausible flags
                         // Try raw bytes as direct temp
                         for (int bo = 5; bo <= 10 && off + bo < 512; bo++) {
                             int t = raw[off + bo];
@@ -197,76 +194,81 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 }
                 tempFound:;
 
-                // PASS 2: grid scan for attribute table display.
-                // Brute-force all even offsets 0-22 — IDE register block
-                // size varies by driver (0/4/8/12/16 bytes prepended).
-                auto isKnownAttrId = [](int id) -> bool {
-                    if (id < 1 || id > 254) return false;
-                    int hi = id >> 4;
-                    return hi == 0x0 || hi == 0xA || hi == 0xB || hi == 0xC || hi == 0xE || hi == 0xF;
+                // PASS 2: signature-based attribute scan.
+                // SA400 and similar drives return data through SMART_RCV_DRIVE_DATA
+                // in a format that doesn't align to any fixed 12-byte grid.
+                // Instead, scan byte-by-byte for known SMART attribute ID bytes
+                // followed by plausible structure (flags > 0, current 1-200).
+                // Known attribute IDs from DiskGenius SA400 dump:
+                //   01,09,0C,94,95,A7,A8,A9,AA,AC,AD,B5,B6,BB,C0,C2,C4,C7,DA,
+                //   E7,E9,F1,F2,F4,F5,F6
+                auto isValidAttrFlags = [](int f) -> bool {
+                    return f > 0 && f < 0xFF;
                 };
-
-                int bestScore = 0, bestOff = 2;
-                std::string scanInfo;
-                for (int tryOff = 0; tryOff <= 22; tryOff += 2) {
-                    int score = 0, n = 0;
-                    for (int off = tryOff; off < 512 - 12; off += 12) {
-                        int id = raw[off];
-                        if (id == 0 || id == 0xFF) continue;
-                        if (isKnownAttrId(id)) score++;
-                        if (++n >= 32) break;
-                    }
-                    if (!scanInfo.empty()) scanInfo += " ";
-                    scanInfo += std::to_string(tryOff) + ":" + std::to_string(score);
-                    if (score > bestScore) { bestScore = score; bestOff = tryOff; }
-                }
-                Logger::Info("SMART disk" + std::to_string(diskIndex) +
-                    " ATA scan: " + scanInfo + " -> pick=" + std::to_string(bestOff));
 
                 bool isSSD = false;
                 bool hasRotationAttr = false;
                 int health = 100;
                 int attrIdx = 0;
 
-                for (int attrOff = bestOff; attrOff < 512 - 12 && attrIdx < 32; attrOff += 12) {
-                    int attrId = raw[attrOff];
-                    if (attrId == 0 || attrId == 0xFF) continue;
+                // Mark used byte positions so we don't re-emit the same attr
+                bool used[512] = {};
+
+                for (int off = 0; off < 512 - 6 && attrIdx < 32; off++) {
+                    if (used[off]) continue;
+                    int id = raw[off];
+                    // Check: is this a plausible attribute ID?
+                    // Valid SMART IDs: 1-254, plus check specific known IDs
+                    if (id < 1 || id > 254) continue;
+                    if (id == 0xFF) continue;
+
+                    int fl = raw[off + 1];
+                    if (!isValidAttrFlags(fl)) continue;
+
+                    int cur = raw[off + 3];
+                    if (cur < 1 || cur > 200) continue;
+                    int worst = raw[off + 4];
+                    if (worst < 1 || worst > 200) continue;
+
+                    // Looks like a valid attribute — extract it
                     uint64_t rawVal = 0;
-                    for (int j = 0; j < 6; j++)
-                        rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
+                    for (int j = 0; j < 6 && off + 5 + j < 512; j++)
+                        rawVal |= (static_cast<uint64_t>(raw[off + 5 + j]) << (8 * j));
 
                     auto& attr = smartData.attributes[attrIdx];
-                    attr.id = static_cast<uint8_t>(attrId);
-                    attr.flags = static_cast<uint8_t>(raw[attrOff + 1]);
-                    attr.current = raw[attrOff + 3];
-                    attr.worst = raw[attrOff + 4];
+                    attr.id = static_cast<uint8_t>(id);
+                    attr.flags = static_cast<uint8_t>(fl);
+                    attr.current = static_cast<uint8_t>(cur);
+                    attr.worst = static_cast<uint8_t>(worst);
                     attr.rawValue = rawVal;
                     attrIdx++;
 
+                    // Mark this 12-byte region as used
+                    for (int k = 0; k < 12 && off + k < 512; k++) used[off + k] = true;
+
                     // Health-critical: 5, 196, 197, 198
-                    if (attrId == 5 || attrId == 196 || attrId == 197 || attrId == 198) {
+                    if (id == 5 || id == 196 || id == 197 || id == 198) {
                         if (rawVal > 0) {
-                            if (attrId == 5 && rawVal > 0) health = (std::min)(health, 95);
-                            if (attrId == 5 && rawVal > 10) health = (std::min)(health, 80);
-                            if (attrId == 197 && rawVal > 0) health = (std::min)(health, 90);
-                            if (attrId == 198 && rawVal > 0) health = (std::min)(health, 85);
-                            if (attrId == 5) smartData.reallocatedSectorCount = rawVal;
-                            if (attrId == 197) smartData.currentPendingSector = rawVal;
-                            if (attrId == 198) smartData.uncorrectableErrors = rawVal;
+                            if (id == 5 && rawVal > 0) health = (std::min)(health, 95);
+                            if (id == 5 && rawVal > 10) health = (std::min)(health, 80);
+                            if (id == 197 && rawVal > 0) health = (std::min)(health, 90);
+                            if (id == 198 && rawVal > 0) health = (std::min)(health, 85);
+                            if (id == 5) smartData.reallocatedSectorCount = rawVal;
+                            if (id == 197) smartData.currentPendingSector = rawVal;
+                            if (id == 198) smartData.uncorrectableErrors = rawVal;
                         }
                     }
 
                     // Power-on hours (ID 9)
-                    if (attrId == 9 && rawVal < 100000000)
+                    if (id == 9 && rawVal < 100000000)
                         smartData.powerOnHours = rawVal;
 
                     // HDD-specific: spin-up time (3), start-stop count (4)
-                    if (attrId == 3 || attrId == 4) hasRotationAttr = true;
+                    if (id == 3 || id == 4) hasRotationAttr = true;
 
-                    // Wear leveling (SSD): 169, 177, 230, 231, 232, 233
-                    if (attrId == 169 || attrId == 177 || attrId == 230 ||
-                        attrId == 231 || attrId == 232 || attrId == 233) {
-                        int cur = raw[attrOff + 3];
+                    // Wear leveling (SSD): 169, 177, 230, 231, 232, 233, 0xE7(231)
+                    if (id == 169 || id == 177 || id == 230 ||
+                        id == 231 || id == 232 || id == 233 || id == 0xE7) {
                         if (cur > 0 && cur <= 100) {
                             smartData.wearLeveling = 1.0 - (cur / 100.0);
                             isSSD = true;
@@ -276,6 +278,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 smartData.attributeCount = attrIdx;
 
+                // Diagnostic: log first few attr IDs found
                 {
                     static int attrLogCount = 0;
                     if (attrLogCount < 5) {
@@ -287,8 +290,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                             ids += std::to_string(smartData.attributes[i].current);
                         }
                         Logger::Info("SMART disk" + std::to_string(diskIndex) +
-                            " ATA off=" + std::to_string(bestOff) +
-                            " temp=" + (tempRead > 0 ? std::to_string((int)tempRead) : "none") +
+                            " ATA sigScan temp=" + (tempRead > 0 ? std::to_string((int)tempRead) : "none") +
                             " attrs[" + std::to_string(attrIdx) + "]: " + ids);
                         attrLogCount++;
                     }
