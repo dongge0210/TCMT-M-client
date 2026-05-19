@@ -198,18 +198,17 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 tempFound:;
 
                 // PASS 2: grid scan for attribute table display.
-                // Try both offset 0 and 2, pick the one with more recognized IDs.
+                // Brute-force all even offsets 0-22 — IDE register block
+                // size varies by driver (0/4/8/12/16 bytes prepended).
                 auto isKnownAttrId = [](int id) -> bool {
                     if (id < 1 || id > 254) return false;
                     int hi = id >> 4;
                     return hi == 0x0 || hi == 0xA || hi == 0xB || hi == 0xC || hi == 0xE || hi == 0xF;
                 };
 
-                // Try multiple offsets: some drivers prepend 8-byte IDE
-                // register block before SMART data (offset 10 = 8+2), others
-                // start directly (offset 2 = version header, 0 = raw).
                 int bestScore = 0, bestOff = 2;
-                for (int tryOff : {10, 2, 0, 8}) {
+                std::string scanInfo;
+                for (int tryOff = 0; tryOff <= 22; tryOff += 2) {
                     int score = 0, n = 0;
                     for (int off = tryOff; off < 512 - 12; off += 12) {
                         int id = raw[off];
@@ -217,8 +216,12 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                         if (isKnownAttrId(id)) score++;
                         if (++n >= 32) break;
                     }
+                    if (!scanInfo.empty()) scanInfo += " ";
+                    scanInfo += std::to_string(tryOff) + ":" + std::to_string(score);
                     if (score > bestScore) { bestScore = score; bestOff = tryOff; }
                 }
+                Logger::Info("SMART disk" + std::to_string(diskIndex) +
+                    " ATA scan: " + scanInfo + " -> pick=" + std::to_string(bestOff));
 
                 bool isSSD = false;
                 bool hasRotationAttr = false;
