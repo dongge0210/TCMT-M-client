@@ -740,11 +740,60 @@ int main(int argc, char* argv[]) {
             std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
             data.timestamp = buf;
 
+            // Physical disks (SMART) — cache once, then feed TUI every loop
+            {
+                static std::vector<PhysicalDiskSmartData> cachedSmart;
+                static bool smartDone = false;
+                if (!smartDone) {
+                    try {
+                        SystemInfo tmp;
+                        DiskInfo().CollectSmartData(tmp);
+                        cachedSmart = std::move(tmp.physicalDisks);
+                        smartDone = true;
+                        Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks");
+                    } catch (...) {
+                        Logger::Error("SMART collection threw exception (need root?)");
+                    }
+                }
+                data.physicalDisks.clear();
+                data.physicalDisks.reserve(cachedSmart.size());
+                for (const auto& src : cachedSmart) {
+                    tcmt::TuiData::PhysicalDiskInfo pi;
+                    for (int k = 0; k < 63 && src.model[k] != u'\0'; ++k)
+                        pi.model += static_cast<char>(src.model[k]);
+                    for (int k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
+                        pi.serial += static_cast<char>(src.serialNumber[k]);
+                    pi.capacity = src.capacity;
+                    pi.temperature = src.temperature;
+                    pi.healthPct = src.healthPercentage;
+                    pi.smartSupported = src.smartSupported;
+                    pi.powerOnHours = src.powerOnHours;
+                    pi.wearLeveling = src.wearLeveling;
+                    for (int k = 0; k < 15 && src.diskType[k] != u'\0'; ++k)
+                        pi.diskType += static_cast<char>(src.diskType[k]);
+                    for (int k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
+                        pi.interfaceType += static_cast<char>(src.interfaceType[k]);
+                    pi.attributes.clear();
+                    pi.attributes.reserve(src.attributeCount);
+                    for (int ai = 0; ai < src.attributeCount; ++ai) {
+                        tcmt::TuiData::SmAttributeInfo ai2;
+                        ai2.id = src.attributes[ai].id;
+                        ai2.current = src.attributes[ai].current;
+                        ai2.worst = src.attributes[ai].worst;
+                        ai2.rawValue = src.attributes[ai].rawValue;
+                        for (int k = 0; k < 63 && src.attributes[ai].name[k] != u'\0'; ++k)
+                            ai2.name += static_cast<char>(src.attributes[ai].name[k]);
+                        pi.attributes.push_back(std::move(ai2));
+                    }
+                    data.physicalDisks.push_back(std::move(pi));
+                }
+            }
+
             // Update TUI
             tuiApp.UpdateData(data);
 
             // Write to IPC shared memory (schema-driven, for C# Avalonia)
-                if (ipcServer.IsRunning()) {
+            if (ipcServer.IsRunning()) {
                     auto* b = static_cast<tcmt::ipc::IPCDataBlock*>(ipcServer.GetShmPtr());
                     if (b) {
                         // seqlock: mark write in progress (odd)
@@ -818,75 +867,37 @@ int main(int argc, char* argv[]) {
                             b->temperatures[ti].value = static_cast<float>(data.temperatures[ti].second);
                             b->tempCount++;
                         }
-                        // Physical disks (SMART) — cached once at startup
-                        static std::vector<PhysicalDiskSmartData> cachedSmart;
-                        static bool smartDone = false;
-                        if (!smartDone) {
-                            try {
-                                SystemInfo tmp;
-                                DiskInfo().CollectSmartData(tmp);
-                                cachedSmart = std::move(tmp.physicalDisks);
-                                smartDone = true;
-                                Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks");
-                            } catch (...) {
-                                Logger::Error("SMART collection threw exception (need root?)");
+                        // Physical disks (SMART) — shared memory for IPC
+                        {
+                            static std::vector<PhysicalDiskSmartData> cachedSmartIpc;
+                            static bool smartDoneIpc = false;
+                            if (!smartDoneIpc) {
+                                try {
+                                    SystemInfo tmp;
+                                    DiskInfo().CollectSmartData(tmp);
+                                    cachedSmartIpc = std::move(tmp.physicalDisks);
+                                    smartDoneIpc = true;
+                                } catch (...) {}
                             }
-                        }
-                        b->physDiskCount = 0;
-                        for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
-                            auto& pd = b->physicalDisks[pi];
-                            const auto& src = cachedSmart[pi];
-                            for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
-                                pd.model[k] = static_cast<char>(src.model[k]);
-                            pd.model[63] = '\0';
-                            for (size_t k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
-                                pd.serial[k] = static_cast<char>(src.serialNumber[k]);
-                            pd.serial[63] = '\0';
-                            pd.capacity = src.capacity;
-                            for (size_t k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
-                                pd.interfaceType[k] = static_cast<char>(src.interfaceType[k]);
-                            pd.interfaceType[15] = '\0';
-                            pd.temperature = static_cast<float>(src.temperature);
-                            pd.healthPercent = static_cast<float>(src.healthPercentage);
-                            pd.smartSupported = src.smartSupported;
-                            b->physDiskCount++;
-                        }
-                        // TUI physical disk snapshot (from same cached data)
-                        data.physicalDisks.clear();
-                        data.physicalDisks.reserve(cachedSmart.size());
-                        for (const auto& src : cachedSmart) {
-                            tcmt::TuiData::PhysicalDiskInfo pi;
-                            // Convert WCHAR model to narrow (strip trailing nulls, take up to 63 chars)
-                            for (int k = 0; k < 63 && src.model[k] != u'\0'; ++k)
-                                pi.model += static_cast<char>(src.model[k]);
-                            for (int k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
-                                pi.serial += static_cast<char>(src.serialNumber[k]);
-                            pi.capacity = src.capacity;
-                            pi.temperature = src.temperature;
-                            pi.healthPct = src.healthPercentage;
-                            pi.smartSupported = src.smartSupported;
-                            pi.powerOnHours = src.powerOnHours;
-                            pi.wearLeveling = src.wearLeveling;
-                            // diskType
-                            for (int k = 0; k < 15 && src.diskType[k] != u'\0'; ++k)
-                                pi.diskType += static_cast<char>(src.diskType[k]);
-                            // interfaceType
-                            for (int k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
-                                pi.interfaceType += static_cast<char>(src.interfaceType[k]);
-                            // attributes
-                            pi.attributes.clear();
-                            pi.attributes.reserve(src.attributeCount);
-                            for (int ai = 0; ai < src.attributeCount; ++ai) {
-                                tcmt::TuiData::SmAttributeInfo ai2;
-                                ai2.id = src.attributes[ai].id;
-                                ai2.current = src.attributes[ai].current;
-                                ai2.worst = src.attributes[ai].worst;
-                                ai2.rawValue = src.attributes[ai].rawValue;
-                                for (int k = 0; k < 63 && src.attributes[ai].name[k] != u'\0'; ++k)
-                                    ai2.name += static_cast<char>(src.attributes[ai].name[k]);
-                                pi.attributes.push_back(std::move(ai2));
+                            b->physDiskCount = 0;
+                            for (size_t pi = 0; pi < std::min(cachedSmartIpc.size(), size_t(8)); ++pi) {
+                                auto& pd = b->physicalDisks[pi];
+                                const auto& src = cachedSmartIpc[pi];
+                                for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
+                                    pd.model[k] = static_cast<char>(src.model[k]);
+                                pd.model[63] = '\0';
+                                for (size_t k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
+                                    pd.serial[k] = static_cast<char>(src.serialNumber[k]);
+                                pd.serial[63] = '\0';
+                                pd.capacity = src.capacity;
+                                for (size_t k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
+                                    pd.interfaceType[k] = static_cast<char>(src.interfaceType[k]);
+                                pd.interfaceType[15] = '\0';
+                                pd.temperature = static_cast<float>(src.temperature);
+                                pd.healthPercent = static_cast<float>(src.healthPercentage);
+                                pd.smartSupported = src.smartSupported;
+                                b->physDiskCount++;
                             }
-                            data.physicalDisks.push_back(std::move(pi));
                         }
                     }
                     // WiFi
