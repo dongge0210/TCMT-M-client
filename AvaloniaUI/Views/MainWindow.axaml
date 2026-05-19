@@ -282,7 +282,7 @@
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid ColumnDefinitions="40,*,40,40,80">
-                                                        <TextBlock Grid.Column="0" Text="{Binding Id}" Foreground="#FFB3B3B3" FontSize="10"/>
+                                                        <TextBlock Grid.Column="0" Text="{Binding Id, StringFormat={}{0:X2}}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="2" Text="{Binding Current}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="3" Text="{Binding Worst}" Foreground="#FFB3B3B3" FontSize="10"/>

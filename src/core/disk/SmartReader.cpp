@@ -291,9 +291,8 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     if (id < 1 || id > 254 || id == 0xFF) continue;
 
                     int cur = raw[off + 3];
-                    if (cur < 1 || cur > 200) continue;
-                    int worst = raw[off + 4];
-                    if (worst < 1 || worst > 200) continue;
+                    if (cur > 255) continue;
+                    int worst = raw[off + 4]; // not validated — may be 0
                     int fl = raw[off + 1];
 
                     // Looks like a valid attribute — extract it
