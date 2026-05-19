@@ -435,7 +435,7 @@ public class IPCMemoryReader : IDisposable
         int len = 0;
         while (len < buf.Length && buf[len] != 0) len++;
         if (len == 0) return string.Empty;
-        return Encoding.ASCII.GetString(buf, 0, len);
+        return Encoding.UTF8.GetString(buf, 0, len);
     }
 
     // --- WString 支持 ---
