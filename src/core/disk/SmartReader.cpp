@@ -244,6 +244,23 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 smartData.attributeCount = attrIdx;
 
+                // Diagnostic: log all attribute IDs found (once per drive)
+                {
+                    static int attrLogCount = 0;
+                    if (attrLogCount < 5) {
+                        std::string ids;
+                        for (int i = 0; i < attrIdx && i < 32; i++) {
+                            if (i > 0) ids += ",";
+                            ids += std::to_string(smartData.attributes[i].id);
+                            ids += ":";
+                            ids += std::to_string(smartData.attributes[i].current);
+                        }
+                        Logger::Info("SMART disk" + std::to_string(diskIndex) +
+                            " ATA attrs[" + std::to_string(attrIdx) + "]: " + ids);
+                        attrLogCount++;
+                    }
+                }
+
                 // Secondary temperature pass: scan stored attrs in case raw-byte extraction missed
                 if (tempRead <= 0) {
                     for (int i = 0; i < attrIdx; i++) {
