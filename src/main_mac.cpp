@@ -848,6 +848,43 @@ int main(int argc, char* argv[]) {
                             pd.smartSupported = src.smartSupported;
                             b->physDiskCount++;
                         }
+                        // TUI physical disk snapshot (from same cached data)
+                        data.physicalDisks.clear();
+                        data.physicalDisks.reserve(cachedSmart.size());
+                        for (const auto& src : cachedSmart) {
+                            tcmt::TuiData::PhysicalDiskInfo pi;
+                            // Convert WCHAR model to narrow (strip trailing nulls, take up to 63 chars)
+                            for (int k = 0; k < 63 && src.model[k] != u'\0'; ++k)
+                                pi.model += static_cast<char>(src.model[k]);
+                            for (int k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
+                                pi.serial += static_cast<char>(src.serialNumber[k]);
+                            pi.capacity = src.capacity;
+                            pi.temperature = src.temperature;
+                            pi.healthPct = src.healthPercentage;
+                            pi.smartSupported = src.smartSupported;
+                            pi.powerOnHours = src.powerOnHours;
+                            pi.wearLeveling = src.wearLeveling;
+                            // diskType
+                            for (int k = 0; k < 15 && src.diskType[k] != u'\0'; ++k)
+                                pi.diskType += static_cast<char>(src.diskType[k]);
+                            // interfaceType
+                            for (int k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
+                                pi.interfaceType += static_cast<char>(src.interfaceType[k]);
+                            // attributes
+                            pi.attributes.clear();
+                            pi.attributes.reserve(src.attributeCount);
+                            for (int ai = 0; ai < src.attributeCount; ++ai) {
+                                tcmt::TuiData::SmAttributeInfo ai2;
+                                ai2.id = src.attributes[ai].id;
+                                ai2.current = src.attributes[ai].current;
+                                ai2.worst = src.attributes[ai].worst;
+                                ai2.rawValue = src.attributes[ai].rawValue;
+                                for (int k = 0; k < 63 && src.attributes[ai].name[k] != u'\0'; ++k)
+                                    ai2.name += static_cast<char>(src.attributes[ai].name[k]);
+                                pi.attributes.push_back(std::move(ai2));
+                            }
+                            data.physicalDisks.push_back(std::move(pi));
+                        }
                     }
                     // WiFi
                     const auto& wd2 = s_wifi.GetData();
