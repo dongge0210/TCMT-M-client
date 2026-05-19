@@ -165,6 +165,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 // Scan ALL 512 bytes (not just starting at offset 2) — some SSDs
                 // have non-standard layout with vendor data before attributes.
                 bool isSSD = false;
+                bool hasRotationAttr = false;  // HDD-specific: spin-up time (3) or start-stop (4)
                 double tempRead = -1;
                 int health = 100;
                 int attrIdx = 0;
@@ -221,8 +222,13 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     if (attrId == 9 && rawVal < 100000000)
                         smartData.powerOnHours = rawVal;
 
-                    // Wear leveling (SSD) — ID 177, 230, 233
-                    if (attrId == 177 || attrId == 230 || attrId == 233) {
+                    // HDD-specific: spin-up time (3), start-stop count (4)
+                    if (attrId == 3 || attrId == 4) hasRotationAttr = true;
+
+                    // Wear leveling (SSD) — check multiple SSD-specific attribute IDs.
+                    // SA400 and other budget SSDs may only expose 169/231/232.
+                    if (attrId == 169 || attrId == 177 || attrId == 230 ||
+                        attrId == 231 || attrId == 232 || attrId == 233) {
                         int cur = raw[attrOff + 3];
                         if (cur > 0 && cur <= 100) {
                             smartData.wearLeveling = 1.0 - (cur / 100.0);
@@ -234,6 +240,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 smartData.attributeCount = attrIdx;
                 if (tempRead > 0) smartData.temperature = tempRead;
                 smartData.healthPercentage = static_cast<uint8_t>(health);
+                // If no wear-leveling attr was found but no HDD-specific attrs (spin-up,
+                // start-stop) are present either, assume SSD — true for SA400 and similar.
+                if (!isSSD && !hasRotationAttr) isSSD = true;
                 wcsncpy_s(smartData.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
             }
         }

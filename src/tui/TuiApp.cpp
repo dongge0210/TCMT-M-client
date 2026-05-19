@@ -382,7 +382,7 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
         if (!pd.diskType.empty()) line += " " + pd.diskType;
         if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
         if (pd.temperature > 0) { char b[12]; snprintf(b, sizeof(b), " %.0fC", pd.temperature); line += b; }
-        if (pd.wearLeveling > 0) { char b[16]; snprintf(b, sizeof(b), " w%.1f%%", pd.wearLeveling * 100); line += b; }
+        if (pd.wearLeveling > 0) { char b[16]; snprintf(b, sizeof(b), " W:%.0f%%", pd.wearLeveling * 100); line += b; }
         line = TrimRight(line, maxW - 2);
         mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
     }
