@@ -211,11 +211,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 int health = 100;
                 int attrIdx = 0;
 
-                // Mark used byte positions so we don't re-emit the same attr
-                bool used[512] = {};
-
                 for (int off = 0; off < 512 - 6 && attrIdx < 32; off++) {
-                    if (used[off]) continue;
                     int id = raw[off];
                     // Check: is this a plausible attribute ID?
                     // Valid SMART IDs: 1-254, plus check specific known IDs
@@ -242,9 +238,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     attr.worst = static_cast<uint8_t>(worst);
                     attr.rawValue = rawVal;
                     attrIdx++;
-
-                    // Mark this 12-byte region as used
-                    for (int k = 0; k < 12 && off + k < 512; k++) used[off + k] = true;
 
                     // Health-critical: 5, 196, 197, 198
                     if (id == 5 || id == 196 || id == 197 || id == 198) {
@@ -292,6 +285,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                         }
                         Logger::Info("SMART disk" + std::to_string(diskIndex) +
                             " ATA sigScan temp=" + (tempRead > 0 ? std::to_string((int)tempRead) : "none") +
+                            " health=" + std::to_string(health) +
+                            " isSSD=" + std::to_string(isSSD) +
+                            " hasRot=" + std::to_string(hasRotationAttr) +
                             " attrs[" + std::to_string(attrIdx) + "]: " + ids);
                         attrLogCount++;
                     }
