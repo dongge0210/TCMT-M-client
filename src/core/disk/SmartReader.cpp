@@ -202,10 +202,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 // Known attribute IDs from DiskGenius SA400 dump:
                 //   01,09,0C,94,95,A7,A8,A9,AA,AC,AD,B5,B6,BB,C0,C2,C4,C7,DA,
                 //   E7,E9,F1,F2,F4,F5,F6
-                auto isValidAttrFlags = [](int f) -> bool {
-                    return f > 0 && f < 0xFF;
-                };
-
                 bool isSSD = false;
                 bool hasRotationAttr = false;
                 int health = 100;
@@ -213,18 +209,13 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 for (int off = 0; off < 512 - 6 && attrIdx < 32; off++) {
                     int id = raw[off];
-                    // Check: is this a plausible attribute ID?
-                    // Valid SMART IDs: 1-254, plus check specific known IDs
-                    if (id < 1 || id > 254) continue;
-                    if (id == 0xFF) continue;
-
-                    int fl = raw[off + 1];
-                    if (!isValidAttrFlags(fl)) continue;
+                    if (id < 1 || id > 254 || id == 0xFF) continue;
 
                     int cur = raw[off + 3];
                     if (cur < 1 || cur > 200) continue;
                     int worst = raw[off + 4];
                     if (worst < 1 || worst > 200) continue;
+                    int fl = raw[off + 1];
 
                     // Looks like a valid attribute — extract it
                     uint64_t rawVal = 0;
