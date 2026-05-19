@@ -66,6 +66,8 @@ struct PhysicalDiskSmartData {
 
     // Partition volume labels
     WCHAR partitionLabels[8][32]; // Volume label for each partition
+    // SMART attributes serialized as JSON array (pipe-delimited for C# parse)
+    char attrsJson[4096];
 
     PlatformSystemTime lastScanTime;       // Last scan time
 };
@@ -135,6 +137,7 @@ struct SystemInfo {
     int efficiencyCores;
     double performanceCoreFreq;
     double efficiencyCoreFreq;
+    double cpuBaseFreq = 0;       // Nominal base frequency (MHz) from WMI
     bool hyperThreading;
     bool virtualization;
     uint64_t totalMemory;
@@ -164,6 +167,20 @@ struct SystemInfo {
     double cpuTemperature; // CPU temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs = 0.0; // CPU usage sample interval (ms)
+    // WiFi
+    bool wifiPowerOn = false;
+    bool wifiIsConnected = false;
+    std::string wifiSSID;
+    int wifiRSSI = 0;
+    int wifiChannel = 0;
+    std::string wifiSecurity;
+    std::string wifiBand;
+    std::string wifiGen;
+
+    // Bluetooth
+    bool btPowerOn = false;
+    int btDeviceCount = 0;
+
     PlatformSystemTime lastUpdate;
 };
 
@@ -179,6 +196,7 @@ struct SharedMemoryBlock {
     int efficiencyCores;      // Efficiency cores
     double pCoreFreq;         // Performance core frequency (MHz)
     double eCoreFreq;         // Efficiency core frequency (MHz)
+    double cpuBaseFreq;       // Nominal base frequency (MHz) from WMI
     bool hyperThreading;      // Hyperthreading enabled
     bool virtualization;      // Virtualization enabled
     uint64_t totalMemory;     // Total memory (bytes)
@@ -234,6 +252,8 @@ struct SharedMemoryBlock {
         int32_t rssi;
         int32_t channel;
         WCHAR security[16];
+        WCHAR band[8];
+        WCHAR wifiGen[12];
         bool powerOn;
         bool isConnected;
     } wifi;

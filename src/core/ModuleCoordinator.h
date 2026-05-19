@@ -7,6 +7,7 @@
 #include "DataStruct/DataStruct.h"
 #include "../tui/TuiApp.h"
 #include "Utils/JThreadCompat.h"
+#include "etw/EtwMonitor.h"
 
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
@@ -41,6 +42,13 @@ struct ModuleData {
     // Power (2s)
     std::atomic<int> batteryPercent{-1};
     std::atomic<bool> acOnline{false};
+    // ETW dirty flags — set by callbacks, checked by loops
+    std::atomic<bool> powerDirty{false};
+    std::atomic<bool> networkDirty{false};
+    std::atomic<bool> wifiDirty{false};
+    std::atomic<bool> btDirty{false};
+    std::atomic<bool> usbDirty{false};
+    std::atomic<bool> cpuFreqDirty{false};
 };
 
 // Free function thread loops (implemented in ModuleCoordinator_cpu.cpp)
@@ -56,10 +64,14 @@ public:
     void Stop();
     void Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData);
     static void SleepFor(tcmt::compat::StopToken st, int ms);
+    bool IsWifiDirty() { return data_.wifiDirty.exchange(false); }
+    bool IsBtDirty()   { return data_.btDirty.exchange(false); }
+    bool IsUsbDirty()  { return data_.usbDirty.exchange(false); }
 private:
     ModuleData data_;
     std::atomic<bool> running_{false};
     tcmt::compat::JThread cpuThread_, memoryThread_, diskThread_, netThread_, tempThread_, powerThread_;
+    tcmt::etw::EtwMonitor etwMonitor_;
     void DiskLoop(tcmt::compat::StopToken st);
     void NetworkLoop(tcmt::compat::StopToken st);
     void TemperatureLoop(tcmt::compat::StopToken st);

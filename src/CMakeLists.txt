@@ -24,6 +24,7 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/DiskInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp
@@ -37,6 +38,7 @@ if(TCMT_MACOS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
     )
 endif()
 
@@ -44,6 +46,7 @@ endif()
 if(TCMT_WINDOWS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/etw/EtwMonitor.cpp
     )
 endif()
 
@@ -188,6 +191,9 @@ endif()
 # Apply compile options from cmake/Options.cmake
 tcmt_target_set_options(TCMTCore)
 tcmt_set_platform_libraries(TCMTCore)
+if(TCMT_WINDOWS)
+    target_link_libraries(TCMTCore PRIVATE tdh)
+endif()
 tcmt_set_output_directories(TCMTCore)
 
 # Link curses on Windows and macOS

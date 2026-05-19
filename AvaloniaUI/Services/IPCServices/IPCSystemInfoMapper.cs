@@ -27,6 +27,7 @@ public static class IPCSystemInfoMapper
             info.CpuUsage = reader.ReadFloat64("cpu/usage") ?? (double?)reader.ReadFloat32("cpu/usage") ?? 0;
             info.PerformanceCoreFreq = reader.ReadFloat64("cpu/freq/pCore") ?? (double?)reader.ReadFloat32("cpu/freq/pCore") ?? 0;
             info.EfficiencyCoreFreq = reader.ReadFloat64("cpu/freq/eCore") ?? (double?)reader.ReadFloat32("cpu/freq/eCore") ?? 0;
+            info.CpuBaseFreq = reader.ReadFloat64("cpu/freq/base") ?? (double?)reader.ReadFloat32("cpu/freq/base") ?? 0;
             info.HyperThreading = reader.ReadBool("cpu/hyperThreading") ?? false;
             info.Virtualization = reader.ReadBool("cpu/virtualization") ?? false;
             info.CpuTemperature = reader.ReadFloat64("cpu/temperature") ?? (double?)reader.ReadFloat32("cpu/temperature") ?? 0;
@@ -196,7 +197,7 @@ public static class IPCSystemInfoMapper
 
                     if (capacity > 0)
                     {
-                        info.PhysicalDisks.Add(new PhysicalDiskSmartData
+                        var pd = new PhysicalDiskSmartData
                         {
                             Model = model,
                             SerialNumber = serial,
@@ -206,7 +207,32 @@ public static class IPCSystemInfoMapper
                             HealthPercentage = health,
                             SmartSupported = supported,
                             LogicalDriveLetters = driveLetters
-                        });
+                        };
+
+                        // Read SMART attributes JSON
+                        var attrCount = reader.ReadInt32($"phys/{idx}/attrCount") ?? 0;
+                        var attrsJson = reader.ReadString($"phys/{idx}/attrsJson") ?? "";
+                        if (attrCount > 0 && !string.IsNullOrEmpty(attrsJson))
+                        {
+                            try
+                            {
+                                // Parse compact JSON: [{"id":5,"cur":100,"worst":100,"raw":0},...]
+                                var doc = System.Text.Json.JsonDocument.Parse(attrsJson);
+                                foreach (var el in doc.RootElement.EnumerateArray())
+                                {
+                                    pd.Attributes.Add(new SmartAttributeData
+                                    {
+                                        Id = el.TryGetProperty("id", out var id) ? (byte)id.GetUInt32() : (byte)0,
+                                        Current = el.TryGetProperty("cur", out var cur) ? (byte)cur.GetUInt32() : (byte)0,
+                                        Worst = el.TryGetProperty("worst", out var worst) ? (byte)worst.GetUInt32() : (byte)0,
+                                        RawValue = el.TryGetProperty("raw", out var raw) ? raw.GetUInt64() : 0UL
+                                    });
+                                }
+                            }
+                            catch { /* ignore parse errors */ }
+                        }
+
+                        info.PhysicalDisks.Add(pd);
                     }
                     idx++;
                 }
@@ -220,6 +246,8 @@ public static class IPCSystemInfoMapper
                 info.WifiRSSI = reader.ReadInt32("wifi/rssi") ?? 0;
                 info.WifiChannel = reader.ReadInt32("wifi/channel") ?? 0;
                 info.WifiSecurity = ipc.ReadWString("wifi/security") ?? reader.ReadString("wifi/security") ?? "";
+                info.WifiBand = ipc.ReadWString("wifi/band") ?? reader.ReadString("wifi/band") ?? "";
+                info.WifiGen = ipc.ReadWString("wifi/gen") ?? reader.ReadString("wifi/gen") ?? "";
             }
 
             // Bluetooth (optional fields — may not exist in older schema)

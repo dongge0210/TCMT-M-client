@@ -43,6 +43,7 @@ struct TuiData {
     int efficiencyCores = 0;
     double pCoreFreq = 0.0;
     double eCoreFreq = 0.0;
+    double cpuBaseFreq = 0.0;
     double cpuTemp = 0.0;
 
     // Memory
@@ -67,6 +68,29 @@ struct TuiData {
         std::string fileSystem;
     };
     std::vector<DiskInfo> disks;
+
+    struct SmAttributeInfo {
+        uint8_t id = 0;
+        uint8_t current = 0;
+        uint8_t worst = 0;
+        uint64_t rawValue = 0;
+        std::string name;
+    };
+
+    struct PhysicalDiskInfo {
+        std::string model;
+        std::string serial;
+        std::string interfaceType;
+        std::string diskType;    // "SSD" / "HDD"
+        uint64_t capacity = 0;
+        double temperature = 0;
+        uint8_t healthPct = 0;
+        bool smartSupported = false;
+        uint64_t powerOnHours = 0;
+        double wearLeveling = 0;
+        std::vector<SmAttributeInfo> attributes;
+    };
+    std::vector<PhysicalDiskInfo> physicalDisks;
 
     // Network
     struct NetInfo {
@@ -103,6 +127,8 @@ struct TuiData {
     int wifiRSSI = 0;
     int wifiChannel = 0;
     std::string wifiSecurity;
+    std::string wifiBand;
+    std::string wifiGen;
     double wifiTxRate = 0;
     // Bluetooth (optional)
     bool hasBluetooth = false;
@@ -144,6 +170,7 @@ private:
     int DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility

@@ -75,6 +75,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsConnected = false;
             ConnectionStatus = $"IPC 初始化失败: {ex.Message}";
         }
+        // Initialize placeholders to avoid Avalonia binding errors before IPC data arrives
+        SelectedGpu = new GpuData { Name = "等待数据..." };
+        SelectedNetwork = new NetworkAdapterData { Name = "等待数据..." };
+        SelectedDisk = new DiskData { Label = "等待数据..." };
+
         _timer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
@@ -109,9 +114,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NetworkList.Clear();
         DiskList.Clear();
         PhysicalDiskList.Clear();
-        SelectedGpu = null;
-        SelectedNetwork = null;
-        SelectedDisk = null;
+        SelectedGpu = new GpuData { Name = "未连接" };
+        SelectedNetwork = new NetworkAdapterData { Name = "未连接" };
+        SelectedDisk = new DiskData { Label = "未连接" };
     }
 
     [RelayCommand]
@@ -169,6 +174,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                         ConnectionStatus = "已连接 (IPC)";
                         WindowTitle = "系统硬件监视器";
                     }
+
+                    // Reset placeholders to null so auto‑selection logic in UpdateSystemData works
+                    if (SelectedGpu?.Name == "等待数据..." || SelectedGpu?.Name == "未连接")
+                        SelectedGpu = null;
+                    if (SelectedNetwork?.Name == "等待数据..." || SelectedNetwork?.Name == "未连接")
+                        SelectedNetwork = null;
+                    if (SelectedDisk?.Label == "等待数据..." || SelectedDisk?.Label == "未连接")
+                        SelectedDisk = null;
+
                     UpdateSystemData(info);
                     LastUpdate = DateTime.Now;
                     return;
@@ -213,6 +227,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CpuTemperature = ValidateDouble(info.CpuTemperature);
         CpuFrequency = FormatFrequency(info.PerformanceCoreFreq);
         CpuEfficiencyFrequency = FormatFrequency(info.EfficiencyCoreFreq);
+        CpuBaseFreq = info.CpuBaseFreq;
 
         // Memory
         TotalMemory = info.TotalMemory > 0 ? FormatBytes(info.TotalMemory) : "未检测到";
@@ -306,6 +321,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         WifiRSSI = info.WifiRSSI;
         WifiChannel = info.WifiChannel;
         WifiSecurity = info.WifiSecurity ?? "";
+        WifiBand = info.WifiBand ?? "";
+        WifiGen = info.WifiGen ?? "";
         HasWifiHardware = info.HasWiFi; // C++ wifi/powerOn via IPC
         OnPropertyChanged(nameof(HasWiFi));
         OnPropertyChanged(nameof(WifiDisplay));
@@ -478,7 +495,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string FormatFrequency(double frequency)
     {
         if (frequency <= 0) return "N/A";
-        return frequency >= 1000 ? $"{frequency / 1000.0:F1} GHz" : $"{frequency:F0} MHz";
+        return $"{frequency:F0} MHz";
     }
 
     private string FormatNetworkSpeed(ulong speedBps)
@@ -552,6 +569,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _cpuEfficiencyFrequency = "N/A";
 
+    [ObservableProperty]
+    private double _cpuBaseFreq;
+
     // Memory
     [ObservableProperty]
     private string _totalMemory = "检测中...";
@@ -605,6 +625,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private PhysicalDiskView? _selectedPhysicalDisk;
 
+    [ObservableProperty]
+    private bool _smartDetailVisible;
+
+    [RelayCommand]
+    private void ToggleSmartDetail()
+    {
+        SmartDetailVisible = !SmartDetailVisible;
+    }
+
     // TPM
     [ObservableProperty]
     private TpmData? _tpmInfo;
@@ -640,6 +669,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _wifiSecurity = "";
 
+    [ObservableProperty]
+    private string _wifiBand = "";
+
+    [ObservableProperty]
+    private string _wifiGen = "";
+
     // Bluetooth raw data from C++ IPC
     [ObservableProperty]
     private bool _hasBluetooth;
@@ -655,20 +690,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         !string.IsNullOrEmpty(a.AdapterType) &&
         (a.AdapterType.Contains("Wireless", StringComparison.OrdinalIgnoreCase) ||
          a.AdapterType.Contains("无线")));
-    // On Windows: check if any network adapter is wireless
-    // On macOS: use WiFi hardware presence from CoreWLAN (adapter types not reported)
-    public bool HasWiFi => true; // Always show WiFi status
+    // WiFi hardware presence: prefers C++ wifi/powerOn via IPC.
+    // Falls back to wireless adapter check if IPC data not available.
+    public bool HasWiFi => HasWifiHardware || HasWirelessAdapter;
     public string WifiDisplay
     {
         get
         {
-            if (!HasWirelessAdapter && !IsMacOS) return "WiFi: OFF";
-            if (!HasWifiHardware && IsMacOS) return "WiFi: OFF";
-            var cppWiFiOn = WifiSSID != "" || WifiRSSI != 0 || WifiChannel != 0;
-            if (!cppWiFiOn) return "WiFi: OFF";
-            return !string.IsNullOrEmpty(WifiSSID)
-                ? $"WiFi: CONNECTED — {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}"
-                : $"WiFi: DISCONNECTED";
+            bool hasHw = HasWiFi;
+            if (!hasHw) return "WiFi: No adapter";
+            if (!HasWifiHardware && HasWirelessAdapter)
+                return "WiFi: OFF";  // wireless adapter present but C++ module reports radio off
+            var extra = "";
+            if (!string.IsNullOrEmpty(WifiBand)) extra += "  " + WifiBand;
+            if (!string.IsNullOrEmpty(WifiGen)) extra += "  " + WifiGen;
+            if (!string.IsNullOrEmpty(WifiSSID))
+                return $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+            if (WifiRSSI != 0 || WifiChannel != 0)
+                return $"WiFi: On  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+            return "WiFi: Disconnected";
         }
     }
     public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";

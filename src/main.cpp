@@ -610,6 +610,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
     addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
     addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
+    addField("cpu/freq/base", offsetof(SharedMemoryBlock, cpuBaseFreq), 8);
     addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
     addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
     addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
@@ -677,6 +678,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
         addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
+        addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(PhysicalDiskSmartData, attributeCount), 4, (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(PhysicalDiskSmartData, attrsJson), 4096, (uint8_t)FT::String);
         // logical drive letters (up to 8 letters, stored as individual bytes + count)
         for (int j = 0; j < 8; j++) {
             char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);
@@ -690,6 +693,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
     addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
     addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/band",     offsetof(SharedMemoryBlock, wifi.band), 8*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("wifi/gen",      offsetof(SharedMemoryBlock, wifi.wifiGen), 12*(int)sizeof(WCHAR), (uint8_t)FT::WString);
     addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
     addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
     // Bluetooth
@@ -1127,6 +1132,26 @@ int main(int argc, char* argv[]) {
         static uint32_t cachedEfficiencyCores = 0;
         static bool cachedHyperThreading = false;
         static bool cachedVirtualization = false;
+        static double cachedBaseFreq = 0.0;
+        // WMI: Win32_Processor.MaxClockSpeed (MHz) — read once
+        if (cachedBaseFreq == 0.0 && wmiManager && wmiManager->IsInitialized()) {
+            IEnumWbemClassObject* pEnumCpu = nullptr;
+            HRESULT hr = wmiManager->GetWmiService()->ExecQuery(
+                _bstr_t("WQL"), _bstr_t("SELECT MaxClockSpeed FROM Win32_Processor"),
+                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnumCpu);
+            if (SUCCEEDED(hr) && pEnumCpu) {
+                IWbemClassObject* pObj = nullptr;
+                ULONG ret = 0;
+                while (pEnumCpu->Next(WBEM_INFINITE, 1, &pObj, &ret) == S_OK) {
+                    VARIANT vt; VariantInit(&vt);
+                    if (SUCCEEDED(pObj->Get(L"MaxClockSpeed", 0, &vt, 0, 0)) && vt.vt == VT_I4)
+                        cachedBaseFreq = (double)vt.intVal;
+                    VariantClear(&vt);
+                    pObj->Release();
+                }
+                pEnumCpu->Release();
+            }
+        }
         
         std::unique_ptr<CpuInfo> cpuInfo;
         try {
@@ -1238,6 +1263,7 @@ int main(int argc, char* argv[]) {
                 sysInfo.efficiencyCores = cachedEfficiencyCores;
                 sysInfo.hyperThreading = cachedHyperThreading;
                 sysInfo.virtualization = cachedVirtualization;
+                sysInfo.cpuBaseFreq = cachedBaseFreq;
 
                 // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
                 {
@@ -1367,70 +1393,8 @@ int main(int argc, char* argv[]) {
                 sysInfo.networkAdapterIp = "N/A";
                 sysInfo.networkAdapterType = "Unknown";
 
-                // Populate all network adapter info
-                try {
-                    sysInfo.adapters.clear();
-                    NetworkAdapter netAdapter(*wmiManager);
-                    const auto& adapters = netAdapter.GetAdapters();
-                    if (!adapters.empty()) {
-                        for (const auto& adapter : adapters) {
-                            NetworkAdapterData data;
-                            // Zero initialize to avoid garbage data
-                            memset(&data, 0, sizeof(NetworkAdapterData));
-                            
-                            // Convert std::string to std::wstring before copying to wchar_t arrays
-                            std::wstring nameW = WinUtils::StringToWstring(adapter.name);
-                            std::wstring macW = WinUtils::StringToWstring(adapter.mac);
-                            std::wstring ipW = WinUtils::StringToWstring(adapter.ip);
-                            std::wstring typeW = WinUtils::StringToWstring(adapter.adapterType);
-                            
-                            // Use 4-argument version: dest, source, size, count
-                            wcsncpy_s(data.name, nameW.c_str(), 128);
-                            wcsncpy_s(data.mac, macW.c_str(), 32);
-                            wcsncpy_s(data.ipAddress, ipW.c_str(), 64);
-                            wcsncpy_s(data.adapterType, typeW.c_str(), 32);
-                            data.speed = adapter.speed;
-                            data.downloadSpeed = adapter.downloadSpeed;
-                            data.uploadSpeed = adapter.uploadSpeed;
-                            sysInfo.adapters.push_back(data);
-                        }
-                        sysInfo.networkAdapterName = adapters[0].name;
-                        sysInfo.networkAdapterMac = adapters[0].mac;
-                        sysInfo.networkAdapterIp = adapters[0].ip;
-                        sysInfo.networkAdapterType = adapters[0].adapterType;
-                        sysInfo.networkAdapterSpeed = adapters[0].speed;
-                    } else {
-                        sysInfo.networkAdapterName = "No network adapter detected";
-                        sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                        sysInfo.networkAdapterIp = "N/A";
-                        sysInfo.networkAdapterType = "Unknown";
-                        sysInfo.networkAdapterSpeed = 0;
-                    }
-                } catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get network adapter info - Out of memory: " + std::string(e.what()));
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "Out of memory";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A"; 
-                    sysInfo.networkAdapterType = "Unknown";
-                    sysInfo.networkAdapterSpeed = 0;
-                } catch (const std::exception& e) {
-                    Logger::Error("Failed to get network adapter info: " + std::string(e.what()));
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "No network adapter detected";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A";
-                    sysInfo.networkAdapterType = "Unknown";
-                    sysInfo.networkAdapterSpeed = 0;
-                } catch (...) {
-                    Logger::Error("Failed to get network adapter info - Unknown exception");
-                    sysInfo.adapters.clear();
-                    sysInfo.networkAdapterName = "Unknown exception";
-                    sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                    sysInfo.networkAdapterIp = "N/A";
-                    sysInfo.networkAdapterType = "Unknown";
-                    sysInfo.networkAdapterSpeed = 0;
-                }
+                // Network adapter info now populated by ModuleCoordinator::Snapshot()
+                // (was duplicated here — removed to avoid redundant WMI queries)
 
                 // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
 
@@ -1450,6 +1414,34 @@ int main(int argc, char* argv[]) {
                     }
                     if (!cachedPhysDisks.empty())
                         sysInfo.physicalDisks = cachedPhysDisks;
+
+                    // Serialize SMART attributes to JSON for each physical disk
+                    static int diagCount = 0;
+                    for (auto& pd : sysInfo.physicalDisks) {
+                        if (pd.attributeCount > 0 && pd.attributeCount <= 32) {
+                            std::string json = "[";
+                            for (int ai = 0; ai < pd.attributeCount; ai++) {
+                                if (ai > 0) json += ",";
+                                auto& a = pd.attributes[ai];
+                                char buf[128];
+                                snprintf(buf, sizeof(buf),
+                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu}",
+                                    a.id, a.current, a.worst, a.rawValue);
+                                json += buf;
+                            }
+                            json += "]";
+                            strncpy_s(pd.attrsJson, json.c_str(), sizeof(pd.attrsJson) - 1);
+                            pd.attrsJson[sizeof(pd.attrsJson) - 1] = '\0';
+                            if (diagCount < 5) {
+                                Logger::Info("SMART attrs disk[" + std::to_string(0) + "]: count=" +
+                                    std::to_string(pd.attributeCount) + " jsonLen=" + std::to_string(json.length()));
+                                diagCount++;
+                            }
+                        } else if (diagCount < 5) {
+                            Logger::Info("SMART attrs disk: count=" + std::to_string(pd.attributeCount) + " (skip)");
+                            diagCount++;
+                        }
+                    }
 
                     // Collect TPM data
                     {
@@ -1527,12 +1519,13 @@ int main(int argc, char* argv[]) {
 
                 // Write to shared memory - enhanced exception handling
                 try {
-                    if (SharedMemoryManager::GetBuffer()) {
+                    // Shared memory write moved after TUI block (WiFi/BT data)
+                    if (false && SharedMemoryManager::GetBuffer()) {
                         SharedMemoryManager::WriteToSharedMemory(sysInfo);
                         if (isDetailedLogging) {
                             Logger::Debug("Successfully updated shared memory");
                         }
-                    } else {
+                    } else if (false) {
                         Logger::Error("Shared memory buffer unavailable");
                         if (SharedMemoryManager::InitSharedMemory()) {
                             SharedMemoryManager::WriteToSharedMemory(sysInfo);
@@ -1568,6 +1561,7 @@ int main(int argc, char* argv[]) {
                     tuiData.efficiencyCores = sysInfo.efficiencyCores;
                     tuiData.pCoreFreq = sysInfo.performanceCoreFreq;
                     tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
+                    tuiData.cpuBaseFreq = sysInfo.cpuBaseFreq;
                     tuiData.cpuTemp = sysInfo.cpuTemperature;
                     tuiData.totalMemory = sysInfo.totalMemory;
                     tuiData.usedMemory = sysInfo.usedMemory;
@@ -1584,11 +1578,37 @@ int main(int argc, char* argv[]) {
                     // Disks
                     for (const auto& disk : sysInfo.disks) {
                         tcmt::TuiData::DiskInfo di;
+                        di.letter = disk.letter;
                         di.label = disk.label;
                         di.totalSize = disk.totalSize;
                         di.usedSpace = disk.usedSpace;
                         di.fileSystem = disk.fileSystem;
                         tuiData.disks.push_back(di);
+                    }
+
+                    // Physical disks (SMART)
+                    for (const auto& pd : sysInfo.physicalDisks) {
+                        tcmt::TuiData::PhysicalDiskInfo pi;
+                        pi.model = WinUtils::WstringToString(pd.model);
+                        pi.serial = WinUtils::WstringToString(pd.serialNumber);
+                        pi.interfaceType = WinUtils::WstringToString(pd.interfaceType);
+                        pi.diskType = WinUtils::WstringToString(pd.diskType);
+                        pi.capacity = pd.capacity;
+                        pi.temperature = pd.temperature;
+                        pi.healthPct = pd.healthPercentage;
+                        pi.smartSupported = pd.smartSupported;
+                        pi.powerOnHours = pd.powerOnHours;
+                        pi.wearLeveling = pd.wearLeveling;
+                        for (int ai = 0; ai < pd.attributeCount && ai < 32; ai++) {
+                            const auto& sa = pd.attributes[ai];
+                            tcmt::TuiData::SmAttributeInfo ai2;
+                            ai2.id = sa.id;
+                            ai2.current = sa.current;
+                            ai2.worst = sa.worst;
+                            ai2.rawValue = sa.rawValue;
+                            pi.attributes.push_back(ai2);
+                        }
+                        tuiData.physicalDisks.push_back(pi);
                     }
                     
                     // Network adapters
@@ -1623,13 +1643,14 @@ int main(int argc, char* argv[]) {
                         tuiData.tpmInfo = "No TPM";
                     }
 
-                    // WiFi & Bluetooth (every ~3 seconds)
+                    // WiFi & Bluetooth (every ~3s, or immediate on ETW event)
                     { static int wbCtr = 0;
                       static WiFiInfo s_wifi;
                       static BluetoothInfo s_bt;
-                      if (++wbCtr >= 3) { wbCtr = 0;
+                      bool forcePoll = coordinator.IsWifiDirty() || coordinator.IsBtDirty();
+                      if (++wbCtr >= 3 || forcePoll) { wbCtr = 0;
                           try { s_wifi.Detect(); } catch (...) {}
-                          if (s_btNotify.Poll()) { try { s_bt.Detect(); } catch (...) {} }
+                          if (s_btNotify.Poll() || forcePoll) { try { s_bt.Detect(); } catch (...) {} }
                       }
                       const auto& wd = s_wifi.GetData();
                       tuiData.hasWiFi = wd.powerOn;
@@ -1637,10 +1658,22 @@ int main(int argc, char* argv[]) {
                       tuiData.wifiRSSI = wd.rssi;
                       tuiData.wifiChannel = wd.channel;
                       tuiData.wifiSecurity = wd.security;
+                      tuiData.wifiBand = wd.band;
+                      tuiData.wifiGen = wd.wifiGen;
+                      sysInfo.wifiPowerOn = wd.powerOn;
+                      sysInfo.wifiIsConnected = wd.isConnected;
+                      sysInfo.wifiSSID = wd.ssid;
+                      sysInfo.wifiRSSI = wd.rssi;
+                      sysInfo.wifiChannel = wd.channel;
+                      sysInfo.wifiSecurity = wd.security;
+                      sysInfo.wifiBand = wd.band;
+                      sysInfo.wifiGen = wd.wifiGen;
                       const auto& bd = s_bt.GetData();
                       tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
                       tuiData.btPowerOn = bd.adapter.powerOn;
                       tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+                      sysInfo.btPowerOn = bd.adapter.powerOn;
+                      sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
 
                       // Write WiFi & Bluetooth to shared memory block
                       if (auto* buf = SharedMemoryManager::GetBuffer()) {
@@ -1660,8 +1693,15 @@ int main(int argc, char* argv[]) {
                     }
 
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
-                    
+
                     tuiApp.UpdateData(tuiData);
+
+                    // Write to shared memory (after WiFi/BT data populated)
+                    try {
+                        if (SharedMemoryManager::GetBuffer()) {
+                            SharedMemoryManager::WriteToSharedMemory(sysInfo);
+                        }
+                    } catch (...) {}
                 }
                 catch (const std::exception& e) {
                     Logger::Warn("TUI data update failed: " + std::string(e.what()));

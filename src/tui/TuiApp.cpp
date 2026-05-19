@@ -148,7 +148,8 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
         if (data.pCoreFreq > 0 || data.eCoreFreq > 0) {
             std::ostringstream ss;
             ss << "P:" << data.performanceCores << "(" << data.pCoreFreq << "M)"
-               << " E:" << data.efficiencyCores << "(" << data.eCoreFreq << "M)";
+               << " E:" << data.efficiencyCores << "(" << data.eCoreFreq << "M)"
+               << " Base:" << data.cpuBaseFreq << "MHz";
             mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
         } else {
             mvwprintw(win, y + lines, x0 + 2, "P:%d E:%d", data.performanceCores, data.efficiencyCores);
@@ -250,8 +251,6 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
 
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 22, 20);
-    bw = std::max(bw, 4);
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(win, y, x0, "%.*s", maxW, "Disks");
@@ -259,26 +258,22 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     for (const auto& d : data.disks) {
-        auto label = TrimRight(d.label.empty() ? "Untitled" : d.label, 14);
+        // Compact single-line format: [C:] Label  92% 210G/228G
+        char lineBuf[128];
+        int off = 0;
+        if (d.letter >= 'A' && d.letter <= 'Z')
+            off = snprintf(lineBuf, sizeof(lineBuf), "[%c:] ", d.letter);
+        auto label = d.label.empty() ? "?" : d.label;
+        if (label.size() > 10) label = label.substr(0, 8) + "..";
         double upct = (d.totalSize > 0) ? 100.0 * d.usedSpace / d.totalSize : 0;
         auto usedStr = FormatSize(d.usedSpace);
-        // Show drive letter
-        char letterBuf[16];
-        int letterPrefix = 0;
-        if (d.letter && d.letter != '\0') {
-            snprintf(letterBuf, sizeof(letterBuf), "[%c:] ", d.letter);
-            letterPrefix = static_cast<int>(strlen(letterBuf));
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
-        }
-        mvwprintw(win, y + lines, x0 + 2 + letterPrefix, "%.*s", maxW - 2 - letterPrefix, label.c_str());
-        int barCol = x0 + 2 + letterPrefix + static_cast<int>(label.size()) + 1;
-        if (barCol + bw + 2 < x0 + maxW) {
-            wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol, "%.*s", bw, FormatBar(upct, bw).c_str());
-            wattroff(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol + bw + 1, "%d%% %.*s",
-                      static_cast<int>(upct), maxW - (barCol + bw + 1 - x0), usedStr.c_str());
-        }
+        auto totalStr = FormatSize(d.totalSize);
+        off += snprintf(lineBuf + off, sizeof(lineBuf) - off,
+                       "%s  %d%% %s/%s",
+                       label.c_str(), static_cast<int>(upct),
+                       usedStr.c_str(), totalStr.c_str());
+        lineBuf[off] = '\0';
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, lineBuf);
         lines++;
     }
     return lines;
@@ -329,18 +324,27 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     int lines = 0;
 
     if (data.hasWiFi) {
-        std::string wifiStr = "On";
+        bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
+        std::string wifiStr = hasData ? "On" : "Disconnected";
         if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
         if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
         if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
         if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
         if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
+        if (!data.wifiBand.empty()) wifiStr += "  " + data.wifiBand;
+        if (!data.wifiGen.empty()) wifiStr += "  " + data.wifiGen;
         if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
         wifiStr = TrimRight(wifiStr, maxW - 8);
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
+        lines++;
+    } else {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Off");
         lines++;
     }
 
@@ -364,6 +368,25 @@ int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(win, y + 1, x0 + 2, "%.*s", maxW - 2, data.tpmInfo.c_str());
     return 2;
+}
+
+int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10 || data.physicalDisks.empty()) return 0;
+    int lines = 0;
+
+    for (const auto& pd : data.physicalDisks) {
+        if (y + lines >= LINES - 5) break;
+        auto model = pd.model;
+        if (model.size() > 20) model = model.substr(0, 18) + "..";
+        std::string line = model;
+        if (!pd.diskType.empty()) line += " " + pd.diskType;
+        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
+        if (pd.temperature > 0) { char b[12]; snprintf(b, sizeof(b), " %.0fC", pd.temperature); line += b; }
+        if (pd.wearLeveling > 0) { char b[16]; snprintf(b, sizeof(b), " w%.1f%%", pd.wearLeveling * 100); line += b; }
+        line = TrimRight(line, maxW - 2);
+        mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
+    }
+    return lines;
 }
 
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
@@ -518,6 +541,9 @@ void TuiApp::Run() {
         int ry = 2;
         if (ry < maxY) {
             ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
+            if (ry < maxY) {
+                ry += DrawPhysicalDiskPanel(stdscr, data, ry, rx, rightW);
+            }
             if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
             }

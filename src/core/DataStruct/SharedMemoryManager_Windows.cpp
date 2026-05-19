@@ -277,6 +277,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->efficiencyCores = systemInfo.efficiencyCores;
         pBuffer->pCoreFreq = systemInfo.performanceCoreFreq;
         pBuffer->eCoreFreq = systemInfo.efficiencyCoreFreq;
+        pBuffer->cpuBaseFreq = systemInfo.cpuBaseFreq;
         pBuffer->hyperThreading = systemInfo.hyperThreading;
         pBuffer->virtualization = systemInfo.virtualization;
 
@@ -423,6 +424,20 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->tpm.status = src.isPresent ? 1 : 3; // 1=OK, 3=Disabled
             pBuffer->tpmCount = 1;
         }
+
+        // WiFi
+        pBuffer->wifi.powerOn = systemInfo.wifiPowerOn;
+        pBuffer->wifi.isConnected = systemInfo.wifiIsConnected;
+        pBuffer->wifi.rssi = systemInfo.wifiRSSI;
+        pBuffer->wifi.channel = systemInfo.wifiChannel;
+        SafeCopyWideString(pBuffer->wifi.ssid, 32, WinUtils::StringToWstring(systemInfo.wifiSSID));
+        SafeCopyWideString(pBuffer->wifi.security, 16, WinUtils::StringToWstring(systemInfo.wifiSecurity));
+        SafeCopyWideString(pBuffer->wifi.band, 8, WinUtils::StringToWstring(systemInfo.wifiBand));
+        SafeCopyWideString(pBuffer->wifi.wifiGen, 12, WinUtils::StringToWstring(systemInfo.wifiGen));
+
+        // Bluetooth
+        pBuffer->bluetooth.powerOn = systemInfo.btPowerOn;
+        pBuffer->bluetooth.deviceCount = systemInfo.btDeviceCount;
 
         pBuffer->lastUpdate = Platform::SystemTime::Now();
         Logger::Trace("Successfully wrote system/disk/SMART information to shared memory");

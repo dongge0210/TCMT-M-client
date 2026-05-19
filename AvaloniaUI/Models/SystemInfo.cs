@@ -59,6 +59,7 @@ namespace AvaloniaUI.Models
         public int EfficiencyCores { get; set; }
         public double PerformanceCoreFreq { get; set; }
         public double EfficiencyCoreFreq { get; set; }
+        public double CpuBaseFreq { get; set; }
         public bool HyperThreading { get; set; }
         public bool Virtualization { get; set; }
         
@@ -100,6 +101,8 @@ namespace AvaloniaUI.Models
         public int WifiRSSI { get; set; }
         public int WifiChannel { get; set; }
         public string WifiSecurity { get; set; } = "";
+        public string WifiBand { get; set; } = "";
+        public string WifiGen { get; set; } = "";
 
         // Bluetooth — populated by C++ side, not via IPC schema yet
         public bool HasBluetooth { get; set; }

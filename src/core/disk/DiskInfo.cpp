@@ -1,5 +1,6 @@
 #include "DiskInfo.h"
 #include "../Utils/Logger.h"
+#include "SmartReader.h"
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
@@ -204,10 +205,12 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 }
                 data.smartSupported = false;
                 data.smartEnabled = false;
-                data.healthPercentage = 100; // assume healthy when SMART not available
-                data.temperature = -1;       // unknown (not 0°C, which is misleading)
+                data.healthPercentage = 100;
+                data.temperature = -1;
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
+                // Try DeviceIoControl SMART
+                SmartReader::Read(idx, tempDisks[idx]);
             }
             VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
             VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
@@ -412,8 +415,17 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
                 else if (sv.is_string()) try { pd.capacity = std::stoull(sv.get<std::string>()); } catch(...) {}
             }
             sysInfo.physicalDisks.push_back(pd);
+
+            // Extract disk index from bsd_name (e.g., "disk0" → 0)
+            std::string bsd = item.value("bsd_name", "");
+            int diskIdx = 0;
+            if (bsd.rfind("disk", 0) == 0) {
+                try { diskIdx = std::stoi(bsd.substr(4)); } catch(...) {}
+            }
+            SmartReader::Read(diskIdx, sysInfo.physicalDisks.back());
         }
     }
+
     Logger::Debug("DiskInfo: SMART collected " + std::to_string(sysInfo.physicalDisks.size()) + " disks");
 }
 

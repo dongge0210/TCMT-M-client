@@ -17,7 +17,7 @@ void WiFiInfo::Detect() {
 
     WlanData wd;
     if (!WlanDetect(&wd)) {
-        Logger::Warn("WiFiInfo: WlanDetect failed");
+        Logger::Info("WiFiInfo: WlanDetect failed");
         return;
     }
 
@@ -28,6 +28,8 @@ void WiFiInfo::Detect() {
     data_.rssi        = wd.rssi;
     data_.channel     = wd.channel;
     data_.security    = wd.security;
+    data_.band        = wd.band;
+    data_.wifiGen     = wd.wifiGen;
     data_.txRate      = wd.txRate;
 
     if (!data_.isConnected) {
