@@ -418,12 +418,12 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = 0;
                     wcsncpy_s(a.name, name, _TRUNCATE);
                 };
-                addAttr(200, raw[0], raw[0], L"严重警告标志");                          // CriticalWarning
-                addAttr(201, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,                 // Temperature °C
-                            raw[1] | (raw[2] << 8), L"温度 (NVMe)");
-                addAttr(202, raw[3], raw[3], L"可用备用空间");                           // AvailableSpare %
-                addAttr(203, raw[4], raw[4], L"可用备用阈值");                           // AvailableSpareThresh
-                addAttr(204, raw[5], raw[5], L"已用寿命百分比");                         // PercentageUsed
+                addAttr(0x01, raw[0], raw[0], L"严重警告标志");                        // CriticalWarning
+                addAttr(0x02, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,                // Temperature °C
+                            raw[1] | (raw[2] << 8), L"温度");
+                addAttr(0x03, raw[3], raw[3], L"可用备用空间");                           // AvailableSpare %
+                addAttr(0x04, raw[4], raw[4], L"可用备用空间阈值");                        // AvailableSpareThresh
+                addAttr(0x05, raw[5], raw[5], L"已用寿命百分比");                          // PercentageUsed
                 // NVMe health log fields at offsets 32+ (each 16 bytes, use first 8 as uint64)
                 uint64_t v6=0,v7=0,v8=0,v9=0,v10=0,v11=0,v12=0,v13=0,v14=0,v15=0;
                 memcpy(&v6,  raw + 32, 8);   // Data Units Read
@@ -436,16 +436,16 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 memcpy(&v13, raw + 144, 8);  // Unsafe Shutdowns
                 memcpy(&v14, raw + 160, 8);  // Media Errors
                 memcpy(&v15, raw + 176, 8);  // Error Log Entries
-                addAttr(206, 0, v6,  L"主机总计读取");
-                addAttr(207, 0, v7,  L"主机总计写入");
-                addAttr(208, 0, v8,  L"主机读命令计数");
-                addAttr(209, 0, v9,  L"主机写命令计数");
-                addAttr(210, 0, v10, L"控制器忙状态时间");
-                addAttr(211, 0, v11, L"通电次数");
-                addAttr(212, 0, v12, L"通电时间");
-                addAttr(213, 0, v13, L"不安全关机计数");
-                addAttr(214, 0, v14, L"介质与数据完整性错误");
-                addAttr(215, 0, v15, L"错误日志项数");
+                addAttr(0x06, 0, v6,  L"主机总计读取");
+                addAttr(0x07, 0, v7,  L"主机总计写入");
+                addAttr(0x08, 0, v8,  L"主机读命令计数");
+                addAttr(0x09, 0, v9,  L"主机写命令计数");
+                addAttr(0x0A, 0, v10, L"控制器忙状态时间");
+                addAttr(0x0B, 0, v11, L"通电次数");
+                addAttr(0x0C, 0, v12, L"通电时间");
+                addAttr(0x0D, 0, v13, L"不安全关机计数");
+                addAttr(0x0E, 0, v14, L"介质与数据完整性错误");
+                addAttr(0x0F, 0, v15, L"错误日志项数");
 
                 Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe ok: tempC=" +
                     std::to_string((int)(raw[1] | (raw[2] << 8)) - 273) +
