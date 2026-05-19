@@ -175,15 +175,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                                      &gvp, sizeof(gvp),
                                      &bytesReturned, nullptr);
         if (!gvpOk) gvpErr = GetLastError();
-        static int diagCount2 = 0;
-        if (diagCount2 < 5) {
-            Logger::Info("SMART disk" + std::to_string(diskIndex) +
-                " ATA: handleOk gvp=" + std::to_string(gvpOk) +
-                " sz=" + std::to_string(bytesReturned) +
-                " caps=" + std::to_string(gvp.fCapabilities) +
-                " err=" + std::to_string(gvpErr));
-            diagCount2++;
-        }
         if (gvpOk &&
             bytesReturned >= sizeof(GETVERSIONINPARAMS) &&
             (gvp.fCapabilities & 1)) {  // SMART supported
@@ -211,14 +202,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                                          outBuf, sizeof(outBuf),
                                          &bytesReturned, nullptr);
             if (!rcvOk) rcvErr = GetLastError();
-            size_t minSz = offsetof(SENDCMDOUTPARAMS, bBuffer) + 512;
-            Logger::Info("SMART disk" + std::to_string(diskIndex) +
-                " RCV: ok=" + std::to_string(rcvOk) +
-                " sz=" + std::to_string(bytesReturned) +
-                " minSz=" + std::to_string(minSz) +
-                " bBufOff=" + std::to_string(offsetof(SENDCMDOUTPARAMS, bBuffer)) +
-                " sizeofSCOP=" + std::to_string(sizeof(SENDCMDOUTPARAMS)) +
-                " err=" + std::to_string(rcvErr));
 
             // Driver may return 528 bytes (16-byte header + 512 data) without padding
             if (rcvOk &&
@@ -228,17 +211,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 const BYTE* raw = scop->bBuffer;  // 512 bytes of SMART attributes
 
                 success = true;
-
-                // Debug: log first 8 bytes of raw SMART data
-                static int rawDumpCount = 0;
-                if (rawDumpCount < 3) {
-                    char hex[128];
-                    snprintf(hex, sizeof(hex),
-                        "SMART raw[0..7]: %02X %02X %02X %02X %02X %02X %02X %02X",
-                        raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]);
-                    Logger::Info(hex);
-                    rawDumpCount++;
-                }
 
                 // Parse SMART attributes — standard 12-byte grid starting at
                 // offset 2 (after 2-byte version header). The ATA SMART READ
@@ -326,7 +298,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     if (!success) {
         // NVMe path: IOCTL_STORAGE_QUERY_PROPERTY + StorageDeviceProtocolSpecificProperty
         // Query NVME_LOG_PAGE_HEALTH_INFO (log page 0x02) — does NOT require admin rights
-        Logger::Info("SMART disk" + std::to_string(diskIndex) + " trying NVMe path...");
         HANDLE hNvme = CreateFileW(path, FILE_READ_ATTRIBUTES,
                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
@@ -447,9 +418,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 addAttr(0x0E, 0, v14, L"介质与数据完整性错误");
                 addAttr(0x0F, 0, v15, L"错误日志项数");
 
-                Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe ok: tempC=" +
-                    std::to_string((int)(raw[1] | (raw[2] << 8)) - 273) +
-                    " used=" + std::to_string((int)raw[5]) + "%");
             } else {
                 DWORD nvmeErr = GetLastError();
                 Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe IOCTL fail err=" +

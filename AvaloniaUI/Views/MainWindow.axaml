@@ -286,7 +286,7 @@
                                                         <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="2" Text="{Binding Current}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="3" Text="{Binding Worst}" Foreground="#FFB3B3B3" FontSize="10"/>
-                                                        <TextBlock Grid.Column="4" Text="{Binding RawValue}" Foreground="#FFB3B3B3" FontSize="10"/>
+                                                        <TextBlock Grid.Column="4" Text="{Binding RawValue, StringFormat={}{0:X12}}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -294,6 +294,9 @@
                                     </Grid>
                                 </ScrollViewer>
                             </Border>
+                            <!-- 属性说明 -->
+                            <TextBlock Text="Cur: 当前归一化值 | Worst: 历史最差值 | Raw: 原始数据 (16进制)"
+                                       Foreground="#FF666666" FontSize="9" Margin="4,4,0,0"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

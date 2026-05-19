@@ -1416,7 +1416,6 @@ int main(int argc, char* argv[]) {
                         sysInfo.physicalDisks = cachedPhysDisks;
 
                     // Serialize SMART attributes to JSON for each physical disk
-                    static int diagCount = 0;
                     for (auto& pd : sysInfo.physicalDisks) {
                         if (pd.attributeCount > 0 && pd.attributeCount <= 32) {
                             std::string json = "[";
@@ -1443,14 +1442,6 @@ int main(int argc, char* argv[]) {
                             json += "]";
                             strncpy_s(pd.attrsJson, json.c_str(), sizeof(pd.attrsJson) - 1);
                             pd.attrsJson[sizeof(pd.attrsJson) - 1] = '\0';
-                            if (diagCount < 5) {
-                                Logger::Info("SMART attrs disk[" + std::to_string(0) + "]: count=" +
-                                    std::to_string(pd.attributeCount) + " jsonLen=" + std::to_string(json.length()));
-                                diagCount++;
-                            }
-                        } else if (diagCount < 5) {
-                            Logger::Info("SMART attrs disk: count=" + std::to_string(pd.attributeCount) + " (skip)");
-                            diagCount++;
                         }
                     }
 
