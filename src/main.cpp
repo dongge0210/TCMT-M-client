@@ -1427,7 +1427,7 @@ int main(int argc, char* argv[]) {
                                 char nameUtf8[256] = {};
                                 WideCharToMultiByte(CP_UTF8, 0, a.name, -1,
                                     nameUtf8, (int)sizeof(nameUtf8) - 1, nullptr, nullptr);
-                                // JSON-escape: replace " with \" and \ with \\
+                                // JSON-escape: replace " and backslash
                                 std::string nameEscaped;
                                 for (const char* p = nameUtf8; *p; p++) {
                                     if (*p == '"') nameEscaped += "\\\"";
