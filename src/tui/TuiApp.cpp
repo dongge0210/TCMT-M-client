@@ -376,9 +376,7 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
 
     for (const auto& pd : data.physicalDisks) {
         if (y + lines >= LINES - 5) break;
-        auto model = pd.model;
-        if (model.size() > 20) model = model.substr(0, 18) + "..";
-        std::string line = model;
+        std::string line = pd.model;
         if (!pd.diskType.empty()) line += " " + pd.diskType;
         if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
         if (pd.temperature > 0) { char b[12]; snprintf(b, sizeof(b), " %.0fC", pd.temperature); line += b; }

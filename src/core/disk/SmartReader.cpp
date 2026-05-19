@@ -161,17 +161,44 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     rawDumpCount++;
                 }
 
-                // Parse SMART attributes. Standard layout has a 2-byte version
-                // header (offset 0-1) with attributes starting at offset 2.
-                // Some SSDs have non-standard offset, so try both 0 and 2 and
-                // pick the alignment that yields more recognized IDs.
+                // Parse SMART attributes. Standard layout has 2-byte header +
+                // 12-byte attribute records. Some drives (SA400 etc.) use a
+                // vendor-specific layout that doesn't match any fixed alignment.
+                // Strategy: use a two-pass approach:
+                //   Pass 1 — brute-force temperature scan (byte-by-byte in raw data)
+                //   Pass 2 — grid scan at both offsets for attribute display table
                 //
-                // Recognized SMART attr IDs (upper nibble = common group):
-                // 0x0x: 1-9 read-error, throughput, spin-up, start-stop,
-                //        reallocated, seek-error, power-on, spin-retry
-                // 0xAx: 10-12 recalib, CRC, power-cycle
-                // 0xBx: 170-199 endurance, wear-level, temp, realloc, pending
-                // 0xEx: 220-255 write/read totals, media-wear, NAND writes
+                // PASS 1: brute-force temperature scan
+                double tempRead = -1;
+                for (int off = 0; off < 512 - 1; off++) {
+                    int b = raw[off];
+                    if (b == 0xBE || b == 0xC2 || b == 0xE7) {
+                        // Found a temp attr ID byte — check if surrounding data is plausible
+                        if (off + 6 >= 512) continue;
+                        int fl = raw[off + 1];
+                        if (fl == 0 || fl == 0xFF) continue;  // implausible flags
+                        // Try raw bytes as direct temp
+                        for (int bo = 5; bo <= 10 && off + bo < 512; bo++) {
+                            int t = raw[off + bo];
+                            if (t >= 15 && t <= 120) { tempRead = (double)t; goto tempFound; }
+                        }
+                        // Try current/normalized value
+                        int nv = raw[off + 3];
+                        if (nv >= 15 && nv <= 120) { tempRead = (double)nv; goto tempFound; }
+                        // Try LE uint16
+                        if (off + 6 < 512) {
+                            int hi = raw[off + 5] | (raw[off + 6] << 8);
+                            if (hi >= 15 && hi <= 120) { tempRead = (double)hi; goto tempFound; }
+                        }
+                        // Try 100 - raw[5]
+                        int inv = 100 - raw[off + 5];
+                        if (inv >= 15 && inv <= 120) { tempRead = (double)inv; goto tempFound; }
+                    }
+                }
+                tempFound:;
+
+                // PASS 2: grid scan for attribute table display.
+                // Try both offset 0 and 2, pick the one with more recognized IDs.
                 auto isKnownAttrId = [](int id) -> bool {
                     if (id < 1 || id > 254) return false;
                     int hi = id >> 4;
@@ -192,7 +219,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 bool isSSD = false;
                 bool hasRotationAttr = false;
-                double tempRead = -1;
                 int health = 100;
                 int attrIdx = 0;
 
@@ -210,26 +236,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     attr.worst = raw[attrOff + 4];
                     attr.rawValue = rawVal;
                     attrIdx++;
-
-                    // Temperature: 194=C2, 190=BE=Airflow, 231=E7=SSD Temp
-                    if (attrId == 0xBE || attrId == 0xC2 || attrId == 0xE7) {
-                        for (int bo = 5; bo <= 10; bo++) {
-                            int t = raw[attrOff + bo];
-                            if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
-                        }
-                        if (tempRead < 0) {
-                            int nv = raw[attrOff + 3];
-                            if (nv >= 15 && nv <= 120) tempRead = (double)nv;
-                        }
-                        if (tempRead < 0) {
-                            int hi = raw[attrOff + 5] | (raw[attrOff + 6] << 8);
-                            if (hi >= 15 && hi <= 120) tempRead = (double)hi;
-                        }
-                        if (tempRead < 0) {
-                            int inv = 100 - raw[attrOff + 5];
-                            if (inv >= 15 && inv <= 120) tempRead = (double)inv;
-                        }
-                    }
 
                     // Health-critical: 5, 196, 197, 198
                     if (attrId == 5 || attrId == 196 || attrId == 197 || attrId == 198) {
@@ -276,21 +282,12 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                         }
                         Logger::Info("SMART disk" + std::to_string(diskIndex) +
                             " ATA off=" + std::to_string(bestOff) +
+                            " temp=" + (tempRead > 0 ? std::to_string((int)tempRead) : "none") +
                             " attrs[" + std::to_string(attrIdx) + "]: " + ids);
                         attrLogCount++;
                     }
                 }
 
-                // Secondary temperature pass on stored attributes
-                if (tempRead <= 0) {
-                    for (int i = 0; i < attrIdx; i++) {
-                        const auto& a = smartData.attributes[i];
-                        if (a.id == 0xBE || a.id == 0xC2 || a.id == 0xE7) {
-                            if (a.current >= 15 && a.current <= 120)
-                                { tempRead = (double)a.current; break; }
-                        }
-                    }
-                }
                 if (tempRead > 0) smartData.temperature = tempRead;
                 smartData.healthPercentage = static_cast<uint8_t>(health);
                 if (!isSSD && !hasRotationAttr) isSSD = true;
