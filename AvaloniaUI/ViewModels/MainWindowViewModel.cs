@@ -30,6 +30,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public MainWindowViewModel()
     {
+        // Initialize placeholders BEFORE IPC starts — DataReady may fire synchronously
+        SelectedGpu = new GpuData { Name = "等待数据..." };
+        SelectedNetwork = new NetworkAdapterData { Name = "等待数据..." };
+        SelectedDisk = new DiskData { Label = "等待数据..." };
+
         try
         {
             _ipcService = new IPCService();
@@ -75,11 +80,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsConnected = false;
             ConnectionStatus = $"IPC 初始化失败: {ex.Message}";
         }
-        // Initialize placeholders to avoid Avalonia binding errors before IPC data arrives
-        SelectedGpu = new GpuData { Name = "等待数据..." };
-        SelectedNetwork = new NetworkAdapterData { Name = "等待数据..." };
-        SelectedDisk = new DiskData { Label = "等待数据..." };
-
         _timer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
