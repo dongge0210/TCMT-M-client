@@ -13,6 +13,7 @@
 
 #ifdef TCMT_WINDOWS
 // Windows specific includes
+#define NOMINMAX
 // NOTE: winsock2.h must be included BEFORE windows.h to avoid symbol redefinition
 #include <winsock2.h>
 #include <windows.h>
