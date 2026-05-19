@@ -1423,10 +1423,21 @@ int main(int argc, char* argv[]) {
                             for (int ai = 0; ai < pd.attributeCount; ai++) {
                                 if (ai > 0) json += ",";
                                 auto& a = pd.attributes[ai];
-                                char buf[128];
+                                // Convert WCHAR name to UTF-8
+                                char nameUtf8[256] = {};
+                                WideCharToMultiByte(CP_UTF8, 0, a.name, -1,
+                                    nameUtf8, (int)sizeof(nameUtf8) - 1, nullptr, nullptr);
+                                // JSON-escape: replace " with \" and \ with \\
+                                std::string nameEscaped;
+                                for (const char* p = nameUtf8; *p; p++) {
+                                    if (*p == '"') nameEscaped += "\\\"";
+                                    else if (*p == '\\') nameEscaped += "\\\\";
+                                    else nameEscaped += *p;
+                                }
+                                char buf[512];
                                 snprintf(buf, sizeof(buf),
-                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu}",
-                                    a.id, a.current, a.worst, a.rawValue);
+                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu,\"name\":\"%s\"}",
+                                    a.id, a.current, a.worst, a.rawValue, nameEscaped.c_str());
                                 json += buf;
                             }
                             json += "]";

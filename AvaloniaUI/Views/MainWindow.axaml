@@ -273,6 +273,7 @@
                                     <Grid RowDefinitions="Auto,*">
                                         <Grid Grid.Row="0" ColumnDefinitions="40,*,40,40,80" IsVisible="True">
                                             <TextBlock Grid.Column="0" Text="ID" Foreground="#FF888888" FontSize="10" FontWeight="Bold"/>
+                                            <TextBlock Grid.Column="1" Text="属性名称" Foreground="#FF888888" FontSize="10" FontWeight="Bold"/>
                                             <TextBlock Grid.Column="2" Text="当前" Foreground="#FF888888" FontSize="10" FontWeight="Bold"/>
                                             <TextBlock Grid.Column="3" Text="最差" Foreground="#FF888888" FontSize="10" FontWeight="Bold"/>
                                             <TextBlock Grid.Column="4" Text="原始值" Foreground="#FF888888" FontSize="10" FontWeight="Bold"/>
@@ -282,6 +283,7 @@
                                                 <DataTemplate>
                                                     <Grid ColumnDefinitions="40,*,40,40,80">
                                                         <TextBlock Grid.Column="0" Text="{Binding Id}" Foreground="#FFB3B3B3" FontSize="10"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="2" Text="{Binding Current}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="3" Text="{Binding Worst}" Foreground="#FFB3B3B3" FontSize="10"/>
                                                         <TextBlock Grid.Column="4" Text="{Binding RawValue}" Foreground="#FFB3B3B3" FontSize="10"/>

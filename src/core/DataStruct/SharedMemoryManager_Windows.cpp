@@ -393,6 +393,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
                 SafeCopyFromWideArray(dst.description, 128, sa.description, 128);
                 SafeCopyFromWideArray(dst.units, 16, sa.units, 16);
             }
+            strncpy_s(pBuffer->physicalDisks[i].attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson), src.attrsJson, _TRUNCATE);
         }
 
         // Temperature array (sensor names in vector<pair<string,double>>)

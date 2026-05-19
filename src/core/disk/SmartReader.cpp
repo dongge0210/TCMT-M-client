@@ -73,6 +73,85 @@ typedef struct _SENDCMDOUTPARAMS {
 #endif
 
 // ====================================================================
+// SMART attribute ID to human-readable name (Chinese)
+// ====================================================================
+static const wchar_t* GetSmartAttrName(uint8_t id) {
+    switch (id) {
+        case 1:   return L"读取错误率";
+        case 3:   return L"硬盘启动时间";
+        case 4:   return L"启停次数";
+        case 5:   return L"重映射扇区计数";
+        case 7:   return L"寻道错误率";
+        case 9:   return L"通电时间";
+        case 10:  return L"启动重试次数";
+        case 12:  return L"通电次数";
+        case 169: return L"剩余寿命";
+        case 170: return L"可用预留空间";
+        case 171: return L"SSD 编程失败计数";
+        case 172: return L"SSD 擦除失败计数";
+        case 173: return L"SSD 磨损均衡计数";
+        case 174: return L"意外断电计数";
+        case 175: return L"通电时间";
+        case 176: return L"擦除失败计数";
+        case 177: return L"磨损均衡计数";
+        case 179: return L"已用预留块计数";
+        case 180: return L"编程失败计数";
+        case 181: return L"编程失败计数";
+        case 182: return L"擦除失败计数";
+        case 183: return L"SATA 下行计数";
+        case 184: return L"端到端错误";
+        case 187: return L"报告不可校正错误";
+        case 188: return L"命令超时";
+        case 189: return L"工厂坏块";
+        case 190: return L"气流温度";
+        case 191: return L"G-Sense 错误率";
+        case 192: return L"断电撤回计数";
+        case 193: return L"加载卸载计数";
+        case 194: return L"温度";
+        case 195: return L"硬件 ECC 恢复";
+        case 196: return L"重新分配事件";
+        case 197: return L"当前待处理扇区";
+        case 198: return L"脱机不可校正";
+        case 199: return L"CRC 错误计数";
+        case 200: return L"写入错误率";
+        case 201: return L"软读取错误率";
+        case 202: return L"数据地址标记错误";
+        case 203: return L"耗尽取消";
+        case 204: return L"软 ECC 修正";
+        case 205: return L"热糙度";
+        case 206: return L"磁头高度";
+        case 207: return L"硬盘旋转震动";
+        case 208: return L"硬盘写入震动";
+        case 210: return L"RAID 恢复";
+        case 220: return L"磁盘偏移";
+        case 222: return L"已加载小时";
+        case 223: return L"加载卸载重试";
+        case 224: return L"负载摩擦";
+        case 225: return L"负载卸载计数";
+        case 226: return L"负载时间";
+        case 227: return L"扭矩放大计数";
+        case 228: return L"断电撤回计数";
+        case 230: return L"SSD 寿命";
+        case 231: return L"SSD 剩余寿命";
+        case 232: return L"可用预留空间";
+        case 233: return L"NAND 写入总量";
+        case 234: return L"平均擦除次数";
+        case 235: return L"最大擦除次数";
+        case 240: return L"磁头飞行时间";
+        case 241: return L"主机总计写入";
+        case 242: return L"主机总计读取";
+        case 245: return L"最大擦除次数";
+        case 246: return L"总计擦除次数";
+        case 247: return L"主机读取量";
+        case 248: return L"主机写入量";
+        case 249: return L"NAND 读取量";
+        case 250: return L"读取错误重试率";
+        case 251: return L"剩余备用容量";
+        default:  return L"";
+    }
+}
+
+// ====================================================================
 // Read SMART for one physical disk
 // ====================================================================
 bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
@@ -228,6 +307,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     attr.current = static_cast<uint8_t>(cur);
                     attr.worst = static_cast<uint8_t>(worst);
                     attr.rawValue = rawVal;
+                    wcsncpy_s(attr.name, GetSmartAttrName(attr.id), _TRUNCATE);
                     attrIdx++;
 
                     // Health-critical: 5, 196, 197, 198
@@ -383,20 +463,21 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 // Populate NVMe health data as pseudo SMART attributes for display
                 smartData.attributeCount = 0;
-                auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal) {
+                auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal, const wchar_t* name) {
                     if (smartData.attributeCount >= 32) return;
                     auto& a = smartData.attributes[smartData.attributeCount++];
                     a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = 0;
+                    wcsncpy_s(a.name, name, _TRUNCATE);
                 };
-                addAttr(200, raw[0], raw[0]);                                    // CriticalWarning
-                addAttr(201, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,           // Temperature °C
-                            raw[1] | (raw[2] << 8));
-                addAttr(202, raw[3], raw[3]);                                    // AvailableSpare %
-                addAttr(203, raw[4], raw[4]);                                    // AvailableSpareThresh
-                addAttr(204, raw[5], raw[5]);                                    // PercentageUsed
+                addAttr(200, raw[0], raw[0], L"严重警告标志");                          // CriticalWarning
+                addAttr(201, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,                 // Temperature °C
+                            raw[1] | (raw[2] << 8), L"温度 (NVMe)");
+                addAttr(202, raw[3], raw[3], L"可用备用空间");                           // AvailableSpare %
+                addAttr(203, raw[4], raw[4], L"可用备用阈值");                           // AvailableSpareThresh
+                addAttr(204, raw[5], raw[5], L"已用寿命百分比");                         // PercentageUsed
                 uint64_t nvmeHours = 0;
                 memcpy(&nvmeHours, raw + 32, sizeof(uint64_t));
-                addAttr(209, 0, nvmeHours);                                      // PowerOnHours
+                addAttr(209, 0, nvmeHours, L"通电时间 (NVMe)");                        // PowerOnHours
 
                 Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe ok: tempC=" +
                     std::to_string((int)(raw[1] | (raw[2] << 8)) - 273) +
