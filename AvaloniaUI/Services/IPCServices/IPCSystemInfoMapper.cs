@@ -225,7 +225,9 @@ public static class IPCSystemInfoMapper
                                         Id = el.TryGetProperty("id", out var id) ? (byte)id.GetUInt32() : (byte)0,
                                         Current = el.TryGetProperty("cur", out var cur) ? (byte)cur.GetUInt32() : (byte)0,
                                         Worst = el.TryGetProperty("worst", out var worst) ? (byte)worst.GetUInt32() : (byte)0,
-                                        RawValue = el.TryGetProperty("raw", out var raw) ? raw.GetUInt64() : 0UL
+                                        RawValue = el.TryGetProperty("raw", out var raw) ? raw.GetUInt64() : 0UL,
+                                        Name = el.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
+                                        Description = el.TryGetProperty("desc", out var desc) ? desc.GetString() ?? "" : ""
                                     });
                                 }
                             }

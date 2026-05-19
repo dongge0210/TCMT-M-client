@@ -1426,17 +1426,27 @@ int main(int argc, char* argv[]) {
                                 char nameUtf8[256] = {};
                                 WideCharToMultiByte(CP_UTF8, 0, a.name, -1,
                                     nameUtf8, (int)sizeof(nameUtf8) - 1, nullptr, nullptr);
-                                // JSON-escape: replace " and backslash
+                                // JSON-escape name
                                 std::string nameEscaped;
                                 for (const char* p = nameUtf8; *p; p++) {
                                     if (*p == '"') nameEscaped += "\\\"";
                                     else if (*p == '\\') nameEscaped += "\\\\";
                                     else nameEscaped += *p;
                                 }
-                                char buf[512];
+                                // Convert WCHAR desc to UTF-8 and escape
+                                char descUtf8[512] = {};
+                                WideCharToMultiByte(CP_UTF8, 0, a.description, -1,
+                                    descUtf8, (int)sizeof(descUtf8) - 1, nullptr, nullptr);
+                                std::string descEscaped;
+                                for (const char* p = descUtf8; *p; p++) {
+                                    if (*p == '"') descEscaped += "\\\"";
+                                    else if (*p == '\\') descEscaped += "\\\\";
+                                    else descEscaped += *p;
+                                }
+                                char buf[768];
                                 snprintf(buf, sizeof(buf),
-                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu,\"name\":\"%s\"}",
-                                    a.id, a.current, a.worst, a.rawValue, nameEscaped.c_str());
+                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu,\"name\":\"%s\",\"desc\":\"%s\"}",
+                                    a.id, a.current, a.worst, a.rawValue, nameEscaped.c_str(), descEscaped.c_str());
                                 json += buf;
                             }
                             json += "]";

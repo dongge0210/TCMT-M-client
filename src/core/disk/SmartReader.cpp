@@ -73,7 +73,7 @@ typedef struct _SENDCMDOUTPARAMS {
 #endif
 
 // ====================================================================
-// SMART attribute ID to human-readable name (Chinese)
+// SMART attribute ID to human-readable name & description (Chinese)
 // ====================================================================
 static const wchar_t* GetSmartAttrName(uint8_t id) {
     switch (id) {
@@ -85,6 +85,10 @@ static const wchar_t* GetSmartAttrName(uint8_t id) {
         case 9:   return L"通电时间";
         case 10:  return L"启动重试次数";
         case 12:  return L"通电次数";
+        case 148: return L"预留";
+        case 149: return L"预留";
+        case 167: return L"固态硬盘保护模式";
+        case 168: return L"SATA 物理层错误计数";
         case 169: return L"剩余寿命";
         case 170: return L"可用预留空间";
         case 171: return L"SSD 编程失败计数";
@@ -123,6 +127,7 @@ static const wchar_t* GetSmartAttrName(uint8_t id) {
         case 207: return L"硬盘旋转震动";
         case 208: return L"硬盘写入震动";
         case 210: return L"RAID 恢复";
+        case 218: return L"CRC 错误计数";
         case 220: return L"磁盘偏移";
         case 222: return L"已加载小时";
         case 223: return L"加载卸载重试";
@@ -140,6 +145,7 @@ static const wchar_t* GetSmartAttrName(uint8_t id) {
         case 240: return L"磁头飞行时间";
         case 241: return L"主机总计写入";
         case 242: return L"主机总计读取";
+        case 244: return L"平均擦除次数";
         case 245: return L"最大擦除次数";
         case 246: return L"总计擦除次数";
         case 247: return L"主机读取量";
@@ -147,6 +153,44 @@ static const wchar_t* GetSmartAttrName(uint8_t id) {
         case 249: return L"NAND 读取量";
         case 250: return L"读取错误重试率";
         case 251: return L"剩余备用容量";
+        default:  return L"";
+    }
+}
+static const wchar_t* GetSmartAttrDesc(uint8_t id) {
+    switch (id) {
+        case 1:   return L"底层数据读取错误率，反映磁盘表面或磁头读取可靠性";
+        case 3:   return L"磁盘电机从静止到达工作转速所需时间";
+        case 4:   return L"硬盘磁头启停/加载卸载的累计次数";
+        case 5:   return L"已被映射到备用扇区的坏扇区数量，>0 说明磁盘开始老化";
+        case 7:   return L"磁头定位到目标磁道的错误率";
+        case 9:   return L"磁盘累计通电运行小时数";
+        case 12:  return L"磁盘累计通电/断电循环次数";
+        case 169: return L"SSD 剩余可擦写寿命百分比，100=全新，0=耗尽";
+        case 170: return L"SSD 可用于替换坏块的预留空间百分比";
+        case 171: return L"SSD 编程(写入)操作失败的总次数";
+        case 172: return L"SSD 擦除操作失败的总次数";
+        case 173: return L"SSD 各块的擦写次数均衡程度，数值越低越不均匀";
+        case 174: return L"非正常断电导致磁盘停止工作的次数";
+        case 177: return L"SSD 擦写磨损程度，100=全新，数值越低磨损越严重";
+        case 187: return L"已检测到但无法通过 ECC 纠正的数据错误数";
+        case 188: return L"磁盘命令执行超时的累计次数";
+        case 190: return L"硬盘内部气流温度（摄氏度）";
+        case 192: return L"异常断电后磁头紧急缩回/撤离的次数";
+        case 193: return L"磁头加载/卸载到停泊区的累计次数";
+        case 194: return L"磁盘当前工作温度（摄氏度），过高会缩短寿命";
+        case 196: return L"已被重新分配到备用扇区的扇区事件计数，>0 需关注";
+        case 197: return L"当前已检测到不稳定但尚未重新分配的待处理扇区数";
+        case 198: return L"无法通过 ECC 和重试修复的永久性坏扇区数";
+        case 199: return L"SATA 数据线传输 CRC 校验错误，常由数据线/接口接触不良引起";
+        case 230: return L"SSD 剩余寿命百分比，类似 169/177";
+        case 231: return L"SSD 剩余寿命百分比，100=全新，0=耗尽";
+        case 232: return L"SSD 可用于替换坏块的空间余量百分比";
+        case 233: return L"SSD NAND 闪存累计写入数据量";
+        case 234: return L"SSD 所有块的平均擦写次数";
+        case 235: return L"SSD 单个块的最高擦写次数";
+        case 241: return L"主机通过接口向磁盘累计写入的数据总量";
+        case 242: return L"主机通过接口从磁盘累计读取的数据总量";
+        case 246: return L"SSD 自出厂以来所有块的累计擦写总次数";
         default:  return L"";
     }
 }
@@ -239,6 +283,7 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     attr.worst = static_cast<uint8_t>(worst);
                     attr.rawValue = rawVal;
                     wcsncpy_s(attr.name, GetSmartAttrName(attr.id), _TRUNCATE);
+                    wcsncpy_s(attr.description, GetSmartAttrDesc(attr.id), _TRUNCATE);
                     attrIdx++;
 
                     // Temperature: 190(=BE)=Airflow, 194(=C2)=Temperature
@@ -383,41 +428,45 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
                 // Populate NVMe health data as pseudo SMART attributes for display
                 smartData.attributeCount = 0;
-                auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal, const wchar_t* name) {
+                auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal, const wchar_t* name, const wchar_t* desc) {
                     if (smartData.attributeCount >= 32) return;
                     auto& a = smartData.attributes[smartData.attributeCount++];
                     a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = 0;
                     wcsncpy_s(a.name, name, _TRUNCATE);
+                    wcsncpy_s(a.description, desc, _TRUNCATE);
                 };
-                addAttr(0x01, raw[0], raw[0], L"严重警告标志");                        // CriticalWarning
-                addAttr(0x02, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,                // Temperature °C
-                            raw[1] | (raw[2] << 8), L"温度");
-                addAttr(0x03, raw[3], raw[3], L"可用备用空间");                           // AvailableSpare %
-                addAttr(0x04, raw[4], raw[4], L"可用备用空间阈值");                        // AvailableSpareThresh
-                addAttr(0x05, raw[5], raw[5], L"已用寿命百分比");                          // PercentageUsed
-                // NVMe health log fields at offsets 32+ (each 16 bytes, use first 8 as uint64)
+                addAttr(0x01, raw[0], raw[0], L"严重警告标志",
+                    L"NVMe 关键警告：0=正常，非0表示存在严重问题");
+                addAttr(0x02, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,
+                            raw[1] | (raw[2] << 8), L"温度",
+                    L"NVMe 复合温度传感器（摄氏度）");
+                addAttr(0x03, raw[3], raw[3], L"可用备用空间",
+                    L"剩余可替换坏块的备用空间百分比");
+                addAttr(0x04, raw[4], raw[4], L"可用备用空间阈值",
+                    L"备用空间低于此阈值时触发警告");
+                addAttr(0x05, raw[5], raw[5], L"已用寿命百分比",
+                    L"已消耗的额定写入寿命百分比，100=寿命耗尽");
                 uint64_t v6=0,v7=0,v8=0,v9=0,v10=0,v11=0,v12=0,v13=0,v14=0,v15=0;
-                memcpy(&v6,  raw + 32, 8);   // Data Units Read
-                memcpy(&v7,  raw + 48, 8);   // Data Units Written
-                memcpy(&v8,  raw + 64, 8);   // Host Read Commands
-                memcpy(&v9,  raw + 80, 8);   // Host Write Commands
-                memcpy(&v10, raw + 96, 8);   // Controller Busy Time (minutes)
-                memcpy(&v11, raw + 112, 8);  // Power Cycles
-                memcpy(&v12, raw + 128, 8);  // Power On Hours
-                memcpy(&v13, raw + 144, 8);  // Unsafe Shutdowns
-                memcpy(&v14, raw + 160, 8);  // Media Errors
-                memcpy(&v15, raw + 176, 8);  // Error Log Entries
-                addAttr(0x06, 0, v6,  L"主机总计读取");
-                addAttr(0x07, 0, v7,  L"主机总计写入");
-                addAttr(0x08, 0, v8,  L"主机读命令计数");
-                addAttr(0x09, 0, v9,  L"主机写命令计数");
-                addAttr(0x0A, 0, v10, L"控制器忙状态时间");
-                addAttr(0x0B, 0, v11, L"通电次数");
-                addAttr(0x0C, 0, v12, L"通电时间");
-                addAttr(0x0D, 0, v13, L"不安全关机计数");
-                addAttr(0x0E, 0, v14, L"介质与数据完整性错误");
-                addAttr(0x0F, 0, v15, L"错误日志项数");
-
+                memcpy(&v6,  raw + 32, 8);
+                memcpy(&v7,  raw + 48, 8);
+                memcpy(&v8,  raw + 64, 8);
+                memcpy(&v9,  raw + 80, 8);
+                memcpy(&v10, raw + 96, 8);
+                memcpy(&v11, raw + 112, 8);
+                memcpy(&v12, raw + 128, 8);
+                memcpy(&v13, raw + 144, 8);
+                memcpy(&v14, raw + 160, 8);
+                memcpy(&v15, raw + 176, 8);
+                addAttr(0x06, 0, v6,  L"主机总计读取", L"主机累计从 NVMe 盘读取的数据量（512字节单位）");
+                addAttr(0x07, 0, v7,  L"主机总计写入", L"主机累计向 NVMe 盘写入的数据量（512字节单位）");
+                addAttr(0x08, 0, v8,  L"主机读命令计数", L"主机发出的读取命令累计次数");
+                addAttr(0x09, 0, v9,  L"主机写命令计数", L"主机发出的写入命令累计次数");
+                addAttr(0x0A, 0, v10, L"控制器忙状态时间", L"控制器处理命令的累计忙碌时间（分钟）");
+                addAttr(0x0B, 0, v11, L"通电次数", L"NVMe 盘累计通电/断电循环次数");
+                addAttr(0x0C, 0, v12, L"通电时间", L"NVMe 盘累计通电运行小时数");
+                addAttr(0x0D, 0, v13, L"不安全关机计数", L"非正常断电/不安全关机的累计次数");
+                addAttr(0x0E, 0, v14, L"介质与数据完整性错误", L"检测到的介质错误和数据完整性错误总数");
+                addAttr(0x0F, 0, v15, L"错误日志项数", L"NVMe 错误信息日志中的条目数量");
             } else {
                 DWORD nvmeErr = GetLastError();
                 Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe IOCTL fail err=" +
@@ -425,38 +474,29 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
             }
             CloseHandle(hNvme);
         } else {
-            DWORD nvmeOpenErr = GetLastError();
             Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe open fail err=" +
-                std::to_string(nvmeOpenErr));
+                std::to_string(GetLastError()));
         }
     }
 
     if (!success) {
         // Fallback: try StorageDeviceTemperatureProperty (Windows 10+)
-        success = false;
         HANDLE hDev2 = CreateFileW(path, FILE_READ_ATTRIBUTES,
                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     nullptr, OPEN_EXISTING, 0, nullptr);
         if (hDev2 != INVALID_HANDLE_VALUE) {
-            // STORAGE_TEMPERATURE_DATA_DESCRIPTOR layout:
-            //   Version(4) + Size(4) + TemperatureInfo[0..N]
-            // Each TemperatureInfo: Identifier(4) + Temperature(4, signed, tenths °C)
-            BYTE tempBuf[64] = {};
             STORAGE_PROPERTY_QUERY query{};
             query.PropertyId = StorageDeviceTemperatureProperty;
             query.QueryType = PropertyStandardQuery;
+            BYTE tempBuf[256] = {};
+            DWORD tempBytes = 0;
             if (DeviceIoControl(hDev2, IOCTL_STORAGE_QUERY_PROPERTY,
                                 &query, sizeof(query),
                                 tempBuf, sizeof(tempBuf),
-                                &bytesReturned, nullptr) &&
-                bytesReturned >= 16) {
+                                &tempBytes, nullptr) && tempBytes >= 12) {
                 // Temperature at offset 12 (after Version+Size+Identifier = 4+4+4)
-                LONG tempTenthsC = *(LONG*)(tempBuf + 12);
-                double tempC = static_cast<double>(tempTenthsC) / 10.0;
-                if (tempC > 0.0 && tempC < 128.0) {
-                    smartData.temperature = tempC;
-                    success = true;
-                }
+                int t = *reinterpret_cast<int*>(tempBuf + 12);
+                if (t != 0) smartData.temperature = static_cast<double>(t) / 10.0;
             }
             CloseHandle(hDev2);
         }
@@ -465,10 +505,11 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     return success;
 }
 
-#else
-// macOS/Linux stub — delegates to platform implementation
+#else  // !TCMT_WINDOWS — macOS stub
+
 extern "C" bool SmartReaderMacRead(int diskIndex, PhysicalDiskSmartData& smartData);
 bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     return SmartReaderMacRead(diskIndex, smartData);
 }
-#endif
+
+#endif // TCMT_WINDOWS
