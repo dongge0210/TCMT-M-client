@@ -61,6 +61,7 @@ void IPCServer::Stop() {
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
+    shm_unlink(IPC_SHM_PATH);
     unlink(IPC_SOCK_PATH);
 #endif
 }
@@ -387,6 +388,7 @@ void IPCServer::Stop() {
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
+    shm_unlink(IPC_SHM_PATH);
     unlink(IPC_SOCK_PATH);
 }
 
