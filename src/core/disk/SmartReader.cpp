@@ -241,8 +241,8 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     wcsncpy_s(attr.name, GetSmartAttrName(attr.id), _TRUNCATE);
                     attrIdx++;
 
-                    // Temperature: 190(=BE)=Airflow, 194(=C2)=Temperature, 231(=E7)=SSD Temp
-                    if (id == 0xBE || id == 0xC2 || id == 0xE7) {
+                    // Temperature: 190(=BE)=Airflow, 194(=C2)=Temperature
+                    if (id == 0xBE || id == 0xC2) {
                         for (int bo = 5; bo <= 10; bo++) {
                             int t = raw[attrOff + bo];
                             if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
