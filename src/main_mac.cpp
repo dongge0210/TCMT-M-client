@@ -827,7 +827,10 @@ int main(int argc, char* argv[]) {
                                 DiskInfo().CollectSmartData(tmp);
                                 cachedSmart = std::move(tmp.physicalDisks);
                                 smartDone = true;
-                            } catch (...) {}
+                                Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks");
+                            } catch (...) {
+                                Logger::Error("SMART collection threw exception (need root?)");
+                            }
                         }
                         b->physDiskCount = 0;
                         for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
