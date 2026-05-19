@@ -189,8 +189,8 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     attr.threshold = 0;  // threshold not directly available in standard SMART read
                     attrIdx++;
 
-                    // Temperature (190=Airflow, 194=Temperature)
-                    if (attrId == 0xBE || attrId == 0xC2) {
+                    // Temperature: 194=C2=Temperature, 190=BE=Airflow, 231=E7=SSD Temp
+                    if (attrId == 0xBE || attrId == 0xC2 || attrId == 0xE7) {
                         for (int bo = 5; bo <= 10; bo++) {
                             int t = raw[attrOff + bo];
                             if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
@@ -202,6 +202,11 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                         if (tempRead < 0) {
                             int hi = raw[attrOff + 5] | (raw[attrOff + 6] << 8);
                             if (hi >= 15 && hi <= 120) tempRead = (double)hi;
+                        }
+                        if (tempRead < 0) {
+                            // Some drives encode temp as 100 - raw[5]
+                            int inv = 100 - raw[attrOff + 5];
+                            if (inv >= 15 && inv <= 120) tempRead = (double)inv;
                         }
                     }
 
@@ -238,6 +243,17 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 }
 
                 smartData.attributeCount = attrIdx;
+
+                // Secondary temperature pass: scan stored attrs in case raw-byte extraction missed
+                if (tempRead <= 0) {
+                    for (int i = 0; i < attrIdx; i++) {
+                        const auto& a = smartData.attributes[i];
+                        if (a.id == 0xBE || a.id == 0xC2 || a.id == 0xE7) {
+                            if (a.current >= 15 && a.current <= 120)
+                                { tempRead = (double)a.current; break; }
+                        }
+                    }
+                }
                 if (tempRead > 0) smartData.temperature = tempRead;
                 smartData.healthPercentage = static_cast<uint8_t>(health);
                 // If no wear-leveling attr was found but no HDD-specific attrs (spin-up,
