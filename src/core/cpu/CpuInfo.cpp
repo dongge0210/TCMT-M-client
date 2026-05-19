@@ -169,7 +169,7 @@ void CpuInfo::DetectCores() {
     GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bufferSize);
     if (bufferSize == 0) {
         // Fallback: assume all performance cores
-        largeCores = std::max(1, totalCores / 2);
+        largeCores = (std::max)(1, totalCores / 2);
         return;
     }
 
@@ -177,7 +177,7 @@ void CpuInfo::DetectCores() {
     if (!GetLogicalProcessorInformationEx(RelationProcessorCore,
             reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()),
             &bufferSize)) {
-        largeCores = std::max(1, totalCores / 2);
+        largeCores = (std::max)(1, totalCores / 2);
         return;
     }
 
