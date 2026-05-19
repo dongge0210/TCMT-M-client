@@ -266,12 +266,13 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     // HDD-specific: spin-up time (3), start-stop count (4)
                     if (id == 3 || id == 4) hasRotationAttr = true;
 
-                    // Wear leveling (SSD): 169, 177, 230, 231, 232, 233, 0xE7(231)
+                    // Wear leveling / SSD remaining life: 169, 177, 230, 231, 232, 233, 0xE7
                     if (id == 169 || id == 177 || id == 230 ||
                         id == 231 || id == 232 || id == 233 || id == 0xE7) {
                         if (cur > 0 && cur <= 100) {
                             smartData.wearLeveling = 1.0 - (cur / 100.0);
                             isSSD = true;
+                            health = (std::min)(health, cur);  // cur = remaining life %
                         }
                     }
                 }
