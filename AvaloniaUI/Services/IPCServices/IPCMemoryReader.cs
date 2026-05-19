@@ -40,6 +40,9 @@ public class IPCMemoryReader : IDisposable
     [DllImport("libc", EntryPoint = "close", SetLastError = true)]
     private static extern int close(int fd);
 
+    [DllImport("libc", EntryPoint = "geteuid")]
+    private static extern uint geteuid();
+
     private SchemaMessage? _schema;
     private bool _disposed;
     private readonly object _lock = new();
@@ -109,8 +112,8 @@ public class IPCMemoryReader : IDisposable
 
     private bool OpenMacOS()
     {
-        // C++ IPCServer creates shm via shm_open("/tcmt_ipc", O_CREAT | O_RDWR, 0666) + mmap
-        _shmFd = shm_open("/tcmt_ipc_shm", O_RDONLY, 0);
+        // C++ IPCServer creates UID-suffixed POSIX shm
+        _shmFd = shm_open(IPCConstants.SharedMemoryPath, O_RDONLY, 0);
         if (_shmFd != -1)
         {
             _shmSize = (int)_schema!.Header.TotalSize;
@@ -141,7 +144,7 @@ public class IPCMemoryReader : IDisposable
 
     private bool OpenMacOSFallback()
     {
-        string path = "/tmp/tcmt_shm.dat";
+        string path = "/tmp/tcmt_shm_" + geteuid().ToString() + ".dat";
         if (!File.Exists(path))
         {
             Log.Error("IPC Memory: Fallback file {Path} not found either", path);

@@ -61,8 +61,8 @@ void IPCServer::Stop() {
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
-    shm_unlink(IPC_SHM_PATH);
-    unlink(IPC_SOCK_PATH);
+    shm_unlink(shmPath_.c_str());
+    unlink(sockPath_.c_str());
 #endif
 }
 
@@ -312,9 +312,14 @@ IPCServer::~IPCServer() {
 }
 
 bool IPCServer::Start() {
+    // Build UID-suffixed paths so root and normal user don't collide
+    auto uid = std::to_string(getuid());
+    sockPath_ = std::string("/tmp/tcmt_ipc_") + uid + ".sock";
+    shmPath_  = std::string("/tcmt_ipc_shm_") + uid;
+
     // 1. Create shared memory file + mmap
-    shm_unlink(IPC_SHM_PATH);
-    shmFd_ = shm_open(IPC_SHM_PATH, O_CREAT | O_RDWR, 0666);
+    shm_unlink(shmPath_.c_str());
+    shmFd_ = shm_open(shmPath_.c_str(), O_CREAT | O_RDWR, 0666);
     if (shmFd_ == -1) {
         lastError_ = "shm_open failed: " + std::string(std::strerror(errno));
         return false;
@@ -343,8 +348,8 @@ bool IPCServer::Start() {
     struct sockaddr_un addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    std::strncpy(addr.sun_path, IPC_SOCK_PATH, sizeof(addr.sun_path) - 1);
-    unlink(IPC_SOCK_PATH);
+    std::strncpy(addr.sun_path, sockPath_.c_str(), sizeof(addr.sun_path) - 1);
+    unlink(sockPath_.c_str());
 
     if (bind(listenFd_, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
         lastError_ = "bind failed: " + std::string(std::strerror(errno));
@@ -388,8 +393,8 @@ void IPCServer::Stop() {
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
-    shm_unlink(IPC_SHM_PATH);
-    unlink(IPC_SOCK_PATH);
+    shm_unlink(shmPath_.c_str());
+    unlink(sockPath_.c_str());
 }
 
 void IPCServer::AcceptLoop() {

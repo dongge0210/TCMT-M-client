@@ -1,4 +1,5 @@
 // IPC Schema 定义 — 与 C++ src/core/IPC/IPCSchema.h 严格一致
+using System.Runtime.InteropServices;
 namespace AvaloniaUI.Services.IPC;
 
 public enum FieldType : byte
@@ -28,8 +29,11 @@ public static class IPCConstants
     public const int    SchemaHeaderSize  = 16;  // sizeof(SchemaHeader)
     public const int    FieldDefSize      = 80;  // sizeof(FieldDef)
     public const string PipeName          = "TCMT_IPC_Pipe";       // Windows
-    public const string UnixSocketPath    = "/tmp/tcmt_ipc.sock";  // macOS/Linux
-    public const string SharedMemoryPath  = "/tmp/tcmt_shm.dat";   // POSIX shm
+    public static string UnixSocketPath   => $"/tmp/tcmt_ipc_{geteuid()}.sock";  // macOS/Linux (UID-suffixed)
+    public static string SharedMemoryPath => $"/tcmt_ipc_shm_{geteuid()}";       // POSIX shm (UID-suffixed)
+
+    [DllImport("libc", EntryPoint = "geteuid")]
+    private static extern uint geteuid();
 }
 
 public class SchemaHeader
