@@ -119,9 +119,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
             scip->irDriveRegs.bFeaturesReg = READ_ATTRIBUTES;
             scip->irDriveRegs.bSectorCountReg = 1;
             scip->irDriveRegs.bSectorNumberReg = 1;
-            scip->irDriveRegs.bCylLowReg = SMART_READ_DATA;
-            scip->irDriveRegs.bCylHighReg = 0xC2; // magic
-            scip->irDriveRegs.bCommandReg = ID_CMD;
+            scip->irDriveRegs.bCylLowReg = 0x4F;  // SMART signature "SM"
+            scip->irDriveRegs.bCylHighReg = 0xC2; // SMART signature "SM"
+            scip->irDriveRegs.bCommandReg = 0xB0; // ATA SMART command
             scip->bDriveNumber = static_cast<BYTE>(diskIndex);
 
             BYTE outBuf[sizeof(SENDCMDOUTPARAMS) + 512 - 1] = {};
