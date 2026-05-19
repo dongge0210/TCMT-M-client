@@ -240,65 +240,25 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     rawDumpCount++;
                 }
 
-                // Parse SMART attributes. Standard layout has 2-byte header +
-                // 12-byte attribute records. Some drives (SA400 etc.) use a
-                // vendor-specific layout that doesn't match any fixed alignment.
-                // Strategy: use a two-pass approach:
-                //   Pass 1 — brute-force temperature scan (byte-by-byte in raw data)
-                //   Pass 2 — grid scan at both offsets for attribute display table
-                //
-                // PASS 1: brute-force temperature scan
+                // Parse SMART attributes — standard 12-byte grid starting at
+                // offset 2 (after 2-byte version header). The ATA SMART READ
+                // DATA command (0xB0) returns properly formatted data.
                 double tempRead = -1;
-                for (int off = 0; off < 512 - 1; off++) {
-                    int b = raw[off];
-                    if (b == 0xBE || b == 0xC2 || b == 0xE7) {
-                        if (off + 6 >= 512) continue;
-                        // Try raw bytes as direct temp
-                        for (int bo = 5; bo <= 10 && off + bo < 512; bo++) {
-                            int t = raw[off + bo];
-                            if (t >= 15 && t <= 120) { tempRead = (double)t; goto tempFound; }
-                        }
-                        // Try current/normalized value
-                        int nv = raw[off + 3];
-                        if (nv >= 15 && nv <= 120) { tempRead = (double)nv; goto tempFound; }
-                        // Try LE uint16
-                        if (off + 6 < 512) {
-                            int hi = raw[off + 5] | (raw[off + 6] << 8);
-                            if (hi >= 15 && hi <= 120) { tempRead = (double)hi; goto tempFound; }
-                        }
-                        // Try 100 - raw[5]
-                        int inv = 100 - raw[off + 5];
-                        if (inv >= 15 && inv <= 120) { tempRead = (double)inv; goto tempFound; }
-                    }
-                }
-                tempFound:;
-
-                // PASS 2: signature-based attribute scan.
-                // SA400 and similar drives return data through SMART_RCV_DRIVE_DATA
-                // in a format that doesn't align to any fixed 12-byte grid.
-                // Instead, scan byte-by-byte for known SMART attribute ID bytes
-                // followed by plausible structure (flags > 0, current 1-200).
-                // Known attribute IDs from DiskGenius SA400 dump:
-                //   01,09,0C,94,95,A7,A8,A9,AA,AC,AD,B5,B6,BB,C0,C2,C4,C7,DA,
-                //   E7,E9,F1,F2,F4,F5,F6
                 bool isSSD = false;
                 bool hasRotationAttr = false;
                 int health = 100;
                 int attrIdx = 0;
 
-                for (int off = 0; off < 512 - 6 && attrIdx < 32; off++) {
-                    int id = raw[off];
-                    if (id < 1 || id > 254 || id == 0xFF) continue;
+                for (int attrOff = 2; attrOff < 512 - 12 && attrIdx < 32; attrOff += 12) {
+                    int id = raw[attrOff];
+                    if (id == 0 || id == 0xFF) continue;
+                    int fl = raw[attrOff + 1];
+                    int cur = raw[attrOff + 3];
+                    int worst = raw[attrOff + 4];
 
-                    int cur = raw[off + 3];
-                    if (cur > 255) continue;
-                    int worst = raw[off + 4]; // not validated — may be 0
-                    int fl = raw[off + 1];
-
-                    // Looks like a valid attribute — extract it
                     uint64_t rawVal = 0;
-                    for (int j = 0; j < 6 && off + 5 + j < 512; j++)
-                        rawVal |= (static_cast<uint64_t>(raw[off + 5 + j]) << (8 * j));
+                    for (int j = 0; j < 6; j++)
+                        rawVal |= (static_cast<uint64_t>(raw[attrOff + 5 + j]) << (8 * j));
 
                     auto& attr = smartData.attributes[attrIdx];
                     attr.id = static_cast<uint8_t>(id);
@@ -308,6 +268,18 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     attr.rawValue = rawVal;
                     wcsncpy_s(attr.name, GetSmartAttrName(attr.id), _TRUNCATE);
                     attrIdx++;
+
+                    // Temperature: 190(=BE)=Airflow, 194(=C2)=Temperature, 231(=E7)=SSD Temp
+                    if (id == 0xBE || id == 0xC2 || id == 0xE7) {
+                        for (int bo = 5; bo <= 10; bo++) {
+                            int t = raw[attrOff + bo];
+                            if (t >= 15 && t <= 120) { tempRead = (double)t; break; }
+                        }
+                        if (tempRead < 0) {
+                            int nv = cur;
+                            if (nv >= 15 && nv <= 120) tempRead = (double)nv;
+                        }
+                    }
 
                     // Health-critical: 5, 196, 197, 198
                     if (id == 5 || id == 196 || id == 197 || id == 198) {
@@ -329,40 +301,18 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     // HDD-specific: spin-up time (3), start-stop count (4)
                     if (id == 3 || id == 4) hasRotationAttr = true;
 
-                    // Wear leveling / SSD remaining life: 169, 177, 230, 231, 232, 233, 0xE7
+                    // Wear leveling / SSD remaining life
                     if (id == 169 || id == 177 || id == 230 ||
                         id == 231 || id == 232 || id == 233 || id == 0xE7) {
                         if (cur > 0 && cur <= 100) {
                             smartData.wearLeveling = 1.0 - (cur / 100.0);
                             isSSD = true;
-                            health = (std::min)(health, cur);  // cur = remaining life %
+                            health = (std::min)(health, cur);
                         }
                     }
                 }
 
                 smartData.attributeCount = attrIdx;
-
-                // Diagnostic: log first few attr IDs found
-                {
-                    static int attrLogCount = 0;
-                    if (attrLogCount < 5) {
-                        std::string ids;
-                        for (int i = 0; i < attrIdx && i < 32; i++) {
-                            if (i > 0) ids += ",";
-                            ids += std::to_string(smartData.attributes[i].id);
-                            ids += ":";
-                            ids += std::to_string(smartData.attributes[i].current);
-                        }
-                        Logger::Info("SMART disk" + std::to_string(diskIndex) +
-                            " ATA sigScan temp=" + (tempRead > 0 ? std::to_string((int)tempRead) : "none") +
-                            " health=" + std::to_string(health) +
-                            " isSSD=" + std::to_string(isSSD) +
-                            " hasRot=" + std::to_string(hasRotationAttr) +
-                            " attrs[" + std::to_string(attrIdx) + "]: " + ids);
-                        attrLogCount++;
-                    }
-                }
-
                 if (tempRead > 0) smartData.temperature = tempRead;
                 smartData.healthPercentage = static_cast<uint8_t>(health);
                 if (!isSSD && !hasRotationAttr) isSSD = true;
