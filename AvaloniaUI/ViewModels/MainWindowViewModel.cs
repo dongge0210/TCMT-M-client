@@ -385,9 +385,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                    .ToDictionary(d => d.Letter, d => d);
                 foreach (var phys in PhysicalDiskList)
                 {
+                    if (phys.Disk?.LogicalDriveLetters == null) continue;
                     for (int i = 0; i < phys.Disk.LogicalDriveLetters.Count; i++)
                     {
-                        // LogicalDriveLetters is List<char> — each char is a drive letter
                         var letter = phys.Disk.LogicalDriveLetters[i];
                         if (dmap.TryGetValue(letter, out var disk))
                             phys.Partitions.Add(disk);
