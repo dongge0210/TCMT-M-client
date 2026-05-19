@@ -424,9 +424,28 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 addAttr(202, raw[3], raw[3], L"可用备用空间");                           // AvailableSpare %
                 addAttr(203, raw[4], raw[4], L"可用备用阈值");                           // AvailableSpareThresh
                 addAttr(204, raw[5], raw[5], L"已用寿命百分比");                         // PercentageUsed
-                uint64_t nvmeHours = 0;
-                memcpy(&nvmeHours, raw + 32, sizeof(uint64_t));
-                addAttr(209, 0, nvmeHours, L"通电时间 (NVMe)");                        // PowerOnHours
+                // NVMe health log fields at offsets 32+ (each 16 bytes, use first 8 as uint64)
+                uint64_t v6=0,v7=0,v8=0,v9=0,v10=0,v11=0,v12=0,v13=0,v14=0,v15=0;
+                memcpy(&v6,  raw + 32, 8);   // Data Units Read
+                memcpy(&v7,  raw + 48, 8);   // Data Units Written
+                memcpy(&v8,  raw + 64, 8);   // Host Read Commands
+                memcpy(&v9,  raw + 80, 8);   // Host Write Commands
+                memcpy(&v10, raw + 96, 8);   // Controller Busy Time (minutes)
+                memcpy(&v11, raw + 112, 8);  // Power Cycles
+                memcpy(&v12, raw + 128, 8);  // Power On Hours
+                memcpy(&v13, raw + 144, 8);  // Unsafe Shutdowns
+                memcpy(&v14, raw + 160, 8);  // Media Errors
+                memcpy(&v15, raw + 176, 8);  // Error Log Entries
+                addAttr(206, 0, v6,  L"主机总计读取");
+                addAttr(207, 0, v7,  L"主机总计写入");
+                addAttr(208, 0, v8,  L"主机读命令计数");
+                addAttr(209, 0, v9,  L"主机写命令计数");
+                addAttr(210, 0, v10, L"控制器忙状态时间");
+                addAttr(211, 0, v11, L"通电次数");
+                addAttr(212, 0, v12, L"通电时间");
+                addAttr(213, 0, v13, L"不安全关机计数");
+                addAttr(214, 0, v14, L"介质与数据完整性错误");
+                addAttr(215, 0, v15, L"错误日志项数");
 
                 Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe ok: tempC=" +
                     std::to_string((int)(raw[1] | (raw[2] << 8)) - 273) +
