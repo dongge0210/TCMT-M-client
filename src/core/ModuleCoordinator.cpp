@@ -2,6 +2,7 @@
 #include "temperature/TemperatureWrapper.h"
 #include "Utils/Logger.h"
 #include "Utils/WinUtils.h"
+#include "memory/MemoryInfo.h"
 #include <algorithm>
 #include <cctype>
 #include "notifications/UserNotifier.h"
@@ -93,6 +94,14 @@ void ModuleCoordinator::Start() {
     if (!sysEventMonitor_.Start()) {
         Logger::Warn("ModuleCoordinator: SystemEventMonitor start failed, using polling fallback");
     }
+
+    // Read RAM specs once at startup (doesn't change at runtime)
+    MemoryInfo memInfo;
+    data_.ramSpeed = memInfo.GetRamSpeed();
+    data_.ramType = memInfo.GetRamType();
+    if (data_.ramSpeed > 0) {
+        Logger::Info("ModuleCoordinator: RAM " + data_.ramType + "-" + std::to_string(data_.ramSpeed));
+    }
 }
 
 void ModuleCoordinator::Stop() {
@@ -151,6 +160,10 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.availableMemory = data_.availableMemory.load();
     sysInfo.compressedMemory = data_.compressedMemory.load();
     tuiData.compressedMemory = data_.compressedMemory.load();
+    sysInfo.ramSpeed = data_.ramSpeed;
+    strncpy(sysInfo.ramType, data_.ramType.c_str(), sizeof(sysInfo.ramType) - 1);
+    tuiData.ramSpeed = data_.ramSpeed;
+    strncpy(tuiData.ramType, data_.ramType.c_str(), sizeof(tuiData.ramType) - 1);
 
     // GPU
     sysInfo.gpuUsage = data_.gpuUsage.load();

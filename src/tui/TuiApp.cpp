@@ -197,6 +197,11 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
         mvwprintw(win, y + lines, x0 + 2, "Compressed: %.*s", maxW - 12, compStr.c_str());
         lines++;
     }
+    if (data.ramSpeed > 0) {
+        std::string ramStr = std::string(data.ramType) + "-" + std::to_string(data.ramSpeed);
+        mvwprintw(win, y + lines, x0 + 2, "RAM: %.*s", maxW - 7, ramStr.c_str());
+        lines++;
+    }
 
     return lines;
 }

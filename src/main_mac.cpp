@@ -99,6 +99,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addU64("memory/used",         offsetof(B, usedMemory));
     addU64("memory/available",    offsetof(B, availableMemory));
     addU64("memory/compressed",   offsetof(B, compressedMemory));
+    add("memory/ramSpeed", offsetof(B, ramSpeed), 4, FT::UInt32);
+    add("memory/ramType",  offsetof(B, ramType), (uint16_t)sizeof(B::ramType), FT::String);
 
     // Battery / Power
     addI("battery/percent",       offsetof(B, batteryPercent));
@@ -688,6 +690,8 @@ int main(int argc, char* argv[]) {
                 data.usedMemory = sysInfo.usedMemory;
                 data.availableMemory = sysInfo.availableMemory;
                 data.compressedMemory = sysInfo.compressedMemory;
+                data.ramSpeed = sysInfo.ramSpeed;
+                strncpy(data.ramType, sysInfo.ramType, sizeof(data.ramType) - 1);
             }
 
             // GPU (coordinator doesn't have a GPU loop — keep inline)

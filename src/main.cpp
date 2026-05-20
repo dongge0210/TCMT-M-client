@@ -618,6 +618,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
     addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
     addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/ramSpeed",   offsetof(SharedMemoryBlock, ramSpeed), 4, (uint8_t)FT::UInt32);
+    addField("memory/ramType",    offsetof(SharedMemoryBlock, ramType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
     addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
     for (int i = 0; i < 2; i++) {
         char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
@@ -1588,6 +1590,8 @@ int main(int argc, char* argv[]) {
                     tuiData.usedMemory = sysInfo.usedMemory;
                     tuiData.availableMemory = sysInfo.availableMemory;
                     tuiData.compressedMemory = sysInfo.compressedMemory;
+                    tuiData.ramSpeed = sysInfo.ramSpeed;
+                    strncpy(tuiData.ramType, sysInfo.ramType, sizeof(tuiData.ramType) - 1);
 
                     if (!sysInfo.gpus.empty()) {
                         tuiData.gpuName = sysInfo.gpuName;
