@@ -370,6 +370,10 @@ bool IPCServer::Start() {
         return false;
     }
 
+    // Allow non-root clients to connect (Unix socket needs write permission)
+    fchmod(listenFd_, 0666);
+    chmod(IPC_SOCK_PATH, 0666);
+
     // 3. Start accept thread
     running_ = true;
     serverThread_ = std::thread(&IPCServer::AcceptLoop, this);
