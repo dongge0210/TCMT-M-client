@@ -150,6 +150,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.usedMemory = data_.usedMemory.load();
     sysInfo.availableMemory = data_.availableMemory.load();
     sysInfo.compressedMemory = data_.compressedMemory.load();
+    tuiData.compressedMemory = data_.compressedMemory.load();
 
     // GPU
     sysInfo.gpuUsage = data_.gpuUsage.load();
