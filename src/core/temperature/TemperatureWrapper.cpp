@@ -146,10 +146,12 @@ static kern_return_t smc_read_key_info(io_connect_t conn, uint32_t key,
     kern_return_t kr = IOConnectCallStructMethod(conn, 5, &in, sizeof(in), &out, &sz);
     if (kr != kIOReturnSuccess) return kr;
     std::memset(info, 0, sizeof(*info));
-    // dataSize is encoded in the lower 16 bits of keyInfo (varies by SMC version)
+    // dataSize from keyInfo (varies by SMC version)
     info->dataSize = static_cast<uint32_t>(out.keyInfo & 0xFFFF);
     if (info->dataSize == 0) info->dataSize = static_cast<uint32_t>((out.keyInfo >> 16) & 0xFFFF);
     if (info->dataSize == 0) info->dataSize = static_cast<uint32_t>(out.status & 0xFFFF);
+    // Copy dataType from response (first 4 bytes of data[] contain type string)
+    std::memcpy(info->dataType, out.data, std::min(sizeof(info->dataType), sizeof(out.data)));
     return kIOReturnSuccess;
 }
 
@@ -274,6 +276,49 @@ static bool smc_read_temp(const char* keyStr, const char* type, double* tempOut)
 
     *tempOut = smc_decode_temp(val, info.dataSize, type ? type : "sp78");
     return (*tempOut > 0 && *tempOut < 150);
+}
+
+// Enumerate all SMC keys, filter temperature-type sensors.
+// Called once; caller may hold g_smc_mutex or not (we re-lock internally).
+static std::vector<std::string> smc_enumerate_temp_keys(void) {
+    std::vector<std::string> keys;
+    std::lock_guard<std::mutex> lock(g_smc_mutex);
+    if (!g_smc_conn) return keys;
+
+    SmcKeyData_t in = {};
+    SmcKeyData_t out = {};
+    in.data8 = KSmcGetTotalNum;
+    size_t sz = sizeof(out);
+    if (IOConnectCallStructMethod(g_smc_conn, 5, &in, sizeof(in), &out, &sz) != kIOReturnSuccess)
+        return keys;
+
+    uint32_t total = out.keyInfo;
+    if (total == 0 || total > 65535) return keys;
+
+    for (uint32_t i = 0; i < total && keys.size() < 64; i++) {
+        SmcKeyData_t kin = {}, kout = {};
+        kin.data8 = 7;  // getKeyFromIndex
+        kin.keyInfo = i;
+        size_t ksz = sizeof(kout);
+        if (IOConnectCallStructMethod(g_smc_conn, 5, &kin, sizeof(kin), &kout, &ksz) != kIOReturnSuccess)
+            continue;
+
+        char name[5] = {};
+        std::memcpy(name, &kout.key, 4);
+        SmcKeyInfoVal_t info{};
+        if (smc_read_key_info(g_smc_conn, kout.key, &info) != kIOReturnSuccess || info.dataSize == 0)
+            continue;
+        if (info.dataSize > 32) continue;
+
+        char type[5] = {};
+        std::memcpy(type, info.dataType, 4);
+        bool isTemp = (type[0] == 's' && type[1] == 'p') ||
+                       (type[0] == 'f' && type[1] == 'l') ||
+                       (type[0] == 'f' && type[1] == 'p');
+        if (isTemp)
+            keys.push_back(std::string(name, 4) + ":" + std::string(type, 4));
+    }
+    return keys;
 }
 
 // =====================================================================
@@ -593,7 +638,7 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
 
     if (!initialized) return temps;
 
-    // Priority 1: Direct SMC reads (hardcoded keys)
+    // Priority 1: Hardcoded SMC keys (Intel Mac)
     for (int i = 0; kCpuKeys[i]; i++) {
         double t = 0;
         if (smc_read_temp(kCpuKeys[i], "sp78", &t))
@@ -603,6 +648,26 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         double t = 0;
         if (smc_read_temp(kGpuKeys[i], "sp78", &t))
             temps.push_back({std::string(kGpuKeys[i]) + " (GPU)", t});
+    }
+    // Priority 1b: Enumerate keys dynamically (Apple Silicon — different key names)
+    if (temps.empty()) {
+        static std::vector<std::string> s_smcEnumerated;
+        static bool s_smcDone = false;
+        if (!s_smcDone) {
+            s_smcEnumerated = smc_enumerate_temp_keys();
+            s_smcDone = true;
+            Logger::Info("TemperatureWrapper: SMC enum found " +
+                         std::to_string(s_smcEnumerated.size()) + " temp keys");
+        }
+        for (const auto& kt : s_smcEnumerated) {
+            auto col = kt.find(':');
+            if (col == std::string::npos) continue;
+            std::string key = kt.substr(0, col);
+            std::string typ = kt.substr(col + 1);
+            double t = 0;
+            if (smc_read_temp(key.c_str(), typ.c_str(), &t))
+                temps.push_back({"SMC " + key, t});
+        }
     }
 
     // Priority 2: powermetrics cache (needs root, filled by background thread)
