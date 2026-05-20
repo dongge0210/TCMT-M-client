@@ -20,3 +20,4 @@ double GetPmECoreFreq();
 double GetPmGpuFreq();
 double GetPmCpuPower();
 double GetPmGpuPower();
+double GetPmAnePower();

@@ -338,12 +338,31 @@ std::atomic<double> g_pm_eCoreFreq{0.0};
 std::atomic<double> g_pm_gpuFreq{0.0};
 std::atomic<double> g_pm_cpuPower{0.0};
 std::atomic<double> g_pm_gpuPower{0.0};
+std::atomic<double> g_pm_anePower{0.0};
 
 double GetPmPCoreFreq() { return g_pm_pCoreFreq.load(); }
 double GetPmECoreFreq() { return g_pm_eCoreFreq.load(); }
 double GetPmGpuFreq()   { return g_pm_gpuFreq.load(); }
 double GetPmCpuPower()  { return g_pm_cpuPower.load(); }
 double GetPmGpuPower()  { return g_pm_gpuPower.load(); }
+double GetPmAnePower()  { return g_pm_anePower.load(); }
+
+// Parse the first floating-point number from a line (works for "XXX MHz", "XXX mW", etc.)
+static double parse_number_line(const char* line) {
+    if (!line) return 0;
+    while (*line) {
+        if (*line == '-' || *line == '.' || (*line >= '0' && *line <= '9')) {
+            const char* start = line;
+            while (*line == '-' || *line == '.' || (*line >= '0' && *line <= '9')) ++line;
+            std::string s(start, static_cast<size_t>(line - start));
+            double v = std::atof(s.c_str());
+            if (v > 0) return v;
+            continue;
+        }
+        ++line;
+    }
+    return 0;
+}
 
 // Parse "XX.YY C" or "XX.YY°C" from a line
 static double parse_temp_line(const char* line) {
@@ -409,26 +428,30 @@ static void powermetrics_thread_func(void) {
         while (fgets(line, sizeof(line), fp)) {
             // Frequency: "E-Cluster HW active frequency: 1405 MHz"
             if (std::strstr(line, "E-Cluster HW active frequency:")) {
-                double v = parse_temp_line(line);  // same number format
+                double v = parse_number_line(line);
                 if (v > 0) g_pm_eCoreFreq.store(v);
             }
             else if (std::strstr(line, "P-Cluster HW active frequency:")) {
-                double v = parse_temp_line(line);
+                double v = parse_number_line(line);
                 if (v > 0) g_pm_pCoreFreq.store(v);
             }
-            // GPU frequency: "GPU HW active frequency: 444 MHz"
+            // GPU frequency: "GPU HW active frequency: 482 MHz"
             else if (std::strstr(line, "GPU HW active frequency:")) {
-                double v = parse_temp_line(line);
+                double v = parse_number_line(line);
                 if (v > 0) g_pm_gpuFreq.store(v);
             }
-            // Power: "CPU Power: 426 mW"
+            // Power: "CPU Power: 941 mW" / "GPU Power: 591 mW" / "ANE Power: 0 mW"
             else if (std::strstr(line, "CPU Power:")) {
-                double v = parse_temp_line(line);
+                double v = parse_number_line(line);
                 if (v > 0) { g_pm_cpuPower.store(v); batch.push_back({"CPU Power", v}); }
             }
             else if (std::strstr(line, "GPU Power:")) {
-                double v = parse_temp_line(line);
+                double v = parse_number_line(line);
                 if (v > 0) { g_pm_gpuPower.store(v); batch.push_back({"GPU Power", v}); }
+            }
+            else if (std::strstr(line, "ANE Power:")) {
+                double v = parse_number_line(line);
+                if (v >= 0) g_pm_anePower.store(v);
             }
             // Temperature (thermal sampler on Intel, ARM PMU on AS)
             else if (std::strstr(line, "CPU Die Temperature") ||
