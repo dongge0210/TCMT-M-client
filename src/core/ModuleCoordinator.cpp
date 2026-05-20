@@ -260,6 +260,14 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.acOnline = data_.acOnline.load();
     sysInfo.batteryPercent = data_.batteryPercent.load();
     sysInfo.acOnline = data_.acOnline.load();
+
+    // PowerMonitor (Apple Silicon — CPU/GPU/ANE power in mW)
+    tuiData.cpuPower = data_.cpuPower.load();
+    tuiData.gpuPower = data_.gpuPower.load();
+    tuiData.anePower = data_.anePower.load();
+    sysInfo.cpuPower = data_.cpuPower.load();
+    sysInfo.gpuPower = data_.gpuPower.load();
+    sysInfo.anePower = data_.anePower.load();
 }
 
 // =====================================================================

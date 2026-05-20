@@ -155,6 +155,9 @@ struct SystemInfo {
     std::string osVersion;
     int batteryPercent = -1;        // -1 = no battery
     bool acOnline = false;
+    double cpuPower = 0.0;          // CPU power in mW
+    double gpuPower = 0.0;          // GPU power in mW
+    double anePower = 0.0;          // ANE power in mW
     std::string gpuName;            // Added
     std::string gpuBrand;           // Added
     uint64_t gpuMemory;             // Added
@@ -246,6 +249,9 @@ struct SharedMemoryBlock {
     // Battery / power info
     int batteryPercent;             // 0-100, -1 = no battery
     bool acOnline;                  // AC power connected
+    double cpuPower;                // CPU power in mW
+    double gpuPower;                // GPU power in mW
+    double anePower;                // ANE power in mW
 
     // OS version info
     WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"

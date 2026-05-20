@@ -1600,7 +1600,10 @@ int main(int argc, char* argv[]) {
                         tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
                     }
                     tuiData.gpuTemp = sysInfo.gpuTemperature;
-                    
+                    tuiData.cpuPower = sysInfo.cpuPower;
+                    tuiData.gpuPower = sysInfo.gpuPower;
+                    tuiData.anePower = sysInfo.anePower;
+
                     // Disks
                     for (const auto& disk : sysInfo.disks) {
                         tcmt::TuiData::DiskInfo di;

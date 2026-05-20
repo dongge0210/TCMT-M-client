@@ -158,7 +158,10 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 
     if (data.cpuTemp > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.cpuTemp);
+        if (data.cpuPower > 0)
+            mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C  Power: %.0f mW", data.cpuTemp, data.cpuPower);
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.cpuTemp);
         lines++;
     }
 
@@ -244,8 +247,13 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
 #endif
 
-    if (data.gpuTemp > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.gpuTemp);
+    if (data.gpuTemp > 0 || data.gpuPower > 0) {
+        std::string gpuPwr;
+        if (data.gpuTemp > 0)
+            gpuPwr = "Temp: " + std::to_string(static_cast<int>(data.gpuTemp)) + " C";
+        if (data.gpuPower > 0)
+            gpuPwr += "  Power: " + std::to_string(static_cast<int>(data.gpuPower)) + "mW";
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, gpuPwr.c_str());
         lines++;
     }
 

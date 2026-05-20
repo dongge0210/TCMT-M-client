@@ -110,6 +110,9 @@ struct TuiData {
     std::string osVersion;
     int batteryPercent = -1;  // -1 = no battery
     bool acOnline = false;
+    double cpuPower = 0.0;
+    double gpuPower = 0.0;
+    double anePower = 0.0;
 
     // Connections
     int connectionCount = 0;
