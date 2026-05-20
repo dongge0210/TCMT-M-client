@@ -28,6 +28,7 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerMonitor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb/UsbInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/UserNotifier.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/SystemEventMonitor.cpp

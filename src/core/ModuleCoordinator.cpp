@@ -95,6 +95,16 @@ void ModuleCoordinator::Start() {
         Logger::Warn("ModuleCoordinator: SystemEventMonitor start failed, using polling fallback");
     }
 
+#ifdef TCMT_MACOS
+    // PowerMonitor — direct IOReport (no sudo) with powermetrics fallback
+    if (!powerMonitor_.Start()) {
+        Logger::Info("ModuleCoordinator: PowerMonitor direct mode unavailable, using powermetrics fallback");
+        // The existing temperature wrapper's powermetrics thread handles fallback
+    } else {
+        Logger::Info("ModuleCoordinator: PowerMonitor direct mode active (no sudo)");
+    }
+#endif
+
     // Read RAM specs once at startup (doesn't change at runtime)
     MemoryInfo memInfo;
     data_.ramSpeed = memInfo.GetRamSpeed();
@@ -123,6 +133,7 @@ void ModuleCoordinator::Stop() {
     if (tempThread_.joinable())   tempThread_.join();
     if (powerThread_.joinable())  powerThread_.join();
 
+    powerMonitor_.Stop();
     sysEventMonitor_.Stop();
 
 #ifdef TCMT_WINDOWS
@@ -286,11 +297,22 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
             }
 
 #ifdef TCMT_MACOS
-            // Feed powermetrics frequency data (Apple Silicon — no ETW/PDH)
-            double pf = GetPmPCoreFreq();
-            double ef = GetPmECoreFreq();
-            if (pf > 0) data_.pCoreFreq.store(pf);
-            if (ef > 0) data_.eCoreFreq.store(ef);
+            // Feed powermetrics frequency data (Apple Silicon)
+            if (powerMonitor_.IsDirectMode()) {
+                double pf = powerMonitor_.GetPCoreFreq();
+                double ef = powerMonitor_.GetECoreFreq();
+                if (pf > 0) data_.pCoreFreq.store(pf);
+                if (ef > 0) data_.eCoreFreq.store(ef);
+                // Power data
+                data_.cpuPower.store(powerMonitor_.GetCpuPower());
+                data_.gpuPower.store(powerMonitor_.GetGpuPower());
+                data_.anePower.store(powerMonitor_.GetAnePower());
+            } else {
+                double pf = GetPmPCoreFreq();
+                double ef = GetPmECoreFreq();
+                if (pf > 0) data_.pCoreFreq.store(pf);
+                if (ef > 0) data_.eCoreFreq.store(ef);
+            }
 #endif
         } catch (const std::exception& e) {
             Logger::Error("TemperatureLoop: " + std::string(e.what()));

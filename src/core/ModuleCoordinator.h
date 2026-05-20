@@ -9,6 +9,7 @@
 #include "Utils/JThreadCompat.h"
 #include "etw/EtwMonitor.h"
 #include "notifications/SystemEventMonitor.h"
+#include "power/PowerMonitor.h"
 
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
@@ -45,6 +46,9 @@ struct ModuleData {
     // Power (2s)
     std::atomic<int> batteryPercent{-1};
     std::atomic<bool> acOnline{false};
+    std::atomic<double> cpuPower{0.0};
+    std::atomic<double> gpuPower{0.0};
+    std::atomic<double> anePower{0.0};
     // ETW dirty flags — set by callbacks, checked by loops
     std::atomic<bool> powerDirty{false};
     std::atomic<bool> networkDirty{false};
@@ -80,6 +84,7 @@ private:
     tcmt::compat::JThread cpuThread_, memoryThread_, diskThread_, netThread_, tempThread_, powerThread_;
     tcmt::etw::EtwMonitor etwMonitor_;
     SystemEventMonitor sysEventMonitor_;
+    PowerMonitor powerMonitor_;
     void DiskLoop(tcmt::compat::StopToken st);
     void NetworkLoop(tcmt::compat::StopToken st);
     void TemperatureLoop(tcmt::compat::StopToken st);
