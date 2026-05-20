@@ -231,6 +231,9 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 std::transform(lower.begin(), lower.end(), lower.begin(),
                                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
+                // Battery is not a CPU sensor — skip for cpuTemperature assignment
+                if (lower.find("battery") != std::string::npos) continue;
+
                 bool isGpu = (lower.find("gpu") != std::string::npos ||
                               lower.find("tg") != std::string::npos ||
                               lower.find("graphics") != std::string::npos);

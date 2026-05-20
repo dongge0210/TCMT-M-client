@@ -157,7 +157,10 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
     lines++;
 
-    // CPU temp hidden on Apple Silicon (battery temp leaks into cpuTemp field)
+    if (data.cpuTemp > 0) {
+        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.cpuTemp);
+        lines++;
+    }
 
     return lines;
 }
@@ -394,9 +397,8 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     // Collect sensors to display: skip per-core CPU sensors, keep everything else
     std::vector<std::pair<std::string, double>> displayTemps;
     for (const auto& [name, temp] : data.temperatures) {
-        // Skip only individual CPU core sensors (e.g. "CPU Core 1", "CPU Core 2")
-        bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos ||
-                                name.find("CPU Die") != std::string::npos);
+        // Skip individual CPU core sensors (e.g. "CPU Core 1") but keep CPU Die
+        bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos);
         if (!isPerCoreSensor) {
             displayTemps.push_back({name, temp});
         }

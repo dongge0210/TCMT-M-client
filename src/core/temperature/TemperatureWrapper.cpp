@@ -73,6 +73,9 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 //   2  = readKeyInfo      → key metadata (type, size)
 //   5  = readKeyValue      → actual value data
 
+// SMC is Intel-only — hardware locked on Apple Silicon
+#ifdef __x86_64__
+
 enum {
     KSmcReadKeyInfo  = 2,
     KSmcReadKeyValue = 5,
@@ -116,8 +119,10 @@ typedef struct {
     uint8_t dataAttributes;
 } SmcKeyInfoVal_t;
 
+#ifdef __x86_64__
 static io_connect_t g_smc_conn = 0;
 static std::mutex   g_smc_mutex;
+#endif
 
 // Open/close AppleSMC service
 static kern_return_t open_smc_service(io_connect_t* conn) {
@@ -246,13 +251,9 @@ static bool probe_smc(void) {
 
     if (testTemp > 10 && testTemp < 150) {
         Logger::Info("TemperatureWrapper: AppleSMC open, TC0P="
-                     + std::to_string(testTemp) + "C (raw_ok)");
+                     + std::to_string(testTemp) + "C");
     } else {
-        // Apple Silicon: TC0P may return 0 — log raw values to diagnose
-        Logger::Info("TemperatureWrapper: AppleSMC TC0P test gave " +
-                     std::to_string(testTemp) + "C (dataSize=" +
-                     std::to_string(info.dataSize) + ", type=" +
-                     std::string(info.dataType, 4) + ")");
+        Logger::Debug("TemperatureWrapper: AppleSMC TC0P probe returned 0 (expected on Apple Silicon)");
     }
     return true;
 }
@@ -321,12 +322,13 @@ static std::vector<std::string> smc_enumerate_temp_keys(void) {
     return keys;
 }
 
+#endif // __x86_64__ — end of SMC block
+
 // =====================================================================
-// Background powermetrics caching thread
+// Background powermetrics caching thread (Intel only — needs root)
 // powermetrics --samplers thermal -i N -n 1 outputs CPU/GPU die temps.
-// Runs as a daemon; GetTemperatures() reads the cache. Falls back to
-// empty when cache is stale or powermetrics is unavailable (no root).
 // =====================================================================
+#ifdef __x86_64__
 static std::vector<std::pair<std::string, double>> g_pm_temps;
 static std::mutex  g_pm_mutex;
 static std::atomic<bool> g_pm_running{false};
@@ -452,6 +454,7 @@ static void start_powermetrics_thread(void) {
     g_pm_running = true;
     g_pm_thread  = std::thread(powermetrics_thread_func);
 }
+#endif // __x86_64__ — end of powermetrics block
 
 // =====================================================================
 // IOKit thermal sensors fallback (no root needed, but limited coverage)
@@ -543,8 +546,9 @@ static std::vector<std::pair<std::string, double>> iokit_arm_temp_sensors(void) 
 }
 
 // =====================================================================
-// Temperature keys to probe on Apple Silicon (no root for most keys)
+// Temperature keys to probe (Intel SMC only)
 // =====================================================================
+#ifdef __x86_64__
 static const char* kCpuKeys[] = {
     // CPU proximity / package
     "TC0P", "TC0D", "TC0H", "TC0C",
@@ -568,6 +572,7 @@ static const char* kGpuKeys[] = {
     "GgTp", "GgTs",
     NULL
 };
+#endif // __x86_64__
 
 // =====================================================================
 // Battery temperature via AppleSmartBattery (no root needed)
@@ -606,11 +611,17 @@ void TemperatureWrapper::Initialize() {
     if (initialized) return;
     initialized = true;
 
-    // Step 1: Try direct SMC (works without root on Intel; may need root on AS)
+    // Step 1: Try direct SMC (Intel Mac only — hardware locked on Apple Silicon)
+#ifdef __x86_64__
     probe_smc();
+#else
+    Logger::Info("TemperatureWrapper: SMC skipped (Apple Silicon — hardware locked)");
+#endif
 
-    // Step 2: Start powermetrics background thread (needs root)
+    // Step 2: Start powermetrics background thread (Intel only, needs root)
+#ifdef __x86_64__
     start_powermetrics_thread();
+#endif
 
     Logger::Info("TemperatureWrapper: initialized");
 }
@@ -619,16 +630,20 @@ void TemperatureWrapper::Cleanup() {
     if (!initialized) return;
 
     // Stop powermetrics thread
+#ifdef __x86_64__
     if (g_pm_running.load()) {
         g_pm_running = false;
         if (g_pm_thread.joinable()) g_pm_thread.join();
     }
+#endif
 
-    // Close SMC
+    // Close SMC (Intel only)
+#ifdef __x86_64__
     if (g_smc_conn) {
         IOServiceClose(g_smc_conn);
         g_smc_conn = 0;
     }
+#endif
 
     initialized = false;
 }
@@ -638,6 +653,7 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
 
     if (!initialized) return temps;
 
+#ifdef __x86_64__
     // Priority 1: Hardcoded SMC keys (Intel Mac)
     for (int i = 0; kCpuKeys[i]; i++) {
         double t = 0;
@@ -649,26 +665,6 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         if (smc_read_temp(kGpuKeys[i], "sp78", &t))
             temps.push_back({std::string(kGpuKeys[i]) + " (GPU)", t});
     }
-    // Priority 1b: Enumerate keys dynamically (Apple Silicon — different key names)
-    if (temps.empty()) {
-        static std::vector<std::string> s_smcEnumerated;
-        static bool s_smcDone = false;
-        if (!s_smcDone) {
-            s_smcEnumerated = smc_enumerate_temp_keys();
-            s_smcDone = true;
-            Logger::Info("TemperatureWrapper: SMC enum found " +
-                         std::to_string(s_smcEnumerated.size()) + " temp keys");
-        }
-        for (const auto& kt : s_smcEnumerated) {
-            auto col = kt.find(':');
-            if (col == std::string::npos) continue;
-            std::string key = kt.substr(0, col);
-            std::string typ = kt.substr(col + 1);
-            double t = 0;
-            if (smc_read_temp(key.c_str(), typ.c_str(), &t))
-                temps.push_back({"SMC " + key, t});
-        }
-    }
 
     // Priority 2: powermetrics cache (needs root, filled by background thread)
     if (temps.empty()) {
@@ -677,20 +673,21 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
             temps = g_pm_temps;
         }
     }
+#endif
 
-    // Priority 3: Battery temperature (no root, always available on laptops)
-    double batTemp = iokit_battery_temp();
-    if (batTemp > 10 && batTemp < 80) {
-        temps.push_back({"Battery", batTemp});
-    }
-
-    // Priority 4: Apple Silicon ARM PMU temp sensors (no root, Apple Silicon only)
+    // Priority 1 (Apple Silicon): ARM PMU temp sensors (no root needed)
     {
         auto arm = iokit_arm_temp_sensors();
         temps.insert(temps.end(), arm.begin(), arm.end());
     }
 
-    // Priority 5: IOKit HID (last resort)
+    // Battery temperature (always available on laptops)
+    double batTemp = iokit_battery_temp();
+    if (batTemp > 10 && batTemp < 80) {
+        temps.push_back({"Battery", batTemp});
+    }
+
+    // IOKit HID (last resort)
     if (temps.empty()) {
         auto hid = iokit_hid_temps();
         temps.insert(temps.end(), hid.begin(), hid.end());
