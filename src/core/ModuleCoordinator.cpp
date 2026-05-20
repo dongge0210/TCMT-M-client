@@ -72,6 +72,27 @@ void ModuleCoordinator::Start() {
                      etwMonitor_.GetLastError() + " (falling back to polling)");
     }
 #endif
+
+    // SystemEventMonitor — platform-level power/disk/thermal events
+    sysEventMonitor_.SetPowerCallback([this](bool acOnline, int batteryPercent) {
+        data_.acOnline.store(acOnline);
+        if (batteryPercent >= 0 && batteryPercent <= 100)
+            data_.batteryPercent.store(batteryPercent);
+        data_.sysPowerDirty.store(true);
+    });
+    sysEventMonitor_.SetDiskCallback([this]() {
+        data_.diskDirty.store(true);
+    });
+    sysEventMonitor_.SetNetworkCallback([this]() {
+        data_.networkDirty.store(true);
+    });
+    sysEventMonitor_.SetThermalCallback([this](int state) {
+        (void)state;
+        data_.thermalDirty.store(true);
+    });
+    if (!sysEventMonitor_.Start()) {
+        Logger::Warn("ModuleCoordinator: SystemEventMonitor start failed, using polling fallback");
+    }
 }
 
 void ModuleCoordinator::Stop() {
@@ -92,6 +113,8 @@ void ModuleCoordinator::Stop() {
     if (netThread_.joinable())    netThread_.join();
     if (tempThread_.joinable())   tempThread_.join();
     if (powerThread_.joinable())  powerThread_.join();
+
+    sysEventMonitor_.Stop();
 
 #ifdef TCMT_WINDOWS
     etwMonitor_.Stop();

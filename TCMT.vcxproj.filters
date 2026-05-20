@@ -78,6 +78,9 @@
     <ClInclude Include="src\core\UserNotifier.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\SystemEventMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\ModuleCoordinator.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -174,6 +177,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\UserNotifier.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\SystemEventMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\ModuleCoordinator.cpp">

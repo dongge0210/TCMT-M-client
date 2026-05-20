@@ -8,6 +8,7 @@
 #include "../tui/TuiApp.h"
 #include "Utils/JThreadCompat.h"
 #include "etw/EtwMonitor.h"
+#include "SystemEventMonitor.h"
 
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
@@ -49,6 +50,10 @@ struct ModuleData {
     std::atomic<bool> btDirty{false};
     std::atomic<bool> usbDirty{false};
     std::atomic<bool> cpuFreqDirty{false};
+    // SystemEventMonitor dirty flags
+    std::atomic<bool> diskDirty{false};
+    std::atomic<bool> sysPowerDirty{false};  // sleep/wake events
+    std::atomic<bool> thermalDirty{false};
 };
 
 // Free function thread loops (implemented in ModuleCoordinator_cpu.cpp)
@@ -72,6 +77,7 @@ private:
     std::atomic<bool> running_{false};
     tcmt::compat::JThread cpuThread_, memoryThread_, diskThread_, netThread_, tempThread_, powerThread_;
     tcmt::etw::EtwMonitor etwMonitor_;
+    SystemEventMonitor sysEventMonitor_;
     void DiskLoop(tcmt::compat::StopToken st);
     void NetworkLoop(tcmt::compat::StopToken st);
     void TemperatureLoop(tcmt::compat::StopToken st);

@@ -140,7 +140,10 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
         }
 
-        ModuleCoordinator::SleepFor(st, 2000);
+        // Respond faster to ETW/system power events
+        if (!data.powerDirty.exchange(false) && !data.sysPowerDirty.exchange(false)) {
+            ModuleCoordinator::SleepFor(st, 2000);
+        }
     }
 
     Logger::Info("PowerLoop: stopped");

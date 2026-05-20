@@ -31,7 +31,10 @@ void ModuleCoordinator::DiskLoop(tcmt::compat::StopToken st) {
             Logger::Error("DiskLoop: unknown exception");
         }
 
-        SleepFor(st, 5000);
+        // Skip sleep if a system event triggered a re-scan
+        if (!data_.diskDirty.exchange(false)) {
+            SleepFor(st, 5000);
+        }
     }
 
     Logger::Debug("DiskLoop: exited");
@@ -91,7 +94,10 @@ void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
             Logger::Error("NetworkLoop: unknown exception");
         }
 
-        SleepFor(st, 1000);
+        // Skip sleep if a system/ETW event triggered a re-scan
+        if (!data_.networkDirty.exchange(false)) {
+            SleepFor(st, 1000);
+        }
     }
 
     Logger::Debug("NetworkLoop: exited");
