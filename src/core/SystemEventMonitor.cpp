@@ -517,10 +517,6 @@ bool SystemEventMonitor::StartWindows()
 
     // Spawn message pump thread
     auto* t = new std::thread([this, hwnd, hPower, hVolNotify]() {
-        // CoInitializeEx for potential WMI use (disk monitoring)
-        HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        bool comInitialized = SUCCEEDED(hr);
-
         running_.store(true);
         Logger::Info("SystemEventMonitor: started (Windows message pump)");
 
@@ -534,8 +530,6 @@ bool SystemEventMonitor::StartWindows()
         if (hVolNotify) UnregisterDeviceNotification(hVolNotify);
         if (hPower) UnregisterPowerSettingNotification(hPower);
         DestroyWindow(hwnd);
-
-        if (comInitialized) CoUninitialize();
     });
 
     notifyThread_ = reinterpret_cast<void*>(t);
