@@ -199,7 +199,7 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     }
     if (data.ramSpeed > 0) {
         std::string ramStr = std::string(data.ramType) + "-" + std::to_string(data.ramSpeed);
-        mvwprintw(win, y + lines, x0 + 2, "RAM: %.*s", maxW - 7, ramStr.c_str());
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, ramStr.c_str());
         lines++;
     }
 
