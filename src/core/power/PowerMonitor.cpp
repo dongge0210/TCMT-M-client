@@ -202,7 +202,7 @@ bool PowerMonitor::Start() {
         running_.store(false);
         return false;
     }
-    subs_ = sub;
+    subs_ = subResult;  // subscription handle = return value, not 3rd-param output
     CFRelease(allChannels);  // our retained copy survives
 
     directMode_.store(true);
