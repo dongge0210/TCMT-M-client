@@ -72,11 +72,6 @@ void ModuleCoordinator::Start() {
                      etwMonitor_.GetLastError() + " (falling back to polling)");
     }
 #endif
-
-    // Startup notification test
-    if (UserNotifier::IsAvailable()) {
-        UserNotifier::ShowNotification("TCMT Monitor", "Hardware monitoring started");
-    }
 }
 
 void ModuleCoordinator::Stop() {

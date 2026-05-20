@@ -370,9 +370,6 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
             protocolData->ProtocolDataLength = 512;  // NVMe health log is 512 bytes
 
             DWORD nvmeBytesReturned = 0;
-            Logger::Info("SMART disk" + std::to_string(diskIndex) +
-                " NVMe: inSize=" + std::to_string(inSize) + " outSize=" + std::to_string(outSize));
-
             if (DeviceIoControl(hNvme, IOCTL_STORAGE_QUERY_PROPERTY,
                                 inBuf, inSize,
                                 outBuf, outSize,
