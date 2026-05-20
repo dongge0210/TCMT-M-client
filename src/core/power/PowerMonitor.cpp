@@ -26,7 +26,7 @@
 
 // Function pointer types for the private IOReport C API
 typedef CFDictionaryRef (*FnIOReportCopyAllChannels)(uint64_t, uint64_t);
-typedef int    (*FnIOReportCreateSubscription)(void*, CFDictionaryRef, void**, uint64_t, int);
+typedef void*  (*FnIOReportCreateSubscription)(void*, CFDictionaryRef, void**, uint64_t, void*);
 typedef CFDictionaryRef (*FnIOReportCreateSamples)(void*, CFDictionaryRef, void*);
 typedef CFDictionaryRef (*FnIOReportCreateSamplesDelta)(CFDictionaryRef, CFDictionaryRef, void*);
 typedef int64_t (*FnIOReportSimpleGetIntegerValue)(CFDictionaryRef, int);
@@ -66,10 +66,15 @@ static bool LoadIOReport() {
         }                                                              \
     } while (0)
 
-    DLSYM_OR_FAIL(CopyAll);
-    DLSYM_OR_FAIL(CreateSub);
-    DLSYM_OR_FAIL(CreateSamples);
-    DLSYM_OR_FAIL(CreateDelta);
+    g_CopyAll       = reinterpret_cast<FnIOReportCopyAllChannels>(     dlsym(g_lib, "IOReportCopyAllChannels"));
+    g_CreateSub     = reinterpret_cast<FnIOReportCreateSubscription>(  dlsym(g_lib, "IOReportCreateSubscription"));
+    g_CreateSamples = reinterpret_cast<FnIOReportCreateSamples>(       dlsym(g_lib, "IOReportCreateSamples"));
+    g_CreateDelta   = reinterpret_cast<FnIOReportCreateSamplesDelta>(  dlsym(g_lib, "IOReportCreateSamplesDelta"));
+    if (!g_CopyAll || !g_CreateSub || !g_CreateSamples || !g_CreateDelta) {
+        Logger::Error("PowerMonitor: required IOReport symbols missing");
+        dlclose(g_lib); g_lib = nullptr;
+        return false;
+    }
 
     // These are optional — not all macOS versions export them
     g_GetInt     = reinterpret_cast<FnIOReportSimpleGetIntegerValue>(
@@ -189,10 +194,9 @@ bool PowerMonitor::Start() {
 
     // -- 3. Create subscription --
     void* sub = nullptr;
-    int ret = g_CreateSub(nullptr, allChannels, &sub, 0, 0);
-    if (ret != 0 || !sub) {
-        Logger::Error("PowerMonitor: IOReportCreateSubscription failed: "
-                      + std::to_string(ret));
+    void* subResult = g_CreateSub(nullptr, allChannels, &sub, 0, nullptr);
+    if (!subResult || !sub) {
+        Logger::Error("PowerMonitor: IOReportCreateSubscription failed");
         CFRelease(allChannels);
         chan_ = nullptr;
         running_.store(false);
