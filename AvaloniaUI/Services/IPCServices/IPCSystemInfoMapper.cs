@@ -260,6 +260,27 @@ public static class IPCSystemInfoMapper
                 info.BtDeviceCount = reader.ReadInt32("bluetooth/deviceCount") ?? 0;
             }
 
+            // TPM
+            if (reader.HasField("tpm/count")) {
+                var tpmCount = reader.ReadUInt8("tpm/count") ?? 0;
+                if (tpmCount > 0) {
+                    var manu = reader.ReadWString("tpm/manufacturer") ?? "";
+                    var fw = reader.ReadWString("tpm/firmwareVersion") ?? "";
+                    var status = reader.ReadUInt8("tpm/status") ?? 0;
+                    var selfTest = reader.ReadUInt8("tpm/selfTestStatus") ?? 0;
+                    var enabled = reader.ReadBool("tpm/isEnabled") ?? false;
+                    var active = reader.ReadBool("tpm/isActive") ?? false;
+                    info.Tpm = new TpmData {
+                        Manufacturer = manu,
+                        FirmwareVersion = fw,
+                        Status = status == 1 ? "正常" : (status == 3 ? "禁用" : "未知"),
+                        SelfTestStatus = selfTest == 0 ? "通过" : (selfTest == 1 ? "失败" : "未测试"),
+                        IsEnabled = enabled,
+                        IsActive = active,
+                    };
+                }
+            }
+
             return info;
         }
         catch (Exception ex)

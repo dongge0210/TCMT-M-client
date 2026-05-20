@@ -701,6 +701,15 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
     addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
     addField("bluetooth/name",        offsetof(SharedMemoryBlock, bluetooth.name), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+
+    // TPM
+    addField("tpm/manufacturer",    offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, manufacturer), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("tpm/firmwareVersion", offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, firmwareVersion), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("tpm/status",          offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, status), 1, (uint8_t)FT::Uint8);
+    addField("tpm/selfTestStatus",  offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, selfTestStatus), 1, (uint8_t)FT::Uint8);
+    addField("tpm/isEnabled",       offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isEnabled), 1, (uint8_t)FT::Bool);
+    addField("tpm/isActive",        offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isActive), 1, (uint8_t)FT::Bool);
+    addField("tpm/count",           offsetof(SharedMemoryBlock, tpmCount), 1, (uint8_t)FT::Uint8);
 }
 
 int main(int argc, char* argv[]) {

@@ -422,6 +422,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->tpm.isPresent = src.isPresent;
             pBuffer->tpm.isEnabled = src.isEnabled;
             pBuffer->tpm.isActive = src.isActive;
+            pBuffer->tpm.selfTestStatus = src.selfTestStatus;
             pBuffer->tpm.status = src.isPresent ? 1 : 3; // 1=OK, 3=Disabled
             pBuffer->tpmCount = 1;
         }
