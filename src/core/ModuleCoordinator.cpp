@@ -246,6 +246,12 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                         data_.cpuTemperature = temp;
                 }
             }
+
+            // Feed powermetrics frequency data (Apple Silicon — no ETW/PDH)
+            double pf = GetPmPCoreFreq();
+            double ef = GetPmECoreFreq();
+            if (pf > 0) data_.pCoreFreq.store(pf);
+            if (ef > 0) data_.eCoreFreq.store(ef);
         } catch (const std::exception& e) {
             Logger::Error("TemperatureLoop: " + std::string(e.what()));
         }

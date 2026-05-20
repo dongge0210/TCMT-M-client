@@ -328,12 +328,22 @@ static std::vector<std::string> smc_enumerate_temp_keys(void) {
 // Background powermetrics caching thread (Intel only — needs root)
 // powermetrics --samplers thermal -i N -n 1 outputs CPU/GPU die temps.
 // =====================================================================
-#ifdef __x86_64__
 static std::vector<std::pair<std::string, double>> g_pm_temps;
 static std::mutex  g_pm_mutex;
 static std::atomic<bool> g_pm_running{false};
 static std::atomic<bool> g_pm_available{false};
 static std::thread g_pm_thread;
+std::atomic<double> g_pm_pCoreFreq{0.0};
+std::atomic<double> g_pm_eCoreFreq{0.0};
+std::atomic<double> g_pm_gpuFreq{0.0};
+std::atomic<double> g_pm_cpuPower{0.0};
+std::atomic<double> g_pm_gpuPower{0.0};
+
+double GetPmPCoreFreq() { return g_pm_pCoreFreq.load(); }
+double GetPmECoreFreq() { return g_pm_eCoreFreq.load(); }
+double GetPmGpuFreq()   { return g_pm_gpuFreq.load(); }
+double GetPmCpuPower()  { return g_pm_cpuPower.load(); }
+double GetPmGpuPower()  { return g_pm_gpuPower.load(); }
 
 // Parse "XX.YY C" or "XX.YY°C" from a line
 static double parse_temp_line(const char* line) {
@@ -383,9 +393,10 @@ static void powermetrics_thread_func(void) {
     signal(SIGALRM, oldAlrm);  // restore; just want to test signal works
 
     while (g_pm_running.load()) {
-        // Run powermetrics for 10s sampling interval, output 1 sample
-        alarm(12);  // 12s hard timeout — fires if powermetrics blocks
-        FILE* fp = popen("/usr/bin/powermetrics --samplers thermal -i 10000 -n 1 2>/dev/null", "r");
+        // Run powermetrics with default samplers (includes frequency + power on AS)
+        // --samplers thermal is Intel-only; Apple Silicon uses default output
+        alarm(15);
+        FILE* fp = popen("/usr/bin/powermetrics -i 10000 -n 1 2>/dev/null", "r");
         if (!fp) {
             alarm(0);
             std::this_thread::sleep_for(std::chrono::seconds(30));
@@ -394,27 +405,42 @@ static void powermetrics_thread_func(void) {
 
         std::vector<std::pair<std::string, double>> batch;
         char line[512] = {0};
-        [[maybe_unused]] bool in_thermal = false;
 
         while (fgets(line, sizeof(line), fp)) {
-            if (std::strstr(line, "Thermal pressure")) {
-                in_thermal = true;
+            // Frequency: "E-Cluster HW active frequency: 1405 MHz"
+            if (std::strstr(line, "E-Cluster HW active frequency:")) {
+                double v = parse_temp_line(line);  // same number format
+                if (v > 0) g_pm_eCoreFreq.store(v);
             }
-            if (std::strstr(line, "CPU Die Temperature") ||
-                std::strstr(line, "GPU Die Temperature") ||
-                std::strstr(line, "CPU Die") ||
-                std::strstr(line, "GPU Die")) {
+            else if (std::strstr(line, "P-Cluster HW active frequency:")) {
+                double v = parse_temp_line(line);
+                if (v > 0) g_pm_pCoreFreq.store(v);
+            }
+            // GPU frequency: "GPU HW active frequency: 444 MHz"
+            else if (std::strstr(line, "GPU HW active frequency:")) {
+                double v = parse_temp_line(line);
+                if (v > 0) g_pm_gpuFreq.store(v);
+            }
+            // Power: "CPU Power: 426 mW"
+            else if (std::strstr(line, "CPU Power:")) {
+                double v = parse_temp_line(line);
+                if (v > 0) { g_pm_cpuPower.store(v); batch.push_back({"CPU Power", v}); }
+            }
+            else if (std::strstr(line, "GPU Power:")) {
+                double v = parse_temp_line(line);
+                if (v > 0) { g_pm_gpuPower.store(v); batch.push_back({"GPU Power", v}); }
+            }
+            // Temperature (thermal sampler on Intel, ARM PMU on AS)
+            else if (std::strstr(line, "CPU Die Temperature") ||
+                     std::strstr(line, "GPU Die Temperature")) {
                 double t = parse_temp_line(line);
                 if (t > 10 && t < 150) {
                     std::string label = (std::strstr(line, "GPU")) ? "GPU Die" : "CPU Die";
                     batch.push_back({label, t});
                 }
             }
-            if (std::strlen(line) > 2 && std::strstr(line, "PLimitData") != nullptr) {
-                in_thermal = false;
-            }
         }
-        alarm(0);  // cancel SIGALRM
+        alarm(0);
         pclose(fp);
 
         if (!batch.empty()) {
@@ -454,7 +480,6 @@ static void start_powermetrics_thread(void) {
     g_pm_running = true;
     g_pm_thread  = std::thread(powermetrics_thread_func);
 }
-#endif // __x86_64__ — end of powermetrics block
 
 // =====================================================================
 // IOKit thermal sensors fallback (no root needed, but limited coverage)
@@ -618,10 +643,8 @@ void TemperatureWrapper::Initialize() {
     Logger::Info("TemperatureWrapper: SMC skipped (Apple Silicon — hardware locked)");
 #endif
 
-    // Step 2: Start powermetrics background thread (Intel only, needs root)
-#ifdef __x86_64__
+    // Step 2: Start powermetrics background thread (needs root)
     start_powermetrics_thread();
-#endif
 
     Logger::Info("TemperatureWrapper: initialized");
 }
@@ -630,12 +653,10 @@ void TemperatureWrapper::Cleanup() {
     if (!initialized) return;
 
     // Stop powermetrics thread
-#ifdef __x86_64__
     if (g_pm_running.load()) {
         g_pm_running = false;
         if (g_pm_thread.joinable()) g_pm_thread.join();
     }
-#endif
 
     // Close SMC (Intel only)
 #ifdef __x86_64__
@@ -665,20 +686,20 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         if (smc_read_temp(kGpuKeys[i], "sp78", &t))
             temps.push_back({std::string(kGpuKeys[i]) + " (GPU)", t});
     }
-
-    // Priority 2: powermetrics cache (needs root, filled by background thread)
-    if (temps.empty()) {
-        std::lock_guard<std::mutex> lock(g_pm_mutex);
-        if (!g_pm_temps.empty()) {
-            temps = g_pm_temps;
-        }
-    }
 #endif
 
-    // Priority 1 (Apple Silicon): ARM PMU temp sensors (no root needed)
+    // ARM PMU temp sensors (no root, Apple Silicon; also works on Intel fallback)
     {
         auto arm = iokit_arm_temp_sensors();
         temps.insert(temps.end(), arm.begin(), arm.end());
+    }
+
+    // powermetrics cache (needs root, background thread; frequency+power on AS)
+    {
+        std::lock_guard<std::mutex> lock(g_pm_mutex);
+        if (!g_pm_temps.empty()) {
+            temps.insert(temps.end(), g_pm_temps.begin(), g_pm_temps.end());
+        }
     }
 
     // Battery temperature (always available on laptops)
