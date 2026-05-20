@@ -705,11 +705,11 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     // TPM
     addField("tpm/manufacturer",    offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, manufacturer), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
     addField("tpm/firmwareVersion", offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, firmwareVersion), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("tpm/status",          offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, status), 1, (uint8_t)FT::Uint8);
-    addField("tpm/selfTestStatus",  offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, selfTestStatus), 1, (uint8_t)FT::Uint8);
+    addField("tpm/status",          offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, status), 1, (uint8_t)FT::UInt8);
+    addField("tpm/selfTestStatus",  offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, selfTestStatus), 1, (uint8_t)FT::UInt8);
     addField("tpm/isEnabled",       offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isEnabled), 1, (uint8_t)FT::Bool);
     addField("tpm/isActive",        offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isActive), 1, (uint8_t)FT::Bool);
-    addField("tpm/count",           offsetof(SharedMemoryBlock, tpmCount), 1, (uint8_t)FT::Uint8);
+    addField("tpm/count",           offsetof(SharedMemoryBlock, tpmCount), 1, (uint8_t)FT::UInt8);
 }
 
 int main(int argc, char* argv[]) {
