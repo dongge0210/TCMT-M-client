@@ -152,6 +152,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\bluetooth\BluetoothInfo.h" />
     <ClInclude Include="src\core\wifi\WiFiInfo.h" />
     <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h" />
+    <ClInclude Include="src\core\UserNotifier.h" />
     <ClInclude Include="src\core\ModuleCoordinator.h" />
     <ClInclude Include="src\core\Utils\JThreadCompat.h" />
     <ClInclude Include="src\core\etw\EtwMonitor.h" />
@@ -180,6 +181,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\usb\UsbInfo.cpp" />
     <ClCompile Include="src\core\wifi\WiFiInfo.cpp" />
     <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c" />
+    <ClCompile Include="src\core\UserNotifier.cpp" />
     <ClCompile Include="src\core\ModuleCoordinator.cpp" />
     <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp" />
     <ClCompile Include="src\core\ModuleCoordinator_io.cpp" />

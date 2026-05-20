@@ -29,6 +29,7 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb/UsbInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/UserNotifier.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_cpu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_io.cpp
@@ -192,7 +193,7 @@ endif()
 tcmt_target_set_options(TCMTCore)
 tcmt_set_platform_libraries(TCMTCore)
 if(TCMT_WINDOWS)
-    target_link_libraries(TCMTCore PRIVATE tdh)
+    target_link_libraries(TCMTCore PRIVATE tdh wtsapi32)
 endif()
 tcmt_set_output_directories(TCMTCore)
 

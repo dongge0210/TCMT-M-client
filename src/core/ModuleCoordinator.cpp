@@ -4,6 +4,7 @@
 #include "Utils/WinUtils.h"
 #include <algorithm>
 #include <cctype>
+#include "UserNotifier.h"
 
 // =====================================================================
 // Construction / Destruction
@@ -71,6 +72,11 @@ void ModuleCoordinator::Start() {
                      etwMonitor_.GetLastError() + " (falling back to polling)");
     }
 #endif
+
+    // Startup notification test
+    if (UserNotifier::IsAvailable()) {
+        UserNotifier::ShowNotification("TCMT Monitor", "Hardware monitoring started");
+    }
 }
 
 void ModuleCoordinator::Stop() {

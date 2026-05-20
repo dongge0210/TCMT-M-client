@@ -75,6 +75,9 @@
     <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\UserNotifier.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\ModuleCoordinator.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -168,6 +171,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\UserNotifier.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\ModuleCoordinator.cpp">
