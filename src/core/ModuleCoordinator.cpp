@@ -161,9 +161,9 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.compressedMemory = data_.compressedMemory.load();
     tuiData.compressedMemory = data_.compressedMemory.load();
     sysInfo.ramSpeed = data_.ramSpeed;
-    strncpy(sysInfo.ramType, data_.ramType.c_str(), sizeof(sysInfo.ramType) - 1);
+    snprintf(sysInfo.ramType, sizeof(sysInfo.ramType), "%s", data_.ramType.c_str());
     tuiData.ramSpeed = data_.ramSpeed;
-    strncpy(tuiData.ramType, data_.ramType.c_str(), sizeof(tuiData.ramType) - 1);
+    snprintf(tuiData.ramType, sizeof(tuiData.ramType), "%s", data_.ramType.c_str());
 
     // GPU
     sysInfo.gpuUsage = data_.gpuUsage.load();

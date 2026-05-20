@@ -1591,7 +1591,7 @@ int main(int argc, char* argv[]) {
                     tuiData.availableMemory = sysInfo.availableMemory;
                     tuiData.compressedMemory = sysInfo.compressedMemory;
                     tuiData.ramSpeed = sysInfo.ramSpeed;
-                    strncpy(tuiData.ramType, sysInfo.ramType, sizeof(tuiData.ramType) - 1);
+                    snprintf(tuiData.ramType, sizeof(tuiData.ramType), "%s", sysInfo.ramType);
 
                     if (!sysInfo.gpus.empty()) {
                         tuiData.gpuName = sysInfo.gpuName;
