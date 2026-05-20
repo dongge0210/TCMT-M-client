@@ -1587,7 +1587,8 @@ int main(int argc, char* argv[]) {
                     tuiData.totalMemory = sysInfo.totalMemory;
                     tuiData.usedMemory = sysInfo.usedMemory;
                     tuiData.availableMemory = sysInfo.availableMemory;
-                    
+                    tuiData.compressedMemory = sysInfo.compressedMemory;
+
                     if (!sysInfo.gpus.empty()) {
                         tuiData.gpuName = sysInfo.gpuName;
                         tuiData.gpuMemory = sysInfo.gpuMemory;
