@@ -81,8 +81,6 @@ private:
     std::vector<FieldDef> schemaFields_;
 
     std::string lastError_;
-    std::string sockPath_;   // UID-suffixed socket path (avoids root/user conflict)
-    std::string shmPath_;    // UID-suffixed shm path
 };
 
 } // namespace tcmt::ipc

@@ -103,8 +103,7 @@ bool IPCClient::ConnectSocket() {
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    std::string sockPath = "/tmp/tcmt_ipc_" + std::to_string(getuid()) + ".sock";
-    strncpy(addr.sun_path, sockPath.c_str(), sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, IPC_SOCK_PATH, sizeof(addr.sun_path) - 1);
 
     int rc = connect(sockFd_, (struct sockaddr*)&addr, sizeof(addr));
     if (rc == -1 && errno != EINPROGRESS) {

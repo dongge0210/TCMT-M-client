@@ -588,7 +588,7 @@ int main(int argc, char* argv[]) {
         ipcServer.UpdateSchema(schemaHdr, fields);
     }
     if (ipcServer.Start()) {
-        Logger::Info("IPC server started (UID-suffixed socket)");
+        Logger::Info("IPC server started on " + std::string(tcmt::ipc::IPC_SOCK_PATH));
     } else {
         Logger::Warn("IPC server start failed: " + ipcServer.GetLastError());
     }
