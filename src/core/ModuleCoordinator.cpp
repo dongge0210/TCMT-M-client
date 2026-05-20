@@ -4,7 +4,7 @@
 #include "Utils/WinUtils.h"
 #include <algorithm>
 #include <cctype>
-#include "UserNotifier.h"
+#include "notifications/UserNotifier.h"
 
 // =====================================================================
 // Construction / Destruction

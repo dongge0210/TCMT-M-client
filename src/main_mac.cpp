@@ -31,7 +31,7 @@
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
 #include "core/bluetooth/BluetoothInfo.h"
-#include "core/DeviceChangeNotifier.h"
+#include "core/notifications/DeviceChangeNotifier.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/DataStruct/DataStruct.h"

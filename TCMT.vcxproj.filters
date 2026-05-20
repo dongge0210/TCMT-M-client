@@ -75,10 +75,13 @@
     <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\UserNotifier.h">
+    <ClInclude Include="src\core\notifications\DeviceChangeNotifier.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\SystemEventMonitor.h">
+    <ClInclude Include="src\core\notifications\UserNotifier.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\notifications\SystemEventMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\core\ModuleCoordinator.h">
@@ -176,10 +179,10 @@
     <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\UserNotifier.cpp">
+    <ClCompile Include="src\core\notifications\UserNotifier.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\SystemEventMonitor.cpp">
+    <ClCompile Include="src\core\notifications\SystemEventMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\ModuleCoordinator.cpp">

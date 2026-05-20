@@ -8,7 +8,7 @@
 #include "../tui/TuiApp.h"
 #include "Utils/JThreadCompat.h"
 #include "etw/EtwMonitor.h"
-#include "SystemEventMonitor.h"
+#include "notifications/SystemEventMonitor.h"
 
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
