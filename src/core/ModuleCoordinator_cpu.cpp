@@ -14,6 +14,11 @@
 #include <chrono>
 #include <memory>
 
+#ifdef TCMT_WINDOWS
+#include <pdh.h>
+#pragma comment(lib, "pdh.lib")
+#endif
+
 #ifdef TCMT_MACOS
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
@@ -102,6 +107,32 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
                     static_cast<uint64_t>(pageSize));
             } else {
                 data.compressedMemory.store(0);
+            }
+#elif defined(TCMT_WINDOWS)
+            // Windows: read compressed memory via PDH \Memory\Modified Page List Bytes
+            {
+                static void* hQuery = nullptr;
+                static void* hCounter = nullptr;
+                static bool pdhReady = false;
+                if (!pdhReady) {
+                    if (PdhOpenQueryW(nullptr, 0, (PDH_HQUERY*)&hQuery) == 0) {
+                        if (PdhAddEnglishCounterW((PDH_HQUERY)hQuery,
+                            L"\\Memory\\Modified Page List Bytes", 0,
+                            (PDH_HCOUNTER*)&hCounter) == 0) {
+                            pdhReady = true;
+                        }
+                    }
+                }
+                if (pdhReady) {
+                    PdhCollectQueryData((PDH_HQUERY)hQuery);
+                    PDH_FMT_COUNTERVALUE v;
+                    if (PdhGetFormattedCounterValue((PDH_HCOUNTER)hCounter,
+                        PDH_FMT_LARGE, nullptr, &v) == 0) {
+                        data.compressedMemory.store(v.largeValue);
+                    }
+                } else {
+                    data.compressedMemory.store(0);
+                }
             }
 #endif
         } catch (const std::exception& e) {

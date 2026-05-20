@@ -1208,7 +1208,7 @@ int main(int argc, char* argv[]) {
                 }
                 
                 SystemInfo sysInfo{};
-                sysInfo.compressedMemory = 0; // Windows: no compressed memory
+                // compressedMemory populated by ModuleCoordinator (PDH \Memory\Modified Page List Bytes)
 
                 try {
                     sysInfo.cpuUsage = 0.0;
