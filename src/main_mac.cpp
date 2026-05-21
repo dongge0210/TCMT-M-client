@@ -993,7 +993,6 @@ int main(int argc, char* argv[]) {
                     }
                 } catch (...) {}
             }
-            }
 
             loopCounter++;
         }
