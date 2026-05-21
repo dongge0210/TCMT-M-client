@@ -257,7 +257,10 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
 #endif
 
     if (data.gpuFreq > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
+        if (data.gpuMaxFreq > 0 && static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq))
+            mvwprintw(win, y + lines, x0 + 2, "Freq: %d/%d MHz", static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
     if (data.gpuTemp > 0 || data.gpuPower > 0) {

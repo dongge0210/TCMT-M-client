@@ -23,6 +23,7 @@ public:
     double GetPCoreFreq() const  { return pCoreFreq_.load(); }
     double GetECoreFreq() const  { return eCoreFreq_.load(); }
     double GetGpuFreq() const    { return gpuFreq_.load(); }
+    double GetGpuMaxFreq() const { return gpuMaxFreq_.load(); }
     double GetPCoreMaxFreq() const { return pCoreMaxFreq_.load(); }
     double GetECoreMaxFreq() const { return eCoreMaxFreq_.load(); }
     double GetCpuPower() const   { return cpuPower_.load(); }
@@ -41,6 +42,7 @@ private:
     std::atomic<double> pCoreFreq_{0.0};
     std::atomic<double> eCoreFreq_{0.0};
     std::atomic<double> gpuFreq_{0.0};
+    std::atomic<double> gpuMaxFreq_{0.0};
     std::atomic<double> pCoreMaxFreq_{0.0};
     std::atomic<double> eCoreMaxFreq_{0.0};
     std::atomic<double> cpuPower_{0.0};

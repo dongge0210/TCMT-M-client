@@ -107,6 +107,7 @@ void ModuleCoordinator::Start() {
         data_.pCoreMaxFreq.store(powerMonitor_.GetPCoreMaxFreq());
         data_.eCoreMaxFreq.store(powerMonitor_.GetECoreMaxFreq());
         data_.gpuFreq.store(powerMonitor_.GetGpuFreq());
+        data_.gpuMaxFreq.store(powerMonitor_.GetGpuMaxFreq());
     }
 #endif
 
@@ -272,6 +273,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.gpuPower = data_.gpuPower.load();
     tuiData.anePower = data_.anePower.load();
     tuiData.gpuFreq = data_.gpuFreq.load();
+    tuiData.gpuMaxFreq = data_.gpuMaxFreq.load();
     sysInfo.cpuPower = data_.cpuPower.load();
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();

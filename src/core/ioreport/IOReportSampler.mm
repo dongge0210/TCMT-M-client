@@ -197,7 +197,10 @@ bool PowerMonitor::Start() {
         eCoreFreq_.store(eFreqTable_[eFreqCount_-1]);
         eCoreMaxFreq_.store(eFreqTable_[eFreqCount_-1]);
     }
-    if (gpuFreqCount_ > 0) gpuFreq_.store(gpuFreqTable_[gpuFreqCount_-1]);
+    if (gpuFreqCount_ > 0) {
+        gpuFreq_.store(gpuFreqTable_[gpuFreqCount_-1]);
+        gpuMaxFreq_.store(gpuFreqTable_[gpuFreqCount_-1]);
+    }
 
     directMode_.store(true);
     running_.store(true);
