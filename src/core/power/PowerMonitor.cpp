@@ -304,6 +304,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     CFArrayRef channels = (CFArrayRef)CFDictionaryGetValue(delta, kChannelsKey);
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
+    static int logCount = 0;
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(
@@ -328,34 +329,37 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                                kCFStringEncodingUTF8);
         }
 
+        // Log first 3 batches of channels for discovery
+        if (logCount < 3) {
+            Logger::Info("PowerMonitor: channel[" + std::to_string(i) + "] "
+                "group=" + std::string(group) + " name=" + std::string(name));
+        }
+
         // Extract the energy-delta value
         int64_t value = ExtractChannelValue((void*)channel);
         if (value <= 0) continue;
 
         // Dispatch by group
-        if (strcmp(group, "CPU") == 0) {
+        if (strcmp(group, "CPU") == 0 && strstr(name, "Power")) {
             double power = EnergyToPower((void*)channel, value);
-            // Guard against fast-path zero readings (first delta is tiny
-            // when counters just reset)
-            if (power > 0.01 && power < 500.0) {
-                cpuPower_.store(power);
-            }
-        } else if (strcmp(group, "GPU") == 0) {
+            if (power > 0.01 && power < 500.0) cpuPower_.store(power);
+        } else if (strcmp(group, "GPU") == 0 && strstr(name, "Power")) {
             double power = EnergyToPower((void*)channel, value);
-            if (power > 0.01 && power < 500.0) {
-                gpuPower_.store(power);
-            }
+            if (power > 0.01 && power < 500.0) gpuPower_.store(power);
         } else if (strcmp(group, "ANE") == 0) {
             double power = EnergyToPower((void*)channel, value);
-            if (power >= 0.0 && power < 500.0) {
-                anePower_.store(power);
+            if (power >= 0.0 && power < 500.0) anePower_.store(power);
+        }
+        // Dynamic cluster frequency — match "CPU Complex" or cluster-named groups
+        else if (strstr(group, "Cluster") || strstr(name, "active frequency")) {
+            double mhz = static_cast<double>(value) / 1e6;
+            if (mhz > 100 && mhz < 10000) {
+                if (strstr(group, "P") || strstr(name, "P")) pCoreFreq_.store(mhz);
+                else if (strstr(group, "E") || strstr(name, "E")) eCoreFreq_.store(mhz);
             }
         }
-        // Note: Cluster frequencies are read once from pmgr in Start().
-        // IOReport frequency channels could in theory provide dynamic
-        // per-sample frequencies but the pmgr DVFS tables give the stable
-        // operating frequencies which is what powermetrics users expect.
     }
+    if (logCount < 3) ++logCount;
 }
 
 // ============================================================================
