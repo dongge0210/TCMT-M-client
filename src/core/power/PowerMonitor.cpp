@@ -333,13 +333,14 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         int64_t value = ExtractChannelValue((void*)channel);
 
-        if (logCount < 2) {
+        // Log channels with real values in first batch
+        if (logCount < 1 && value != INT64_MIN) {
             Logger::Info("PowerMonitor: g=" + std::string(group) +
                 " s=" + std::string(sub) + " n=" + std::string(name) +
                 " v=" + std::to_string(value));
         }
 
-        if (value <= 0) continue;
+        if (value <= 0 || value == INT64_MIN) continue;
 
         // Power: "Energy Model" group, unit in mJ/uJ/nJ (from LLM analysis of IOReport channels)
         if (strcmp(group, "Energy Model") == 0) {
@@ -356,7 +357,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             // IOReportStateGetCount + IOReportStateGetNameForIndex + IOReportStateGetResidency
         }
     }
-    if (logCount < 2) ++logCount;
+    if (logCount < 1) ++logCount;
 }
 
 // ============================================================================
