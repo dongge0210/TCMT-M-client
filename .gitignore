@@ -118,3 +118,4 @@ docs/API.txt
 docs/docs_architecture_and_protocol_plan_v0.14_full_Version11.md
 .traces
 .remember/tmp/save-session.pid
+tools/ioreport/ioreport_dump
