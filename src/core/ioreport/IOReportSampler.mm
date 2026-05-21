@@ -312,18 +312,13 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         }
 
         int64_t value = ExtractChannelValue((void*)channel);
-        static int emCount = 0;
-        if (firstCh && strcmp(group, "Energy Model") == 0 && value > 0 && value != INT64_MIN) {
-            emCount++;
-            if (emCount <= 20) Logger::Info("PowerMonitor: EM[" + std::to_string(emCount) + "] n=" + std::string(name) + " v=" + std::to_string(value));
-        }
         if (value <= 0 || value == INT64_MIN) continue;
 
         if (strcmp(group, "Energy Model") == 0) {
             double power = EnergyToPower((void*)channel, value) * 1000.0;
             if (power > 0.1 && power < 50000.0) {
                 // Per-core energy: accumulate ECPU*/PCPU* into cpuPower
-                if (strncmp(name, "ECPU", 4) == 0 || strncmp(name, "PCPU", 4) == 0)
+                if ((strncmp(name, "ECPU", 4) == 0 || strncmp(name, "PCPU", 4) == 0) && !strstr(name, "SRAM"))
                     cpuPower_.store(cpuPower_.load() + power);
                 else if (strcmp(name, "GPU") == 0) gpuPower_.store(power);
                 else if (strcmp(name, "ANE") == 0) anePower_.store(power);
