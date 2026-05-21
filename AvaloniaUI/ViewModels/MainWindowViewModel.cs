@@ -238,6 +238,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AddMemoryHistoryPoint(MemoryPercent);
         RamType = info.RamType ?? "";
         RamSpeed = info.RamSpeed;
+        OnPropertyChanged(nameof(HasRamInfo));
 
         // Power (mW → W)
         CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F1}W" : "";
@@ -610,6 +611,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private uint _ramSpeed;
+
+    public bool HasRamInfo => !string.IsNullOrEmpty(RamType) || RamSpeed > 0;
 
     // Power display (mW → W)
     [ObservableProperty]

@@ -172,8 +172,13 @@ public:
                 IOServiceAddMatchingNotification(
                     notifyPort_, kIOFirstMatchNotification, matching,
                     &DeviceChangeNotifier::IOCallback, this, &iterator_);
-                // Drain initial iterator
                 DeviceChangeNotifier::IOCallback(this, iterator_);
+            }
+            CFMutableDictionaryRef termMatching = IOServiceMatching(className_.c_str());
+            if (termMatching) {
+                IOServiceAddMatchingNotification(
+                    notifyPort_, kIOTerminatedNotification, termMatching,
+                    &DeviceChangeNotifier::IOCallback, this, &termIterator_);
             }
 
             while (!stopFlag_.load()) {
@@ -191,6 +196,8 @@ public:
     ~DeviceChangeNotifier() {
         stopFlag_.store(true);
         if (runLoopThread_.joinable()) runLoopThread_.join();
+        if (iterator_) IOObjectRelease(iterator_);
+        if (termIterator_) IOObjectRelease(termIterator_);
     }
 
     bool Poll() {
@@ -213,6 +220,7 @@ private:
     std::thread runLoopThread_;
     IONotificationPortRef notifyPort_{nullptr};
     io_iterator_t iterator_{0};
+    io_iterator_t termIterator_{0};
 };
 
 #else

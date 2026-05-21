@@ -118,11 +118,10 @@
                             <TextBlock Text="{Binding TotalMemory, StringFormat='总计: {0}'}" Foreground="#FFB3B3B3"/>
                             <TextBlock Text="{Binding AvailableMemory, StringFormat='可用: {0}'}" Foreground="#FF666666" FontSize="11"/>
                             <TextBlock Text="{Binding CompressedMemory, StringFormat='已压缩: {0}'}" Foreground="#FF666666" FontSize="11" IsVisible="{Binding CompressedMemory, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0" Spacing="8">
-                                <TextBlock Text="{Binding RamType}" Foreground="#FFB3B3B3" FontSize="11"
-                                           IsVisible="{Binding RamType, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                <TextBlock Text="{Binding RamSpeed, StringFormat='{0} MHz'}" Foreground="#FF888888" FontSize="11"
-                                           IsVisible="{Binding RamSpeed, Converter={StaticResource UintToBoolConverter}}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0" Spacing="8"
+                                        IsVisible="{Binding HasRamInfo}">
+                                <TextBlock Text="{Binding RamType}" Foreground="#FFB3B3B3" FontSize="11"/>
+                                <TextBlock Text="{Binding RamSpeed, StringFormat='{}{0} MHz'}" Foreground="#FF888888" FontSize="11"/>
                             </StackPanel>
                             <ProgressBar Value="{Binding MemoryPercent}" Maximum="100" Height="8" Margin="0,10,0,0"/>
                             <Grid Margin="0,5,0,0">
@@ -162,9 +161,34 @@
                         </Grid>
                         <ProgressBar Value="{Binding SelectedGpu.Usage, TargetNullValue=0}" Maximum="100" Height="6" Margin="0,8,0,0" Foreground="#FF4CAF50"/>
                         <TextBlock Text="{Binding SelectedGpu.Usage, TargetNullValue=0, StringFormat='GPU使用率: {0:F1}%'}" Foreground="#FFB3B3B3" FontSize="11"/>
+                        <TextBlock Text="{Binding GpuFreqDisplay}" Foreground="#FFB3B3B3" FontSize="11"
+                                   IsVisible="{Binding GpuFreqDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         <StackPanel IsVisible="{Binding IsNotMacOS}">
                             <ProgressBar Value="{Binding SelectedGpu.CoreClock, TargetNullValue=0}" Maximum="100" Height="6" Margin="0,4,0,0" Foreground="#FFFF9800"/>
                             <TextBlock Text="{Binding SelectedGpu.CoreClock, TargetNullValue=0, StringFormat='显存占用: {0:F1}%'}" Foreground="#FFB3B3B3" FontSize="11"/>
+                        </StackPanel>
+                        <!-- Power consumption -->
+                        <StackPanel Margin="0,6,0,0" IsVisible="{Binding CpuPowerDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Text="功耗" FontSize="12" FontWeight="Bold" Foreground="#FF888888"/>
+                            <Grid Margin="0,3,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="CPU" Foreground="#FF666666" FontSize="10"/>
+                                    <TextBlock Text="{Binding CpuPowerDisplay}" Foreground="#FFB3B3B3" FontSize="11"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="GPU" Foreground="#FF666666" FontSize="10"/>
+                                    <TextBlock Text="{Binding GpuPowerDisplay}" Foreground="#FFB3B3B3" FontSize="11"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="ANE" Foreground="#FF666666" FontSize="10"/>
+                                    <TextBlock Text="{Binding AnePowerDisplay}" Foreground="#FFB3B3B3" FontSize="11"/>
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
                     </StackPanel>
                 </Border>
