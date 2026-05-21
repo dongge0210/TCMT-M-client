@@ -243,6 +243,8 @@ void PowerMonitor::SampleLoop() {
         if (!nextSample) break;
         CFDictionaryRef delta = g_CreateDelta(prevSample, nextSample, nullptr);
         if (delta) { ParsePowerDelta((void*)delta); CFRelease((CFTypeRef)delta); }
+        static bool firstDelta = true;
+        if (firstDelta) { Logger::Info("PowerMonitor: CPU=" + std::to_string(cpuPower_.load()) + "mW GPU=" + std::to_string(gpuPower_.load()) + "mW ANE=" + std::to_string(anePower_.load()) + "mW"); firstDelta = false; }
         CFRelease((CFTypeRef)prevSample);
         prevSample = nextSample;
     }
@@ -323,10 +325,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     }
     if (logCount < 1) ++logCount;
     if (gpuFreqN > 0) gpuFreq_.store(gpuFreqSum / static_cast<double>(gpuFreqN));
-    if (logCount < 1) {
-        Logger::Info("PowerMonitor: power CPU=" + std::to_string(cpuPower_.load()) +
-            " GPU=" + std::to_string(gpuPower_.load()) + " ANE=" + std::to_string(anePower_.load()));
-    }
 }
 
 // ====================================================================
