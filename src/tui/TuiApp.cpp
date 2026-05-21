@@ -166,11 +166,16 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
     lines++;
 
-    if (data.cpuTemp > 0) {
-        if (data.cpuPower > 0)
-            mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C  Power: %.1fW", data.cpuTemp, data.cpuPower / 1000.0);
-        else
-            mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.cpuTemp);
+    if (data.cpuTemp > 0 || data.cpuPower > 0) {
+        std::string cpuPwr;
+        if (data.cpuTemp > 0)
+            cpuPwr = "Temp: " + std::to_string(static_cast<int>(data.cpuTemp)) + " C";
+        if (data.cpuPower > 0) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "  Power: %.1fW", data.cpuPower / 1000.0);
+            cpuPwr += buf;
+        }
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, cpuPwr.c_str());
         lines++;
     }
 
