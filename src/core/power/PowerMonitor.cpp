@@ -381,36 +381,37 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         if (strcmp(group, "CPU Stats") == 0) {
             if (g_StateCount && g_StateName && g_StateRes) {
                 int nStates = g_StateCount((CFDictionaryRef)channel);
-                if (nStates > 1) {
+                if (nStates > 1 && (strcmp(name, "PCPU") == 0 || strcmp(name, "ECPU") == 0)) {
                     double weightedSum = 0.0;
                     int64_t totalRes = 0;
+                    // Log first state name to see format
+                    static bool firstState = true;
                     for (int si = 0; si < nStates; ++si) {
                         int64_t r = g_StateRes((CFDictionaryRef)channel, si);
+                        CFStringRef sn = g_StateName((CFDictionaryRef)channel, si);
+                        char sname[32] = {};
+                        if (sn) CFStringGetCString(sn, sname, sizeof(sname), kCFStringEncodingUTF8);
+                        if (firstState && strcmp(name, "PCPU") == 0) {
+                            Logger::Info("PowerMonitor: state[" + std::to_string(si) + "] name='" +
+                                std::string(sname) + "' res=" + std::to_string(r));
+                        }
                         if (r <= 0) continue;
                         totalRes += r;
-                        CFStringRef sn = g_StateName((CFDictionaryRef)channel, si);
-                        if (!sn) continue;
-                        char sname[32] = {};
-                        CFStringGetCString(sn, sname, sizeof(sname), kCFStringEncodingUTF8);
                         double mhz = atof(sname);
                         if (mhz > 100 && mhz < 10000)
                             weightedSum += mhz * static_cast<double>(r);
                     }
+                    if (strcmp(name, "PCPU") == 0) firstState = false;
                     if (totalRes > 0) {
                         double activeMHz = weightedSum / static_cast<double>(totalRes);
-                        // "CPU Complex Voltage States" with name PCPU/ECPU = cluster aggregate
                         if (strcmp(name, "PCPU") == 0) {
-                            if (static bool first = true; first) {
-                                Logger::Info("PowerMonitor: dynamic P-Cluster freq: " + std::to_string(activeMHz) + " MHz");
-                                first = false;
-                            }
                             pCoreFreq_.store(activeMHz);
-                        } else if (strcmp(name, "ECPU") == 0) {
-                            if (static bool first = true; first) {
-                                Logger::Info("PowerMonitor: dynamic E-Cluster freq: " + std::to_string(activeMHz) + " MHz");
-                                first = false;
-                            }
+                            static bool firstP = true;
+                            if (firstP) { Logger::Info("PowerMonitor: P-Cluster " + std::to_string(activeMHz) + " MHz"); firstP = false; }
+                        } else {
                             eCoreFreq_.store(activeMHz);
+                            static bool firstE = true;
+                            if (firstE) { Logger::Info("PowerMonitor: E-Cluster " + std::to_string(activeMHz) + " MHz"); firstE = false; }
                         }
                     }
                 }
