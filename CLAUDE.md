@@ -151,11 +151,17 @@ git submodule update --init --recursive
 - **sessions**: change `docs/session.md` when current status changed also you see current status from that file.
 - **read-scope**: **Always use `Read` with `offset` and `limit` parameters.** Never read entire files — read only the relevant range.
 
+## Scope & Boundaries
+- **Stay focused**: When debugging, focus narrowly on the specific error or crash. Do NOT deep-dive into unrelated internals, propose tangential refactors, or expand the scope without asking.
+- **No external actions**: Do NOT create GitHub issues, PRs, or external tickets unless explicitly asked. Never push to `main` without confirmation.
+- **Plan before large changes**: For features touching >3 files or adding new modules, present a brief plan before coding.
+
 ## Repository Safety Rules
 - Before any file edit, verify working directory with `pwd` and `git status`.
-- Do NOT create GitHub issues, pull requests, or modify any remote resources unless the user explicitly asks.
 - When creating a PR, always ask the user whether it should be **draft** or **ready** first. Never assume one or the other.
+- All PRs target `dev` unless told otherwise.
 
 ## Edit Verification
-- After every code change on macOS, run `cmake --build build -j8` and confirm 0 errors.
+- After every code change on macOS, run `cmake --build build -j8` and confirm 0 errors. Use fixed `-j8`, NOT `$(nproc)` or `$(sysctl -n hw.ncpu)` — command substitution breaks auto-approval.
 - After every code change on Windows, the build command is `msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /m`.
+- **Zero warnings tolerance** — fix any warning immediately, do not suppress or ignore.
