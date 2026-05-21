@@ -291,10 +291,10 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 double wsum = 0.0; int64_t tres = 0;
                 for (int si = 0; si < nStates; ++si) {
                     int fi = freqBase + si;
-                    if (fi >= freqCount) break;
+                    double f = (fi < freqCount) ? ft[fi] : ft[freqCount-1];
                     int64_t r = g_StateRes((CFDictionaryRef)channel, si);
                     if (r <= 0) continue;
-                    tres += r; wsum += ft[fi] * static_cast<double>(r);
+                    tres += r; wsum += f * static_cast<double>(r);
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
