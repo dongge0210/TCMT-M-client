@@ -253,6 +253,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
     static int logCount = 0;
+    double gpuFreqSum = 0.0; int gpuFreqN = 0;  // accumulate GPU per-delta
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(channels, i));
@@ -289,16 +290,18 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 while (freqBase < freqCount && ft[freqBase] <= 0) ++freqBase;
                 if (freqBase >= freqCount) continue;
                 double wsum = 0.0; int64_t tres = 0;
-                for (int si = 0; si < nStates; ++si) {
-                    int fi = freqBase + si;
-                    double f = (fi < freqCount) ? ft[fi] : ft[freqCount-1];
+                for (int si = 0; si < nStates && (freqBase + si) < freqCount; ++si) {
                     int64_t r = g_StateRes((CFDictionaryRef)channel, si);
                     if (r <= 0) continue;
-                    tres += r; wsum += f * static_cast<double>(r);
+                    tres += r; wsum += ft[freqBase + si] * static_cast<double>(r);
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
-                    if (isGpu) gpuFreq_.store(mhz);
+                    if (isGpu) { gpuFreqSum += mhz; gpuFreqN++; }
+                    else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
+                    else eCoreFreq_.store(mhz);
+                }
+                if (isGpu) continue;
                     else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
                     else eCoreFreq_.store(mhz);
                 }
@@ -319,6 +322,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         }
     }
     if (logCount < 1) ++logCount;
+    if (gpuFreqN > 0) gpuFreq_.store(gpuFreqSum / static_cast<double>(gpuFreqN));
 }
 
 // ====================================================================
