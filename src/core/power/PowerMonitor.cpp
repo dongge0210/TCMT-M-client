@@ -329,14 +329,26 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                                kCFStringEncodingUTF8);
         }
 
-        // Log first 3 batches of channels for discovery
-        if (logCount < 3) {
-            Logger::Info("PowerMonitor: channel[" + std::to_string(i) + "] "
-                "group=" + std::string(group) + " name=" + std::string(name));
+        // Extract the value
+        int64_t value = ExtractChannelValue((void*)channel);
+
+        // Log only channels with values or interesting names (first 5 batches)
+        if (logCount < 5 && (value != 0 || group[0] != '\0')) {
+            if (strstr(group, "Cluster") || strstr(group, "CPU") || strstr(group, "GPU") ||
+                strstr(group, "ANE") || strstr(name, "Power") || strstr(name, "freq") ||
+                strstr(name, "Cluster") || strstr(name, "CPU") || strstr(name, "GPU") ||
+                strstr(name, "ANE")) {
+                char sub[64] = {0};
+                if (g_GetSubGroup) {
+                    CFStringRef sg = g_GetSubGroup((CFDictionaryRef)channel);
+                    if (sg) CFStringGetCString(sg, sub, sizeof(sub), kCFStringEncodingUTF8);
+                }
+                Logger::Info("PowerMonitor: group=" + std::string(group) +
+                    " sub=" + std::string(sub) + " name=" + std::string(name) +
+                    " val=" + std::to_string(value));
+            }
         }
 
-        // Extract the energy-delta value
-        int64_t value = ExtractChannelValue((void*)channel);
         if (value <= 0) continue;
 
         // Dispatch by group
