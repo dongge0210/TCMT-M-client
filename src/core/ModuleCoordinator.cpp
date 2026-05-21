@@ -164,6 +164,8 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.cpuUsage = data_.cpuUsage.load();
     sysInfo.performanceCoreFreq = data_.pCoreFreq.load();
     sysInfo.efficiencyCoreFreq = data_.eCoreFreq.load();
+    tuiData.pCoreFreq = data_.pCoreFreq.load();
+    tuiData.eCoreFreq = data_.eCoreFreq.load();
 
     // Memory
     sysInfo.totalMemory = data_.totalMemory.load();
