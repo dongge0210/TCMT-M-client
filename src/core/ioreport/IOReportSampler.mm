@@ -280,9 +280,12 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 double* ft;
                 if (isGpu) {
                     if (!gpuLogged) {
+                        std::string rs;
+                        for (int si = 0; si < std::min(nStates, 5); ++si)
+                            rs += " r" + std::to_string(si) + "=" + std::to_string(g_StateRes((CFDictionaryRef)channel, si));
                         Logger::Info("PowerMonitor: GPUStat sub=" + std::string(sub) +
                             " name=" + std::string(name) + " states=" + std::to_string(nStates) +
-                            " ftable=" + std::to_string(gpuFreqCount_));
+                            " ftable=" + std::to_string(gpuFreqCount_) + rs);
                         gpuLogged = true;
                     }
                     freqCount = gpuFreqCount_; ft = gpuFreqTable_;
