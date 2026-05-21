@@ -284,11 +284,19 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 else if (strncmp(name, "ECPU", 4) == 0) { freqCount = eFreqCount_; ft = eFreqTable_; }
                 else continue;
                 if (freqCount <= 0) continue;
+                // Find first non-zero freq (skip voltage-only entries in DVFS table)
+                int freqBase = 0;
+                while (freqBase < freqCount && ft[freqBase] <= 0) ++freqBase;
+                int validFreqs = freqCount - freqBase;
+                if (validFreqs <= 0) continue;
                 double wsum = 0.0; int64_t tres = 0;
-                for (int si = 0; si < nStates && si < freqCount; ++si) {
+                int stateBase = (isGpu && nStates > validFreqs) ? (nStates - validFreqs) : 0;
+                for (int si = stateBase; si < nStates; ++si) {
+                    int fi = freqBase + (si - stateBase);
+                    if (fi >= freqCount) break;
                     int64_t r = g_StateRes((CFDictionaryRef)channel, si);
                     if (r <= 0) continue;
-                    tres += r; wsum += ft[si] * static_cast<double>(r);
+                    tres += r; wsum += ft[fi] * static_cast<double>(r);
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
