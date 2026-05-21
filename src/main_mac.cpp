@@ -105,9 +105,13 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     // Battery / Power
     addI("battery/percent",       offsetof(B, batteryPercent));
     addB("battery/acOnline",      offsetof(B, acOnline));
+    addF("power/cpu",             offsetof(B, cpuPower));
+    addF("power/gpu",             offsetof(B, gpuPower));
+    addF("power/ane",             offsetof(B, anePower));
 
     // OS
     addS("os/version",            offsetof(B, osVersion), 128);
+    addS("os/model",              offsetof(B, hardwareModel), 128);
 
     // GPU
     addS("gpu/0/name",            offsetof(B, gpuName), 48);
@@ -116,6 +120,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("gpu/0/memoryPercent",   offsetof(B, gpuMemoryPercent));
     addF("gpu/0/usage",           offsetof(B, gpuUsage));
     addF("gpu/0/temperature",     offsetof(B, gpuTemp));
+    addF("gpu/0/freq",            offsetof(B, gpuFreq));
     addB("gpu/0/isVirtual",       offsetof(B, gpuIsVirtual));
 
     // Disks (up to 4)
@@ -714,6 +719,7 @@ int main(int argc, char* argv[]) {
             static int wbCtr = 0;
             static WiFiInfo s_wifi;
             static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+            static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
             static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
             static BluetoothInfo s_bt;
             if (++wbCtr >= 6) { wbCtr = 0;
@@ -822,12 +828,20 @@ int main(int argc, char* argv[]) {
                         b->usedMemory = data.usedMemory;
                         b->availableMemory = data.availableMemory;
                         b->compressedMemory = data.compressedMemory;
+                        b->ramSpeed = data.ramSpeed;
+                        std::strncpy(b->ramType, data.ramType, 31);
+                        b->ramType[31] = '\0';
                         // Battery / power
                         b->batteryPercent = data.batteryPercent;
                         b->acOnline = data.acOnline;
+                        b->cpuPower = static_cast<float>(data.cpuPower);
+                        b->gpuPower = static_cast<float>(data.gpuPower);
+                        b->anePower = static_cast<float>(data.anePower);
                         // OS
                         std::strncpy(b->osVersion, data.osVersion.c_str(), 127);
                         b->osVersion[127] = '\0';
+                        std::strncpy(b->hardwareModel, data.hardwareModel.c_str(), 127);
+                        b->hardwareModel[127] = '\0';
                         // GPU
                         std::strncpy(b->gpuName, data.gpuName.c_str(), 47);
                         b->gpuName[47] = '\0';
@@ -835,6 +849,7 @@ int main(int argc, char* argv[]) {
                         b->gpuMemoryPercent = static_cast<float>(data.gpuMemoryPercent);
                         b->gpuUsage = static_cast<float>(data.gpuUsage);
                         b->gpuTemp = static_cast<float>(data.gpuTemp);
+                        b->gpuFreq = static_cast<float>(data.gpuFreq);
                         b->gpuIsVirtual = false;
                         // Disks (up to 4)
                         b->diskCount = 0;
@@ -958,8 +973,9 @@ int main(int argc, char* argv[]) {
             static int usbCheckCounter = 0;
             if (++usbCheckCounter >= 20) {
                 usbCheckCounter = 0;
-                if (s_usbNotify.Poll()) {
+                if (s_usbNotify.Poll() || s_hubNotify.Poll()) {
                 try {
+                    if (s_hubNotify.Poll()) Logger::Info("USB: hub change detected");
                     UsbInfo usb;
                     usb.Detect();
                     const auto& devs = usb.GetDevices();
@@ -970,7 +986,7 @@ int main(int argc, char* argv[]) {
                                         + " PID:" + std::to_string(devs[di].pid));
                     }
                 } catch (...) {}
-                } // s_usbNotify.Poll()
+                } // USB/hub poll
             }
 
             loopCounter++;

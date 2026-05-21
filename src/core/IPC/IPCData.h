@@ -119,9 +119,13 @@ struct IPCDataBlock {
     // Battery / power
     int32_t  batteryPercent          = -1;
     bool     acOnline                = false;
+    float    cpuPower                = 0;
+    float    gpuPower                = 0;
+    float    anePower                = 0;
 
     // OS
     char     osVersion[128]          = {};
+    char     hardwareModel[128]      = {};
 
     // GPU
     char     gpuName[48]             = {};
@@ -130,6 +134,7 @@ struct IPCDataBlock {
     float    gpuMemoryPercent        = 0;
     float    gpuUsage                = 0;
     float    gpuTemp                 = 0;
+    float    gpuFreq                 = 0;
     bool     gpuIsVirtual            = false;
 
     // Disks (up to 4)

@@ -277,6 +277,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.cpuPower = data_.cpuPower.load();
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();
+    sysInfo.gpuFreq = data_.gpuFreq.load();
 }
 
 // =====================================================================

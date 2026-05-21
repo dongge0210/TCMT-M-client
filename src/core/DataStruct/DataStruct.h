@@ -158,6 +158,8 @@ struct SystemInfo {
     double cpuPower = 0.0;          // CPU power in mW
     double gpuPower = 0.0;          // GPU power in mW
     double anePower = 0.0;          // ANE power in mW
+    double gpuFreq = 0.0;           // GPU frequency in MHz
+    std::string hardwareModel;      // Hardware model (e.g. "Mac14,2")
     std::string gpuName;            // Added
     std::string gpuBrand;           // Added
     uint64_t gpuMemory;             // Added
@@ -252,9 +254,11 @@ struct SharedMemoryBlock {
     double cpuPower;                // CPU power in mW
     double gpuPower;                // GPU power in mW
     double anePower;                // ANE power in mW
+    double gpuFreq = 0.0;           // GPU frequency in MHz
 
     // OS version info
     WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
+    WCHAR hardwareModel[128] = {};  // Hardware model (e.g. "Mac14,2" or "HP ZBook Fury G10")
 
     // WiFi info for Avalonia
     struct {

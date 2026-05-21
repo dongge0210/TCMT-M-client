@@ -286,6 +286,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->usedMemory = systemInfo.usedMemory;
         pBuffer->availableMemory = systemInfo.availableMemory;
         pBuffer->compressedMemory = systemInfo.compressedMemory;
+        pBuffer->ramSpeed = systemInfo.ramSpeed;
+        SafeCopyWideString(pBuffer->ramType, 32, WinUtils::StringToWstring(std::string(systemInfo.ramType)));
 
         // GPU (compatible with old fields)
         pBuffer->gpuCount = 0;
@@ -299,6 +301,15 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->gpuCount = 1;
         }
         // If later want to support vector<GPUData>, can extend here
+
+        // Power
+        pBuffer->cpuPower = systemInfo.cpuPower;
+        pBuffer->gpuPower = systemInfo.gpuPower;
+        pBuffer->anePower = systemInfo.anePower;
+        pBuffer->gpuFreq = systemInfo.gpuFreq;
+
+        // Hardware model
+        SafeCopyWideString(pBuffer->hardwareModel, 128, WinUtils::StringToWstring(systemInfo.hardwareModel));
 
         // Network adapters (NetworkAdapterData in SystemInfo.adapters has wchar_t array fields)
         pBuffer->adapterCount = 0;

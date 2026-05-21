@@ -632,9 +632,14 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(prefix)+"memoryPercent").c_str(), base + offsetof(GPUData, coreClock), 8);
         addField((std::string(prefix)+"temperature").c_str(), offsetof(SharedMemoryBlock, gpuTemperature), 8);
     }
+    addField("gpu/freq", offsetof(SharedMemoryBlock, gpuFreq), 8);
     addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
     addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
+    addField("power/cpu", offsetof(SharedMemoryBlock, cpuPower), 8);
+    addField("power/gpu", offsetof(SharedMemoryBlock, gpuPower), 8);
+    addField("power/ane", offsetof(SharedMemoryBlock, anePower), 8);
     addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("os/model", offsetof(SharedMemoryBlock, hardwareModel), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
 
     // Network adapters (up to 4)
     for (int i = 0; i < 4; i++) {
@@ -1194,6 +1199,7 @@ int main(int argc, char* argv[]) {
 
         while (!g_shouldExit.load()) {
             static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+            static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
             static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
             try {
                 auto loopStart = std::chrono::high_resolution_clock::now();
@@ -1603,6 +1609,7 @@ int main(int argc, char* argv[]) {
                     tuiData.cpuPower = sysInfo.cpuPower;
                     tuiData.gpuPower = sysInfo.gpuPower;
                     tuiData.anePower = sysInfo.anePower;
+                    tuiData.gpuFreq = sysInfo.gpuFreq;
 
                     // Disks
                     for (const auto& disk : sysInfo.disks) {
@@ -1820,8 +1827,9 @@ int main(int argc, char* argv[]) {
                         static int usbCheckCounter = 0;
                         if (++usbCheckCounter >= 20) {
                             usbCheckCounter = 0;
-                            if (s_usbNotify.Poll()) {
+                            if (s_usbNotify.Poll() || s_hubNotify.Poll()) {
                             try {
+                                if (s_hubNotify.Poll()) Logger::Info("USB: hub change detected");
                                 UsbInfo usb;
                                 usb.Detect();
                                 const auto& devs = usb.GetDevices();
@@ -1832,7 +1840,7 @@ int main(int argc, char* argv[]) {
                                                     + " PID:" + std::to_string(devs[di].pid));
                                 }
                             } catch (...) {}
-                            } // s_usbNotify.Poll()
+                            } // USB/hub poll
                         }
 
                         historyLogger.WriteBatch(snapshots);

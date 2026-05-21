@@ -74,14 +74,18 @@ typedef DWORD (WINAPI *FnCM_Unregister_Notification)(void* hNotify);
 
 class DeviceChangeNotifier {
 public:
-    enum DeviceClass { USB, Bluetooth };
+    enum DeviceClass { USB, Bluetooth, USB_Hub };
 
     explicit DeviceChangeNotifier(DeviceClass devClass)
         : devClass_(devClass), fallback_(false) {
 
-        const GUID* guidPtr = (devClass == USB)
-            ? &GUID_DEVINTERFACE_USB_DEVICE
-            : &GUID_BTHPORT_DEVICE_INTERFACE;
+        const GUID* guidPtr;
+        if (devClass == USB_Hub)
+            guidPtr = &GUID_DEVINTERFACE_USB_HUB;
+        else if (devClass == USB)
+            guidPtr = &GUID_DEVINTERFACE_USB_DEVICE;
+        else
+            guidPtr = &GUID_BTHPORT_DEVICE_INTERFACE;
 
         HMODULE hCfg = GetModuleHandleW(L"cfgmgr32.dll");
         if (!hCfg) hCfg = LoadLibraryW(L"cfgmgr32.dll");
@@ -147,10 +151,12 @@ private:
 
 class DeviceChangeNotifier {
 public:
-    enum DeviceClass { USB, Bluetooth };
+    enum DeviceClass { USB, Bluetooth, USB_Hub };
 
     explicit DeviceChangeNotifier(DeviceClass devClass)
-        : className_((devClass == USB) ? "IOUSBHostDevice" : "IOBluetoothHostController") {
+        : className_((devClass == USB) ? "IOUSBHostDevice"
+                      : (devClass == USB_Hub) ? "IOUSBHubDevice"
+                      : "IOBluetoothHostController") {
         changed_.store(true);
 
         runLoopThread_ = std::thread([this]() {
