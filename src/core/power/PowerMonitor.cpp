@@ -25,7 +25,8 @@
 // ============================================================================
 
 // Function pointer types for the private IOReport C API
-typedef CFDictionaryRef (*FnIOReportCopyAllChannels)(uint64_t, uint64_t);
+typedef CFDictionaryRef (*FnIOReportCopyChannelsInGroup)(CFStringRef, CFStringRef, uint64_t, uint64_t, uint64_t);
+typedef void         (*FnIOReportMergeChannels)(CFDictionaryRef, CFDictionaryRef, void*);
 typedef void*  (*FnIOReportCreateSubscription)(void*, CFDictionaryRef, void**, uint64_t, void*);
 typedef CFDictionaryRef (*FnIOReportCreateSamples)(void*, CFDictionaryRef, void*);
 typedef CFDictionaryRef (*FnIOReportCreateSamplesDelta)(CFDictionaryRef, CFDictionaryRef, void*);
@@ -36,7 +37,8 @@ typedef CFStringRef (*FnIOReportChannelGetChannelName)(CFDictionaryRef);
 
 // Function pointers (loaded once; all instances share them)
 static void* g_lib = nullptr;
-static FnIOReportCopyAllChannels      g_CopyAll = nullptr;
+static FnIOReportCopyChannelsInGroup g_CopyGroup = nullptr;
+static FnIOReportMergeChannels       g_MergeChan = nullptr;
 static FnIOReportCreateSubscription   g_CreateSub = nullptr;
 static FnIOReportCreateSamples        g_CreateSamples = nullptr;
 static FnIOReportCreateSamplesDelta   g_CreateDelta = nullptr;
@@ -66,11 +68,12 @@ static bool LoadIOReport() {
         }                                                              \
     } while (0)
 
-    g_CopyAll       = reinterpret_cast<FnIOReportCopyAllChannels>(     dlsym(g_lib, "IOReportCopyAllChannels"));
+    g_CopyGroup    = reinterpret_cast<FnIOReportCopyChannelsInGroup>( dlsym(g_lib, "IOReportCopyChannelsInGroup"));
+    g_MergeChan    = reinterpret_cast<FnIOReportMergeChannels>(       dlsym(g_lib, "IOReportMergeChannels"));
     g_CreateSub     = reinterpret_cast<FnIOReportCreateSubscription>(  dlsym(g_lib, "IOReportCreateSubscription"));
     g_CreateSamples = reinterpret_cast<FnIOReportCreateSamples>(       dlsym(g_lib, "IOReportCreateSamples"));
     g_CreateDelta   = reinterpret_cast<FnIOReportCreateSamplesDelta>(  dlsym(g_lib, "IOReportCreateSamplesDelta"));
-    if (!g_CopyAll || !g_CreateSub || !g_CreateSamples || !g_CreateDelta) {
+    if (!g_CopyGroup || !g_CreateSub || !g_CreateSamples || !g_CreateDelta) {
         Logger::Error("PowerMonitor: required IOReport symbols missing");
         dlclose(g_lib); g_lib = nullptr;
         return false;
@@ -181,29 +184,51 @@ bool PowerMonitor::Start() {
         return false;
     }
 
-    // -- 2. Fetch all IOReport channels --
-    CFDictionaryRef allChannels = g_CopyAll(0, 0);
-    if (!allChannels) {
-        Logger::Error("PowerMonitor: IOReportCopyAllChannels returned NULL");
+    // -- 2. Fetch channels for CPU/GPU/ANE groups (like macmon does) --
+    auto makeCFStr = [](const char* s) -> CFStringRef {
+        return CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8);
+    };
+    CFStringRef cpuGroup  = makeCFStr("CPU");
+    CFStringRef gpuGroup  = makeCFStr("GPU");
+    CFStringRef aneGroup  = makeCFStr("ANE");
+
+    CFDictionaryRef cpuChannels = g_CopyGroup(cpuGroup, nullptr, 0, 0, 0);
+    CFDictionaryRef gpuChannels = g_CopyGroup(gpuGroup, nullptr, 0, 0, 0);
+    CFDictionaryRef aneChannels = g_CopyGroup(aneGroup, nullptr, 0, 0, 0);
+
+    CFRelease(cpuGroup); CFRelease(gpuGroup); CFRelease(aneGroup);
+
+    if (!cpuChannels && !gpuChannels && !aneChannels) {
+        Logger::Error("PowerMonitor: no IOReport channels for CPU/GPU/ANE");
         running_.store(false);
         return false;
     }
 
-    CFRetain(allChannels);
-    chan_ = static_cast<void*>(const_cast<__CFDictionary*>(allChannels));
+    // Merge channels into cpuChannels (first non-null)
+    CFDictionaryRef merged = cpuChannels ? cpuChannels : (gpuChannels ? gpuChannels : aneChannels);
+    if (g_MergeChan) {
+        if (cpuChannels && gpuChannels) g_MergeChan(merged, gpuChannels, nullptr);
+        if (aneChannels) g_MergeChan(merged, aneChannels, nullptr);
+    }
+    chan_ = static_cast<void*>(const_cast<__CFDictionary*>(merged));
 
     // -- 3. Create subscription --
     void* sub = nullptr;
-    void* subResult = g_CreateSub(nullptr, allChannels, &sub, 0, nullptr);
+    void* subResult = g_CreateSub(nullptr, merged, &sub, 0, nullptr);
     if (!subResult || !sub) {
         Logger::Error("PowerMonitor: IOReportCreateSubscription failed");
-        CFRelease(allChannels);
+        if (cpuChannels) CFRelease(cpuChannels);
+        if (gpuChannels) CFRelease(gpuChannels);
+        if (aneChannels) CFRelease(aneChannels);
         chan_ = nullptr;
         running_.store(false);
         return false;
     }
-    subs_ = subResult;  // subscription handle = return value, not 3rd-param output
-    CFRelease(allChannels);  // our retained copy survives
+    subs_ = subResult;
+    // Release individual group channels (merged holds references)
+    if (cpuChannels && cpuChannels != merged) CFRelease(cpuChannels);
+    if (gpuChannels && gpuChannels != merged) CFRelease(gpuChannels);
+    if (aneChannels && aneChannels != merged) CFRelease(aneChannels);
 
     directMode_.store(true);
 
@@ -330,7 +355,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         int64_t value = ExtractChannelValue((void*)channel);
 
-        if (logCount < 3 && value != 0) {
+        if (logCount < 2) {
             Logger::Info("PowerMonitor: g=" + std::string(group) +
                 " s=" + std::string(sub) + " n=" + std::string(name) +
                 " v=" + std::to_string(value));
@@ -355,7 +380,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             if (mhz > 100 && mhz < 10000) eCoreFreq_.store(mhz);
         }
     }
-    if (logCount < 3) ++logCount;
+    if (logCount < 2) ++logCount;
 }
 
 // ============================================================================
