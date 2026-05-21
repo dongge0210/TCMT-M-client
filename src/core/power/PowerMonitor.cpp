@@ -341,6 +341,9 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     CFArrayRef channels = (CFArrayRef)CFDictionaryGetValue(delta, kChannelsKey);
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
+    // Reset per-sample accumulators
+    double cpuSum = 0.0;
+
     static int logCount = 0;
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
@@ -367,31 +370,29 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         int64_t value = ExtractChannelValue((void*)channel);
 
-        // Log channels with real values in first batch
-        if (logCount < 1 && value != INT64_MIN) {
-            Logger::Info("PowerMonitor: g=" + std::string(group) +
-                " s=" + std::string(sub) + " n=" + std::string(name) +
-                " v=" + std::to_string(value));
-        }
 
         if (value <= 0 || value == INT64_MIN) continue;
 
-        // Power: "Energy Model" group, unit in mJ/uJ/nJ (from LLM analysis of IOReport channels)
+        // Power: "Energy Model" group — real channel names from IOReport dump analysis:
+        // subgroup "ECPU"/"PCPU" in mJ = CPU power, sum them as cpuPower
+        // subgroup "GPU" in mJ = GPU power
+        // subgroup "ANE" in mJ = ANE power (if present)
         if (strcmp(group, "Energy Model") == 0) {
             double power = EnergyToPower((void*)channel, value);
             if (power > 0.01 && power < 500.0) {
-                if (strstr(sub, "CPU") || strstr(name, "CPU")) cpuPower_.store(power);
-                else if (strstr(sub, "GPU") || strstr(name, "GPU")) gpuPower_.store(power);
-                else if (strstr(sub, "ANE") || strstr(name, "ANE")) anePower_.store(power);
+                if (strcmp(sub, "ECPU") == 0 || strcmp(sub, "PCPU") == 0) {
+                    cpuSum += power;
+                } else if (strcmp(sub, "GPU") == 0 && strlen(sub) == 3) {
+                    gpuPower_.store(power);
+                } else if (strcmp(sub, "ANE") == 0) {
+                    anePower_.store(power);
+                }
             }
         }
-        // CPU/GPU stats — frequency residency data
-        else if (strcmp(group, "CPU Stats") == 0 || strcmp(group, "GPU Stats") == 0) {
-            // Parse state residency for active frequency
-            // IOReportStateGetCount + IOReportStateGetNameForIndex + IOReportStateGetResidency
-        }
+        // Skip "CPU Stats"/"GPU Stats" — state residency, needs IOReportState* API
     }
     if (logCount < 1) ++logCount;
+    if (cpuSum > 0.01) cpuPower_.store(cpuSum);
 }
 
 // ============================================================================
