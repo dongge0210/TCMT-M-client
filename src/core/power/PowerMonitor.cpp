@@ -184,51 +184,29 @@ bool PowerMonitor::Start() {
         return false;
     }
 
-    // -- 2. Fetch channels for CPU/GPU/ANE groups (like macmon does) --
-    auto makeCFStr = [](const char* s) -> CFStringRef {
-        return CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8);
-    };
-    CFStringRef cpuGroup  = makeCFStr("CPU");
-    CFStringRef gpuGroup  = makeCFStr("GPU");
-    CFStringRef aneGroup  = makeCFStr("ANE");
-
-    CFDictionaryRef cpuChannels = g_CopyGroup(cpuGroup, nullptr, 0, 0, 0);
-    CFDictionaryRef gpuChannels = g_CopyGroup(gpuGroup, nullptr, 0, 0, 0);
-    CFDictionaryRef aneChannels = g_CopyGroup(aneGroup, nullptr, 0, 0, 0);
-
-    CFRelease(cpuGroup); CFRelease(gpuGroup); CFRelease(aneGroup);
-
-    if (!cpuChannels && !gpuChannels && !aneChannels) {
-        Logger::Error("PowerMonitor: no IOReport channels for CPU/GPU/ANE");
+    // -- 2. Fetch IOReport channels, filter for power/freq in ParsePowerDelta --
+    typedef CFDictionaryRef (*FnCopyAll)(uint64_t, uint64_t);
+    FnCopyAll g_CopyAll = reinterpret_cast<FnCopyAll>(dlsym(g_lib, "IOReportCopyAllChannels"));
+    CFDictionaryRef all = g_CopyAll ? g_CopyAll(0, 0) : nullptr;
+    if (!all) {
+        Logger::Error("PowerMonitor: IOReportCopyAllChannels failed");
         running_.store(false);
         return false;
     }
-
-    // Merge channels into cpuChannels (first non-null)
-    CFDictionaryRef merged = cpuChannels ? cpuChannels : (gpuChannels ? gpuChannels : aneChannels);
-    if (g_MergeChan) {
-        if (cpuChannels && gpuChannels) g_MergeChan(merged, gpuChannels, nullptr);
-        if (aneChannels) g_MergeChan(merged, aneChannels, nullptr);
-    }
-    chan_ = static_cast<void*>(const_cast<__CFDictionary*>(merged));
+    chan_ = static_cast<void*>(const_cast<__CFDictionary*>(all));
 
     // -- 3. Create subscription --
     void* sub = nullptr;
-    void* subResult = g_CreateSub(nullptr, merged, &sub, 0, nullptr);
+    void* subResult = g_CreateSub(nullptr, all, &sub, 0, nullptr);
     if (!subResult || !sub) {
         Logger::Error("PowerMonitor: IOReportCreateSubscription failed");
-        if (cpuChannels) CFRelease(cpuChannels);
-        if (gpuChannels) CFRelease(gpuChannels);
-        if (aneChannels) CFRelease(aneChannels);
+        CFRelease(all);
         chan_ = nullptr;
         running_.store(false);
         return false;
     }
     subs_ = subResult;
-    // Release individual group channels (merged holds references)
-    if (cpuChannels && cpuChannels != merged) CFRelease(cpuChannels);
-    if (gpuChannels && gpuChannels != merged) CFRelease(gpuChannels);
-    if (aneChannels && aneChannels != merged) CFRelease(aneChannels);
+    if (all) CFRelease(all);
 
     directMode_.store(true);
 
@@ -363,21 +341,19 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         if (value <= 0) continue;
 
-        if (strcmp(group, "CPU") == 0) {
+        // Power: "Energy Model" group, unit in mJ/uJ/nJ (from LLM analysis of IOReport channels)
+        if (strcmp(group, "Energy Model") == 0) {
             double power = EnergyToPower((void*)channel, value);
-            if (power > 0.01 && power < 500.0) cpuPower_.store(power);
-        } else if (strcmp(group, "GPU") == 0) {
-            double power = EnergyToPower((void*)channel, value);
-            if (power > 0.01 && power < 500.0) gpuPower_.store(power);
-        } else if (strcmp(group, "ANE") == 0) {
-            double power = EnergyToPower((void*)channel, value);
-            if (power >= 0.0 && power < 500.0) anePower_.store(power);
-        } else if (strstr(group, "Cluster") && strstr(group, "P-")) {
-            double mhz = static_cast<double>(value) / 1e6;
-            if (mhz > 100 && mhz < 10000) pCoreFreq_.store(mhz);
-        } else if (strstr(group, "Cluster") && strstr(group, "E-")) {
-            double mhz = static_cast<double>(value) / 1e6;
-            if (mhz > 100 && mhz < 10000) eCoreFreq_.store(mhz);
+            if (power > 0.01 && power < 500.0) {
+                if (strstr(sub, "CPU") || strstr(name, "CPU")) cpuPower_.store(power);
+                else if (strstr(sub, "GPU") || strstr(name, "GPU")) gpuPower_.store(power);
+                else if (strstr(sub, "ANE") || strstr(name, "ANE")) anePower_.store(power);
+            }
+        }
+        // CPU/GPU stats — frequency residency data
+        else if (strcmp(group, "CPU Stats") == 0 || strcmp(group, "GPU Stats") == 0) {
+            // Parse state residency for active frequency
+            // IOReportStateGetCount + IOReportStateGetNameForIndex + IOReportStateGetResidency
         }
     }
     if (logCount < 2) ++logCount;
