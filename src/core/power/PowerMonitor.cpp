@@ -341,9 +341,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     CFArrayRef channels = (CFArrayRef)CFDictionaryGetValue(delta, kChannelsKey);
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
-    // Reset per-sample accumulators
-    double cpuSum = 0.0;
-
     static int logCount = 0;
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
@@ -373,26 +370,20 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         if (value <= 0 || value == INT64_MIN) continue;
 
-        // Power: "Energy Model" group — real channel names from IOReport dump analysis:
-        // subgroup "ECPU"/"PCPU" in mJ = CPU power, sum them as cpuPower
-        // subgroup "GPU" in mJ = GPU power
-        // subgroup "ANE" in mJ = ANE power (if present)
+        // Power: "Energy Model" group — channel names from IOReport dump:
+        // "CPU Energy" = total CPU (ECPU+PCPU+ECPM+PCPM sum) in mJ
+        // "GPU" = GPU in mJ
+        // "ANE" = ANE in mJ (may be absent)
         if (strcmp(group, "Energy Model") == 0) {
             double power = EnergyToPower((void*)channel, value);
             if (power > 0.01 && power < 500.0) {
-                if (strcmp(sub, "ECPU") == 0 || strcmp(sub, "PCPU") == 0) {
-                    cpuSum += power;
-                } else if (strcmp(sub, "GPU") == 0 && strlen(sub) == 3) {
-                    gpuPower_.store(power);
-                } else if (strcmp(sub, "ANE") == 0) {
-                    anePower_.store(power);
-                }
+                if (strcmp(sub, "CPU Energy") == 0) cpuPower_.store(power);
+                else if (strcmp(sub, "GPU") == 0) gpuPower_.store(power);
+                else if (strcmp(sub, "ANE") == 0) anePower_.store(power);
             }
         }
-        // Skip "CPU Stats"/"GPU Stats" — state residency, needs IOReportState* API
     }
     if (logCount < 1) ++logCount;
-    if (cpuSum > 0.01) cpuPower_.store(cpuSum);
 }
 
 // ============================================================================
