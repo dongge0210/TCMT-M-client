@@ -272,12 +272,21 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             if (g_StateCount && g_StateName && g_StateRes) {
                 bool isGpu = strcmp(group, "GPU Stats") == 0;
                 if (!isGpu && strcmp(sub, "CPU Core Performance States") != 0) continue;
+                static bool gpuLogged = false;
                 int nStates = g_StateCount((CFDictionaryRef)channel);
                 if (nStates <= 1) continue;
                 // Determine frequency table
                 int freqCount;
                 double* ft;
-                if (isGpu) { freqCount = gpuFreqCount_; ft = gpuFreqTable_; }
+                if (isGpu) {
+                    if (!gpuLogged) {
+                        Logger::Info("PowerMonitor: GPUStat sub=" + std::string(sub) +
+                            " name=" + std::string(name) + " states=" + std::to_string(nStates) +
+                            " ftable=" + std::to_string(gpuFreqCount_));
+                        gpuLogged = true;
+                    }
+                    freqCount = gpuFreqCount_; ft = gpuFreqTable_;
+                }
                 else if (strncmp(name, "PCPU", 4) == 0) { freqCount = pFreqCount_; ft = pFreqTable_; }
                 else if (strncmp(name, "ECPU", 4) == 0) { freqCount = eFreqCount_; ft = eFreqTable_; }
                 else continue;
