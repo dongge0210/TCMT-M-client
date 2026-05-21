@@ -323,6 +323,10 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     }
     if (logCount < 1) ++logCount;
     if (gpuFreqN > 0) gpuFreq_.store(gpuFreqSum / static_cast<double>(gpuFreqN));
+    if (logCount < 1) {
+        Logger::Info("PowerMonitor: power CPU=" + std::to_string(cpuPower_.load()) +
+            " GPU=" + std::to_string(gpuPower_.load()) + " ANE=" + std::to_string(anePower_.load()));
+    }
 }
 
 // ====================================================================
