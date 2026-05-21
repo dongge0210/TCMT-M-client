@@ -243,8 +243,6 @@ void PowerMonitor::SampleLoop() {
         if (!nextSample) break;
         CFDictionaryRef delta = g_CreateDelta(prevSample, nextSample, nullptr);
         if (delta) { ParsePowerDelta((void*)delta); CFRelease((CFTypeRef)delta); }
-        static bool firstDelta = true;
-        if (firstDelta) { Logger::Info("PowerMonitor: CPU=" + std::to_string(cpuPower_.load()) + "mW GPU=" + std::to_string(gpuPower_.load()) + "mW ANE=" + std::to_string(anePower_.load()) + "mW"); firstDelta = false; }
         CFRelease((CFTypeRef)prevSample);
         prevSample = nextSample;
     }
@@ -260,7 +258,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     static int logCount = 0;
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
     CFIndex count = CFArrayGetCount(channels);
-    if (logCount < 1) Logger::Info("PowerMonitor: delta " + std::to_string(count) + " ch");
+    bool firstCh = (logCount < 1);
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(channels, i));
         if (!channel || CFGetTypeID(channel) != CFDictionaryGetTypeID()) continue;
@@ -313,8 +311,11 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         }
 
         int64_t value = ExtractChannelValue((void*)channel);
-        if (logCount < 1 && value != INT64_MIN && (strcmp(group, "Energy Model") == 0 || strcmp(group, "CPU Stats") == 0))
-            Logger::Info("PowerMonitor: g=" + std::string(group) + " s=" + std::string(sub) + " v=" + std::to_string(value));
+        static int emCount = 0;
+        if (firstCh && strcmp(group, "Energy Model") == 0 && value > 0 && value != INT64_MIN) {
+            emCount++;
+            if (emCount <= 3) Logger::Info("PowerMonitor: EM " + std::string(sub) + "=" + std::to_string(value));
+        }
         if (value <= 0 || value == INT64_MIN) continue;
 
         if (strcmp(group, "Energy Model") == 0) {
@@ -326,7 +327,13 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             }
         }
     }
-    if (logCount < 1) ++logCount;
+    if (logCount < 1) {
+        Logger::Info("PowerMonitor: " + std::to_string(count) + "ch CPU=" +
+            std::to_string(static_cast<int>(cpuPower_.load())) + "mW GPU=" +
+            std::to_string(static_cast<int>(gpuPower_.load())) + "mW ANE=" +
+            std::to_string(static_cast<int>(anePower_.load())) + "mW");
+        ++logCount;
+    }
     if (gpuFreqN > 0) gpuFreq_.store(gpuFreqSum / static_cast<double>(gpuFreqN));
 }
 
