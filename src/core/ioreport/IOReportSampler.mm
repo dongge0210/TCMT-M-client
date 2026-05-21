@@ -259,7 +259,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     cpuPower_.store(0.0); // reset per-delta accumulator
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
     CFIndex count = CFArrayGetCount(channels);
-    bool firstCh = (logCount < 1);
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(channels, i));
         if (!channel || CFGetTypeID(channel) != CFDictionaryGetTypeID()) continue;
@@ -325,13 +324,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             }
         }
     }
-    if (logCount < 1) {
-        Logger::Info("PowerMonitor: " + std::to_string(count) + "ch CPU=" +
-            std::to_string(static_cast<int>(cpuPower_.load())) + "mW GPU=" +
-            std::to_string(static_cast<int>(gpuPower_.load())) + "mW ANE=" +
-            std::to_string(static_cast<int>(anePower_.load())) + "mW");
-        ++logCount;
-    }
+    if (logCount < 1) ++logCount;
     if (gpuFreqN > 0) gpuFreq_.store(gpuFreqSum / static_cast<double>(gpuFreqN));
 }
 
