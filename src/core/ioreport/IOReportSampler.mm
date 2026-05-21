@@ -292,6 +292,12 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
+                    static int gpuCount = 0;
+                    if (isGpu && gpuCount < 3) {
+                        Logger::Info("PowerMonitor: GPU freq " + std::to_string(mhz) + " MHz ft[0]=" +
+                            std::to_string(ft[0]) + " ft[8]=" + std::to_string(ft[8]) + " tres=" + std::to_string(tres));
+                        gpuCount++;
+                    }
                     if (isGpu) gpuFreq_.store(mhz);
                     else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
                     else eCoreFreq_.store(mhz);
