@@ -399,10 +399,19 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                     if (totalRes > 0) {
                         double activeMHz = weightedSum / static_cast<double>(totalRes);
                         // "CPU Complex Voltage States" with name PCPU/ECPU = cluster aggregate
-                        if (strcmp(name, "PCPU") == 0)
+                        if (strcmp(name, "PCPU") == 0) {
+                            if (static bool first = true; first) {
+                                Logger::Info("PowerMonitor: dynamic P-Cluster freq: " + std::to_string(activeMHz) + " MHz");
+                                first = false;
+                            }
                             pCoreFreq_.store(activeMHz);
-                        else if (strcmp(name, "ECPU") == 0)
+                        } else if (strcmp(name, "ECPU") == 0) {
+                            if (static bool first = true; first) {
+                                Logger::Info("PowerMonitor: dynamic E-Cluster freq: " + std::to_string(activeMHz) + " MHz");
+                                first = false;
+                            }
                             eCoreFreq_.store(activeMHz);
+                        }
                     }
                 }
             }
