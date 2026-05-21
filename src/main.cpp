@@ -1825,12 +1825,10 @@ int main(int argc, char* argv[]) {
                             snapshots.push_back({"battery/percent", (double)sysInfo.batteryPercent, "%", (uint64_t)nowMs});
                         // USB detection (every ~10 seconds)
                         static int usbCheckCounter = 0;
-                        if (++usbCheckCounter >= 20) {
+                        static size_t prevUsbCount = 0;
+                        if (++usbCheckCounter >= 20 || s_usbNotify.Poll() || s_hubNotify.Poll()) {
                             usbCheckCounter = 0;
-                            if (s_usbNotify.Poll() || s_hubNotify.Poll()) {
-                            static size_t prevUsbCount = 0;
                             try {
-                                if (s_hubNotify.Poll()) Logger::Info("USB: hub change detected");
                                 UsbInfo usb;
                                 usb.Detect();
                                 const auto& devs = usb.GetDevices();
@@ -1846,7 +1844,7 @@ int main(int argc, char* argv[]) {
                                     prevUsbCount = devs.size();
                                 }
                             } catch (...) {}
-                            } // USB/hub poll
+                        }
                         }
 
                         historyLogger.WriteBatch(snapshots);

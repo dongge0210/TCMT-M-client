@@ -973,16 +973,14 @@ int main(int argc, char* argv[]) {
 
             // USB detection (every 10 seconds)
             static int usbCheckCounter = 0;
-            if (++usbCheckCounter >= 20) {
+            static size_t prevUsbCount = 0;
+            if (++usbCheckCounter >= 20 || s_usbNotify.Poll() || s_hubNotify.Poll()) {
                 usbCheckCounter = 0;
-                if (s_usbNotify.Poll() || s_hubNotify.Poll()) {
-                static size_t prevCount = 0;
                 try {
-                    if (s_hubNotify.Poll()) Logger::Info("USB: hub change detected");
                     UsbInfo usb;
                     usb.Detect();
                     const auto& devs = usb.GetDevices();
-                    if (devs.size() != prevCount) {
+                    if (devs.size() != prevUsbCount) {
                         if (devs.empty())
                             Logger::Info("USB: all devices removed");
                         else {
@@ -991,10 +989,10 @@ int main(int argc, char* argv[]) {
                                 Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
                                             + " PID:" + std::to_string(devs[di].pid));
                         }
-                        prevCount = devs.size();
+                        prevUsbCount = devs.size();
                     }
                 } catch (...) {}
-                } // USB/hub poll
+            }
             }
 
             loopCounter++;
