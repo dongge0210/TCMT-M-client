@@ -34,6 +34,9 @@ typedef int64_t (*FnIOReportSimpleGetIntegerValue)(CFDictionaryRef, int);
 typedef CFStringRef (*FnIOReportChannelGetGroup)(CFDictionaryRef);
 typedef CFStringRef (*FnIOReportChannelGetSubGroup)(CFDictionaryRef);
 typedef CFStringRef (*FnIOReportChannelGetChannelName)(CFDictionaryRef);
+typedef int32_t  (*FnIOReportStateGetCount)(CFDictionaryRef);
+typedef CFStringRef (*FnIOReportStateGetNameForIndex)(CFDictionaryRef, int32_t);
+typedef int64_t  (*FnIOReportStateGetResidency)(CFDictionaryRef, int32_t);
 
 // Function pointers (loaded once; all instances share them)
 static void* g_lib = nullptr;
@@ -46,6 +49,9 @@ static FnIOReportSimpleGetIntegerValue g_GetInt = nullptr;
 static FnIOReportChannelGetGroup       g_GetGroup = nullptr;
 static FnIOReportChannelGetSubGroup    g_GetSubGroup = nullptr;
 static FnIOReportChannelGetChannelName g_GetChanName = nullptr;
+static FnIOReportStateGetCount         g_StateCount = nullptr;
+static FnIOReportStateGetNameForIndex  g_StateName  = nullptr;
+static FnIOReportStateGetResidency     g_StateRes   = nullptr;
 
 // Load all IOReport symbols.  Returns true once.
 static bool LoadIOReport() {
@@ -88,6 +94,12 @@ static bool LoadIOReport() {
                        dlsym(g_lib, "IOReportChannelGetSubGroup"));
     g_GetChanName = reinterpret_cast<FnIOReportChannelGetChannelName>(
                        dlsym(g_lib, "IOReportChannelGetChannelName"));
+    g_StateCount  = reinterpret_cast<FnIOReportStateGetCount>(
+                       dlsym(g_lib, "IOReportStateGetCount"));
+    g_StateName   = reinterpret_cast<FnIOReportStateGetNameForIndex>(
+                       dlsym(g_lib, "IOReportStateGetNameForIndex"));
+    g_StateRes    = reinterpret_cast<FnIOReportStateGetResidency>(
+                       dlsym(g_lib, "IOReportStateGetResidency"));
 
 #undef DLSYM_OR_FAIL
 
@@ -371,13 +383,41 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         if (value <= 0 || value == INT64_MIN) continue;
 
         // Power: "Energy Model" group — energy in mJ/uJ/nJ over ~1s → mW
-        // "CPU Energy" = total CPU, "GPU" = GPU, "ANE" = ANE
         if (strcmp(group, "Energy Model") == 0) {
-            double power = EnergyToPower((void*)channel, value) * 1000.0;  // W → mW
+            double power = EnergyToPower((void*)channel, value) * 1000.0;
             if (power > 0.1 && power < 50000.0) {
                 if (strcmp(sub, "CPU Energy") == 0) cpuPower_.store(power);
                 else if (strcmp(sub, "GPU") == 0) gpuPower_.store(power);
                 else if (strcmp(sub, "ANE") == 0) anePower_.store(power);
+            }
+        }
+        // Dynamic frequency from CPU Stats state residency
+        else if (strcmp(group, "CPU Stats") == 0 && g_StateCount && g_StateName && g_StateRes) {
+            int nStates = g_StateCount((CFDictionaryRef)channel);
+            if (nStates > 1) {
+                double weightedSum = 0.0;
+                int64_t totalRes = 0;
+                for (int si = 0; si < nStates; ++si) {
+                    int64_t residency = g_StateRes((CFDictionaryRef)channel, si);
+                    if (residency <= 0) continue;
+                    totalRes += residency;
+                    CFStringRef stateName = g_StateName((CFDictionaryRef)channel, si);
+                    if (!stateName) continue;
+                    char sname[32] = {};
+                    CFStringGetCString(stateName, sname, sizeof(sname), kCFStringEncodingUTF8);
+                    // State name format: "660 MHz" or "600 MHz" — parse leading number
+                    double freqMHz = atof(sname);
+                    if (freqMHz > 100 && freqMHz < 10000)
+                        weightedSum += freqMHz * static_cast<double>(residency);
+                }
+                if (totalRes > 0) {
+                    double activeMHz = weightedSum / static_cast<double>(totalRes);
+                    // Match by channel subgroup name
+                    if (strstr(sub, "P-Cluster") || strcmp(sub, "PCPM") == 0)
+                        pCoreFreq_.store(activeMHz);
+                    else if (strstr(sub, "E-Cluster") || strcmp(sub, "ECPM") == 0)
+                        eCoreFreq_.store(activeMHz);
+                }
             }
         }
     }
