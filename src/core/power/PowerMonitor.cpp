@@ -311,64 +311,48 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             CFArrayGetValueAtIndex(channels, i));
         if (!channel || CFGetTypeID(channel) != CFDictionaryGetTypeID()) continue;
 
-        // Read group name
-        CFStringRef groupStr = (CFStringRef)CFDictionaryGetValue(
-                                    channel, kGroupKey);
-        if (!groupStr || CFGetTypeID(groupStr) != CFStringGetTypeID()) continue;
-
-        char group[64] = {0};
-        CFStringGetCString(groupStr, group, sizeof(group),
-                           kCFStringEncodingUTF8);
-
-        // Read channel name (optional for matching)
-        char name[64] = {0};
-        CFStringRef nameStr = (CFStringRef)CFDictionaryGetValue(
-                                    channel, kChannelNameKey);
-        if (nameStr && CFGetTypeID(nameStr) == CFStringGetTypeID()) {
-            CFStringGetCString(nameStr, name, sizeof(name),
-                               kCFStringEncodingUTF8);
+        // Use IOReport API functions to read metadata (not CFDictionaryGetValue)
+        char group[64] = {0}, sub[64] = {0}, name[64] = {0};
+        if (g_GetGroup) {
+            CFStringRef s = g_GetGroup(channel);
+            if (s) CFStringGetCString(s, group, sizeof(group), kCFStringEncodingUTF8);
+        }
+        if (g_GetSubGroup) {
+            CFStringRef s = g_GetSubGroup(channel);
+            if (s) CFStringGetCString(s, sub, sizeof(sub), kCFStringEncodingUTF8);
+        }
+        if (g_GetChanName) {
+            CFStringRef s = g_GetChanName(channel);
+            if (s) CFStringGetCString(s, name, sizeof(name), kCFStringEncodingUTF8);
         }
 
-        // Extract the value
+        if (group[0] == '\0') continue;
+
         int64_t value = ExtractChannelValue((void*)channel);
 
-        // Log only channels with values or interesting names (first 5 batches)
-        if (logCount < 5 && (value != 0 || group[0] != '\0')) {
-            if (strstr(group, "Cluster") || strstr(group, "CPU") || strstr(group, "GPU") ||
-                strstr(group, "ANE") || strstr(name, "Power") || strstr(name, "freq") ||
-                strstr(name, "Cluster") || strstr(name, "CPU") || strstr(name, "GPU") ||
-                strstr(name, "ANE")) {
-                char sub[64] = {0};
-                if (g_GetSubGroup) {
-                    CFStringRef sg = g_GetSubGroup((CFDictionaryRef)channel);
-                    if (sg) CFStringGetCString(sg, sub, sizeof(sub), kCFStringEncodingUTF8);
-                }
-                Logger::Info("PowerMonitor: group=" + std::string(group) +
-                    " sub=" + std::string(sub) + " name=" + std::string(name) +
-                    " val=" + std::to_string(value));
-            }
+        if (logCount < 3 && value != 0) {
+            Logger::Info("PowerMonitor: g=" + std::string(group) +
+                " s=" + std::string(sub) + " n=" + std::string(name) +
+                " v=" + std::to_string(value));
         }
 
         if (value <= 0) continue;
 
-        // Dispatch by group
-        if (strcmp(group, "CPU") == 0 && strstr(name, "Power")) {
+        if (strcmp(group, "CPU") == 0) {
             double power = EnergyToPower((void*)channel, value);
             if (power > 0.01 && power < 500.0) cpuPower_.store(power);
-        } else if (strcmp(group, "GPU") == 0 && strstr(name, "Power")) {
+        } else if (strcmp(group, "GPU") == 0) {
             double power = EnergyToPower((void*)channel, value);
             if (power > 0.01 && power < 500.0) gpuPower_.store(power);
         } else if (strcmp(group, "ANE") == 0) {
             double power = EnergyToPower((void*)channel, value);
             if (power >= 0.0 && power < 500.0) anePower_.store(power);
-        }
-        // Dynamic cluster frequency — match "CPU Complex" or cluster-named groups
-        else if (strstr(group, "Cluster") || strstr(name, "active frequency")) {
+        } else if (strstr(group, "Cluster") && strstr(group, "P-")) {
             double mhz = static_cast<double>(value) / 1e6;
-            if (mhz > 100 && mhz < 10000) {
-                if (strstr(group, "P") || strstr(name, "P")) pCoreFreq_.store(mhz);
-                else if (strstr(group, "E") || strstr(name, "E")) eCoreFreq_.store(mhz);
-            }
+            if (mhz > 100 && mhz < 10000) pCoreFreq_.store(mhz);
+        } else if (strstr(group, "Cluster") && strstr(group, "E-")) {
+            double mhz = static_cast<double>(value) / 1e6;
+            if (mhz > 100 && mhz < 10000) eCoreFreq_.store(mhz);
         }
     }
     if (logCount < 3) ++logCount;
