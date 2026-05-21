@@ -20,6 +20,7 @@
 
 CpuInfo::CpuInfo()
     : totalCores(0), largeCores(0), smallCores(0), cpuUsage(0.0),
+      pCoreFreqHandle(nullptr), eCoreFreqHandle(nullptr),
       counterInitialized(false), lastUpdateTime(0),
       lastSampleTick(0), prevSampleTick(0), lastSampleIntervalMs(0.0) {
     try {
@@ -38,7 +39,9 @@ CpuInfo::~CpuInfo() { CleanupCounter(); }
 void CpuInfo::InitializeCounter() {
     auto qh = reinterpret_cast<void**>(&queryHandle);
     auto ch = reinterpret_cast<void**>(&counterHandle);
-    *qh = nullptr; *ch = nullptr;
+    auto pch = reinterpret_cast<void**>(&pCoreFreqHandle);
+    auto ech = reinterpret_cast<void**>(&eCoreFreqHandle);
+    *qh = nullptr; *ch = nullptr; *pch = nullptr; *ech = nullptr;
 
     PDH_STATUS status = PdhOpenQuery(NULL, 0, (PDH_HQUERY*)qh);
     if (status != ERROR_SUCCESS) {
@@ -46,10 +49,10 @@ void CpuInfo::InitializeCounter() {
         return;
     }
 
+    // CPU usage counter
     status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh,
         L"\\Processor(_Total)\\% Processor Time", 0,
         (PDH_HCOUNTER*)ch);
-
     if (status != ERROR_SUCCESS) {
         Logger::Error("Cannot add CPU usage counter");
         PdhCloseQuery(*(PDH_HQUERY*)qh);
@@ -57,32 +60,72 @@ void CpuInfo::InitializeCounter() {
         return;
     }
 
+    // P-core frequency: always instance "0,0" (core 0 is always P-core on Intel)
+    status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh,
+        L"\\Processor Information(0,0)\\Processor Frequency", 0,
+        (PDH_HCOUNTER*)pch);
+    if (status != ERROR_SUCCESS) {
+        Logger::Warn("Cannot add P-core frequency counter (err=" + std::to_string(status) + ")");
+    }
+
+    // E-core frequency: use first E-core logical processor index
+    if (smallCores > 0) {
+        int htRatio = (totalCores > (largeCores + smallCores)) ? 2 : 1;
+        int firstECoreIdx = largeCores * htRatio;
+        wchar_t eCorePath[128];
+        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\Processor Frequency", firstECoreIdx);
+        status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh, eCorePath, 0, (PDH_HCOUNTER*)ech);
+        if (status != ERROR_SUCCESS) {
+            Logger::Warn("Cannot add E-core frequency counter (err=" + std::to_string(status) + ")");
+        }
+    }
+
     status = PdhCollectQueryData(*(PDH_HQUERY*)qh);
     if (status != ERROR_SUCCESS) {
         Logger::Error("Cannot collect performance counter data");
         PdhCloseQuery(*(PDH_HQUERY*)qh);
-        *qh = nullptr; *ch = nullptr;
+        *qh = nullptr; *ch = nullptr; *pch = nullptr; *ech = nullptr;
         return;
     }
 
     counterInitialized = true;
 }
 
+static double ReadPdhFreqValue(void* handle) {
+    if (!handle) return 0.0;
+    PDH_FMT_COUNTERVALUE v;
+    PDH_STATUS s = PdhGetFormattedCounterValue(
+        (PDH_HCOUNTER)handle, PDH_FMT_DOUBLE, NULL, &v);
+    if (s == ERROR_SUCCESS &&
+        (v.CStatus == PDH_CSTATUS_VALID_DATA || v.CStatus == PDH_CSTATUS_NEW_DATA)) {
+        return v.doubleValue; // MHz
+    }
+    return 0.0;
+}
+
 double CpuInfo::GetLargeCoreSpeed() const {
-    // Read CurrentClockSpeed from registry (updated by OS, faster than WMI)
+    // Try PDH per-core counter first (real-time frequency)
+    double freq = ReadPdhFreqValue(pCoreFreqHandle);
+    if (freq > 0.0) return freq;
+
+    // Fallback: registry base frequency
     DWORD speed = 0;
     DWORD size = sizeof(speed);
     if (RegGetValueW(HKEY_LOCAL_MACHINE,
         L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
         L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
-        return static_cast<double>(speed); // MHz
+        return static_cast<double>(speed);
     }
     return 0.0;
 }
 
 double CpuInfo::GetSmallCoreSpeed() const {
-    // E-cores: same registry path, try CurrentClockSpeed as approximation
-    return GetLargeCoreSpeed(); // same base clock for now
+    // Try PDH per-core counter first (real-time E-core frequency)
+    double freq = ReadPdhFreqValue(eCoreFreqHandle);
+    if (freq > 0.0) return freq;
+
+    // Fallback: P-core frequency as approximation
+    return GetLargeCoreSpeed();
 }
 
 void CpuInfo::CleanupCounter() {
@@ -96,17 +139,46 @@ void CpuInfo::DetectCores() {
     SYSTEM_INFO sysInfo;
     GetSystemInfo(&sysInfo);
     totalCores = (int)sysInfo.dwNumberOfProcessors;
+    largeCores = 0;
+    smallCores = 0;
 
+    // Use GetLogicalProcessorInformationEx for correct P/E core detection
+    // on Intel hybrid (12th gen+) where EfficiencyClass distinguishes cores
     DWORD bufferSize = 0;
-    GetLogicalProcessorInformation(nullptr, &bufferSize);
-    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bufferSize);
+    if (bufferSize == 0) {
+        // Fallback: assume all performance cores
+        largeCores = std::max(1, totalCores / 2);
+        return;
+    }
 
-    if (GetLogicalProcessorInformation(buffer.data(), &bufferSize)) {
-        for (const auto& info : buffer) {
-            if (info.Relationship == RelationProcessorCore) {
-                (info.ProcessorCore.Flags == 1) ? largeCores++ : smallCores++;
-            }
+    std::vector<BYTE> buffer(bufferSize);
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore,
+            reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()),
+            &bufferSize)) {
+        largeCores = std::max(1, totalCores / 2);
+        return;
+    }
+
+    BYTE* ptr = buffer.data();
+    DWORD offset = 0;
+    while (offset < bufferSize) {
+        auto* info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(ptr + offset);
+        if (info->Size == 0) break;
+        if (info->Relationship == RelationProcessorCore) {
+            // EfficiencyClass: 0=unknown, 1=E-core, 2=P-core (Win10 21H2+)
+            if (info->Processor.EfficiencyClass == 1)
+                smallCores++;
+            else
+                largeCores++;
         }
+        offset += info->Size;
+    }
+
+    // If no distinction found (pre-Win10 or non-hybrid), treat all as P-core
+    if (largeCores == 0) {
+        largeCores = totalCores;
+        smallCores = 0;
     }
 }
 

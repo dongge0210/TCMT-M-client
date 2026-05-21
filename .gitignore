@@ -88,6 +88,8 @@ UI_README.md
 
 # Local IDE configurations
 .codemap/
+claude.md
+CLAUDE.md
 cmake-build/
 
 
@@ -107,12 +109,10 @@ inbox/
 swarmvault.schema.md
 swarmvault.config.json
 compile_commands.json
-.claude/settings.local.json
 .cursor/
 litho.docs
 litho.toml
 litho.toml.bak
-.claude/settings.local.json
 src/third_party/sqlite3/sqlite-amalgamation.zip
 docs/API.txt
 docs/docs_architecture_and_protocol_plan_v0.14_full_Version11.md
