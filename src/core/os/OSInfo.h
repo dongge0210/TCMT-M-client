@@ -13,10 +13,12 @@ class OSInfo {
 public:
     OSInfo();
     std::string GetVersion() const;
+    std::string GetModel() const;       // e.g. "Mac14,2"
     void Initialize();
     static bool HasTpm();
 private:
     std::string osVersion;
+    std::string model;
 #ifdef TCMT_WINDOWS
     DWORD majorVersion;
     DWORD minorVersion;

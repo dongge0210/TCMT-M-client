@@ -21,7 +21,7 @@ Missing a build system causes linker errors on one platform while the other buil
 ### macOS (Apple Silicon)
 ```bash
 # C++ core + ncurses TUI
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n hw.ncpu)
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
 # AvaloniaUI desktop frontend
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 # Run
@@ -144,3 +144,14 @@ git submodule update --init --recursive
 
 ## User addition notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
+- **sessions**: change `docs/session.md` when current status changed also you see current status from that file.
+- **read-scope**: **Always use `Read` with `offset` and `limit` parameters.** Never read entire files — read only the relevant range.
+
+## Repository Safety Rules
+- Before any file edit, verify working directory with `pwd` and `git status`.
+- Do NOT create GitHub issues, pull requests, or modify any remote resources unless the user explicitly asks.
+- When creating a PR, always ask the user whether it should be **draft** or **ready** first. Never assume one or the other.
+
+## Edit Verification
+- After every code change on macOS, run `cmake --build build -j8` and confirm 0 errors.
+- After every code change on Windows, the build command is `msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /m`.

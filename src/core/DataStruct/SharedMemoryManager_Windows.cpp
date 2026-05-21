@@ -277,6 +277,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->efficiencyCores = systemInfo.efficiencyCores;
         pBuffer->pCoreFreq = systemInfo.performanceCoreFreq;
         pBuffer->eCoreFreq = systemInfo.efficiencyCoreFreq;
+        pBuffer->cpuBaseFreq = systemInfo.cpuBaseFreq;
         pBuffer->hyperThreading = systemInfo.hyperThreading;
         pBuffer->virtualization = systemInfo.virtualization;
 
@@ -285,6 +286,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->usedMemory = systemInfo.usedMemory;
         pBuffer->availableMemory = systemInfo.availableMemory;
         pBuffer->compressedMemory = systemInfo.compressedMemory;
+        pBuffer->ramSpeed = systemInfo.ramSpeed;
+        SafeCopyWideString(pBuffer->ramType, 32, WinUtils::StringToWstring(std::string(systemInfo.ramType)));
 
         // GPU (compatible with old fields)
         pBuffer->gpuCount = 0;
@@ -298,6 +301,15 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->gpuCount = 1;
         }
         // If later want to support vector<GPUData>, can extend here
+
+        // Power
+        pBuffer->cpuPower = systemInfo.cpuPower;
+        pBuffer->gpuPower = systemInfo.gpuPower;
+        pBuffer->anePower = systemInfo.anePower;
+        pBuffer->gpuFreq = systemInfo.gpuFreq;
+
+        // Hardware model
+        SafeCopyWideString(pBuffer->hardwareModel, 128, WinUtils::StringToWstring(systemInfo.hardwareModel));
 
         // Network adapters (NetworkAdapterData in SystemInfo.adapters has wchar_t array fields)
         pBuffer->adapterCount = 0;
@@ -392,6 +404,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
                 SafeCopyFromWideArray(dst.description, 128, sa.description, 128);
                 SafeCopyFromWideArray(dst.units, 16, sa.units, 16);
             }
+            strncpy_s(pBuffer->physicalDisks[i].attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson), src.attrsJson, _TRUNCATE);
         }
 
         // Temperature array (sensor names in vector<pair<string,double>>)
@@ -420,9 +433,24 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->tpm.isPresent = src.isPresent;
             pBuffer->tpm.isEnabled = src.isEnabled;
             pBuffer->tpm.isActive = src.isActive;
+            pBuffer->tpm.selfTestStatus = src.selfTestStatus;
             pBuffer->tpm.status = src.isPresent ? 1 : 3; // 1=OK, 3=Disabled
             pBuffer->tpmCount = 1;
         }
+
+        // WiFi
+        pBuffer->wifi.powerOn = systemInfo.wifiPowerOn;
+        pBuffer->wifi.isConnected = systemInfo.wifiIsConnected;
+        pBuffer->wifi.rssi = systemInfo.wifiRSSI;
+        pBuffer->wifi.channel = systemInfo.wifiChannel;
+        SafeCopyWideString(pBuffer->wifi.ssid, 32, WinUtils::StringToWstring(systemInfo.wifiSSID));
+        SafeCopyWideString(pBuffer->wifi.security, 16, WinUtils::StringToWstring(systemInfo.wifiSecurity));
+        SafeCopyWideString(pBuffer->wifi.band, 8, WinUtils::StringToWstring(systemInfo.wifiBand));
+        SafeCopyWideString(pBuffer->wifi.wifiGen, 12, WinUtils::StringToWstring(systemInfo.wifiGen));
+
+        // Bluetooth
+        pBuffer->bluetooth.powerOn = systemInfo.btPowerOn;
+        pBuffer->bluetooth.deviceCount = systemInfo.btDeviceCount;
 
         pBuffer->lastUpdate = Platform::SystemTime::Now();
         Logger::Trace("Successfully wrote system/disk/SMART information to shared memory");

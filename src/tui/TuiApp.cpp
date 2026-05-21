@@ -145,21 +145,37 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 
     if (data.performanceCores > 0 || data.efficiencyCores > 0) {
-        if (data.pCoreFreq > 0 || data.eCoreFreq > 0) {
-            std::ostringstream ss;
-            ss << "P:" << data.performanceCores << "(" << data.pCoreFreq << "M)"
-               << " E:" << data.efficiencyCores << "(" << data.eCoreFreq << "M)";
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
-        } else {
-            mvwprintw(win, y + lines, x0 + 2, "P:%d E:%d", data.performanceCores, data.efficiencyCores);
+        std::ostringstream ss;
+        ss << "P:" << data.performanceCores;
+        if (data.pCoreFreq > 0) {
+            ss << "(" << static_cast<int>(data.pCoreFreq);
+            if (data.pCoreMaxFreq > 0 && static_cast<int>(data.pCoreMaxFreq) != static_cast<int>(data.pCoreFreq))
+                ss << "/" << static_cast<int>(data.pCoreMaxFreq);
+            ss << "M)";
         }
-    } else {
+        ss << "  E:" << data.efficiencyCores;
+        if (data.eCoreFreq > 0) {
+            ss << "(" << static_cast<int>(data.eCoreFreq);
+            if (data.eCoreMaxFreq > 0 && static_cast<int>(data.eCoreMaxFreq) != static_cast<int>(data.eCoreFreq))
+                ss << "/" << static_cast<int>(data.eCoreMaxFreq);
+            ss << "M)";
+        }
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
+    } else if (data.physicalCores > 0) {
         mvwprintw(win, y + lines, x0 + 2, "Cores: %d", data.physicalCores);
     }
     lines++;
 
-    if (data.cpuTemp > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.cpuTemp);
+    if (data.cpuTemp > 0 || data.cpuPower > 0) {
+        std::string cpuPwr;
+        if (data.cpuTemp > 0)
+            cpuPwr = "Temp: " + std::to_string(static_cast<int>(data.cpuTemp)) + " C";
+        if (data.cpuPower > 0) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "  Power: %.1fW", data.cpuPower / 1000.0);
+            cpuPwr += buf;
+        }
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, cpuPwr.c_str());
         lines++;
     }
 
@@ -196,6 +212,11 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     if (data.compressedMemory > 0) {
         auto compStr = FormatSize(data.compressedMemory);
         mvwprintw(win, y + lines, x0 + 2, "Compressed: %.*s", maxW - 12, compStr.c_str());
+        lines++;
+    }
+    if (data.ramSpeed > 0) {
+        std::string ramStr = std::string(data.ramType) + "-" + std::to_string(data.ramSpeed);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, ramStr.c_str());
         lines++;
     }
 
@@ -240,18 +261,33 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
 #endif
 
-    if (data.gpuTemp > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.gpuTemp);
+    if (data.gpuFreq > 0) {
+        if (data.gpuMaxFreq > 0 && static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq))
+            mvwprintw(win, y + lines, x0 + 2, "Freq: %d/%d MHz", static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
+    if (data.gpuTemp > 0 || data.gpuPower > 0) {
+        std::string gpuPwr;
+        if (data.gpuTemp > 0)
+            gpuPwr = "Temp: " + std::to_string(static_cast<int>(data.gpuTemp)) + " C";
+        if (data.gpuPower > 0) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "  Power: %.1fW", data.gpuPower / 1000.0);
+            gpuPwr += buf;
+        }
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, gpuPwr.c_str());
+        lines++;
+    }
+    mvwprintw(win, y + lines, x0 + 2, "ANE: %.1fW", data.anePower / 1000.0);
+    lines++;
 
     return lines;
 }
 
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 22, 20);
-    bw = std::max(bw, 4);
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(win, y, x0, "%.*s", maxW, "Disks");
@@ -259,26 +295,22 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     for (const auto& d : data.disks) {
-        auto label = TrimRight(d.label.empty() ? "Untitled" : d.label, 14);
+        // Compact single-line format: [C:] Label  92% 210G/228G
+        char lineBuf[128];
+        int off = 0;
+        if (d.letter >= 'A' && d.letter <= 'Z')
+            off = snprintf(lineBuf, sizeof(lineBuf), "[%c:] ", d.letter);
+        auto label = d.label.empty() ? "?" : d.label;
+        if (label.size() > 10) label = label.substr(0, 8) + "..";
         double upct = (d.totalSize > 0) ? 100.0 * d.usedSpace / d.totalSize : 0;
         auto usedStr = FormatSize(d.usedSpace);
-        // Show drive letter
-        char letterBuf[16];
-        int letterPrefix = 0;
-        if (d.letter && d.letter != '\0') {
-            snprintf(letterBuf, sizeof(letterBuf), "[%c:] ", d.letter);
-            letterPrefix = static_cast<int>(strlen(letterBuf));
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
-        }
-        mvwprintw(win, y + lines, x0 + 2 + letterPrefix, "%.*s", maxW - 2 - letterPrefix, label.c_str());
-        int barCol = x0 + 2 + letterPrefix + static_cast<int>(label.size()) + 1;
-        if (barCol + bw + 2 < x0 + maxW) {
-            wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol, "%.*s", bw, FormatBar(upct, bw).c_str());
-            wattroff(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol + bw + 1, "%d%% %.*s",
-                      static_cast<int>(upct), maxW - (barCol + bw + 1 - x0), usedStr.c_str());
-        }
+        auto totalStr = FormatSize(d.totalSize);
+        off += snprintf(lineBuf + off, sizeof(lineBuf) - off,
+                       "%s  %d%% %s/%s",
+                       label.c_str(), static_cast<int>(upct),
+                       usedStr.c_str(), totalStr.c_str());
+        lineBuf[off] = '\0';
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, lineBuf);
         lines++;
     }
     return lines;
@@ -329,18 +361,27 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     int lines = 0;
 
     if (data.hasWiFi) {
-        std::string wifiStr = "On";
+        bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
+        std::string wifiStr = hasData ? "On" : "Disconnected";
         if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
         if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
         if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
         if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
         if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
+        if (!data.wifiBand.empty()) wifiStr += "  " + data.wifiBand;
+        if (!data.wifiGen.empty()) wifiStr += "  " + data.wifiGen;
         if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
         wifiStr = TrimRight(wifiStr, maxW - 8);
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
+        lines++;
+    } else {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Off");
         lines++;
     }
 
@@ -366,6 +407,22 @@ int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     return 2;
 }
 
+int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10 || data.physicalDisks.empty()) return 0;
+    int lines = 0;
+
+    for (const auto& pd : data.physicalDisks) {
+        if (y + lines >= LINES - 5) break;
+        std::string line = pd.model;
+        if (!pd.diskType.empty()) line += " " + pd.diskType;
+        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
+        if (pd.temperature > 0) { char b[12]; snprintf(b, sizeof(b), " %.0fC", pd.temperature); line += b; }
+        line = TrimRight(line, maxW - 2);
+        mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
+    }
+    return lines;
+}
+
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -379,9 +436,8 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     // Collect sensors to display: skip per-core CPU sensors, keep everything else
     std::vector<std::pair<std::string, double>> displayTemps;
     for (const auto& [name, temp] : data.temperatures) {
-        // Skip only individual CPU core sensors (e.g. "CPU Core 1", "CPU Core 2")
-        bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos ||
-                                name.find("CPU Die") != std::string::npos);
+        // Skip individual CPU core sensors (e.g. "CPU Core 1") but keep CPU Die
+        bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos);
         if (!isPerCoreSensor) {
             displayTemps.push_back({name, temp});
         }
@@ -518,6 +574,9 @@ void TuiApp::Run() {
         int ry = 2;
         if (ry < maxY) {
             ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
+            if (ry < maxY) {
+                ry += DrawPhysicalDiskPanel(stdscr, data, ry, rx, rightW);
+            }
             if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
             }

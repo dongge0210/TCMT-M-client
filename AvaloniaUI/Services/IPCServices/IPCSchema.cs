@@ -22,14 +22,14 @@ public static class IPCConstants
 {
     public const uint   Magic             = 0x54434D54; // "TCMT"
     public const byte   CurrentVersion    = 1;
-    public const int    MaxFields         = 200;
+    public const int    MaxFields         = 300;
     public const int    FieldNameLen      = 32;
     public const int    FieldUnitsLen     = 16;
     public const int    SchemaHeaderSize  = 16;  // sizeof(SchemaHeader)
     public const int    FieldDefSize      = 80;  // sizeof(FieldDef)
     public const string PipeName          = "TCMT_IPC_Pipe";       // Windows
     public const string UnixSocketPath    = "/tmp/tcmt_ipc.sock";  // macOS/Linux
-    public const string SharedMemoryPath  = "/tmp/tcmt_shm.dat";   // POSIX shm
+    public const string SharedMemoryPath  = "/tcmt_ipc_shm";       // POSIX shm
 }
 
 public class SchemaHeader

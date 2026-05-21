@@ -5,19 +5,28 @@
 #include <vector>
 #include <string>
 #include "DataStruct/DataStruct.h"
-#include "../tui/TuiApp.h"
+#include "../../tui/TuiApp.h"
 #include "Utils/JThreadCompat.h"
+#include "etw/EtwMonitor.h"
+#include "notifications/SystemEventMonitor.h"
+#include "power/PowerMonitor.h"
 
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
     std::atomic<double> cpuUsage{0.0};
     std::atomic<double> pCoreFreq{0.0};
     std::atomic<double> eCoreFreq{0.0};
+    std::atomic<double> pCoreMaxFreq{0.0};
+    std::atomic<double> eCoreMaxFreq{0.0};
+    std::atomic<double> gpuFreq{0.0};
+    std::atomic<double> gpuMaxFreq{0.0};
     // Memory (1s)
     std::atomic<uint64_t> totalMemory{0};
     std::atomic<uint64_t> usedMemory{0};
     std::atomic<uint64_t> availableMemory{0};
     std::atomic<uint64_t> compressedMemory{0};
+    uint32_t ramSpeed = 0;
+    std::string ramType;  // non-atomic — set once at startup
     // GPU (500ms)
     std::atomic<double> gpuUsage{0.0};
     std::atomic<uint64_t> gpuMemory{0};
@@ -41,6 +50,20 @@ struct ModuleData {
     // Power (2s)
     std::atomic<int> batteryPercent{-1};
     std::atomic<bool> acOnline{false};
+    std::atomic<double> cpuPower{0.0};
+    std::atomic<double> gpuPower{0.0};
+    std::atomic<double> anePower{0.0};
+    // ETW dirty flags — set by callbacks, checked by loops
+    std::atomic<bool> powerDirty{false};
+    std::atomic<bool> networkDirty{false};
+    std::atomic<bool> wifiDirty{false};
+    std::atomic<bool> btDirty{false};
+    std::atomic<bool> usbDirty{false};
+    std::atomic<bool> cpuFreqDirty{false};
+    // SystemEventMonitor dirty flags
+    std::atomic<bool> diskDirty{false};
+    std::atomic<bool> sysPowerDirty{false};  // sleep/wake events
+    std::atomic<bool> thermalDirty{false};
 };
 
 // Free function thread loops (implemented in ModuleCoordinator_cpu.cpp)
@@ -56,10 +79,16 @@ public:
     void Stop();
     void Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData);
     static void SleepFor(tcmt::compat::StopToken st, int ms);
+    bool IsWifiDirty() { return data_.wifiDirty.exchange(false); }
+    bool IsBtDirty()   { return data_.btDirty.exchange(false); }
+    bool IsUsbDirty()  { return data_.usbDirty.exchange(false); }
 private:
     ModuleData data_;
     std::atomic<bool> running_{false};
     tcmt::compat::JThread cpuThread_, memoryThread_, diskThread_, netThread_, tempThread_, powerThread_;
+    tcmt::etw::EtwMonitor etwMonitor_;
+    SystemEventMonitor sysEventMonitor_;
+    PowerMonitor powerMonitor_;
     void DiskLoop(tcmt::compat::StopToken st);
     void NetworkLoop(tcmt::compat::StopToken st);
     void TemperatureLoop(tcmt::compat::StopToken st);

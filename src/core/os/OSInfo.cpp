@@ -58,10 +58,11 @@ OSInfo::OSInfo() {
     }
 
     // Append machine model if available (e.g. "MacBookPro17,1")
-    char model[128] = {0};
-    len = sizeof(model);
-    if (sysctlbyname("hw.model", model, &len, nullptr, 0) == 0) {
-        osVersion += " (" + std::string(model) + ")";
+    char modelBuf[128] = {0};
+    len = sizeof(modelBuf);
+    if (sysctlbyname("hw.model", modelBuf, &len, nullptr, 0) == 0) {
+        model = modelBuf;
+        osVersion += " (" + model + ")";
     }
 }
 
@@ -79,6 +80,10 @@ bool OSInfo::HasTpm() {
 
 std::string OSInfo::GetVersion() const {
     return osVersion;
+}
+
+std::string OSInfo::GetModel() const {
+    return model;
 }
 
 void OSInfo::Initialize() {

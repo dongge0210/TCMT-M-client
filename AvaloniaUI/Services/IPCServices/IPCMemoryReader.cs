@@ -109,8 +109,8 @@ public class IPCMemoryReader : IDisposable
 
     private bool OpenMacOS()
     {
-        // C++ IPCServer creates shm via shm_open("/tcmt_ipc", O_CREAT | O_RDWR, 0666) + mmap
-        _shmFd = shm_open("/tcmt_ipc_shm", O_RDONLY, 0);
+        // C++ IPCServer creates shm via shm_open + mmap
+        _shmFd = shm_open(IPCConstants.SharedMemoryPath, O_RDONLY, 0);
         if (_shmFd != -1)
         {
             _shmSize = (int)_schema!.Header.TotalSize;
@@ -435,7 +435,7 @@ public class IPCMemoryReader : IDisposable
         int len = 0;
         while (len < buf.Length && buf[len] != 0) len++;
         if (len == 0) return string.Empty;
-        return Encoding.ASCII.GetString(buf, 0, len);
+        return Encoding.UTF8.GetString(buf, 0, len);
     }
 
     // --- WString 支持 ---

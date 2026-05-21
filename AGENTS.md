@@ -5,7 +5,7 @@
 ```bash
 # ─── macOS (Apple Silicon) ───
 # C++ core (TCMT-M, ncurses TUI)
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n hw.ncpu)
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
 # AvaloniaUI (separate, reads SHM)
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 
@@ -66,3 +66,4 @@ Do NOT hardcode build output paths. Use the MCP server's inference:
 
 ## User additional notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
+- **sessions**: change `docs/session.md` when current status changed also you see current status from that file.

@@ -7,7 +7,7 @@ namespace tcmt::ipc {
 // === Protocol Constants ===
 constexpr uint32_t IPC_MAGIC          = 0x54434D54; // "TCMT"
 constexpr uint8_t  IPC_VERSION        = 1;
-constexpr uint32_t IPC_MAX_FIELDS     = 200;
+constexpr uint32_t IPC_MAX_FIELDS     = 300;
 constexpr uint32_t IPC_FIELD_NAME_LEN = 32;
 constexpr uint32_t IPC_FIELD_UNITS_LEN = 16;
 constexpr uint32_t IPC_SCHEMA_HEADER_SIZE = 16;
@@ -113,13 +113,19 @@ struct IPCDataBlock {
     uint64_t usedMemory              = 0;
     uint64_t availableMemory         = 0;
     uint64_t compressedMemory        = 0;
+    uint32_t ramSpeed                = 0;
+    char     ramType[32]             = {};
 
     // Battery / power
     int32_t  batteryPercent          = -1;
     bool     acOnline                = false;
+    float    cpuPower                = 0;
+    float    gpuPower                = 0;
+    float    anePower                = 0;
 
     // OS
     char     osVersion[128]          = {};
+    char     hardwareModel[128]      = {};
 
     // GPU
     char     gpuName[48]             = {};
@@ -128,6 +134,7 @@ struct IPCDataBlock {
     float    gpuMemoryPercent        = 0;
     float    gpuUsage                = 0;
     float    gpuTemp                 = 0;
+    float    gpuFreq                 = 0;
     bool     gpuIsVirtual            = false;
 
     // Disks (up to 4)
@@ -171,6 +178,7 @@ struct IPCDataBlock {
         float    temperature         = 0;
         float    healthPercent       = 0;
         bool     smartSupported      = false;
+        char     attrsJson[4096]     = {}; // SMART attributes as JSON array
     };
     PhysDiskSlot physicalDisks[8]    = {};
     uint8_t  physDiskCount           = 0;

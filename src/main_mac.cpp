@@ -31,13 +31,14 @@
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
 #include "core/bluetooth/BluetoothInfo.h"
-#include "core/DeviceChangeNotifier.h"
+#include "core/notifications/DeviceChangeNotifier.h"
+#include "core/notifications/UserNotifier.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/IPC/IPCServer.h"
 #include "core/temperature/TemperatureWrapper.h"
-#include "core/ModuleCoordinator.h"
+#include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
 
@@ -99,13 +100,19 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addU64("memory/used",         offsetof(B, usedMemory));
     addU64("memory/available",    offsetof(B, availableMemory));
     addU64("memory/compressed",   offsetof(B, compressedMemory));
+    add("memory/ramSpeed", offsetof(B, ramSpeed), 4, FT::UInt32);
+    add("memory/ramType",  offsetof(B, ramType), (uint16_t)sizeof(B::ramType), FT::String);
 
     // Battery / Power
     addI("battery/percent",       offsetof(B, batteryPercent));
     addB("battery/acOnline",      offsetof(B, acOnline));
+    addF("power/cpu",             offsetof(B, cpuPower));
+    addF("power/gpu",             offsetof(B, gpuPower));
+    addF("power/ane",             offsetof(B, anePower));
 
     // OS
     addS("os/version",            offsetof(B, osVersion), 128);
+    addS("os/model",              offsetof(B, hardwareModel), 128);
 
     // GPU
     addS("gpu/0/name",            offsetof(B, gpuName), 48);
@@ -114,6 +121,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("gpu/0/memoryPercent",   offsetof(B, gpuMemoryPercent));
     addF("gpu/0/usage",           offsetof(B, gpuUsage));
     addF("gpu/0/temperature",     offsetof(B, gpuTemp));
+    addF("gpu/freq",              offsetof(B, gpuFreq));
     addB("gpu/0/isVirtual",       offsetof(B, gpuIsVirtual));
 
     // Disks (up to 4)
@@ -653,6 +661,7 @@ int main(int argc, char* argv[]) {
             // === Build TuiData snapshot ===
             tcmt::TuiData data;
             data.osVersion = os.GetVersion();
+            data.hardwareModel = os.GetModel();
             data.connectionCount = ipcServer.GetClientCount();
             auto ct = ipcServer.GetClientTypes();
             data.clientTypes.clear();
@@ -688,6 +697,8 @@ int main(int argc, char* argv[]) {
                 data.usedMemory = sysInfo.usedMemory;
                 data.availableMemory = sysInfo.availableMemory;
                 data.compressedMemory = sysInfo.compressedMemory;
+                data.ramSpeed = sysInfo.ramSpeed;
+                strncpy(data.ramType, sysInfo.ramType, sizeof(data.ramType) - 1);
             }
 
             // GPU (coordinator doesn't have a GPU loop — keep inline)
@@ -710,6 +721,7 @@ int main(int argc, char* argv[]) {
             static int wbCtr = 0;
             static WiFiInfo s_wifi;
             static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+            static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
             static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
             static BluetoothInfo s_bt;
             if (++wbCtr >= 6) { wbCtr = 0;
@@ -740,11 +752,60 @@ int main(int argc, char* argv[]) {
             std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
             data.timestamp = buf;
 
+            // Physical disks (SMART) — cache once, then feed TUI every loop
+            {
+                static std::vector<PhysicalDiskSmartData> cachedSmart;
+                static bool smartDone = false;
+                if (!smartDone) {
+                    try {
+                        SystemInfo tmp;
+                        DiskInfo().CollectSmartData(tmp);
+                        cachedSmart = std::move(tmp.physicalDisks);
+                        smartDone = true;
+                        Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks");
+                    } catch (...) {
+                        Logger::Error("SMART collection threw exception (need root?)");
+                    }
+                }
+                data.physicalDisks.clear();
+                data.physicalDisks.reserve(cachedSmart.size());
+                for (const auto& src : cachedSmart) {
+                    tcmt::TuiData::PhysicalDiskInfo pi;
+                    for (int k = 0; k < 63 && src.model[k] != u'\0'; ++k)
+                        pi.model += static_cast<char>(src.model[k]);
+                    for (int k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
+                        pi.serial += static_cast<char>(src.serialNumber[k]);
+                    pi.capacity = src.capacity;
+                    pi.temperature = src.temperature;
+                    pi.healthPct = src.healthPercentage;
+                    pi.smartSupported = src.smartSupported;
+                    pi.powerOnHours = src.powerOnHours;
+                    pi.wearLeveling = src.wearLeveling;
+                    for (int k = 0; k < 15 && src.diskType[k] != u'\0'; ++k)
+                        pi.diskType += static_cast<char>(src.diskType[k]);
+                    for (int k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
+                        pi.interfaceType += static_cast<char>(src.interfaceType[k]);
+                    pi.attributes.clear();
+                    pi.attributes.reserve(src.attributeCount);
+                    for (int ai = 0; ai < src.attributeCount; ++ai) {
+                        tcmt::TuiData::SmAttributeInfo ai2;
+                        ai2.id = src.attributes[ai].id;
+                        ai2.current = src.attributes[ai].current;
+                        ai2.worst = src.attributes[ai].worst;
+                        ai2.rawValue = src.attributes[ai].rawValue;
+                        for (int k = 0; k < 63 && src.attributes[ai].name[k] != u'\0'; ++k)
+                            ai2.name += static_cast<char>(src.attributes[ai].name[k]);
+                        pi.attributes.push_back(std::move(ai2));
+                    }
+                    data.physicalDisks.push_back(std::move(pi));
+                }
+            }
+
             // Update TUI
             tuiApp.UpdateData(data);
 
             // Write to IPC shared memory (schema-driven, for C# Avalonia)
-                if (ipcServer.IsRunning()) {
+            if (ipcServer.IsRunning()) {
                     auto* b = static_cast<tcmt::ipc::IPCDataBlock*>(ipcServer.GetShmPtr());
                     if (b) {
                         // seqlock: mark write in progress (odd)
@@ -769,12 +830,20 @@ int main(int argc, char* argv[]) {
                         b->usedMemory = data.usedMemory;
                         b->availableMemory = data.availableMemory;
                         b->compressedMemory = data.compressedMemory;
+                        b->ramSpeed = data.ramSpeed;
+                        std::strncpy(b->ramType, data.ramType, 31);
+                        b->ramType[31] = '\0';
                         // Battery / power
                         b->batteryPercent = data.batteryPercent;
                         b->acOnline = data.acOnline;
+                        b->cpuPower = static_cast<float>(data.cpuPower);
+                        b->gpuPower = static_cast<float>(data.gpuPower);
+                        b->anePower = static_cast<float>(data.anePower);
                         // OS
                         std::strncpy(b->osVersion, data.osVersion.c_str(), 127);
                         b->osVersion[127] = '\0';
+                        std::strncpy(b->hardwareModel, data.hardwareModel.c_str(), 127);
+                        b->hardwareModel[127] = '\0';
                         // GPU
                         std::strncpy(b->gpuName, data.gpuName.c_str(), 47);
                         b->gpuName[47] = '\0';
@@ -782,6 +851,7 @@ int main(int argc, char* argv[]) {
                         b->gpuMemoryPercent = static_cast<float>(data.gpuMemoryPercent);
                         b->gpuUsage = static_cast<float>(data.gpuUsage);
                         b->gpuTemp = static_cast<float>(data.gpuTemp);
+                        b->gpuFreq = static_cast<float>(data.gpuFreq);
                         b->gpuIsVirtual = false;
                         // Disks (up to 4)
                         b->diskCount = 0;
@@ -818,35 +888,37 @@ int main(int argc, char* argv[]) {
                             b->temperatures[ti].value = static_cast<float>(data.temperatures[ti].second);
                             b->tempCount++;
                         }
-                        // Physical disks (SMART) — cached once at startup
-                        static std::vector<PhysicalDiskSmartData> cachedSmart;
-                        static bool smartDone = false;
-                        if (!smartDone) {
-                            try {
-                                SystemInfo tmp;
-                                DiskInfo().CollectSmartData(tmp);
-                                cachedSmart = std::move(tmp.physicalDisks);
-                                smartDone = true;
-                            } catch (...) {}
-                        }
-                        b->physDiskCount = 0;
-                        for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
-                            auto& pd = b->physicalDisks[pi];
-                            const auto& src = cachedSmart[pi];
-                            for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
-                                pd.model[k] = static_cast<char>(src.model[k]);
-                            pd.model[63] = '\0';
-                            for (size_t k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
-                                pd.serial[k] = static_cast<char>(src.serialNumber[k]);
-                            pd.serial[63] = '\0';
-                            pd.capacity = src.capacity;
-                            for (size_t k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
-                                pd.interfaceType[k] = static_cast<char>(src.interfaceType[k]);
-                            pd.interfaceType[15] = '\0';
-                            pd.temperature = static_cast<float>(src.temperature);
-                            pd.healthPercent = static_cast<float>(src.healthPercentage);
-                            pd.smartSupported = src.smartSupported;
-                            b->physDiskCount++;
+                        // Physical disks (SMART) — shared memory for IPC
+                        {
+                            static std::vector<PhysicalDiskSmartData> cachedSmartIpc;
+                            static bool smartDoneIpc = false;
+                            if (!smartDoneIpc) {
+                                try {
+                                    SystemInfo tmp;
+                                    DiskInfo().CollectSmartData(tmp);
+                                    cachedSmartIpc = std::move(tmp.physicalDisks);
+                                    smartDoneIpc = true;
+                                } catch (...) {}
+                            }
+                            b->physDiskCount = 0;
+                            for (size_t pi = 0; pi < std::min(cachedSmartIpc.size(), size_t(8)); ++pi) {
+                                auto& pd = b->physicalDisks[pi];
+                                const auto& src = cachedSmartIpc[pi];
+                                for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
+                                    pd.model[k] = static_cast<char>(src.model[k]);
+                                pd.model[63] = '\0';
+                                for (size_t k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
+                                    pd.serial[k] = static_cast<char>(src.serialNumber[k]);
+                                pd.serial[63] = '\0';
+                                pd.capacity = src.capacity;
+                                for (size_t k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
+                                    pd.interfaceType[k] = static_cast<char>(src.interfaceType[k]);
+                                pd.interfaceType[15] = '\0';
+                                pd.temperature = static_cast<float>(src.temperature);
+                                pd.healthPercent = static_cast<float>(src.healthPercentage);
+                                pd.smartSupported = src.smartSupported;
+                                b->physDiskCount++;
+                            }
                         }
                     }
                     // WiFi
@@ -901,21 +973,23 @@ int main(int argc, char* argv[]) {
 
             // USB detection (every 10 seconds)
             static int usbCheckCounter = 0;
+            static size_t prevUsbCount = 0;
+            if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
             if (++usbCheckCounter >= 20) {
                 usbCheckCounter = 0;
-                if (s_usbNotify.Poll()) {
                 try {
                     UsbInfo usb;
                     usb.Detect();
                     const auto& devs = usb.GetDevices();
-                    if (!devs.empty()) {
-                        Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
-                        for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
-                            Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
-                                        + " PID:" + std::to_string(devs[di].pid));
+                    Logger::Debug("USB: scan — " + std::to_string(devs.size()) + " device(s)");
+                    if (devs.size() != prevUsbCount) {
+                        if (devs.empty())
+                            Logger::Info("USB: all devices removed");
+                        else
+                            Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                        prevUsbCount = devs.size();
                     }
                 } catch (...) {}
-                } // s_usbNotify.Poll()
             }
 
             loopCounter++;

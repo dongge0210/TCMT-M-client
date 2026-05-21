@@ -24,19 +24,25 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/DiskInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerMonitor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb/UsbInfo.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_cpu.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/UserNotifier.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/SystemEventMonitor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator_cpu.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator_io.cpp
 )
 # macOS-only modules (.mm Objective-C++, not valid for MSVC)
 if(TCMT_MACOS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
 endif()
 
@@ -44,6 +50,7 @@ endif()
 if(TCMT_WINDOWS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/etw/EtwMonitor.cpp
     )
 endif()
 
@@ -188,6 +195,9 @@ endif()
 # Apply compile options from cmake/Options.cmake
 tcmt_target_set_options(TCMTCore)
 tcmt_set_platform_libraries(TCMTCore)
+if(TCMT_WINDOWS)
+    target_link_libraries(TCMTCore PRIVATE tdh wtsapi32)
+endif()
 tcmt_set_output_directories(TCMTCore)
 
 # Link curses on Windows and macOS
@@ -221,6 +231,25 @@ if(TCMT_MACOS)
         message(STATUS "  IOBluetooth.framework: ${IOBLUETOOTH_LIB}")
     else()
         message(WARNING "  IOBluetooth.framework not found — Bluetooth monitoring disabled")
+    endif()
+endif()
+
+# DiskArbitration, SystemConfiguration, IOKit — macOS system event monitoring
+if(TCMT_MACOS)
+    find_library(DISKARBITRATION_LIB DiskArbitration)
+    find_library(SYSTEMCONFIGURATION_LIB SystemConfiguration)
+    find_library(IOKIT_LIB IOKit)
+    if(DISKARBITRATION_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${DISKARBITRATION_LIB})
+        message(STATUS "  DiskArbitration.framework: ${DISKARBITRATION_LIB}")
+    endif()
+    if(SYSTEMCONFIGURATION_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${SYSTEMCONFIGURATION_LIB})
+        message(STATUS "  SystemConfiguration.framework: ${SYSTEMCONFIGURATION_LIB}")
+    endif()
+    if(IOKIT_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${IOKIT_LIB})
+        message(STATUS "  IOKit.framework: ${IOKIT_LIB}")
     endif()
 endif()
 

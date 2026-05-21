@@ -74,14 +74,18 @@ typedef DWORD (WINAPI *FnCM_Unregister_Notification)(void* hNotify);
 
 class DeviceChangeNotifier {
 public:
-    enum DeviceClass { USB, Bluetooth };
+    enum DeviceClass { USB, Bluetooth, USB_Hub };
 
     explicit DeviceChangeNotifier(DeviceClass devClass)
         : devClass_(devClass), fallback_(false) {
 
-        const GUID* guidPtr = (devClass == USB)
-            ? &GUID_DEVINTERFACE_USB_DEVICE
-            : &GUID_BTHPORT_DEVICE_INTERFACE;
+        const GUID* guidPtr;
+        if (devClass == USB_Hub)
+            guidPtr = &GUID_DEVINTERFACE_USB_HUB;
+        else if (devClass == USB)
+            guidPtr = &GUID_DEVINTERFACE_USB_DEVICE;
+        else
+            guidPtr = &GUID_BTHPORT_DEVICE_INTERFACE;
 
         HMODULE hCfg = GetModuleHandleW(L"cfgmgr32.dll");
         if (!hCfg) hCfg = LoadLibraryW(L"cfgmgr32.dll");
@@ -147,10 +151,12 @@ private:
 
 class DeviceChangeNotifier {
 public:
-    enum DeviceClass { USB, Bluetooth };
+    enum DeviceClass { USB, Bluetooth, USB_Hub };
 
     explicit DeviceChangeNotifier(DeviceClass devClass)
-        : className_((devClass == USB) ? "IOUSBHostDevice" : "IOBluetoothHostController") {
+        // USB_Hub == USB on macOS (IOUSBHostDevice covers both devices and hubs)
+        : className_((devClass == USB || devClass == USB_Hub) ? "IOUSBHostDevice"
+                      : "IOBluetoothHostController") {
         changed_.store(true);
 
         runLoopThread_ = std::thread([this]() {
@@ -166,8 +172,13 @@ public:
                 IOServiceAddMatchingNotification(
                     notifyPort_, kIOFirstMatchNotification, matching,
                     &DeviceChangeNotifier::IOCallback, this, &iterator_);
-                // Drain initial iterator
                 DeviceChangeNotifier::IOCallback(this, iterator_);
+            }
+            CFMutableDictionaryRef termMatching = IOServiceMatching(className_.c_str());
+            if (termMatching) {
+                IOServiceAddMatchingNotification(
+                    notifyPort_, kIOTerminatedNotification, termMatching,
+                    &DeviceChangeNotifier::IOCallback, this, &termIterator_);
             }
 
             while (!stopFlag_.load()) {
@@ -185,6 +196,8 @@ public:
     ~DeviceChangeNotifier() {
         stopFlag_.store(true);
         if (runLoopThread_.joinable()) runLoopThread_.join();
+        if (iterator_) IOObjectRelease(iterator_);
+        if (termIterator_) IOObjectRelease(termIterator_);
     }
 
     bool Poll() {
@@ -207,6 +220,7 @@ private:
     std::thread runLoopThread_;
     IONotificationPortRef notifyPort_{nullptr};
     io_iterator_t iterator_{0};
+    io_iterator_t termIterator_{0};
 };
 
 #else

@@ -102,23 +102,114 @@ bool WlanDetect(WlanData* out) {
                          pConn->wlanSecurityAttributes.dot11AuthAlgorithm);
                 break;
             }
+
+            // Band from channel (set after channel is populated later)
+            // WiFi generation from PHY type
+            {
+                DOT11_PHY_TYPE phy = pConn->wlanAssociationAttributes.dot11PhyType;
+                switch (phy) {
+                case dot11_phy_type_ht:  snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 4"); break;
+                case dot11_phy_type_vht: snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 5"); break;
+                case dot11_phy_type_he:  snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 6"); break;
+                case dot11_phy_type_eht: snprintf(out->wifiGen, sizeof(out->wifiGen), "WiFi 7"); break;
+                default: out->wifiGen[0] = '\0'; break;
+                }
+            }
         }
         WlanFreeMemory(pConn);
     }
 
-    // --- RSSI (dBm) ---
-    LONG rssi = 0;
-    DWORD rssiSize = sizeof(rssi);
-    dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
-                                  NULL, &rssiSize, (PVOID*)&rssi, &opCode);
-    if (dwResult == ERROR_SUCCESS) out->rssi = (int32_t)rssi;
+    // --- RSSI (dBm) — only valid when connected ---
+    if (out->isConnected) {
+        LONG* pRssi = NULL;
+        DWORD rssiSize = 0;
+        dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_rssi,
+                                      NULL, &rssiSize, (PVOID*)&pRssi, NULL);
+        if (dwResult == ERROR_SUCCESS && pRssi && rssiSize >= sizeof(LONG)) {
+            int32_t raw = (int32_t)(*pRssi);
+            if (raw < 0 && raw > -100) {
+                out->rssi = raw;
+            } else {
+                float frssi;
+                memcpy(&frssi, pRssi, sizeof(frssi));
+                if (frssi < 0.0f && frssi > -100.0f)
+                    out->rssi = (int32_t)frssi;
+            }
+        }
+        if (pRssi) WlanFreeMemory(pRssi);
+        // Fallback: use wlanSignalQuality (0-100%) from connection attributes
+        if (out->rssi == 0 && out->isConnected && pConn) {
+            ULONG sq = pConn->wlanAssociationAttributes.wlanSignalQuality;
+            if (sq <= 100) out->rssi = -100 + (int32_t)sq * 70 / 100;
+        }
+    }
 
-    // --- Channel ---
-    ULONG channel = 0;
-    DWORD channelSize = sizeof(channel);
-    dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
-                                  NULL, &channelSize, (PVOID*)&channel, &opCode);
-    if (dwResult == ERROR_SUCCESS) out->channel = (int32_t)channel;
+    // --- Channel — only valid when connected ---
+    if (out->isConnected) {
+        ULONG* pChannel = NULL;
+        DWORD channelSize = 0;
+        dwResult = WlanQueryInterface(hClient, pGuid, wlan_intf_opcode_channel_number,
+                                      NULL, &channelSize, (PVOID*)&pChannel, NULL);
+        if (dwResult == ERROR_SUCCESS && pChannel && channelSize >= sizeof(ULONG)) {
+            if (*pChannel >= 1 && *pChannel <= 255) {
+                out->channel = (int32_t)(*pChannel);
+            } else {
+                float fch;
+                memcpy(&fch, pChannel, sizeof(fch));
+                if (fch >= 1.0f && fch <= 255.0f)
+                    out->channel = (int32_t)fch;
+            }
+        }
+        if (pChannel) WlanFreeMemory(pChannel);
+    }
+
+    // --- Channel fallback via BSS list ---
+    if (out->channel == 0 && out->isConnected && out->ssid[0] != '\0') {
+        DOT11_SSID dot11Ssid;
+        memset(&dot11Ssid, 0, sizeof(dot11Ssid));
+        int ssidLen = (int)strlen(out->ssid);
+        if (ssidLen > (int)DOT11_SSID_MAX_LENGTH) ssidLen = DOT11_SSID_MAX_LENGTH;
+        dot11Ssid.uSSIDLength = (ULONG)ssidLen;
+        memcpy(dot11Ssid.ucSSID, out->ssid, ssidLen);
+
+        PWLAN_BSS_LIST pBssList = NULL;
+        dwResult = WlanGetNetworkBssList(hClient, pGuid, &dot11Ssid,
+                                          dot11_BSS_type_infrastructure,
+                                          FALSE, NULL, &pBssList);
+        if (dwResult == ERROR_SUCCESS && pBssList && pBssList->dwNumberOfItems > 0) {
+            if (strlen(out->bssid) == 17) {
+                UCHAR target[6];
+                for (int i = 0; i < 6; i++) {
+                    char h[3] = {out->bssid[i*3], out->bssid[i*3+1], '\0'};
+                    target[i] = (UCHAR)strtoul(h, NULL, 16);
+                }
+                for (DWORD i = 0; i < pBssList->dwNumberOfItems; i++) {
+                    if (memcmp(target, pBssList->wlanBssEntries[i].dot11Bssid, 6) == 0) {
+                        ULONG freqKhz = pBssList->wlanBssEntries[i].ulChCenterFrequency;
+                        // Convert frequency (kHz) to channel number
+                        if (freqKhz >= 2412000 && freqKhz <= 2484000)
+                            out->channel = (int32_t)((freqKhz / 1000 - 2407) / 5);
+                        else if (freqKhz >= 5000000)
+                            out->channel = (int32_t)((freqKhz / 1000) / 5);
+                        else if (freqKhz > 0)
+                            out->channel = (int32_t)freqKhz; // raw value
+                        break;
+                    }
+                }
+            }
+            WlanFreeMemory(pBssList);
+        }
+    }
+
+    // Derive band from channel
+    if (out->channel > 0) {
+        if (out->channel <= 14)
+            snprintf(out->band, sizeof(out->band), "2.4GHz");
+        else if (out->channel <= 165)
+            snprintf(out->band, sizeof(out->band), "5GHz");
+        else
+            snprintf(out->band, sizeof(out->band), "6GHz");
+    }
 
     WlanFreeMemory(pIfList);
     WlanCloseHandle(hClient, NULL);

@@ -16,6 +16,8 @@ typedef struct {
     int32_t rssi;
     int32_t channel;
     char security[WLAN_SECURITY_MAX_LEN];
+    char band[16];      // "2.4GHz", "5GHz", "6GHz"
+    char wifiGen[16];   // "WiFi 4", "WiFi 5", "WiFi 6", "WiFi 6E", "WiFi 7"
     double txRate;
     bool powerOn;
     bool isConnected;

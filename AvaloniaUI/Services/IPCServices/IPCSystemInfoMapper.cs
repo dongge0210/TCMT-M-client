@@ -27,6 +27,7 @@ public static class IPCSystemInfoMapper
             info.CpuUsage = reader.ReadFloat64("cpu/usage") ?? (double?)reader.ReadFloat32("cpu/usage") ?? 0;
             info.PerformanceCoreFreq = reader.ReadFloat64("cpu/freq/pCore") ?? (double?)reader.ReadFloat32("cpu/freq/pCore") ?? 0;
             info.EfficiencyCoreFreq = reader.ReadFloat64("cpu/freq/eCore") ?? (double?)reader.ReadFloat32("cpu/freq/eCore") ?? 0;
+            info.CpuBaseFreq = reader.ReadFloat64("cpu/freq/base") ?? (double?)reader.ReadFloat32("cpu/freq/base") ?? 0;
             info.HyperThreading = reader.ReadBool("cpu/hyperThreading") ?? false;
             info.Virtualization = reader.ReadBool("cpu/virtualization") ?? false;
             info.CpuTemperature = reader.ReadFloat64("cpu/temperature") ?? (double?)reader.ReadFloat32("cpu/temperature") ?? 0;
@@ -37,10 +38,17 @@ public static class IPCSystemInfoMapper
             info.UsedMemory = reader.ReadUInt64("memory/used") ?? 0;
             info.AvailableMemory = reader.ReadUInt64("memory/available") ?? 0;
             info.CompressedMemory = reader.ReadUInt64("memory/compressed") ?? 0;
+            info.RamSpeed = reader.ReadUInt32("memory/ramSpeed") ?? 0;
+            info.RamType = ipc.ReadWString("memory/ramType") ?? reader.ReadString("memory/ramType") ?? "";
 
             // Battery
             info.BatteryPercent = reader.ReadInt32("battery/percent") ?? -1;
             info.AcOnline = reader.ReadBool("battery/acOnline") ?? false;
+
+            // Power (mW)
+            info.CpuPower = reader.ReadFloat64("power/cpu") ?? (double?)reader.ReadFloat32("power/cpu") ?? 0;
+            info.GpuPower = reader.ReadFloat64("power/gpu") ?? (double?)reader.ReadFloat32("power/gpu") ?? 0;
+            info.AnePower = reader.ReadFloat64("power/ane") ?? (double?)reader.ReadFloat32("power/ane") ?? 0;
 
             // OS
             info.OsVersion = reader.ReadString("os/version") ?? "";
@@ -53,6 +61,7 @@ public static class IPCSystemInfoMapper
             var gpuUsage = reader.ReadFloat64("gpu/0/usage") ?? (double?)reader.ReadFloat32("gpu/0/usage") ?? 0;
             info.GpuTemperature = reader.ReadFloat64("gpu/0/temperature") ?? (double?)reader.ReadFloat32("gpu/0/temperature") ?? 0;
             info.GpuIsVirtual = reader.ReadBool("gpu/0/isVirtual") ?? false;
+            info.GpuFreq = reader.ReadFloat64("gpu/freq") ?? (double?)reader.ReadFloat32("gpu/freq") ?? 0;
 
             if (!string.IsNullOrEmpty(info.GpuName))
             {
@@ -196,7 +205,7 @@ public static class IPCSystemInfoMapper
 
                     if (capacity > 0)
                     {
-                        info.PhysicalDisks.Add(new PhysicalDiskSmartData
+                        var pd = new PhysicalDiskSmartData
                         {
                             Model = model,
                             SerialNumber = serial,
@@ -206,7 +215,34 @@ public static class IPCSystemInfoMapper
                             HealthPercentage = health,
                             SmartSupported = supported,
                             LogicalDriveLetters = driveLetters
-                        });
+                        };
+
+                        // Read SMART attributes JSON
+                        var attrCount = reader.ReadInt32($"phys/{idx}/attrCount") ?? 0;
+                        var attrsJson = reader.ReadString($"phys/{idx}/attrsJson") ?? "";
+                        if (attrCount > 0 && !string.IsNullOrEmpty(attrsJson))
+                        {
+                            try
+                            {
+                                // Parse compact JSON: [{"id":5,"cur":100,"worst":100,"raw":0},...]
+                                var doc = System.Text.Json.JsonDocument.Parse(attrsJson);
+                                foreach (var el in doc.RootElement.EnumerateArray())
+                                {
+                                    pd.Attributes.Add(new SmartAttributeData
+                                    {
+                                        Id = el.TryGetProperty("id", out var id) ? (byte)id.GetUInt32() : (byte)0,
+                                        Current = el.TryGetProperty("cur", out var cur) ? (byte)cur.GetUInt32() : (byte)0,
+                                        Worst = el.TryGetProperty("worst", out var worst) ? (byte)worst.GetUInt32() : (byte)0,
+                                        RawValue = el.TryGetProperty("raw", out var raw) ? raw.GetUInt64() : 0UL,
+                                        Name = el.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
+                                        Description = el.TryGetProperty("desc", out var desc) ? desc.GetString() ?? "" : ""
+                                    });
+                                }
+                            }
+                            catch { /* ignore parse errors */ }
+                        }
+
+                        info.PhysicalDisks.Add(pd);
                     }
                     idx++;
                 }
@@ -220,6 +256,8 @@ public static class IPCSystemInfoMapper
                 info.WifiRSSI = reader.ReadInt32("wifi/rssi") ?? 0;
                 info.WifiChannel = reader.ReadInt32("wifi/channel") ?? 0;
                 info.WifiSecurity = ipc.ReadWString("wifi/security") ?? reader.ReadString("wifi/security") ?? "";
+                info.WifiBand = ipc.ReadWString("wifi/band") ?? reader.ReadString("wifi/band") ?? "";
+                info.WifiGen = ipc.ReadWString("wifi/gen") ?? reader.ReadString("wifi/gen") ?? "";
             }
 
             // Bluetooth (optional fields — may not exist in older schema)
@@ -228,6 +266,27 @@ public static class IPCSystemInfoMapper
                 info.HasBluetooth = reader.ReadBool("bluetooth/powerOn") ?? false;
                 info.BtPowerOn = reader.ReadBool("bluetooth/powerOn") ?? false;
                 info.BtDeviceCount = reader.ReadInt32("bluetooth/deviceCount") ?? 0;
+            }
+
+            // TPM
+            if (reader.HasField("tpm/count")) {
+                var tpmCount = reader.ReadUInt8("tpm/count") ?? 0;
+                if (tpmCount > 0) {
+                    var manu = reader.ReadWString("tpm/manufacturer") ?? "";
+                    var fw = reader.ReadWString("tpm/firmwareVersion") ?? "";
+                    var status = reader.ReadUInt8("tpm/status") ?? 0;
+                    var selfTest = reader.ReadUInt8("tpm/selfTestStatus") ?? 0;
+                    var enabled = reader.ReadBool("tpm/isEnabled") ?? false;
+                    var active = reader.ReadBool("tpm/isActive") ?? false;
+                    info.Tpm = new TpmData {
+                        Manufacturer = manu,
+                        FirmwareVersion = fw,
+                        Status = status == 1 ? "正常" : (status == 3 ? "禁用" : "未知"),
+                        SelfTestStatus = selfTest == 0 ? "通过" : (selfTest == 1 ? "失败" : "未测试"),
+                        IsEnabled = enabled,
+                        IsActive = active,
+                    };
+                }
             }
 
             return info;

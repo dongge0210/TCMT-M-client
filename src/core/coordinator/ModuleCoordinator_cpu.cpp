@@ -14,6 +14,11 @@
 #include <chrono>
 #include <memory>
 
+#ifdef TCMT_WINDOWS
+#include <pdh.h>
+#pragma comment(lib, "pdh.lib")
+#endif
+
 #ifdef TCMT_MACOS
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
@@ -44,8 +49,10 @@ void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
 
         try {
             data.cpuUsage.store(cpuInfo->GetUsage());
-            data.pCoreFreq.store(cpuInfo->GetLargeCoreSpeed());
-            data.eCoreFreq.store(cpuInfo->GetSmallCoreSpeed());
+            double pf = cpuInfo->GetLargeCoreSpeed();
+            double ef = cpuInfo->GetSmallCoreSpeed();
+            if (pf > 0) data.pCoreFreq.store(pf);
+            if (ef > 0) data.eCoreFreq.store(ef);
         } catch (const std::exception& e) {
             Logger::Error("CpuLoop: collection error - "
                           + std::string(e.what()));
@@ -103,6 +110,32 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
             } else {
                 data.compressedMemory.store(0);
             }
+#elif defined(TCMT_WINDOWS)
+            // Windows: read compressed memory via PDH \Memory\Modified Page List Bytes
+            {
+                static void* hQuery = nullptr;
+                static void* hCounter = nullptr;
+                static bool pdhReady = false;
+                if (!pdhReady) {
+                    if (PdhOpenQueryW(nullptr, 0, (PDH_HQUERY*)&hQuery) == 0) {
+                        if (PdhAddEnglishCounterW((PDH_HQUERY)hQuery,
+                            L"\\Memory\\Modified Page List Bytes", 0,
+                            (PDH_HCOUNTER*)&hCounter) == 0) {
+                            pdhReady = true;
+                        }
+                    }
+                }
+                if (pdhReady) {
+                    PdhCollectQueryData((PDH_HQUERY)hQuery);
+                    PDH_FMT_COUNTERVALUE v;
+                    if (PdhGetFormattedCounterValue((PDH_HCOUNTER)hCounter,
+                        PDH_FMT_LARGE, nullptr, &v) == 0) {
+                        data.compressedMemory.store(v.largeValue);
+                    }
+                } else {
+                    data.compressedMemory.store(0);
+                }
+            }
 #endif
         } catch (const std::exception& e) {
             Logger::Error("MemoryLoop: " + std::string(e.what()));
@@ -140,7 +173,10 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
         }
 
-        ModuleCoordinator::SleepFor(st, 2000);
+        // Respond faster to ETW/system power events
+        if (!data.powerDirty.exchange(false) && !data.sysPowerDirty.exchange(false)) {
+            ModuleCoordinator::SleepFor(st, 2000);
+        }
     }
 
     Logger::Info("PowerLoop: stopped");

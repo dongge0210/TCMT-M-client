@@ -13,3 +13,11 @@ public:
 private:
     static bool initialized;
 };
+
+// powermetrics frequency/power data (Apple Silicon — no ETW/PDH)
+double GetPmPCoreFreq();
+double GetPmECoreFreq();
+double GetPmGpuFreq();
+double GetPmCpuPower();
+double GetPmGpuPower();
+double GetPmAnePower();

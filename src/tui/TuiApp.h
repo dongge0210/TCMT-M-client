@@ -43,6 +43,11 @@ struct TuiData {
     int efficiencyCores = 0;
     double pCoreFreq = 0.0;
     double eCoreFreq = 0.0;
+    double pCoreMaxFreq = 0.0;
+    double eCoreMaxFreq = 0.0;
+    double cpuBaseFreq = 0.0;
+    double gpuFreq = 0.0;
+    double gpuMaxFreq = 0.0;
     double cpuTemp = 0.0;
 
     // Memory
@@ -50,6 +55,8 @@ struct TuiData {
     uint64_t usedMemory = 0;
     uint64_t availableMemory = 0;
     uint64_t compressedMemory = 0;
+    uint32_t ramSpeed = 0;
+    char ramType[32] = {};
 
     // GPU
     std::string gpuName;
@@ -68,6 +75,29 @@ struct TuiData {
     };
     std::vector<DiskInfo> disks;
 
+    struct SmAttributeInfo {
+        uint8_t id = 0;
+        uint8_t current = 0;
+        uint8_t worst = 0;
+        uint64_t rawValue = 0;
+        std::string name;
+    };
+
+    struct PhysicalDiskInfo {
+        std::string model;
+        std::string serial;
+        std::string interfaceType;
+        std::string diskType;    // "SSD" / "HDD"
+        uint64_t capacity = 0;
+        double temperature = 0;
+        uint8_t healthPct = 0;
+        bool smartSupported = false;
+        uint64_t powerOnHours = 0;
+        double wearLeveling = 0;
+        std::vector<SmAttributeInfo> attributes;
+    };
+    std::vector<PhysicalDiskInfo> physicalDisks;
+
     // Network
     struct NetInfo {
         std::string name;
@@ -82,8 +112,12 @@ struct TuiData {
 
     // OS
     std::string osVersion;
+    std::string hardwareModel;
     int batteryPercent = -1;  // -1 = no battery
     bool acOnline = false;
+    double cpuPower = 0.0;
+    double gpuPower = 0.0;
+    double anePower = 0.0;
 
     // Connections
     int connectionCount = 0;
@@ -103,6 +137,8 @@ struct TuiData {
     int wifiRSSI = 0;
     int wifiChannel = 0;
     std::string wifiSecurity;
+    std::string wifiBand;
+    std::string wifiGen;
     double wifiTxRate = 0;
     // Bluetooth (optional)
     bool hasBluetooth = false;
@@ -144,6 +180,7 @@ private:
     int DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
