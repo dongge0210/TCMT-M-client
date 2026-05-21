@@ -38,10 +38,17 @@ public static class IPCSystemInfoMapper
             info.UsedMemory = reader.ReadUInt64("memory/used") ?? 0;
             info.AvailableMemory = reader.ReadUInt64("memory/available") ?? 0;
             info.CompressedMemory = reader.ReadUInt64("memory/compressed") ?? 0;
+            info.RamSpeed = reader.ReadUInt32("memory/ramSpeed") ?? 0;
+            info.RamType = ipc.ReadWString("memory/ramType") ?? reader.ReadString("memory/ramType") ?? "";
 
             // Battery
             info.BatteryPercent = reader.ReadInt32("battery/percent") ?? -1;
             info.AcOnline = reader.ReadBool("battery/acOnline") ?? false;
+
+            // Power (mW)
+            info.CpuPower = reader.ReadFloat64("power/cpu") ?? (double?)reader.ReadFloat32("power/cpu") ?? 0;
+            info.GpuPower = reader.ReadFloat64("power/gpu") ?? (double?)reader.ReadFloat32("power/gpu") ?? 0;
+            info.AnePower = reader.ReadFloat64("power/ane") ?? (double?)reader.ReadFloat32("power/ane") ?? 0;
 
             // OS
             info.OsVersion = reader.ReadString("os/version") ?? "";
@@ -54,6 +61,7 @@ public static class IPCSystemInfoMapper
             var gpuUsage = reader.ReadFloat64("gpu/0/usage") ?? (double?)reader.ReadFloat32("gpu/0/usage") ?? 0;
             info.GpuTemperature = reader.ReadFloat64("gpu/0/temperature") ?? (double?)reader.ReadFloat32("gpu/0/temperature") ?? 0;
             info.GpuIsVirtual = reader.ReadBool("gpu/0/isVirtual") ?? false;
+            info.GpuFreq = reader.ReadFloat64("gpu/freq") ?? (double?)reader.ReadFloat32("gpu/freq") ?? 0;
 
             if (!string.IsNullOrEmpty(info.GpuName))
             {

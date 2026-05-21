@@ -154,8 +154,8 @@ public:
     enum DeviceClass { USB, Bluetooth, USB_Hub };
 
     explicit DeviceChangeNotifier(DeviceClass devClass)
-        : className_((devClass == USB) ? "IOUSBHostDevice"
-                      : (devClass == USB_Hub) ? "IOUSBHubDevice"
+        // USB_Hub == USB on macOS (IOUSBHostDevice covers both devices and hubs)
+        : className_((devClass == USB || devClass == USB_Hub) ? "IOUSBHostDevice"
                       : "IOBluetoothHostController") {
         changed_.store(true);
 

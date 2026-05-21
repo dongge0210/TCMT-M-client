@@ -67,7 +67,9 @@ namespace AvaloniaUI.Models
         public ulong UsedMemory { get; set; }
         public ulong AvailableMemory { get; set; }
         public ulong CompressedMemory { get; set; }
-        
+        public uint RamSpeed { get; set; }
+        public string RamType { get; set; } = "";
+
         public List<GpuData> Gpus { get; set; } = new();
         public string GpuName { get; set; } = string.Empty;
         public string GpuBrand { get; set; } = string.Empty;
@@ -92,6 +94,10 @@ namespace AvaloniaUI.Models
         public bool AcOnline { get; set; }
         public double CpuTemperature { get; set; }
         public double GpuTemperature { get; set; }
+        public double CpuPower { get; set; }
+        public double GpuPower { get; set; }
+        public double AnePower { get; set; }
+        public double GpuFreq { get; set; }
         public double CpuUsageSampleIntervalMs { get; set; }
         public DateTime LastUpdate { get; set; }
 

@@ -236,6 +236,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CompressedMemory = info.CompressedMemory > 0 ? FormatBytes(info.CompressedMemory) : "";
         MemoryPercent = info.TotalMemory > 0 ? (double)info.UsedMemory / info.TotalMemory * 100 : 0;
         AddMemoryHistoryPoint(MemoryPercent);
+        RamType = info.RamType ?? "";
+        RamSpeed = info.RamSpeed;
+
+        // Power (mW → W)
+        CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F1}W" : "";
+        GpuPowerDisplay = info.GpuPower > 0 ? $"{info.GpuPower / 1000.0:F1}W" : "";
+        AnePowerDisplay = info.AnePower > 0 ? $"{info.AnePower / 1000.0:F1}W" : "";
+
+        // GPU frequency
+        GpuFreqDisplay = info.GpuFreq > 0 ? $"{info.GpuFreq:F0} MHz" : "";
 
         // GPU
         UpdateCollection(GpuList, info.Gpus);
@@ -593,6 +603,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private double _memoryPercent;
+
+    // RAM type / speed
+    [ObservableProperty]
+    private string _ramType = "";
+
+    [ObservableProperty]
+    private uint _ramSpeed;
+
+    // Power display (mW → W)
+    [ObservableProperty]
+    private string _cpuPowerDisplay = "";
+
+    [ObservableProperty]
+    private string _gpuPowerDisplay = "";
+
+    [ObservableProperty]
+    private string _anePowerDisplay = "";
+
+    // GPU frequency display
+    [ObservableProperty]
+    private string _gpuFreqDisplay = "";
 
     // GPU
     [ObservableProperty]

@@ -120,7 +120,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("gpu/0/memoryPercent",   offsetof(B, gpuMemoryPercent));
     addF("gpu/0/usage",           offsetof(B, gpuUsage));
     addF("gpu/0/temperature",     offsetof(B, gpuTemp));
-    addF("gpu/0/freq",            offsetof(B, gpuFreq));
+    addF("gpu/freq",              offsetof(B, gpuFreq));
     addB("gpu/0/isVirtual",       offsetof(B, gpuIsVirtual));
 
     // Disks (up to 4)
