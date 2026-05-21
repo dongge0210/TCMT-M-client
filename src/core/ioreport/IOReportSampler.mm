@@ -294,29 +294,21 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 else if (strncmp(name, "ECPU", 4) == 0) { freqCount = eFreqCount_; ft = eFreqTable_; }
                 else continue;
                 if (freqCount <= 0) continue;
-                // State-to-DVFS mapping: performance states may have IDLE/OFF at start.
-                // Align DVFS table to end of state list (shift = nStates - freqCount).
-                int stateOffset = (isGpu && nStates > freqCount) ? (nStates - freqCount) : 0;
                 double wsum = 0.0; int64_t tres = 0;
-                for (int si = stateOffset; si < nStates; ++si) {
-                    int dvfsIdx = si - stateOffset;
-                    if (dvfsIdx >= freqCount) break;
+                for (int si = 0; si < nStates && si < freqCount; ++si) {
                     int64_t r = g_StateRes((CFDictionaryRef)channel, si);
                     if (r <= 0) continue;
-                    tres += r; wsum += ft[dvfsIdx] * static_cast<double>(r);
+                    tres += r; wsum += ft[si] * static_cast<double>(r);
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
                     static bool firstGpu = true;
                     if (isGpu) {
-                        if (firstGpu) { Logger::Info("PowerMonitor: GPU active " + std::to_string(mhz) + " MHz off=" + std::to_string(stateOffset)); firstGpu = false; }
+                        if (firstGpu) { Logger::Info("PowerMonitor: GPU active " + std::to_string(mhz) + " MHz"); firstGpu = false; }
                         gpuFreq_.store(mhz);
                     }
                     else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
                     else eCoreFreq_.store(mhz);
-                } else if (isGpu) {
-                    static bool tresLogged = false;
-                    if (!tresLogged) { Logger::Info("PowerMonitor: GPU tres=0 off=" + std::to_string(stateOffset)); tresLogged = true; }
                 }
             }
             continue;
