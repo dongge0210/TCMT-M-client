@@ -314,16 +314,16 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         static int emCount = 0;
         if (firstCh && strcmp(group, "Energy Model") == 0 && value > 0 && value != INT64_MIN) {
             emCount++;
-            if (emCount <= 3) Logger::Info("PowerMonitor: EM " + std::string(sub) + "=" + std::to_string(value));
+            if (emCount <= 5) Logger::Info("PowerMonitor: EM sub='" + std::string(sub) + "' name='" + std::string(name) + "' v=" + std::to_string(value));
         }
         if (value <= 0 || value == INT64_MIN) continue;
 
         if (strcmp(group, "Energy Model") == 0) {
             double power = EnergyToPower((void*)channel, value) * 1000.0;
             if (power > 0.1 && power < 50000.0) {
-                if (strcmp(sub, "CPU Energy") == 0) cpuPower_.store(power);
-                else if (strcmp(sub, "GPU") == 0) gpuPower_.store(power);
-                else if (strcmp(sub, "ANE") == 0) anePower_.store(power);
+                if (strcmp(name, "CPU Energy") == 0) cpuPower_.store(power);
+                else if (strcmp(name, "GPU") == 0) gpuPower_.store(power);
+                else if (strcmp(name, "ANE") == 0) anePower_.store(power);
             }
         }
     }
