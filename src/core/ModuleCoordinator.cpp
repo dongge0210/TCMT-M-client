@@ -99,9 +99,11 @@ void ModuleCoordinator::Start() {
     // PowerMonitor — direct IOReport (no sudo) with powermetrics fallback
     if (!powerMonitor_.Start()) {
         Logger::Info("ModuleCoordinator: PowerMonitor direct mode unavailable, using powermetrics fallback");
-        // The existing temperature wrapper's powermetrics thread handles fallback
     } else {
         Logger::Info("ModuleCoordinator: PowerMonitor direct mode active (no sudo)");
+        // Seed frequency immediately (before TemperatureLoop's first iteration)
+        data_.pCoreFreq.store(powerMonitor_.GetPCoreFreq());
+        data_.eCoreFreq.store(powerMonitor_.GetECoreFreq());
     }
 #endif
 
