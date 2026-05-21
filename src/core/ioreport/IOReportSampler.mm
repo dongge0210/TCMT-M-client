@@ -188,19 +188,16 @@ bool PowerMonitor::Start() {
     // Pre-cache DVFS frequency tables
     pFreqCount_ = ReadPmgrFreqTable("voltage-states5-sram", pFreqTable_, 32);
     eFreqCount_ = ReadPmgrFreqTable("voltage-states1-sram", eFreqTable_, 32);
-    double gpuTable[32];
-    int gpuN = ReadPmgrFreqTable("voltage-states9", gpuTable, 32);
+    gpuFreqCount_ = ReadPmgrFreqTable("voltage-states9", gpuFreqTable_, 32);
     if (pFreqCount_ > 0) {
-        double maxP = pFreqTable_[pFreqCount_-1];
-        pCoreFreq_.store(maxP);
-        pCoreMaxFreq_.store(maxP);
+        pCoreFreq_.store(pFreqTable_[pFreqCount_-1]);
+        pCoreMaxFreq_.store(pFreqTable_[pFreqCount_-1]);
     }
     if (eFreqCount_ > 0) {
-        double maxE = eFreqTable_[eFreqCount_-1];
-        eCoreFreq_.store(maxE);
-        eCoreMaxFreq_.store(maxE);
+        eCoreFreq_.store(eFreqTable_[eFreqCount_-1]);
+        eCoreMaxFreq_.store(eFreqTable_[eFreqCount_-1]);
     }
-    if (gpuN > 0) gpuFreq_.store(gpuTable[gpuN-1]);
+    if (gpuFreqCount_ > 0) gpuFreq_.store(gpuFreqTable_[gpuFreqCount_-1]);
 
     directMode_.store(true);
     running_.store(true);
@@ -270,29 +267,32 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
             if (s) CFStringGetCString(s, name, sizeof(name), kCFStringEncodingUTF8); }
         if (group[0] == '\0') continue;
 
-        // CPU Stats: state residency → dynamic frequency
-        if (strcmp(group, "CPU Stats") == 0) {
+        // CPU/GPU Stats: state residency → dynamic frequency
+        if (strcmp(group, "CPU Stats") == 0 || strcmp(group, "GPU Stats") == 0) {
             if (g_StateCount && g_StateName && g_StateRes) {
-                if (strcmp(sub, "CPU Core Performance States") != 0) continue;
+                bool isGpu = strcmp(group, "GPU Stats") == 0;
+                if (!isGpu && strcmp(sub, "CPU Core Performance States") != 0) continue;
                 int nStates = g_StateCount((CFDictionaryRef)channel);
-                bool isP = strncmp(name, "PCPU", 4) == 0;
-                bool isE = strncmp(name, "ECPU", 4) == 0;
-                if ((isP || isE) && nStates > 1) {
-                    int freqCount = isP ? pFreqCount_ : eFreqCount_;
-                    double* ft = isP ? pFreqTable_ : eFreqTable_;
-                    if (freqCount > 0) {
-                        double wsum = 0.0; int64_t tres = 0;
-                        for (int si = 0; si < nStates && si < freqCount; ++si) {
-                            int64_t r = g_StateRes((CFDictionaryRef)channel, si);
-                            if (r <= 0) continue;
-                            tres += r; wsum += ft[si] * static_cast<double>(r);
-                        }
-                        if (tres > 0) {
-                            double mhz = wsum / static_cast<double>(tres);
-                            if (isP) pCoreFreq_.store(mhz);
-                            else eCoreFreq_.store(mhz);
-                        }
-                    }
+                if (nStates <= 1) continue;
+                // Determine frequency table
+                int freqCount;
+                double* ft;
+                if (isGpu) { freqCount = gpuFreqCount_; ft = gpuFreqTable_; }
+                else if (strncmp(name, "PCPU", 4) == 0) { freqCount = pFreqCount_; ft = pFreqTable_; }
+                else if (strncmp(name, "ECPU", 4) == 0) { freqCount = eFreqCount_; ft = eFreqTable_; }
+                else continue;
+                if (freqCount <= 0) continue;
+                double wsum = 0.0; int64_t tres = 0;
+                for (int si = 0; si < nStates && si < freqCount; ++si) {
+                    int64_t r = g_StateRes((CFDictionaryRef)channel, si);
+                    if (r <= 0) continue;
+                    tres += r; wsum += ft[si] * static_cast<double>(r);
+                }
+                if (tres > 0) {
+                    double mhz = wsum / static_cast<double>(tres);
+                    if (isGpu) gpuFreq_.store(mhz);
+                    else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
+                    else eCoreFreq_.store(mhz);
                 }
             }
             continue;

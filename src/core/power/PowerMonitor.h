@@ -55,6 +55,8 @@ private:
     // DVFS frequency lookup tables (state index → MHz)
     double pFreqTable_[32] = {};
     double eFreqTable_[32] = {};
+    double gpuFreqTable_[32] = {};
     int pFreqCount_ = 0;
     int eFreqCount_ = 0;
+    int gpuFreqCount_ = 0;
 };
