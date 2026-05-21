@@ -43,7 +43,10 @@ struct TuiData {
     int efficiencyCores = 0;
     double pCoreFreq = 0.0;
     double eCoreFreq = 0.0;
+    double pCoreMaxFreq = 0.0;
+    double eCoreMaxFreq = 0.0;
     double cpuBaseFreq = 0.0;
+    double gpuFreq = 0.0;
     double cpuTemp = 0.0;
 
     // Memory

@@ -76,7 +76,6 @@ static bool LoadIOReport() {
     g_StateName   = reinterpret_cast<FnIOReportStateGetNameForIndex>(dlsym(g_lib, "IOReportStateGetNameForIndex"));
     g_StateRes    = reinterpret_cast<FnIOReportStateGetResidency>(dlsym(g_lib, "IOReportStateGetResidency"));
 #undef DLSYM_OR_FAIL
-    Logger::Info("PowerMonitor: loaded libIOReport.dylib");
     return true;
 }
 
@@ -192,12 +191,14 @@ bool PowerMonitor::Start() {
     double gpuTable[32];
     int gpuN = ReadPmgrFreqTable("voltage-states9", gpuTable, 32);
     if (pFreqCount_ > 0) {
-        pCoreFreq_.store(pFreqTable_[pFreqCount_-1]);
-        Logger::Info("PowerMonitor: P-cluster max freq " + std::to_string(pFreqTable_[pFreqCount_-1]) + " MHz");
+        double maxP = pFreqTable_[pFreqCount_-1];
+        pCoreFreq_.store(maxP);
+        pCoreMaxFreq_.store(maxP);
     }
     if (eFreqCount_ > 0) {
-        eCoreFreq_.store(eFreqTable_[eFreqCount_-1]);
-        Logger::Info("PowerMonitor: E-cluster max freq " + std::to_string(eFreqTable_[eFreqCount_-1]) + " MHz");
+        double maxE = eFreqTable_[eFreqCount_-1];
+        eCoreFreq_.store(maxE);
+        eCoreMaxFreq_.store(maxE);
     }
     if (gpuN > 0) gpuFreq_.store(gpuTable[gpuN-1]);
 

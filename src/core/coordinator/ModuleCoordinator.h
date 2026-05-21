@@ -16,6 +16,9 @@ struct ModuleData {
     std::atomic<double> cpuUsage{0.0};
     std::atomic<double> pCoreFreq{0.0};
     std::atomic<double> eCoreFreq{0.0};
+    std::atomic<double> pCoreMaxFreq{0.0};
+    std::atomic<double> eCoreMaxFreq{0.0};
+    std::atomic<double> gpuFreq{0.0};
     // Memory (1s)
     std::atomic<uint64_t> totalMemory{0};
     std::atomic<uint64_t> usedMemory{0};

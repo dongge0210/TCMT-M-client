@@ -147,9 +147,19 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     if (data.performanceCores > 0 || data.efficiencyCores > 0) {
         std::ostringstream ss;
         ss << "P:" << data.performanceCores;
-        if (data.pCoreFreq > 0) ss << "(" << static_cast<int>(data.pCoreFreq) << "M)";
+        if (data.pCoreFreq > 0) {
+            ss << "(" << static_cast<int>(data.pCoreFreq);
+            if (data.pCoreMaxFreq > 0 && static_cast<int>(data.pCoreMaxFreq) != static_cast<int>(data.pCoreFreq))
+                ss << "/" << static_cast<int>(data.pCoreMaxFreq);
+            ss << "M)";
+        }
         ss << "  E:" << data.efficiencyCores;
-        if (data.eCoreFreq > 0) ss << "(" << static_cast<int>(data.eCoreFreq) << "M)";
+        if (data.eCoreFreq > 0) {
+            ss << "(" << static_cast<int>(data.eCoreFreq);
+            if (data.eCoreMaxFreq > 0 && static_cast<int>(data.eCoreMaxFreq) != static_cast<int>(data.eCoreFreq))
+                ss << "/" << static_cast<int>(data.eCoreMaxFreq);
+            ss << "M)";
+        }
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
     } else if (data.physicalCores > 0) {
         mvwprintw(win, y + lines, x0 + 2, "Cores: %d", data.physicalCores);
@@ -246,6 +256,10 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
 #endif
 
+    if (data.gpuFreq > 0) {
+        mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
+        lines++;
+    }
     if (data.gpuTemp > 0 || data.gpuPower > 0) {
         std::string gpuPwr;
         if (data.gpuTemp > 0)

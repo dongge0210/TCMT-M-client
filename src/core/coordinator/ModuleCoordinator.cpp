@@ -104,6 +104,8 @@ void ModuleCoordinator::Start() {
         // Seed frequency immediately (before TemperatureLoop's first iteration)
         data_.pCoreFreq.store(powerMonitor_.GetPCoreFreq());
         data_.eCoreFreq.store(powerMonitor_.GetECoreFreq());
+        data_.pCoreMaxFreq.store(powerMonitor_.GetPCoreMaxFreq());
+        data_.eCoreMaxFreq.store(powerMonitor_.GetECoreMaxFreq());
     }
 #endif
 
@@ -165,6 +167,8 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.efficiencyCoreFreq = data_.eCoreFreq.load();
     tuiData.pCoreFreq = data_.pCoreFreq.load();
     tuiData.eCoreFreq = data_.eCoreFreq.load();
+    tuiData.pCoreMaxFreq = data_.pCoreMaxFreq.load();
+    tuiData.eCoreMaxFreq = data_.eCoreMaxFreq.load();
 
     // Memory
     sysInfo.totalMemory = data_.totalMemory.load();
@@ -266,6 +270,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.cpuPower = data_.cpuPower.load();
     tuiData.gpuPower = data_.gpuPower.load();
     tuiData.anePower = data_.anePower.load();
+    tuiData.gpuFreq = data_.gpuFreq.load();
     sysInfo.cpuPower = data_.cpuPower.load();
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();
@@ -317,6 +322,7 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 data_.cpuPower.store(powerMonitor_.GetCpuPower());
                 data_.gpuPower.store(powerMonitor_.GetGpuPower());
                 data_.anePower.store(powerMonitor_.GetAnePower());
+                data_.gpuFreq.store(powerMonitor_.GetGpuFreq());
             } else {
                 double pf = GetPmPCoreFreq();
                 double ef = GetPmECoreFreq();
