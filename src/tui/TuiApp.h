@@ -112,6 +112,7 @@ struct TuiData {
 
     // OS
     std::string osVersion;
+    std::string hardwareModel;
     int batteryPercent = -1;  // -1 = no battery
     bool acOnline = false;
     double cpuPower = 0.0;

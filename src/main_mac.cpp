@@ -660,6 +660,7 @@ int main(int argc, char* argv[]) {
             // === Build TuiData snapshot ===
             tcmt::TuiData data;
             data.osVersion = os.GetVersion();
+            data.hardwareModel = os.GetModel();
             data.connectionCount = ipcServer.GetClientCount();
             auto ct = ipcServer.GetClientTypes();
             data.clientTypes.clear();
