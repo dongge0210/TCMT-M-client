@@ -974,7 +974,9 @@ int main(int argc, char* argv[]) {
             // USB detection (every 10 seconds)
             static int usbCheckCounter = 0;
             static size_t prevUsbCount = 0;
-            if (++usbCheckCounter >= 20 || s_usbNotify.Poll() || s_hubNotify.Poll()) {
+            // Notification fires → force immediate re-scan
+            if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
+            if (++usbCheckCounter >= 20) {
                 usbCheckCounter = 0;
                 try {
                     UsbInfo usb;
