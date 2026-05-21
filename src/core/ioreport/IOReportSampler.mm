@@ -294,11 +294,16 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 else if (strncmp(name, "ECPU", 4) == 0) { freqCount = eFreqCount_; ft = eFreqTable_; }
                 else continue;
                 if (freqCount <= 0) continue;
+                // State-to-DVFS mapping: performance states may have IDLE/OFF at start.
+                // Align DVFS table to end of state list (shift = nStates - freqCount).
+                int stateOffset = (isGpu && nStates > freqCount) ? (nStates - freqCount) : 0;
                 double wsum = 0.0; int64_t tres = 0;
-                for (int si = 0; si < nStates && si < freqCount; ++si) {
+                for (int si = stateOffset; si < nStates; ++si) {
+                    int dvfsIdx = si - stateOffset;
+                    if (dvfsIdx >= freqCount) break;
                     int64_t r = g_StateRes((CFDictionaryRef)channel, si);
                     if (r <= 0) continue;
-                    tres += r; wsum += ft[si] * static_cast<double>(r);
+                    tres += r; wsum += ft[dvfsIdx] * static_cast<double>(r);
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
