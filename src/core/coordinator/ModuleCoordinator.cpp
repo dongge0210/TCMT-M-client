@@ -106,6 +106,7 @@ void ModuleCoordinator::Start() {
         data_.eCoreFreq.store(powerMonitor_.GetECoreFreq());
         data_.pCoreMaxFreq.store(powerMonitor_.GetPCoreMaxFreq());
         data_.eCoreMaxFreq.store(powerMonitor_.GetECoreMaxFreq());
+        data_.gpuFreq.store(powerMonitor_.GetGpuFreq());
     }
 #endif
 
