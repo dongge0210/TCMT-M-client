@@ -47,4 +47,10 @@ private:
     void* subs_{nullptr};    // IOReportSubscriptionRef
     void* chan_{nullptr};    // CFMutableDictionaryRef
     void* thread_{nullptr};  // std::thread*
+
+    // DVFS frequency lookup tables (state index → MHz)
+    double pFreqTable_[32] = {};
+    double eFreqTable_[32] = {};
+    int pFreqCount_ = 0;
+    int eFreqCount_ = 0;
 };

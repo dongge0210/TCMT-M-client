@@ -121,10 +121,10 @@ static const CFStringRef kChannelValuesKey = CFSTR("IOReportChannelValues");
 // Helpers
 // ============================================================================
 
-// Read cluster max frequency from pmgr IOKit node via IOServiceNameMatching.
-// property:  "voltage-states1-sram" (E-cluster), "voltage-states5-sram" (P-cluster)
-// Returns MHz or 0 on failure.
-static double ReadPmgrFreq(const char* propName) {
+// Read DVFS frequency table from pmgr. Fills outFreqs[] with MHz values.
+// Returns count of entries, 0 on failure.
+// Each entry is a uint32 pair [freq, voltage], 8 bytes total.
+static int ReadPmgrFreqTable(const char* propName, double* outFreqs, int maxCount) {
     mach_port_t mainPort;
     if (@available(macOS 12.0, *)) {
         mainPort = kIOMainPortDefault;
@@ -153,29 +153,21 @@ static double ReadPmgrFreq(const char* propName) {
     if (data && CFGetTypeID(data) == CFDataGetTypeID()) {
         CFIndex len   = CFDataGetLength(data);
         const uint8_t* bytes = CFDataGetBytePtr(data);
-        size_t nPairs = static_cast<size_t>(len) / 8;  // each: [freq:4, volt:4]
+        int nPairs = static_cast<int>(len / 8);
+        if (nPairs > maxCount) nPairs = maxCount;
 
-        if (nPairs > 0) {
-            uint32_t maxFreq = 0;
-            for (size_t i = 0; i < nPairs; ++i) {
-                uint32_t f = 0;
-                memcpy(&f, bytes + i * 8, sizeof(f));
-                if (f > maxFreq) maxFreq = f;
-            }
-
-            if (maxFreq > 0) {
-                // M1-M3: freq in Hz  (values ~600000000..3504000000)
-                // M4+:   freq in kHz (values ~600000..3504000)
-                // Detect by magnitude: > 5000000 means Hz
-                if (maxFreq > 5000000u)
-                    freqMHz = static_cast<double>(maxFreq) / 1000000.0;
-                else
-                    freqMHz = static_cast<double>(maxFreq) / 1000.0;
-            }
+        bool isHz = false;
+        for (int i = 0; i < nPairs && outFreqs; ++i) {
+            uint32_t f = 0;
+            memcpy(&f, bytes + i * 8, sizeof(f));
+            if (f > 5000000u) isHz = true;
+            outFreqs[i] = static_cast<double>(f) / (isHz ? 1000000.0 : 1000.0);
         }
+        CFRelease(props);
+        return nPairs;
     }
     CFRelease(props);
-    return freqMHz;
+    return 0;
 }
 
 // ============================================================================
@@ -258,12 +250,22 @@ bool PowerMonitor::Start() {
 
     // -- 4. Pre-cache pmgr frequencies (stable — read once) --
     {
-        double pf = ReadPmgrFreq("voltage-states5-sram");
-        double ef = ReadPmgrFreq("voltage-states1-sram");
-        double gf = ReadPmgrFreq("voltage-states9");
-        if (pf > 0) { pCoreFreq_.store(pf); Logger::Info("PowerMonitor: P-cluster freq " + std::to_string(pf) + " MHz"); }
-        if (ef > 0) { eCoreFreq_.store(ef); Logger::Info("PowerMonitor: E-cluster freq " + std::to_string(ef) + " MHz"); }
-        if (gf > 0) { gpuFreq_.store(gf);   Logger::Info("PowerMonitor: GPU freq " + std::to_string(gf) + " MHz"); }
+        pFreqCount_ = ReadPmgrFreqTable("voltage-states5-sram", pFreqTable_, 32);
+        eFreqCount_ = ReadPmgrFreqTable("voltage-states1-sram", eFreqTable_, 32);
+        double gf = ReadPmgrFreqTable("voltage-states9", nullptr, 0) > 0 ? 0 : 0; // GPU: use table later
+        // Seed with max frequency from tables
+        if (pFreqCount_ > 0) {
+            pCoreFreq_.store(pFreqTable_[pFreqCount_-1]);
+            Logger::Info("PowerMonitor: P-cluster max freq " + std::to_string(pFreqTable_[pFreqCount_-1]) + " MHz");
+        }
+        if (eFreqCount_ > 0) {
+            eCoreFreq_.store(eFreqTable_[eFreqCount_-1]);
+            Logger::Info("PowerMonitor: E-cluster max freq " + std::to_string(eFreqTable_[eFreqCount_-1]) + " MHz");
+        }
+        // GPU: use pmgr voltage-states9 table
+        double gpuTable[32];
+        int gpuN = ReadPmgrFreqTable("voltage-states9", gpuTable, 32);
+        if (gpuN > 0) gpuFreq_.store(gpuTable[gpuN-1]);
     }
 
     // -- 5. Start background sampling thread --
@@ -384,31 +386,27 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 // "CPU Core Performance States" has freq names like "660 MHz"
                 if (strcmp(sub, "CPU Core Performance States") != 0) { continue; }
 
-                // Aggregate per-cluster: accumulate all PCPU*/ECPU* channels
+                // Aggregate per-cluster: accumulate PCPU*/ECPU* channel residencies
+                // Map state index → frequency from DVFS table (not from state name)
                 int nStates = g_StateCount((CFDictionaryRef)channel);
-                if (nStates > 1) {
+                bool isP = strncmp(name, "PCPU", 4) == 0;
+                bool isE = strncmp(name, "ECPU", 4) == 0;
+                if (!isP && !isE) continue;
+                int freqCount = isP ? pFreqCount_ : eFreqCount_;
+                double* freqTable = isP ? pFreqTable_ : eFreqTable_;
+                if (nStates > 1 && freqCount > 0) {
                     double weightedSum = 0.0;
                     int64_t totalRes = 0;
-                    static bool firstLog = true;
-                    for (int si = 0; si < nStates; ++si) {
+                    for (int si = 0; si < nStates && si < freqCount; ++si) {
                         int64_t r = g_StateRes((CFDictionaryRef)channel, si);
-                        CFStringRef sn = g_StateName((CFDictionaryRef)channel, si);
-                        char sname[32] = {};
-                        if (sn) CFStringGetCString(sn, sname, sizeof(sname), kCFStringEncodingUTF8);
-                        if (firstLog && strncmp(name, "PCPU", 4) == 0 && si == 0)
-                            Logger::Info("PowerMonitor: perf state[0]='" + std::string(sname) + "' r=" + std::to_string(r));
                         if (r <= 0) continue;
                         totalRes += r;
-                        double mhz = atof(sname);
-                        // State names like "660 MHz" or "3504 MHz"
-                        if (mhz > 100 && mhz < 10000)
-                            weightedSum += mhz * static_cast<double>(r);
+                        weightedSum += freqTable[si] * static_cast<double>(r);
                     }
-                    if (strncmp(name, "PCPU", 4) == 0) firstLog = false;
                     if (totalRes > 0) {
                         double activeMHz = weightedSum / static_cast<double>(totalRes);
-                        if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(activeMHz);
-                        else if (strncmp(name, "ECPU", 4) == 0) eCoreFreq_.store(activeMHz);
+                        if (isP) pCoreFreq_.store(activeMHz);
+                        else eCoreFreq_.store(activeMHz);
                     }
                 }
             }
