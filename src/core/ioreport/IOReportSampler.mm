@@ -315,7 +315,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         static int emCount = 0;
         if (firstCh && strcmp(group, "Energy Model") == 0 && value > 0 && value != INT64_MIN) {
             emCount++;
-            if (emCount <= 5) Logger::Info("PowerMonitor: EM sub='" + std::string(sub) + "' name='" + std::string(name) + "' v=" + std::to_string(value));
+            if (emCount <= 20) Logger::Info("PowerMonitor: EM[" + std::to_string(emCount) + "] n=" + std::string(name) + " v=" + std::to_string(value));
         }
         if (value <= 0 || value == INT64_MIN) continue;
 
