@@ -240,7 +240,7 @@ bool PowerMonitor::Start() {
         return false;
     }
     subs_ = subResult;
-    CFRelease(merged);
+    // chan_ owns merged — released in Stop()
 
     directMode_.store(true);
 
