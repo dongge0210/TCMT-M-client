@@ -145,7 +145,7 @@ git submodule update --init --recursive
 ## User addition notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
 - **sessions**: change `docs/session.md` when current status changed also you see current status from that file.
-- **read-scope**: Always use `Read` with `offset` and `limit` parameters. Never read entire files — read only the relevant range.
+- **read-scope**: **Always use `Read` with `offset` and `limit` parameters.** Never read entire files — read only the relevant range.
 
 ## Repository Safety Rules
 - Before any file edit, verify working directory with `pwd` and `git status`.

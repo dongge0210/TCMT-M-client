@@ -1,9 +1,9 @@
-// PowerMonitor_mac.mm — Apple Silicon IOReport power/frequency sampler
-// All macOS-specific IOReport + IOKit implementation lives here.
-// Compiled only on macOS (CMake adds .mm files only when TCMT_MACOS defined).
+// IOReportSampler.mm — Apple Silicon IOReport power/frequency/state sampling engine
+// Provides IOReport subscription, delta sampling, channel iteration, and data extraction.
+// Used by PowerMonitor module. Compiled only on macOS.
 
-#include "PowerMonitor.h"
-#include "../Utils/Logger.h"
+#include "power/PowerMonitor.h"
+#include "Utils/Logger.h"
 
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
