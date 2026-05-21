@@ -256,6 +256,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
     static int logCount = 0;
+    cpuPower_.store(0.0); // reset per-delta accumulator
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
     CFIndex count = CFArrayGetCount(channels);
     bool firstCh = (logCount < 1);
@@ -321,7 +322,9 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         if (strcmp(group, "Energy Model") == 0) {
             double power = EnergyToPower((void*)channel, value) * 1000.0;
             if (power > 0.1 && power < 50000.0) {
-                if (strcmp(name, "CPU Energy") == 0) cpuPower_.store(power);
+                // Per-core energy: accumulate ECPU*/PCPU* into cpuPower
+                if (strncmp(name, "ECPU", 4) == 0 || strncmp(name, "PCPU", 4) == 0)
+                    cpuPower_.store(cpuPower_.load() + power);
                 else if (strcmp(name, "GPU") == 0) gpuPower_.store(power);
                 else if (strcmp(name, "ANE") == 0) anePower_.store(power);
             }
