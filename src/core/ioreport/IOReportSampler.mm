@@ -311,6 +311,11 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         }
 
         int64_t value = ExtractChannelValue((void*)channel);
+        static bool aneCheck = true;
+        if (aneCheck && strcmp(group, "Energy Model") == 0 && strstr(name, "ANE")) {
+            Logger::Info("PowerMonitor: ANE found! name=" + std::string(name) + " v=" + std::to_string(value));
+            aneCheck = false;
+        }
         if (value <= 0 || value == INT64_MIN) continue;
 
         if (strcmp(group, "Energy Model") == 0) {
