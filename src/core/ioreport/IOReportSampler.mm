@@ -302,9 +302,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                     else eCoreFreq_.store(mhz);
                 }
                 if (isGpu) continue;
-                    else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
-                    else eCoreFreq_.store(mhz);
-                }
             }
             continue;
         }
