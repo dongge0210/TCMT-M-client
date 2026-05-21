@@ -145,14 +145,8 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 
     if (data.performanceCores > 0 || data.efficiencyCores > 0) {
-        std::ostringstream ss;
-        ss << "P:" << data.performanceCores;
-        if (data.pCoreFreq > 0) ss << "(" << static_cast<int>(data.pCoreFreq) << "M) ";
-        ss << "E:" << data.efficiencyCores;
-        if (data.eCoreFreq > 0) ss << "(" << static_cast<int>(data.eCoreFreq) << "M)";
-        if (data.cpuBaseFreq > 0) ss << " B:" << static_cast<int>(data.cpuBaseFreq) << "M";
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
-    } else {
+        mvwprintw(win, y + lines, x0 + 2, "Cores: %dP + %dE", data.performanceCores, data.efficiencyCores);
+    } else if (data.physicalCores > 0) {
         mvwprintw(win, y + lines, x0 + 2, "Cores: %d", data.physicalCores);
     }
     lines++;
