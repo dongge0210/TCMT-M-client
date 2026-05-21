@@ -370,13 +370,11 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         if (value <= 0 || value == INT64_MIN) continue;
 
-        // Power: "Energy Model" group — channel names from IOReport dump:
-        // "CPU Energy" = total CPU (ECPU+PCPU+ECPM+PCPM sum) in mJ
-        // "GPU" = GPU in mJ
-        // "ANE" = ANE in mJ (may be absent)
+        // Power: "Energy Model" group — energy in mJ/uJ/nJ over ~1s → mW
+        // "CPU Energy" = total CPU, "GPU" = GPU, "ANE" = ANE
         if (strcmp(group, "Energy Model") == 0) {
-            double power = EnergyToPower((void*)channel, value);
-            if (power > 0.01 && power < 500.0) {
+            double power = EnergyToPower((void*)channel, value) * 1000.0;  // W → mW
+            if (power > 0.1 && power < 50000.0) {
                 if (strcmp(sub, "CPU Energy") == 0) cpuPower_.store(power);
                 else if (strcmp(sub, "GPU") == 0) gpuPower_.store(power);
                 else if (strcmp(sub, "ANE") == 0) anePower_.store(power);
