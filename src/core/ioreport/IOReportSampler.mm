@@ -260,7 +260,9 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
     static int logCount = 0;
-    cpuPower_.store(0.0); // reset per-delta accumulator
+    cpuPower_.store(0.0);
+    gpuPower_.store(0.0);
+    anePower_.store(0.0);
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
