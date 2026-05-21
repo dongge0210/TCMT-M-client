@@ -280,7 +280,7 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, gpuPwr.c_str());
         lines++;
     }
-    mvwprintw(win, y + lines, x0 + 2, "ANE: %.2fW", data.anePower / 1000.0);
+    mvwprintw(win, y + lines, x0 + 2, "ANE: %.1fW", data.anePower / 1000.0);
     lines++;
 
     return lines;
