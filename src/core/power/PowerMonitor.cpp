@@ -13,22 +13,8 @@ PowerMonitor::~PowerMonitor() { Stop(); }
 
 bool PowerMonitor::Start() { return false; }
 void PowerMonitor::Stop() {}
-bool PowerMonitor::IsRunning() const { return false; }
 
-void PowerMonitor::SetPowerCallback(PowerEventCallback) {}
-void PowerMonitor::SetDiskCallback(DiskEventCallback) {}
-void PowerMonitor::SetNetworkCallback(NetworkEventCallback) {}
-void PowerMonitor::SetThermalCallback(ThermalEventCallback) {}
-
-double PowerMonitor::GetPCoreFreq() const { return 0.0; }
-double PowerMonitor::GetECoreFreq() const { return 0.0; }
-double PowerMonitor::GetGpuFreq() const   { return 0.0; }
-double PowerMonitor::GetCpuPower() const   { return 0.0; }
-double PowerMonitor::GetGpuPower() const   { return 0.0; }
-double PowerMonitor::GetAnePower() const   { return 0.0; }
-bool PowerMonitor::IsDirectMode() const    { return false; }
-
-// Stubs for platform-specific methods (not called on non-macOS)
+// Private methods — stubs on Windows (not called)
 void PowerMonitor::SampleLoop() {}
 void PowerMonitor::ParsePowerDelta(void*) {}
 int64_t PowerMonitor::ExtractChannelValue(void*) { return 0; }
