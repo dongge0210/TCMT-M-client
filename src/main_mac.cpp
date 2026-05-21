@@ -974,7 +974,6 @@ int main(int argc, char* argv[]) {
             // USB detection (every 10 seconds)
             static int usbCheckCounter = 0;
             static size_t prevUsbCount = 0;
-            // Notification fires → force immediate re-scan
             if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
             if (++usbCheckCounter >= 20) {
                 usbCheckCounter = 0;
@@ -982,15 +981,12 @@ int main(int argc, char* argv[]) {
                     UsbInfo usb;
                     usb.Detect();
                     const auto& devs = usb.GetDevices();
+                    Logger::Debug("USB: scan — " + std::to_string(devs.size()) + " device(s)");
                     if (devs.size() != prevUsbCount) {
                         if (devs.empty())
                             Logger::Info("USB: all devices removed");
-                        else {
+                        else
                             Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
-                            for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
-                                Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
-                                            + " PID:" + std::to_string(devs[di].pid));
-                        }
                         prevUsbCount = devs.size();
                     }
                 } catch (...) {}
