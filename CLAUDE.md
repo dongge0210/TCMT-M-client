@@ -70,7 +70,10 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
   - Hardware: `cpu/`, `gpu/`, `memory/`, `disk/`, `network/`, `os/`, `power/`, `wifi/`, `bluetooth/`, `temperature/`, `board/`
   - IPC: `IPC/IPCServer.cpp` (unified UDS+Windows), `IPC/IPCClient.cpp`, `IPC/IPCData.h` (schema/protocol)
   - MCP: `MCP/MCPServer.cpp` (JSON-RPC 2.0 over stdio, 8 tools)
-  - Coordinator: `ModuleCoordinator` — 6 background jthread loops (CPU/Memory/Disk/Network/Temp/Power), `Snapshot()` feeds main loop
+  - Coordinator: `coordinator/ModuleCoordinator` — 6 background jthread loops (CPU/Memory/Disk/Network/Temp/Power), `Snapshot()` feeds main loop
+  - IOReport: `ioreport/IOReportSampler.mm` (macOS-only, private framework, no sudo)
+  - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
+  - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
   - Config: `Config/ConfigManager.cpp` (wraps CPP-parsers IConfigParser + nlohmann/json)
   - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
@@ -86,6 +89,7 @@ Some `.cpp` / `.mm` files are compiled on ONE platform only:
 - `BluetoothInfo.mm` — macOS only (IOBluetooth ObjC++). Windows: `BluetoothInfo.cpp`.
 - `TemperatureWrapper.cpp` — Windows only (LibreHardwareMonitor bridge, C++/CLI).
 - `Platform_Windows.cpp` — Windows only.
+- `IOReportSampler.mm` — macOS only (private IOReport.framework + IOKit pmgr, no sudo).
 
 ## IPC / Shared Memory Gotchas
 
