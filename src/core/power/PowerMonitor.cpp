@@ -354,7 +354,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
     static int logCount = 0;
-    static int cpuStatLog = 0;  // log first few CPU Stats channels
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(
@@ -380,12 +379,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         // CPU Stats: state residency (before value check — no simple int value)
         if (strcmp(group, "CPU Stats") == 0) {
-            if (cpuStatLog < 10 && g_StateCount) {
-                int ns = g_StateCount((CFDictionaryRef)channel);
-                Logger::Info("PowerMonitor: CPUStat sub=" + std::string(sub) +
-                    " name=" + std::string(name) + " states=" + std::to_string(ns));
-                cpuStatLog++;
-            }
             if (g_StateCount && g_StateName && g_StateRes) {
                 int nStates = g_StateCount((CFDictionaryRef)channel);
                 if (nStates > 1) {
@@ -405,9 +398,10 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                     }
                     if (totalRes > 0) {
                         double activeMHz = weightedSum / static_cast<double>(totalRes);
-                        if (strcmp(sub, "P-Cluster") == 0 || strcmp(sub, "PCPM") == 0)
+                        // "CPU Complex Voltage States" with name PCPU/ECPU = cluster aggregate
+                        if (strcmp(name, "PCPU") == 0)
                             pCoreFreq_.store(activeMHz);
-                        else if (strcmp(sub, "E-Cluster") == 0 || strcmp(sub, "ECPM") == 0)
+                        else if (strcmp(name, "ECPU") == 0)
                             eCoreFreq_.store(activeMHz);
                     }
                 }
