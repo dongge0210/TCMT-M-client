@@ -49,8 +49,10 @@ void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
 
         try {
             data.cpuUsage.store(cpuInfo->GetUsage());
-            data.pCoreFreq.store(cpuInfo->GetLargeCoreSpeed());
-            data.eCoreFreq.store(cpuInfo->GetSmallCoreSpeed());
+            double pf = cpuInfo->GetLargeCoreSpeed();
+            double ef = cpuInfo->GetSmallCoreSpeed();
+            if (pf > 0) data.pCoreFreq.store(pf);
+            if (ef > 0) data.eCoreFreq.store(ef);
         } catch (const std::exception& e) {
             Logger::Error("CpuLoop: collection error - "
                           + std::string(e.what()));
