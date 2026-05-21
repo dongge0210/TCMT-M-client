@@ -308,21 +308,18 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
             }
 
 #ifdef TCMT_MACOS
-            // Feed powermetrics frequency data (Apple Silicon)
-            if (powerMonitor_.IsDirectMode()) {
-                double pf = powerMonitor_.GetPCoreFreq();
-                double ef = powerMonitor_.GetECoreFreq();
-                if (pf > 0) data_.pCoreFreq.store(pf);
-                if (ef > 0) data_.eCoreFreq.store(ef);
-                // Power data
-                data_.cpuPower.store(powerMonitor_.GetCpuPower());
-                data_.gpuPower.store(powerMonitor_.GetGpuPower());
-                data_.anePower.store(powerMonitor_.GetAnePower());
-            } else {
+            // Active frequency from powermetrics (dynamic, changes with load)
+            {
                 double pf = GetPmPCoreFreq();
                 double ef = GetPmECoreFreq();
                 if (pf > 0) data_.pCoreFreq.store(pf);
                 if (ef > 0) data_.eCoreFreq.store(ef);
+            }
+            // Power from PowerMonitor (IOReport, no sudo) or powermetrics fallback
+            if (powerMonitor_.IsDirectMode()) {
+                data_.cpuPower.store(powerMonitor_.GetCpuPower());
+                data_.gpuPower.store(powerMonitor_.GetGpuPower());
+                data_.anePower.store(powerMonitor_.GetAnePower());
             }
 #endif
         } catch (const std::exception& e) {
