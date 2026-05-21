@@ -378,9 +378,44 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
 
         if (group[0] == '\0') continue;
 
+        // CPU Stats: state residency (before value check — no simple int value)
+        if (strcmp(group, "CPU Stats") == 0) {
+            if (cpuStatLog < 10 && g_StateCount) {
+                int ns = g_StateCount((CFDictionaryRef)channel);
+                Logger::Info("PowerMonitor: CPUStat sub=" + std::string(sub) +
+                    " name=" + std::string(name) + " states=" + std::to_string(ns));
+                cpuStatLog++;
+            }
+            if (g_StateCount && g_StateName && g_StateRes) {
+                int nStates = g_StateCount((CFDictionaryRef)channel);
+                if (nStates > 1) {
+                    double weightedSum = 0.0;
+                    int64_t totalRes = 0;
+                    for (int si = 0; si < nStates; ++si) {
+                        int64_t r = g_StateRes((CFDictionaryRef)channel, si);
+                        if (r <= 0) continue;
+                        totalRes += r;
+                        CFStringRef sn = g_StateName((CFDictionaryRef)channel, si);
+                        if (!sn) continue;
+                        char sname[32] = {};
+                        CFStringGetCString(sn, sname, sizeof(sname), kCFStringEncodingUTF8);
+                        double mhz = atof(sname);
+                        if (mhz > 100 && mhz < 10000)
+                            weightedSum += mhz * static_cast<double>(r);
+                    }
+                    if (totalRes > 0) {
+                        double activeMHz = weightedSum / static_cast<double>(totalRes);
+                        if (strcmp(sub, "P-Cluster") == 0 || strcmp(sub, "PCPM") == 0)
+                            pCoreFreq_.store(activeMHz);
+                        else if (strcmp(sub, "E-Cluster") == 0 || strcmp(sub, "ECPM") == 0)
+                            eCoreFreq_.store(activeMHz);
+                    }
+                }
+            }
+            continue;
+        }
+
         int64_t value = ExtractChannelValue((void*)channel);
-
-
         if (value <= 0 || value == INT64_MIN) continue;
 
         // Power: "Energy Model" group — energy in mJ/uJ/nJ over ~1s → mW
@@ -390,39 +425,6 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 if (strcmp(sub, "CPU Energy") == 0) cpuPower_.store(power);
                 else if (strcmp(sub, "GPU") == 0) gpuPower_.store(power);
                 else if (strcmp(sub, "ANE") == 0) anePower_.store(power);
-            }
-        }
-        // Dynamic frequency from CPU Stats state residency
-        else if (strcmp(group, "CPU Stats") == 0 && g_StateCount && g_StateName && g_StateRes) {
-            int nStates = g_StateCount((CFDictionaryRef)channel);
-            if (cpuStatLog < 10) {
-                Logger::Info("PowerMonitor: CPUStat sub=" + std::string(sub) +
-                    " name=" + std::string(name) + " states=" + std::to_string(nStates));
-                cpuStatLog++;
-            }
-            if (nStates > 1) {
-                double weightedSum = 0.0;
-                int64_t totalRes = 0;
-                for (int si = 0; si < nStates; ++si) {
-                    int64_t residency = g_StateRes((CFDictionaryRef)channel, si);
-                    if (residency <= 0) continue;
-                    totalRes += residency;
-                    CFStringRef stateName = g_StateName((CFDictionaryRef)channel, si);
-                    if (!stateName) continue;
-                    char sname[32] = {};
-                    CFStringGetCString(stateName, sname, sizeof(sname), kCFStringEncodingUTF8);
-                    double freqMHz = atof(sname);
-                    if (freqMHz > 100 && freqMHz < 10000)
-                        weightedSum += freqMHz * static_cast<double>(residency);
-                }
-                if (totalRes > 0) {
-                    double activeMHz = weightedSum / static_cast<double>(totalRes);
-                    // Cluster-level: subgroup "P-Cluster" or "E-Cluster" (or per-cluster aggregated)
-                    if (strcmp(sub, "P-Cluster") == 0 || strcmp(sub, "PCPM") == 0)
-                        { pCoreFreq_.store(activeMHz); Logger::Info("PowerMonitor: P-Cluster active " + std::to_string(activeMHz) + " MHz"); }
-                    else if (strcmp(sub, "E-Cluster") == 0 || strcmp(sub, "ECPM") == 0)
-                        { eCoreFreq_.store(activeMHz); Logger::Info("PowerMonitor: E-Cluster active " + std::to_string(activeMHz) + " MHz"); }
-                }
             }
         }
     }
