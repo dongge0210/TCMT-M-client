@@ -380,39 +380,35 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         // CPU Stats: state residency (before value check — no simple int value)
         if (strcmp(group, "CPU Stats") == 0) {
             if (g_StateCount && g_StateName && g_StateRes) {
+                // "CPU Complex Voltage States" has V0-V16 (voltages) — skip
+                // "CPU Core Performance States" has freq names like "660 MHz"
+                if (strcmp(sub, "CPU Core Performance States") != 0) { continue; }
+
+                // Aggregate per-cluster: accumulate all PCPU*/ECPU* channels
                 int nStates = g_StateCount((CFDictionaryRef)channel);
-                if (nStates > 1 && (strcmp(name, "PCPU") == 0 || strcmp(name, "ECPU") == 0)) {
+                if (nStates > 1) {
                     double weightedSum = 0.0;
                     int64_t totalRes = 0;
-                    // Log first state name to see format
-                    static bool firstState = true;
+                    static bool firstLog = true;
                     for (int si = 0; si < nStates; ++si) {
                         int64_t r = g_StateRes((CFDictionaryRef)channel, si);
                         CFStringRef sn = g_StateName((CFDictionaryRef)channel, si);
                         char sname[32] = {};
                         if (sn) CFStringGetCString(sn, sname, sizeof(sname), kCFStringEncodingUTF8);
-                        if (firstState && strcmp(name, "PCPU") == 0) {
-                            Logger::Info("PowerMonitor: state[" + std::to_string(si) + "] name='" +
-                                std::string(sname) + "' res=" + std::to_string(r));
-                        }
+                        if (firstLog && strncmp(name, "PCPU", 4) == 0 && si == 0)
+                            Logger::Info("PowerMonitor: perf state[0]='" + std::string(sname) + "' r=" + std::to_string(r));
                         if (r <= 0) continue;
                         totalRes += r;
                         double mhz = atof(sname);
+                        // State names like "660 MHz" or "3504 MHz"
                         if (mhz > 100 && mhz < 10000)
                             weightedSum += mhz * static_cast<double>(r);
                     }
-                    if (strcmp(name, "PCPU") == 0) firstState = false;
+                    if (strncmp(name, "PCPU", 4) == 0) firstLog = false;
                     if (totalRes > 0) {
                         double activeMHz = weightedSum / static_cast<double>(totalRes);
-                        if (strcmp(name, "PCPU") == 0) {
-                            pCoreFreq_.store(activeMHz);
-                            static bool firstP = true;
-                            if (firstP) { Logger::Info("PowerMonitor: P-Cluster " + std::to_string(activeMHz) + " MHz"); firstP = false; }
-                        } else {
-                            eCoreFreq_.store(activeMHz);
-                            static bool firstE = true;
-                            if (firstE) { Logger::Info("PowerMonitor: E-Cluster " + std::to_string(activeMHz) + " MHz"); firstE = false; }
-                        }
+                        if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(activeMHz);
+                        else if (strncmp(name, "ECPU", 4) == 0) eCoreFreq_.store(activeMHz);
                     }
                 }
             }
