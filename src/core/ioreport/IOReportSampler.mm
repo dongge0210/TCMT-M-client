@@ -307,9 +307,16 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
-                    if (isGpu) gpuFreq_.store(mhz);
+                    static bool firstGpu = true;
+                    if (isGpu) {
+                        if (firstGpu) { Logger::Info("PowerMonitor: GPU active " + std::to_string(mhz) + " MHz off=" + std::to_string(stateOffset)); firstGpu = false; }
+                        gpuFreq_.store(mhz);
+                    }
                     else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
                     else eCoreFreq_.store(mhz);
+                } else if (isGpu) {
+                    static bool tresLogged = false;
+                    if (!tresLogged) { Logger::Info("PowerMonitor: GPU tres=0 off=" + std::to_string(stateOffset)); tresLogged = true; }
                 }
             }
             continue;
