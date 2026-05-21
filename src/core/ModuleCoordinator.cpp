@@ -107,13 +107,10 @@ void ModuleCoordinator::Start() {
     }
 #endif
 
-    // Read RAM specs once at startup (doesn't change at runtime)
+    // Read RAM specs once at startup
     MemoryInfo memInfo;
     data_.ramSpeed = memInfo.GetRamSpeed();
     data_.ramType = memInfo.GetRamType();
-    if (data_.ramSpeed > 0) {
-        Logger::Info("ModuleCoordinator: RAM " + data_.ramType + "-" + std::to_string(data_.ramSpeed));
-    }
 }
 
 void ModuleCoordinator::Stop() {
