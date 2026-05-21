@@ -258,8 +258,9 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
     static int logCount = 0;
-    double gpuFreqSum = 0.0; int gpuFreqN = 0;  // accumulate GPU per-delta
+    double gpuFreqSum = 0.0; int gpuFreqN = 0;
     CFIndex count = CFArrayGetCount(channels);
+    if (logCount < 1) Logger::Info("PowerMonitor: delta " + std::to_string(count) + " ch");
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(channels, i));
         if (!channel || CFGetTypeID(channel) != CFDictionaryGetTypeID()) continue;
@@ -312,6 +313,8 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         }
 
         int64_t value = ExtractChannelValue((void*)channel);
+        if (logCount < 1 && value != INT64_MIN && (strcmp(group, "Energy Model") == 0 || strcmp(group, "CPU Stats") == 0))
+            Logger::Info("PowerMonitor: g=" + std::string(group) + " s=" + std::string(sub) + " v=" + std::to_string(value));
         if (value <= 0 || value == INT64_MIN) continue;
 
         if (strcmp(group, "Energy Model") == 0) {
