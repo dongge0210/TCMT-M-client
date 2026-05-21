@@ -359,8 +359,9 @@ int64_t PowerMonitor::ExtractChannelValue(void* channelV) {
 
 double PowerMonitor::EnergyToPower(void* channelV, int64_t energyDelta) {
     auto* channel = static_cast<CFDictionaryRef>(channelV);
+    // Default to mJ (most IOReport energy channels report in millijoules)
+    double scale = 1e3;
     CFStringRef unitStr = (CFStringRef)CFDictionaryGetValue(channel, kChannelUnitKey);
-    double scale = 1.0;
     if (unitStr && CFGetTypeID(unitStr) == CFStringGetTypeID()) {
         char u[16] = {};
         CFStringGetCString(unitStr, u, sizeof(u), kCFStringEncodingUTF8);
