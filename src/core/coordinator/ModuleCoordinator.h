@@ -5,7 +5,7 @@
 #include <vector>
 #include <string>
 #include "DataStruct/DataStruct.h"
-#include "../tui/TuiApp.h"
+#include "../../tui/TuiApp.h"
 #include "Utils/JThreadCompat.h"
 #include "etw/EtwMonitor.h"
 #include "notifications/SystemEventMonitor.h"

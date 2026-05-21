@@ -32,9 +32,9 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb/UsbInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/UserNotifier.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/SystemEventMonitor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_cpu.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator_cpu.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator_io.cpp
 )
 # macOS-only modules (.mm Objective-C++, not valid for MSVC)
 if(TCMT_MACOS)

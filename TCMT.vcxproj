@@ -156,7 +156,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\notifications\DeviceChangeNotifier.h" />
     <ClInclude Include="src\core\notifications\UserNotifier.h" />
     <ClInclude Include="src\core\notifications\SystemEventMonitor.h" />
-    <ClInclude Include="src\core\ModuleCoordinator.h" />
+    <ClInclude Include="src\core\coordinator\ModuleCoordinator.h" />
     <ClInclude Include="src\core\Utils\JThreadCompat.h" />
     <ClInclude Include="src\core\etw\EtwMonitor.h" />
     <ClInclude Include="src\tui\TuiApp.h" />
@@ -187,9 +187,9 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c" />
     <ClCompile Include="src\core\notifications\UserNotifier.cpp" />
     <ClCompile Include="src\core\notifications\SystemEventMonitor.cpp" />
-    <ClCompile Include="src\core\ModuleCoordinator.cpp" />
-    <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp" />
-    <ClCompile Include="src\core\ModuleCoordinator_io.cpp" />
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator.cpp" />
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator_cpu.cpp" />
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator_io.cpp" />
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>

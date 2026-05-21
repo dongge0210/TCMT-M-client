@@ -84,7 +84,7 @@
     <ClInclude Include="src\core\notifications\SystemEventMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\ModuleCoordinator.h">
+    <ClInclude Include="src\core\coordinator\ModuleCoordinator.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\core\Utils\JThreadCompat.h">
@@ -188,13 +188,13 @@
     <ClCompile Include="src\core\notifications\SystemEventMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\ModuleCoordinator.cpp">
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp">
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator_cpu.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\ModuleCoordinator_io.cpp">
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator_io.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp">
