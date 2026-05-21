@@ -184,29 +184,63 @@ bool PowerMonitor::Start() {
         return false;
     }
 
-    // -- 2. Fetch IOReport channels, filter for power/freq in ParsePowerDelta --
-    typedef CFDictionaryRef (*FnCopyAll)(uint64_t, uint64_t);
-    FnCopyAll g_CopyAll = reinterpret_cast<FnCopyAll>(dlsym(g_lib, "IOReportCopyAllChannels"));
-    CFDictionaryRef all = g_CopyAll ? g_CopyAll(0, 0) : nullptr;
-    if (!all) {
-        Logger::Error("PowerMonitor: IOReportCopyAllChannels failed");
+    // -- 2. Fetch channels for power/freq groups (names from LLM analysis of IOReport dump) --
+    auto makeCFStr = [](const char* s) -> CFStringRef {
+        return CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8);
+    };
+
+    CFStringRef gEnergy = makeCFStr("Energy Model");
+    CFStringRef gCpu    = makeCFStr("CPU Stats");
+    CFStringRef gGpu    = makeCFStr("GPU Stats");
+
+    CFDictionaryRef eChan = g_CopyGroup(gEnergy, nullptr, 0, 0, 0);
+    CFDictionaryRef cChan = g_CopyGroup(gCpu,    nullptr, 0, 0, 0);
+    CFDictionaryRef gChan = g_CopyGroup(gGpu,    nullptr, 0, 0, 0);
+
+    CFRelease(gEnergy); CFRelease(gCpu); CFRelease(gGpu);
+
+    if (!eChan && !cChan && !gChan) {
+        Logger::Error("PowerMonitor: no channels for Energy Model/CPU Stats/GPU Stats");
         running_.store(false);
         return false;
     }
-    chan_ = static_cast<void*>(const_cast<__CFDictionary*>(all));
+
+    // Merge into eChan (first non-null), or use CopyAll fallback
+    CFDictionaryRef merged = nullptr;
+    if (g_MergeChan && eChan) {
+        merged = eChan;
+        if (cChan) { g_MergeChan(merged, cChan, nullptr); CFRelease(cChan); }
+        if (gChan) { g_MergeChan(merged, gChan, nullptr); CFRelease(gChan); }
+    } else if (eChan) {
+        merged = eChan;
+        if (cChan) CFRelease(cChan);
+        if (gChan) CFRelease(gChan);
+    }
+    // Fallback: if no specific groups, try CopyAllChannels
+    if (!merged) {
+        typedef CFDictionaryRef (*FnCopyAll)(uint64_t, uint64_t);
+        FnCopyAll g_CopyAll = reinterpret_cast<FnCopyAll>(dlsym(g_lib, "IOReportCopyAllChannels"));
+        merged = g_CopyAll ? g_CopyAll(0, 0) : nullptr;
+    }
+    if (!merged) {
+        Logger::Error("PowerMonitor: no IOReport channels available");
+        running_.store(false);
+        return false;
+    }
+    chan_ = static_cast<void*>(const_cast<__CFDictionary*>(merged));
 
     // -- 3. Create subscription --
     void* sub = nullptr;
-    void* subResult = g_CreateSub(nullptr, all, &sub, 0, nullptr);
+    void* subResult = g_CreateSub(nullptr, merged, &sub, 0, nullptr);
     if (!subResult || !sub) {
         Logger::Error("PowerMonitor: IOReportCreateSubscription failed");
-        CFRelease(all);
+        CFRelease(merged);
         chan_ = nullptr;
         running_.store(false);
         return false;
     }
     subs_ = subResult;
-    if (all) CFRelease(all);
+    CFRelease(merged);
 
     directMode_.store(true);
 
