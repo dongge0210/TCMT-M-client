@@ -90,6 +90,8 @@ static const WCHAR* GetSmartAttrName(uint8_t id) {
         case 9:   return u"通电时间";
         case 10:  return u"启动重试次数";
         case 12:  return u"通电次数";
+        case 15:  return u"数据完整性错误";
+        case 16:  return u"错误日志条目数";
         case 148: return u"预留";
         case 149: return u"预留";
         case 167: return u"固态硬盘保护模式";
@@ -124,7 +126,7 @@ static const WCHAR* GetSmartAttrName(uint8_t id) {
         case 199: return u"CRC 错误计数";
         case 200: return u"写入错误率";
         case 201: return u"软读取错误率";
-        case 202: return u"数据地址标记错误";
+        case 202: return u"已用寿命百分比";
         case 203: return u"耗尽取消";
         case 204: return u"软 ECC 修正";
         case 205: return u"热糙度";
@@ -165,6 +167,8 @@ static const WCHAR* GetSmartAttrDesc(uint8_t id) {
     switch (id) {
         case 1:   return u"底层数据读取错误率，反映磁盘表面或磁头读取可靠性";
         case 3:   return u"磁盘电机从静止到达工作转速所需时间";
+        case 15:  return u"SSD/闪存介质数据完整性错误计数，>0 需关注";
+        case 16:  return u"存储的错误信息日志总条目数";
         case 4:   return u"硬盘磁头启停/加载卸载的累计次数";
         case 5:   return u"已被映射到备用扇区的坏扇区数量，>0 说明磁盘开始老化";
         case 7:   return u"磁头定位到目标磁道的错误率";
@@ -193,6 +197,7 @@ static const WCHAR* GetSmartAttrDesc(uint8_t id) {
         case 233: return u"SSD NAND 闪存累计写入数据量";
         case 234: return u"SSD 所有块的平均擦写次数";
         case 235: return u"SSD 单个块的最高擦写次数";
+        case 202: return u"SSD 已消耗的写入寿命百分比，数值越高磨损越严重";
         case 241: return u"主机通过接口向磁盘累计写入的数据总量";
         case 242: return u"主机通过接口从磁盘累计读取的数据总量";
         case 246: return u"SSD 自出厂以来所有块的累计擦写总次数";
@@ -252,7 +257,6 @@ static bool ReadNVMeSmart(int diskIndex, PhysicalDiskSmartData &out) {
                     wcs_ncopy(a.name, name, 63);
                     wcs_ncopy(a.description, desc, 127);
                 };
-                const uint8_t* rb = (const uint8_t*)&raw;
                 addAttr(0x01, raw.CRITICAL_WARNING, raw.CRITICAL_WARNING,
                     u"严重警告标志", u"NVMe 关键警告：0=正常，非0表示存在严重问题");
                 addAttr(0x02, (uint8_t)tempC, raw.TEMPERATURE,

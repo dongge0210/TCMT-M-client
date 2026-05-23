@@ -22,6 +22,7 @@
 #ifdef TCMT_MACOS
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
+#include <sys/sysctl.h>
 #endif
 
 // =====================================================================
@@ -107,6 +108,13 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 data.compressedMemory.store(
                     vmStats.compressor_page_count *
                     static_cast<uint64_t>(pageSize));
+                // Swap usage
+                struct xsw_usage xsu;
+                size_t xsuLen = sizeof(xsu);
+                if (sysctlbyname("vm.swapusage", &xsu, &xsuLen, nullptr, 0) == 0) {
+                    data.swapUsed.store(xsu.xsu_used);
+                    data.swapTotal.store(xsu.xsu_total);
+                }
             } else {
                 data.compressedMemory.store(0);
             }

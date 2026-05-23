@@ -25,6 +25,8 @@ struct ModuleData {
     std::atomic<uint64_t> usedMemory{0};
     std::atomic<uint64_t> availableMemory{0};
     std::atomic<uint64_t> compressedMemory{0};
+    std::atomic<uint64_t> swapUsed{0};
+    std::atomic<uint64_t> swapTotal{0};
     uint32_t ramSpeed = 0;
     std::string ramType;  // non-atomic — set once at startup
     // GPU (500ms)

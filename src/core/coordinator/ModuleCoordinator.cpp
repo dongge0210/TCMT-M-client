@@ -177,7 +177,11 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.usedMemory = data_.usedMemory.load();
     sysInfo.availableMemory = data_.availableMemory.load();
     sysInfo.compressedMemory = data_.compressedMemory.load();
+    sysInfo.swapUsed = data_.swapUsed.load();
+    sysInfo.swapTotal = data_.swapTotal.load();
     tuiData.compressedMemory = data_.compressedMemory.load();
+    tuiData.swapUsed = data_.swapUsed.load();
+    tuiData.swapTotal = data_.swapTotal.load();
     sysInfo.ramSpeed = data_.ramSpeed;
     snprintf(sysInfo.ramType, sizeof(sysInfo.ramType), "%s", data_.ramType.c_str());
     tuiData.ramSpeed = data_.ramSpeed;
@@ -290,6 +294,11 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
 
             std::lock_guard<std::mutex> lock(data_.tempMutex);
             data_.temperatures = temps;
+            static bool tempLogged = false;
+            if (!tempLogged && !temps.empty()) {
+                Logger::Info("TemperatureLoop: got " + std::to_string(temps.size()) + " sensors");
+                tempLogged = true;
+            }
             data_.cpuTemperature = 0.0;
             data_.gpuTemperature = 0.0;
 

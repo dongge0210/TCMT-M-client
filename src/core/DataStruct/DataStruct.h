@@ -144,6 +144,8 @@ struct SystemInfo {
     uint64_t usedMemory;
     uint64_t availableMemory;
     uint64_t compressedMemory;
+    uint64_t swapUsed = 0;
+    uint64_t swapTotal = 0;
     uint32_t ramSpeed = 0;          // RAM frequency in MHz (e.g., 6400)
     char ramType[32] = {};         // DDR generation (e.g., "DDR5", "LPDDR5")
     std::vector<GPUData> gpus;
@@ -210,6 +212,8 @@ struct SharedMemoryBlock {
     uint64_t usedMemory;      // Used memory (bytes)
     uint64_t availableMemory; // Available memory (bytes)
     uint64_t compressedMemory; // Compressed memory (bytes)
+    uint64_t swapUsed;         // Swap used (bytes)
+    uint64_t swapTotal;        // Swap total (bytes)
     uint32_t ramSpeed;       // RAM frequency in MHz (e.g., 6400)
     WCHAR ramType[32];       // DDR generation (e.g., "DDR5", "LPDDR5")
     double cpuTemperature; // CPU temperature

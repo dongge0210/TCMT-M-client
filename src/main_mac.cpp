@@ -100,6 +100,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addU64("memory/used",         offsetof(B, usedMemory));
     addU64("memory/available",    offsetof(B, availableMemory));
     addU64("memory/compressed",   offsetof(B, compressedMemory));
+    addU64("memory/swapUsed",     offsetof(B, swapUsed));
+    addU64("memory/swapTotal",    offsetof(B, swapTotal));
     add("memory/ramSpeed", offsetof(B, ramSpeed), 4, FT::UInt32);
     add("memory/ramType",  offsetof(B, ramType), (uint16_t)sizeof(B::ramType), FT::String);
 
@@ -697,6 +699,8 @@ int main(int argc, char* argv[]) {
                 data.usedMemory = sysInfo.usedMemory;
                 data.availableMemory = sysInfo.availableMemory;
                 data.compressedMemory = sysInfo.compressedMemory;
+                data.swapUsed = sysInfo.swapUsed;
+                data.swapTotal = sysInfo.swapTotal;
                 data.ramSpeed = sysInfo.ramSpeed;
                 strncpy(data.ramType, sysInfo.ramType, sizeof(data.ramType) - 1);
             }
@@ -830,6 +834,8 @@ int main(int argc, char* argv[]) {
                         b->usedMemory = data.usedMemory;
                         b->availableMemory = data.availableMemory;
                         b->compressedMemory = data.compressedMemory;
+                        b->swapUsed = data.swapUsed;
+                        b->swapTotal = data.swapTotal;
                         b->ramSpeed = data.ramSpeed;
                         std::strncpy(b->ramType, data.ramType, 31);
                         b->ramType[31] = '\0';

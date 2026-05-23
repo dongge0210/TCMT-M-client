@@ -43,15 +43,16 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 #elif defined(TCMT_MACOS)
 // ======================== macOS Implementation ========================
 // macOS temperature access options (no root):
-//   1. SMC direct reads via IOKit AppleSMC (no root on Intel; Apple Silicon needs root)
-//   2. powermetrics (needs root, caches via background thread)
-//   3. IOKit IOHIDEventService (few sensors, unreliable)
+//   1. Apple Silicon SMC (AppleSMCKeysEndpoint, selector 2, works on AS)
+//   2. Intel SMC (AppleSMC, selector 5, works on Intel)
+//   3. IOKit IOHIDEventService (fallback, limited sensors)
+//   4. powermetrics (needs root, caches via background thread)
 //
-// Priority: SMC > powermetrics cache > IOKit HID
-// All three are tried; GetTemperatures() returns whatever succeeded.
+// Priority: SMC (platform-appropriate) > IOKit HID > powermetrics cache
 
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <mach/mach.h>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -63,6 +64,7 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
 
 // =====================================================================
 // SMC Reader — Direct IOKit access to AppleSMC
@@ -322,7 +324,315 @@ static std::vector<std::string> smc_enumerate_temp_keys(void) {
     return keys;
 }
 
-#endif // __x86_64__ — end of SMC block
+#endif // __x86_64__ — end of Intel SMC block
+
+// =====================================================================
+// Apple Silicon SMC — selector 2 via AppleSMCKeysEndpoint (no root needed)
+// Reference: macmon (https://github.com/vladkens/macmon)
+// =====================================================================
+
+typedef struct {
+    uint32_t dataSize;
+    uint32_t dataType;
+    uint8_t  dataAttributes;
+    uint8_t  _pad[3];   // natural alignment: KeyInfo = 12 bytes
+} AsKeyInfo;
+
+typedef struct {
+    uint32_t   key;
+    uint8_t    vers[8];
+    uint8_t    pLimitData[16];
+    AsKeyInfo  keyInfo;
+    uint8_t    result;
+    uint8_t    status;
+    uint8_t    data8;
+    uint8_t    _pad;     // align data32 to 4-byte boundary
+    uint32_t   data32;
+    uint8_t    bytes[32];
+} AsKeyData;  // total: 80 bytes
+
+static io_connect_t g_as_smc_conn = 0;
+static std::mutex  g_as_smc_mutex;
+static std::vector<std::string> g_as_smc_cpu_keys;
+static std::vector<std::string> g_as_smc_gpu_keys;
+static std::unordered_map<std::string, AsKeyInfo> g_as_smc_key_info_cache;
+static bool g_as_smc_ready = false;
+
+static bool as_smc_open(void) {
+    if (g_as_smc_conn != 0) return true;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    mach_port_t masterPort = kIOMasterPortDefault;
+#pragma clang diagnostic pop
+
+    io_iterator_t iter = 0;
+    CFDictionaryRef match = IOServiceMatching("AppleSMC");
+    if (!match) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: IOServiceMatching returned NULL\n");
+        return false;
+    }
+    kern_return_t kr = IOServiceGetMatchingServices(masterPort, match, &iter);
+    if (kr != KERN_SUCCESS) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: IOServiceGetMatchingServices failed kr=%d\n", kr);
+        return false;
+    }
+
+    // Also try parent iteration to find nested children
+    io_iterator_t childIter = 0;
+    io_registry_entry_t entry;
+    int foundCount = 0;
+
+    // First pass: iterate top-level AppleSMC entries
+    while ((entry = IOIteratorNext(iter)) != 0) {
+        foundCount++;
+        char nameBuf[128] = {};
+        // Try IORegistryEntryGetName first (always works)
+        IORegistryEntryGetName(entry, nameBuf);
+        if (strcmp(nameBuf, "AppleSMCKeysEndpoint") == 0) {
+            kr = IOServiceOpen(entry, mach_task_self(), 0, &g_as_smc_conn);
+            IOObjectRelease(entry);
+            break;
+        }
+
+        // Check children of this entry
+        if (IORegistryEntryGetChildIterator(entry, kIOServicePlane, &childIter) == KERN_SUCCESS) {
+            io_registry_entry_t child;
+            int childIdx = 0;
+            while ((child = IOIteratorNext(childIter)) != 0) {
+                childIdx++;
+                char cname[128] = {};
+                IORegistryEntryGetName(child, cname);
+                // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC:   child #%d name='%s'\n", childIdx, cname);
+                if (strcmp(cname, "AppleSMCKeysEndpoint") == 0) {
+                    kr = IOServiceOpen(child, mach_task_self(), 0, &g_as_smc_conn);
+                    // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: child IOServiceOpen kr=%d conn=%u\n", kr, g_as_smc_conn);
+                    IOObjectRelease(child);
+                    break;
+                }
+                IOObjectRelease(child);
+            }
+            IOObjectRelease(childIter);
+            if (g_as_smc_conn != 0) { IOObjectRelease(entry); break; }
+        }
+        IOObjectRelease(entry);
+    }
+    IOObjectRelease(iter);
+
+    // SMC scan done
+    if (kr != KERN_SUCCESS || g_as_smc_conn == 0) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: failed (kr=%d conn=%u)\n", kr, g_as_smc_conn);
+        return false;
+    }
+    Logger::Info("TemperatureWrapper: AppleSMCKeysEndpoint opened for Apple Silicon");
+    return true;
+}
+
+static kern_return_t as_smc_call(AsKeyData* in, AsKeyData* out) {
+    size_t isz = sizeof(AsKeyData), osz = sizeof(AsKeyData);
+    static int dbgOnce = 0;
+    if (dbgOnce == 0) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] as_smc_call: sizeof(AsKeyData)=%zu\n", isz);
+        dbgOnce = 1;
+    }
+    return IOConnectCallStructMethod(g_as_smc_conn, 2, in, isz, out, &osz);
+}
+
+// Read key info (data8=9): fills keyInfo (dataSize, dataType, dataAttributes)
+static bool as_smc_read_key_info(uint32_t keyWord, AsKeyInfo* info) {
+    AsKeyData in = {};
+    AsKeyData out = {};
+    in.key = keyWord;
+    in.data8 = 9;
+    kern_return_t kr = as_smc_call(&in, &out);
+    static int dbgCnt = 0;
+    if (dbgCnt < 3) {
+        dbgCnt++;
+    }
+    if (kr != KERN_SUCCESS || out.result != 0)
+        return false;
+    memcpy(info, &out.keyInfo, sizeof(AsKeyInfo));
+    return (info->dataSize > 0 && info->dataSize <= 32);
+}
+
+// Read sensor value (data8=5): raw bytes in out.bytes[0..dataSize]
+static bool as_smc_read_val(uint32_t keyWord, const AsKeyInfo* info,
+                            uint8_t* outBytes, size_t outMax) {
+    AsKeyData in = {};
+    AsKeyData out = {};
+    in.key = keyWord;
+    in.data8 = 5;
+    memcpy(&in.keyInfo, info, sizeof(AsKeyInfo));
+    if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0)
+        return false;
+    size_t n = std::min(static_cast<size_t>(info->dataSize), outMax);
+    memcpy(outBytes, out.bytes, n);
+    return true;
+}
+
+// Get key name by index (data8=8, data32=index)
+static bool as_smc_key_by_index(uint32_t index, char keyOut[5]) {
+    AsKeyData in = {};
+    AsKeyData out = {};
+    in.data8 = 8;
+    in.data32 = index;
+    if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0)
+        return false;
+    uint32_t kw = out.key;  // key is in Big Endian
+    keyOut[0] = (kw >> 24) & 0xFF;
+    keyOut[1] = (kw >> 16) & 0xFF;
+    keyOut[2] = (kw >>  8) & 0xFF;
+    keyOut[3] =  kw        & 0xFF;
+    keyOut[4] = '\0';
+    return true;
+}
+
+// Decode temperature from raw bytes (assumes float32 big-endian, or sp78 fixed-point)
+static double as_smc_decode_temp(const uint8_t* bytes, const AsKeyInfo* info) {
+    if (!bytes || !info || info->dataSize < 2) return 0.0;
+    // Try float32 big-endian first (macmon approach)
+    uint32_t dt = info->dataType;
+    char typeStr[5] = {};
+    typeStr[0] = (dt >> 24) & 0xFF;
+    typeStr[1] = (dt >> 16) & 0xFF;
+    typeStr[2] = (dt >>  8) & 0xFF;
+    typeStr[3] =  dt        & 0xFF;
+    // "flt " = float32 little-endian (macmon: f32::from_le_bytes)
+    if (strcmp(typeStr, "flt ") == 0 && info->dataSize >= 4) {
+        float f;
+        memcpy(&f, bytes, sizeof(f));  // direct memcpy on little-endian (ARM64)
+        if (f > 10.0 && f < 150.0) return static_cast<double>(f);
+    }
+    // "sp78" = signed 16-bit 7.8 fixed-point big-endian (common for Intel SMC)
+    if (strcmp(typeStr, "sp78") == 0 && info->dataSize >= 2) {
+        int16_t raw = ((int16_t)bytes[0] << 8) | bytes[1];
+        double val = static_cast<double>(raw) / 256.0;
+        if (val > 0 && val < 150.0) return val;
+    }
+    // Generic fallback: try as float32 little-endian
+    if (info->dataSize >= 4) {
+        float f;
+        memcpy(&f, bytes, sizeof(f));
+        if (f > 10 && f < 150.0) return static_cast<double>(f);
+    }
+    return 0.0;
+}
+
+// Enumerate all SMC temperature keys (called once at init)
+static void as_smc_enumerate(void) {
+    std::lock_guard<std::mutex> lock(g_as_smc_mutex);
+    if (g_as_smc_ready) return;
+
+    // Read #KEY to get total key count
+    AsKeyInfo keyInfo;
+    uint32_t hashKey = 0x234b4559; // "#KEY" as FourCC
+    // reading #KEY
+    if (!as_smc_read_key_info(hashKey, &keyInfo)) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: #KEY read_key_info FAILED\n");
+        return;
+    }
+    // #KEY info read ok
+
+    uint8_t keyBytes[32] = {};
+    if (!as_smc_read_val(hashKey, &keyInfo, keyBytes, sizeof(keyBytes))) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: #KEY read_val FAILED\n");
+        return;
+    }
+
+    uint32_t totalKeys = ((uint32_t)keyBytes[0] << 24) | ((uint32_t)keyBytes[1] << 16)
+                       | ((uint32_t)keyBytes[2] <<  8) | (uint32_t)keyBytes[3];
+    Logger::Info("TemperatureWrapper: AS SMC has " + std::to_string(totalKeys) + " keys");
+    if (totalKeys == 0 || totalKeys > 65535) return;
+
+    g_as_smc_cpu_keys.clear();
+    g_as_smc_gpu_keys.clear();
+
+    int dbgLimit = 20;
+    for (uint32_t i = 0; i < totalKeys; i++) {
+        char k[5] = {};
+        if (!as_smc_key_by_index(i, k)) continue;
+
+        AsKeyInfo ki;
+        uint32_t kw = ((uint32_t)(uint8_t)k[0] << 24) | ((uint32_t)(uint8_t)k[1] << 16)
+                    | ((uint32_t)(uint8_t)k[2] <<  8) | (uint32_t)(uint8_t)k[3];
+        if (!as_smc_read_key_info(kw, &ki)) continue;
+
+        char dt[5] = {};
+        dt[0] = (ki.dataType >> 24) & 0xFF;
+        dt[1] = (ki.dataType >> 16) & 0xFF;
+        dt[2] = (ki.dataType >>  8) & 0xFF;
+        dt[3] =  ki.dataType        & 0xFF;
+
+        if (dbgLimit > 0 && k[0] >= ' ' && k[1] >= ' ') {
+            dbgLimit--;
+        }
+
+        if (ki.dataSize != 4) continue;
+
+        // Tp=performance core, Te=efficiency core, Ts=super core (M5+), Tg=GPU
+        if (k[0] == 'T' && k[1] == 'g') {
+            g_as_smc_gpu_keys.push_back(std::string(k));
+            g_as_smc_key_info_cache[std::string(k)] = ki;
+        } else if (k[0] == 'T' && (k[1] == 'p' || k[1] == 'e' || k[1] == 's')) {
+            g_as_smc_cpu_keys.push_back(std::string(k));
+            g_as_smc_key_info_cache[std::string(k)] = ki;
+        }
+    }
+
+    g_as_smc_ready = true;
+    Logger::Info("TemperatureWrapper: AS SMC CPU keys="
+                 + std::to_string(g_as_smc_cpu_keys.size())
+                 + " GPU keys=" + std::to_string(g_as_smc_gpu_keys.size()));
+}
+
+// Read temperatures from Apple Silicon SMC (with cache for reliability)
+static std::vector<std::pair<std::string, double>> g_as_smc_cached_temps;
+
+static std::vector<std::pair<std::string, double>> as_smc_read_temps(void) {
+    std::vector<std::pair<std::string, double>> temps;
+    if (!g_as_smc_ready) return g_as_smc_cached_temps; // return last known good data
+
+    std::lock_guard<std::mutex> lock(g_as_smc_mutex);
+
+    auto readKey = [&](const std::string& k) -> double {
+        uint32_t kw = ((uint32_t)(uint8_t)k[0] << 24) | ((uint32_t)(uint8_t)k[1] << 16)
+                    | ((uint32_t)(uint8_t)k[2] <<  8) | (uint32_t)(uint8_t)k[3];
+        auto it = g_as_smc_key_info_cache.find(k);
+        if (it == g_as_smc_key_info_cache.end()) return 0.0;
+        AsKeyData in = {}, out = {};
+        in.key = kw; in.data8 = 5;
+        memcpy(&in.keyInfo, &it->second, sizeof(AsKeyInfo));
+        if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0) return 0.0;
+        return as_smc_decode_temp(out.bytes, &it->second);
+    };
+    double cpuSum = 0.0; int cpuN = 0;
+    double gpuSum = 0.0; int gpuN = 0;
+    for (const auto& k : g_as_smc_cpu_keys) {
+        double v = readKey(k);
+        if (v > 10.0 && v < 150.0) { cpuSum += v; cpuN++; }
+    }
+    for (const auto& k : g_as_smc_gpu_keys) {
+        double v = readKey(k);
+        if (v > 10.0 && v < 150.0) { gpuSum += v; gpuN++; }
+    }
+    if (cpuN > 0) temps.push_back({"CPU Die", cpuSum / cpuN});
+    if (gpuN > 0) temps.push_back({"GPU Die", gpuSum / gpuN});
+
+    if (temps.size() >= 1)
+        g_as_smc_cached_temps = temps;
+    else if (!g_as_smc_cached_temps.empty())
+        temps = g_as_smc_cached_temps;
+
+    return temps;
+}
 
 // =====================================================================
 // Background powermetrics caching thread (Intel only — needs root)
@@ -659,11 +969,19 @@ void TemperatureWrapper::Initialize() {
     if (initialized) return;
     initialized = true;
 
-    // Step 1: Try direct SMC (Intel Mac only — hardware locked on Apple Silicon)
+    // Step 1: SMC (Intel or Apple Silicon, platform-appropriate)
 #ifdef __x86_64__
     probe_smc();
 #else
-    Logger::Info("TemperatureWrapper: SMC skipped (Apple Silicon — hardware locked)");
+    if (as_smc_open()) {
+        as_smc_enumerate();
+        Logger::Info("TemperatureWrapper: AS SMC ready, CPU="
+                     + std::to_string(g_as_smc_cpu_keys.size())
+                     + " GPU=" + std::to_string(g_as_smc_gpu_keys.size()) + " keys");
+    } else {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC open failed\n");
+    }
 #endif
 
     // Step 2: Start powermetrics background thread (needs root)
@@ -681,11 +999,22 @@ void TemperatureWrapper::Cleanup() {
         if (g_pm_thread.joinable()) g_pm_thread.join();
     }
 
-    // Close SMC (Intel only)
+    // Close SMC
 #ifdef __x86_64__
     if (g_smc_conn) {
         IOServiceClose(g_smc_conn);
         g_smc_conn = 0;
+    }
+#else
+    if (g_as_smc_conn) {
+        std::lock_guard<std::mutex> lock(g_as_smc_mutex);
+        g_as_smc_ready = false;
+        g_as_smc_cpu_keys.clear();
+        g_as_smc_gpu_keys.clear();
+        g_as_smc_key_info_cache.clear();
+        g_as_smc_cached_temps.clear();
+        IOServiceClose(g_as_smc_conn);
+        g_as_smc_conn = 0;
     }
 #endif
 
@@ -698,7 +1027,7 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
     if (!initialized) return temps;
 
 #ifdef __x86_64__
-    // Priority 1: Hardcoded SMC keys (Intel Mac)
+    // Priority 1: Intel SMC hardcoded keys
     for (int i = 0; kCpuKeys[i]; i++) {
         double t = 0;
         if (smc_read_temp(kCpuKeys[i], "sp78", &t))
@@ -709,15 +1038,26 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         if (smc_read_temp(kGpuKeys[i], "sp78", &t))
             temps.push_back({std::string(kGpuKeys[i]) + " (GPU)", t});
     }
+#else
+    // Priority 1: Apple Silicon SMC (dynamically enumerated keys, no root)
+    {
+        auto as = as_smc_read_temps();
+        temps.insert(temps.end(), as.begin(), as.end());
+        // ARM PMU fallback if SMC gave nothing
+        if (as.empty()) {
+            auto arm = iokit_arm_temp_sensors();
+            temps.insert(temps.end(), arm.begin(), arm.end());
+        }
+    }
 #endif
 
-    // ARM PMU temp sensors (no root, Apple Silicon; also works on Intel fallback)
-    {
-        auto arm = iokit_arm_temp_sensors();
-        temps.insert(temps.end(), arm.begin(), arm.end());
+    // IOKit HID (supplement if still few sensors)
+    if (temps.size() < 2) {
+        auto hid = iokit_hid_temps();
+        temps.insert(temps.end(), hid.begin(), hid.end());
     }
 
-    // powermetrics cache (needs root, background thread; frequency+power on AS)
+    // powermetrics cache (needs root, supplements SMC)
     {
         std::lock_guard<std::mutex> lock(g_pm_mutex);
         if (!g_pm_temps.empty()) {
@@ -731,10 +1071,11 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         temps.push_back({"Battery", batTemp});
     }
 
-    // IOKit HID (last resort)
-    if (temps.empty()) {
-        auto hid = iokit_hid_temps();
-        temps.insert(temps.end(), hid.begin(), hid.end());
+    static int totalDbg = 0;
+    if (totalDbg < 3) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] GetTemperatures total: %zu sensors\n", temps.size());
+        totalDbg++;
     }
 
     return temps;

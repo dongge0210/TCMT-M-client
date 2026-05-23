@@ -14,6 +14,8 @@
 #include <chrono>
 #include <sys/sysctl.h>
 
+static FILE* dbg_ = nullptr;
+
 // ====================================================================
 // IOReport private API — loaded via dlopen("/usr/lib/libIOReport.dylib")
 // ====================================================================
@@ -83,9 +85,8 @@ static bool LoadIOReport() {
 // Helpers
 // ====================================================================
 
-static const CFStringRef kChannelsKey     = CFSTR("IOReportChannels");
-static const CFStringRef kChannelInfoKey  = CFSTR("IOReportChannelInfo");
-static const CFStringRef kChannelUnitKey  = CFSTR("IOReportChannelUnit");
+static const CFStringRef kChannelsKey      = CFSTR("IOReportChannels");
+static const CFStringRef kChannelUnitKey   = CFSTR("IOReportChannelUnit");
 static const CFStringRef kChannelValuesKey = CFSTR("IOReportChannelValues");
 
 // Read DVFS frequency table from pmgr. Fills outFreqs[] with MHz values.
@@ -193,6 +194,46 @@ bool PowerMonitor::Start() {
     pFreqCount_ = ReadPmgrFreqTable("voltage-states5-sram", pFreqTable_, 32);
     eFreqCount_ = ReadPmgrFreqTable("voltage-states1-sram", eFreqTable_, 32);
     gpuFreqCount_ = ReadPmgrFreqTable("voltage-states9", gpuFreqTable_, 32);
+
+    dbg_ = fopen("/tmp/ioreport_debug.log", "w");
+    if (dbg_) setbuf(dbg_, nullptr); else dbg_ = stderr;
+
+    // DEBUG: dump DVFS tables
+    fprintf(dbg_, "[IOReport] DVFS tables: P-core=%d E-core=%d GPU=%d\n",
+            pFreqCount_, eFreqCount_, gpuFreqCount_);
+    auto dumpTable = [](const char* label, double* ft, int n) {
+        fprintf(dbg_, "[IOReport] %s:", label);
+        for (int i = 0; i < n; i++) fprintf(dbg_, " %.0f", ft[i]);
+        fprintf(dbg_, "\n");
+    };
+    if (pFreqCount_ > 0) dumpTable("P-core", pFreqTable_, pFreqCount_);
+    if (eFreqCount_ > 0) dumpTable("E-core", eFreqTable_, eFreqCount_);
+    if (gpuFreqCount_ > 0) dumpTable("GPU   ", gpuFreqTable_, gpuFreqCount_);
+    // Scan ALL voltage-states* properties in pmgr
+    {
+        double alt[64];
+        const char* vsNames[] = {
+            "voltage-states0","voltage-states1","voltage-states2",
+            "voltage-states3","voltage-states4","voltage-states5",
+            "voltage-states6","voltage-states7","voltage-states8",
+            "voltage-states9","voltage-states10","voltage-states11",
+            "voltage-states12","voltage-states13",
+            "voltage-states0-sram","voltage-states1-sram","voltage-states2-sram",
+            "voltage-states3-sram","voltage-states4-sram","voltage-states5-sram",
+            "voltage-states6-sram","voltage-states7-sram","voltage-states8-sram",
+            "voltage-states9-sram","voltage-states10-sram","voltage-states11-sram",
+            "voltage-states12-sram","voltage-states13-sram",
+        };
+        for (auto n : vsNames) {
+            int c = ReadPmgrFreqTable(n, alt, 64);
+            if (c > 0) {
+                fprintf(dbg_, "[IOReport] VS '%s': %d entries", n, c);
+                for (int i = 0; i < c; i++) fprintf(dbg_, " %.0f", alt[i]);
+                fprintf(dbg_, "\n");
+            }
+        }
+    }
+    // END DEBUG
     if (pFreqCount_ > 0) {
         pCoreFreq_.store(pFreqTable_[pFreqCount_-1]);
         pCoreMaxFreq_.store(pFreqTable_[pFreqCount_-1]);
@@ -225,6 +266,7 @@ void PowerMonitor::Stop() {
     if (subs_) { CFRelease(static_cast<CFTypeRef>(subs_)); subs_ = nullptr; }
     if (chan_) { CFRelease(static_cast<CFDictionaryRef>(chan_)); chan_ = nullptr; }
     directMode_.store(false);
+    if (dbg_ && dbg_ != stderr) { fclose(dbg_); dbg_ = nullptr; }
 }
 
 // ====================================================================
@@ -264,6 +306,8 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     gpuPower_.store(0.0);
     anePower_.store(0.0);
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
+    double pCoreFreqSum = 0.0; int pCoreFreqN = 0;
+    double eCoreFreqSum = 0.0; int eCoreFreqN = 0;
     CFIndex count = CFArrayGetCount(channels);
     for (CFIndex i = 0; i < count; ++i) {
         auto* channel = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(channels, i));
@@ -282,6 +326,10 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         if (strcmp(group, "CPU Stats") == 0 || strcmp(group, "GPU Stats") == 0) {
             if (g_StateCount && g_StateName && g_StateRes) {
                 bool isGpu = strcmp(group, "GPU Stats") == 0;
+                if (isGpu) {
+                    // Only use GPUPH channels; skip AFRSTATE (display refresh) and BSTGPUPH (boost phase)
+                    if (strncmp(name, "GPUPH", 5) != 0) continue;
+                }
                 if (!isGpu && strcmp(sub, "CPU Core Performance States") != 0) continue;
                 int nStates = g_StateCount((CFDictionaryRef)channel);
                 if (nStates <= 1) continue;
@@ -295,21 +343,51 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 else if (strncmp(name, "ECPU", 4) == 0) { freqCount = eFreqCount_; ft = eFreqTable_; }
                 else continue;
                 if (freqCount <= 0) continue;
-                // Skip zero entries at start of DVFS table (voltage-only, no freq)
-                int freqBase = 0;
-                while (freqBase < freqCount && ft[freqBase] <= 0) ++freqBase;
-                if (freqBase >= freqCount) continue;
+                // isIdle filter (below) handles OFF/IDLE/DOWN — don't offset freqBase
                 double wsum = 0.0; int64_t tres = 0;
-                for (int si = 0; si < nStates && (freqBase + si) < freqCount; ++si) {
+                // DEBUG: state-by-state dump (first 3 deltas for each type)
+                static int dbgPCore = 0, dbgECore = 0, dbgGpu = 0;
+                bool doDump = false;
+                if (isGpu)      { if (dbgGpu   < 3) { doDump = true; dbgGpu++;   } }
+                else if (strncmp(name, "PCPU", 4) == 0) { if (dbgPCore < 3) { doDump = true; dbgPCore++; } }
+                else { if (dbgECore < 3) { doDump = true; dbgECore++; } }
+                if (doDump) {
+                    fprintf(dbg_, "[IOReport] chan=%s nStates=%d freqCount=%d\n",
+                            name, nStates, freqCount);
+                }
+                // END DEBUG
+                for (int si = 0; si < nStates; ++si) {
+                    double freq;
+                    if (si < freqCount)
+                        freq = ft[si];  // direct mapping: IOReport state i → DVFS[i]
+                    else
+                        freq = ft[freqCount - 1];  // overflow: use max freq (last table entry)
                     int64_t r = g_StateRes((CFDictionaryRef)channel, si);
+                    // Skip IDLE/DOWN/OFF states (macmon behavior: these are not active frequency states)
+                    char snameBuf[64] = {};
+                    if (g_StateName) {
+                        CFStringRef sn = g_StateName((CFDictionaryRef)channel, si);
+                        if (sn) { CFStringGetCString(sn, snameBuf, sizeof(snameBuf), kCFStringEncodingUTF8); }
+                    }
+                    bool isIdle = (strncmp(snameBuf, "IDLE", 4) == 0 ||
+                                   strncmp(snameBuf, "DOWN", 4) == 0 ||
+                                   strncmp(snameBuf, "OFF", 3) == 0);
+                    if (doDump) {
+                        fprintf(dbg_, "  [%d] state=%s res=%lld -> %.0f MHz (idx=%d)%s\n",
+                                si, snameBuf, (long long)r, freq,
+                                si < freqCount ? si : -1,
+                                isIdle ? " SKIP" : "");
+                    }
                     if (r <= 0) continue;
-                    tres += r; wsum += ft[freqBase + si] * static_cast<double>(r);
+                    if (isIdle) continue;
+                    tres += r; wsum += freq * static_cast<double>(r);
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
+                    if (doDump) fprintf(dbg_, "  => weighted avg = %.1f MHz (wsum=%.0f tres=%lld)\n", mhz, wsum, (long long)tres);
                     if (isGpu) { gpuFreqSum += mhz; gpuFreqN++; }
-                    else if (strncmp(name, "PCPU", 4) == 0) pCoreFreq_.store(mhz);
-                    else eCoreFreq_.store(mhz);
+                    else if (strncmp(name, "PCPU", 4) == 0) { pCoreFreqSum += mhz; pCoreFreqN++; }
+                    else { eCoreFreqSum += mhz; eCoreFreqN++; }
                 }
                 if (isGpu) continue;
             }
@@ -335,6 +413,19 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     }
     if (logCount < 1) ++logCount;
     if (gpuFreqN > 0) gpuFreq_.store(gpuFreqSum / static_cast<double>(gpuFreqN));
+    if (pCoreFreqN > 0) pCoreFreq_.store(pCoreFreqSum / static_cast<double>(pCoreFreqN));
+    if (eCoreFreqN > 0) eCoreFreq_.store(eCoreFreqSum / static_cast<double>(eCoreFreqN));
+
+    // DEBUG: print computed frequencies (first 10 deltas only)
+    {
+        static int debugN = 0;
+        if (debugN < 10) {
+            fprintf(dbg_, "[IOReport] delta#%d: P-core=%.0f MHz  E-core=%.0f MHz  GPU=%.0f MHz\n",
+                    debugN, pCoreFreq_.load(), eCoreFreq_.load(), gpuFreq_.load());
+            debugN++;
+        }
+    }
+    // END DEBUG
 }
 
 // ====================================================================
