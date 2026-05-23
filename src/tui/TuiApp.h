@@ -55,6 +55,8 @@ struct TuiData {
     uint64_t usedMemory = 0;
     uint64_t availableMemory = 0;
     uint64_t compressedMemory = 0;
+    uint64_t swapUsed = 0;
+    uint64_t swapTotal = 0;
     uint32_t ramSpeed = 0;
     char ramType[32] = {};
 
@@ -182,6 +184,7 @@ private:
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);

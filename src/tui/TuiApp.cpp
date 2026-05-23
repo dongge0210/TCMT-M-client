@@ -166,19 +166,6 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
     lines++;
 
-    if (data.cpuTemp > 0 || data.cpuPower > 0) {
-        std::string cpuPwr;
-        if (data.cpuTemp > 0)
-            cpuPwr = "Temp: " + std::to_string(static_cast<int>(data.cpuTemp)) + " C";
-        if (data.cpuPower > 0) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "  Power: %.1fW", data.cpuPower / 1000.0);
-            cpuPwr += buf;
-        }
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, cpuPwr.c_str());
-        lines++;
-    }
-
     return lines;
 }
 
@@ -214,6 +201,13 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
         mvwprintw(win, y + lines, x0 + 2, "Compressed: %.*s", maxW - 12, compStr.c_str());
         lines++;
     }
+    if (data.swapTotal > 0) {
+        auto usedStr = FormatSize(data.swapUsed);
+        auto totalStr = FormatSize(data.swapTotal);
+        mvwprintw(win, y + lines, x0 + 2, "Swap: %.*s / %.*s",
+            maxW - 14, usedStr.c_str(), maxW - 18, totalStr.c_str());
+        lines++;
+    }
     if (data.ramSpeed > 0) {
         std::string ramStr = std::string(data.ramType) + "-" + std::to_string(data.ramSpeed);
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, ramStr.c_str());
@@ -234,9 +228,11 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     lines++;
 
+#ifndef TCMT_MACOS
     auto name = TrimRight(data.gpuName, maxW - 4);
     mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, name.c_str());
     lines++;
+#endif
 
     mvwprintw(win, y + lines, x0 + 2, "Use:");
     wattron(win, COLOR_PAIR(6));
@@ -268,21 +264,6 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
             mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
-    if (data.gpuTemp > 0 || data.gpuPower > 0) {
-        std::string gpuPwr;
-        if (data.gpuTemp > 0)
-            gpuPwr = "Temp: " + std::to_string(static_cast<int>(data.gpuTemp)) + " C";
-        if (data.gpuPower > 0) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "  Power: %.1fW", data.gpuPower / 1000.0);
-            gpuPwr += buf;
-        }
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, gpuPwr.c_str());
-        lines++;
-    }
-    mvwprintw(win, y + lines, x0 + 2, "ANE: %.1fW", data.anePower / 1000.0);
-    lines++;
-
     return lines;
 }
 
@@ -451,7 +432,7 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         auto labelL = TrimRight(nameL, halfW - 9);
         int tcL = (tempL > 80) ? 4 : (tempL > 60) ? 3 : 2;
         wattron(win, COLOR_PAIR(tcL));
-        mvwprintw(win, y + lines, x0 + 2, "%.*s %.0f C", halfW - 9, labelL.c_str(), tempL);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
         wattroff(win, COLOR_PAIR(tcL));
 
         if (rightIdx < static_cast<int>(displayTemps.size())) {
@@ -464,6 +445,29 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         }
         lines++;
     }
+    return lines;
+}
+
+int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    // Only show if any power data is available
+    bool hasData = (data.cpuPower > 0 || data.gpuPower > 0 || data.anePower > 0);
+    if (!hasData) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Power");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    double totalPower = 0.0;
+    if (data.cpuPower > 0)
+        mvwprintw(win, y + lines++, x0 + 2, "CPU:   %.2f W", data.cpuPower / 1000.0);
+    if (data.gpuPower > 0)
+        mvwprintw(win, y + lines++, x0 + 2, "GPU:   %.2f W", data.gpuPower / 1000.0);
+    mvwprintw(win, y + lines++, x0 + 2, "ANE:   %.2f W", data.anePower / 1000.0);
+    totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
+    mvwprintw(win, y + lines++, x0 + 4, "Total: %.2f W", totalPower);
+
     return lines;
 }
 
@@ -589,6 +593,9 @@ void TuiApp::Run() {
             }
             if (ry < maxY) {
                 ry += DrawTempPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawPowerPanel(stdscr, data, ry, rx, rightW);
             }
         }
         if (ry > maxY) ry = maxY;
