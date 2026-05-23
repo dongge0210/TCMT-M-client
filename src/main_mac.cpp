@@ -169,6 +169,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
         addF((std::string(p)+"temperature").c_str(),  base + offsetof(B::PhysDiskSlot, temperature));
         addF((std::string(p)+"health").c_str(),       base + offsetof(B::PhysDiskSlot, healthPercent));
         addB((std::string(p)+"smartSupported").c_str(), base + offsetof(B::PhysDiskSlot, smartSupported));
+        addI((std::string(p)+"attrCount").c_str(),     base + offsetof(B::PhysDiskSlot, attrCount));
+        addS((std::string(p)+"attrsJson").c_str(),     base + offsetof(B::PhysDiskSlot, attrsJson), 4096);
     }
 
     // WiFi
@@ -923,6 +925,47 @@ int main(int argc, char* argv[]) {
                                 pd.temperature = static_cast<float>(src.temperature);
                                 pd.healthPercent = static_cast<float>(src.healthPercentage);
                                 pd.smartSupported = src.smartSupported;
+                                // Serialize SMART attributes to JSON
+                                if (src.attributeCount > 0) {
+                                    std::ostringstream js;
+                                    js << "[";
+                                    for (int ai = 0; ai < src.attributeCount; ++ai) {
+                                        if (ai > 0) js << ",";
+                                        const auto& a = src.attributes[ai];
+                                        // WCHAR (char16_t) → UTF-8 for JSON
+                                        auto toUtf8 = [](const WCHAR* s, int maxLen) -> std::string {
+                                            std::string out;
+                                            for (int i = 0; i < maxLen && s[i] != u'\0'; ++i) {
+                                                uint16_t cp = static_cast<uint16_t>(s[i]);
+                                                if (cp == '"' || cp == '\\') { out += '\\'; out += (char)cp; }
+                                                else if (cp < 0x80) out += (char)cp;
+                                                else if (cp < 0x800) {
+                                                    out += (char)(0xC0 | (cp >> 6));
+                                                    out += (char)(0x80 | (cp & 0x3F));
+                                                } else {
+                                                    out += (char)(0xE0 | (cp >> 12));
+                                                    out += (char)(0x80 | ((cp >> 6) & 0x3F));
+                                                    out += (char)(0x80 | (cp & 0x3F));
+                                                }
+                                            }
+                                            return out;
+                                        };
+                                        js << "{\"id\":" << (int)a.id
+                                           << ",\"cur\":" << (int)a.current
+                                           << ",\"worst\":" << (int)a.worst
+                                           << ",\"raw\":" << a.rawValue
+                                           << ",\"name\":\"" << toUtf8(a.name, 63) << "\""
+                                           << ",\"desc\":\"" << toUtf8(a.description, 127) << "\""
+                                           << "}";
+                                    }
+                                    js << "]";
+                                    std::string jstr = js.str();
+                                    if (jstr.size() < 4096) {
+                                        std::strncpy(pd.attrsJson, jstr.c_str(), 4095);
+                                        pd.attrsJson[4095] = '\0';
+                                        pd.attrCount = src.attributeCount;
+                                    }
+                                }
                                 b->physDiskCount++;
                             }
                         }

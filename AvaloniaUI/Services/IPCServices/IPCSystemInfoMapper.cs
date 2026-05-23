@@ -193,7 +193,7 @@ public static class IPCSystemInfoMapper
                     var capacity = reader.ReadUInt64($"phys/{idx}/capacity") ?? 0;
                     var iface = reader.ReadWString($"phys/{idx}/interface") ?? "";
                     var temp = reader.ReadFloat64($"phys/{idx}/temperature") ?? 0;
-                    var health = reader.ReadUInt8($"phys/{idx}/health") ?? 0;
+                    var health = (byte)(reader.ReadFloat32($"phys/{idx}/health") ?? 0f);
                     var supported = reader.ReadBool($"phys/{idx}/smartSupported") ?? false;
 
                     // Read logical drive letters
