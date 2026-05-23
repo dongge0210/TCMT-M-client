@@ -38,6 +38,8 @@ public static class IPCSystemInfoMapper
             info.UsedMemory = reader.ReadUInt64("memory/used") ?? 0;
             info.AvailableMemory = reader.ReadUInt64("memory/available") ?? 0;
             info.CompressedMemory = reader.ReadUInt64("memory/compressed") ?? 0;
+            info.SwapUsed = reader.ReadUInt64("memory/swapUsed") ?? 0;
+            info.SwapTotal = reader.ReadUInt64("memory/swapTotal") ?? 0;
             info.RamSpeed = reader.ReadUInt32("memory/ramSpeed") ?? 0;
             info.RamType = ipc.ReadWString("memory/ramType") ?? reader.ReadString("memory/ramType") ?? "";
 

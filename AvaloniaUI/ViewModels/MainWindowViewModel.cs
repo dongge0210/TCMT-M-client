@@ -234,6 +234,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         UsedMemory = info.UsedMemory > 0 ? FormatBytes(info.UsedMemory) : "未检测到";
         AvailableMemory = info.AvailableMemory > 0 ? FormatBytes(info.AvailableMemory) : "未检测到";
         CompressedMemory = info.CompressedMemory > 0 ? FormatBytes(info.CompressedMemory) : "";
+        SwapUsedDisplay = info.SwapTotal > 0 ? FormatBytes(info.SwapUsed) : "";
+        SwapTotalDisplay = info.SwapTotal > 0 ? FormatBytes(info.SwapTotal) : "";
+        HasSwap = info.SwapTotal > 0;
+        OnPropertyChanged(nameof(HasSwap));
         MemoryPercent = info.TotalMemory > 0 ? (double)info.UsedMemory / info.TotalMemory * 100 : 0;
         AddMemoryHistoryPoint(MemoryPercent);
         RamType = info.RamType ?? "";
@@ -241,12 +245,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasRamInfo));
 
         // Power (mW → W)
-        CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F1}W" : "";
-        GpuPowerDisplay = info.GpuPower > 0 ? $"{info.GpuPower / 1000.0:F1}W" : "";
-        AnePowerDisplay = info.AnePower > 0 ? $"{info.AnePower / 1000.0:F1}W" : "";
+        CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F2}W" : "";
+        GpuPowerDisplay = info.GpuPower > 0 ? $"{info.GpuPower / 1000.0:F2}W" : "";
+        AnePowerDisplay = info.AnePower > 0 ? $"{info.AnePower / 1000.0:F2}W" : "";
+        var totalMw = info.CpuPower + info.GpuPower + info.AnePower;
+        TotalPowerDisplay = totalMw > 0 ? $"{totalMw / 1000.0:F2}W" : "";
+        OnPropertyChanged(nameof(HasTotalPower));
 
         // GPU frequency
-        GpuFreqDisplay = info.GpuFreq > 0 ? $"{info.GpuFreq:F0} MHz" : "";
+        GpuFreqDisplay = FormatFrequency(info.GpuFreq);
 
         // GPU
         UpdateCollection(GpuList, info.Gpus);
@@ -318,6 +325,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         // Temperature charts
         UpdateTemperatureCharts(info.CpuTemperature, info.GpuTemperature);
+
+        // Temperature sensors
+        UpdateCollection(Temperatures, info.Temperatures);
+        OnPropertyChanged(nameof(HasTemperatureData));
 
         // TPM - 确保不为 null
         TpmInfo = info.Tpm ?? new TpmData { Manufacturer = "", Status = "未检测到" };
@@ -505,7 +516,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private string FormatFrequency(double frequency)
     {
-        if (frequency <= 0) return "N/A";
+        if (double.IsNaN(frequency) || frequency <= 0) return "N/A";
         return $"{frequency:F0} MHz";
     }
 
@@ -597,6 +608,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string _compressedMemory = "";
 
     [ObservableProperty]
+    private string _swapUsedDisplay = "";
+
+    [ObservableProperty]
+    private string _swapTotalDisplay = "";
+
+    public bool HasSwap { get; set; }
+
+    [ObservableProperty]
     private double _memoryUsed;
 
     [ObservableProperty]
@@ -623,6 +642,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _anePowerDisplay = "";
+
+    [ObservableProperty]
+    private string _totalPowerDisplay = "";
+
+    public bool HasTotalPower => !string.IsNullOrEmpty(TotalPowerDisplay);
 
     // GPU frequency display
     [ObservableProperty]
@@ -760,6 +784,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     #region Temperature Chart Data
     public ObservableCollection<double> CpuTempData { get; } = new();
     public ObservableCollection<double> GpuTempData { get; } = new();
+
+    public ObservableCollection<TemperatureData> Temperatures { get; } = new();
+    public bool HasTemperatureData => Temperatures.Count > 0;
     #endregion
 
     public void Dispose()

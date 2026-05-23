@@ -67,6 +67,8 @@ namespace AvaloniaUI.Models
         public ulong UsedMemory { get; set; }
         public ulong AvailableMemory { get; set; }
         public ulong CompressedMemory { get; set; }
+        public ulong SwapUsed { get; set; }
+        public ulong SwapTotal { get; set; }
         public uint RamSpeed { get; set; }
         public string RamType { get; set; } = "";
 
