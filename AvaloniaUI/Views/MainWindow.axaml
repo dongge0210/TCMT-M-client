@@ -179,8 +179,7 @@
                                 <TextBlock Text="GPU" Foreground="#FF666666" FontSize="10"/>
                                 <TextBlock Text="{Binding GpuPowerDisplay}" Foreground="#FFB3B3B3" FontSize="11"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="2"
-                                        IsVisible="{Binding AnePowerDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <StackPanel Grid.Column="2">
                                 <TextBlock Text="ANE" Foreground="#FF666666" FontSize="10"/>
                                 <TextBlock Text="{Binding AnePowerDisplay}" Foreground="#FFB3B3B3" FontSize="11"/>
                             </StackPanel>

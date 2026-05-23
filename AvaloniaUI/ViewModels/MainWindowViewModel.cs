@@ -247,7 +247,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Power (mW → W)
         CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F2}W" : "";
         GpuPowerDisplay = info.GpuPower > 0 ? $"{info.GpuPower / 1000.0:F2}W" : "";
-        AnePowerDisplay = info.AnePower > 0 ? $"{info.AnePower / 1000.0:F2}W" : "";
+        AnePowerDisplay = $"{info.AnePower / 1000.0:F2}W";
         var totalMw = info.CpuPower + info.GpuPower + info.AnePower;
         TotalPowerDisplay = totalMw > 0 ? $"{totalMw / 1000.0:F2}W" : "";
         OnPropertyChanged(nameof(HasTotalPower));
@@ -326,8 +326,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Temperature charts
         UpdateTemperatureCharts(info.CpuTemperature, info.GpuTemperature);
 
-        // Temperature sensors
-        UpdateCollection(Temperatures, info.Temperatures);
+        // Temperature sensors (filter out invalid/empty entries)
+        var validTemps = info.Temperatures
+            .Where(t => t.Temperature > 0 && !string.IsNullOrWhiteSpace(t.SensorName))
+            .ToList();
+        UpdateCollection(Temperatures, validTemps);
         OnPropertyChanged(nameof(HasTemperatureData));
 
         // TPM - 确保不为 null
