@@ -44,14 +44,12 @@ public partial class DashboardViewModel : ViewModelBase
         CpuName = info.CpuName;
         RamInfo = $"{FormatUtil.FormatBytes(info.TotalMemory)} {info.RamType}";
 
-        // Fast sync of collections
         Disks.Clear();
         foreach (var d in info.Disks) Disks.Add(d);
         
         NetworkAdapters.Clear();
         foreach (var a in info.Adapters) NetworkAdapters.Add(a);
         
-        // Filter out inactive sensors (0°C)
         Temperatures.Clear();
         foreach (var t in info.Temperatures.Where(t => t.Temperature > 0)) 
             Temperatures.Add(t);
@@ -61,5 +59,8 @@ public partial class DashboardViewModel : ViewModelBase
         AnePowerDisplay = info.AnePower > 0 ? $"{info.AnePower / 1000.0:F2}W" : "";
         var totalMw = info.CpuPower + info.GpuPower + info.AnePower;
         TotalPowerDisplay = totalMw > 0 ? $"{totalMw / 1000.0:F2}W" : "";
+        
+        // Ensure UI updates are notified
+        OnPropertyChanged(string.Empty); 
     }
 }

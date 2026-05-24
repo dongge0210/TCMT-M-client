@@ -507,9 +507,9 @@ void TuiApp::Run() {
             break;
         }
 
-        if (rows < 10 || cols < 40) {
+        if (rows < 10 || cols < 20) {
             clear();
-            mvprintw(0, 0, "Terminal too small (min 40x10). Current: %dx%d", cols, rows);
+            mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
