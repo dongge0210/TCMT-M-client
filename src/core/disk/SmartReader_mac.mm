@@ -45,15 +45,56 @@ static io_service_t FindNVMeController(io_service_t media) {
 
     io_registry_entry_t parent;
     while ((parent = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
-        if (IOObjectConformsTo(parent, "IONVMeController")) {
-            CFTypeRef prop = IORegistryEntryCreateCFProperty(parent,
+        char className[128] = {};
+        IOObjectGetClass(parent, className);
+        Logger::Info(std::string("[smart]   parent class: ") + className);
+
+        // On Apple Silicon, hierarchy is: IOMedia -> IOBlockStorageDriver -> AppleANS2Controller
+        io_service_t nvme = IO_OBJECT_NULL;
+        bool needReleaseParent = true;
+
+        if (IOObjectConformsTo(parent, "IOBlockStorageDriver")) {
+            io_iterator_t gpIter;
+            if (IORegistryEntryGetParentIterator(parent, kIOServicePlane, &gpIter) == KERN_SUCCESS) {
+                io_registry_entry_t grandparent;
+                while ((grandparent = IOIteratorNext(gpIter)) != IO_OBJECT_NULL) {
+                    char gpName[128] = {};
+                    IOObjectGetClass(grandparent, gpName);
+                    if (IOObjectConformsTo(grandparent, "IONVMeController") ||
+                        IOObjectConformsTo(grandparent, "AppleNVMeController")) {
+                        nvme = grandparent;
+                        // Release remaining entries in iterator
+                        io_registry_entry_t rest;
+                        while ((rest = IOIteratorNext(gpIter)) != IO_OBJECT_NULL)
+                            IOObjectRelease(rest);
+                        break;
+                    }
+                    IOObjectRelease(grandparent);
+                }
+                IOObjectRelease(gpIter);
+            }
+        } else if (IOObjectConformsTo(parent, "IONVMeController") ||
+                   IOObjectConformsTo(parent, "AppleNVMeController")) {
+            nvme = parent;
+            needReleaseParent = false;  // nvme is parent, don't double-release
+        }
+
+        if (nvme != IO_OBJECT_NULL) {
+            CFTypeRef prop = IORegistryEntryCreateCFProperty(nvme,
                 CFSTR(kIOPropertyNVMeSMARTCapableKey), kCFAllocatorDefault, 0);
+            bool ok = true;
             if (prop) {
-                bool ok = (CFGetTypeID(prop) == CFBooleanGetTypeID())
+                ok = (CFGetTypeID(prop) == CFBooleanGetTypeID())
                     ? CFBooleanGetValue((CFBooleanRef)prop) : true;
                 CFRelease(prop);
-                if (ok) { found = parent; break; }
             }
+            if (ok) {
+                found = nvme;
+                if (needReleaseParent) IOObjectRelease(parent);
+                Logger::Info("[smart] Found NVMe controller");
+                break;
+            }
+            if (nvme != parent) IOObjectRelease(nvme);
         }
         IOObjectRelease(parent);
     }
