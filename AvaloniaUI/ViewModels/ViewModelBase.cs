@@ -7,6 +7,8 @@ namespace AvaloniaUI.ViewModels
     {
         [ObservableProperty]
         private string _title = "";
+
+        public string Title { get => _title; set => SetProperty(ref _title, value); }
         
         public virtual void Update(SystemInfo info) { }
     }
