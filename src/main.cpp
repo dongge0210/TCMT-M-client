@@ -1679,7 +1679,7 @@ int main(int argc, char* argv[]) {
                         if (tuiData.physicalDisks[di].temperature > 0) {
                             std::string label = tuiData.physicalDisks[di].diskType;
                             if (label.empty()) label = "Disk";
-                            if (tuiData.physicalDisks.size() > 1) label += " " + std::to_string(di);
+                            if (tuiData.physicalDisks.size() > 1) label += " " + std::to_string(di + 1);
                             tuiData.temperatures.push_back({label, tuiData.physicalDisks[di].temperature});
                         }
                     }

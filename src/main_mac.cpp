@@ -818,7 +818,7 @@ int main(int argc, char* argv[]) {
                         // Trim null padding from WCHAR
                         label = label.c_str();
                         if (label.empty()) label = "Disk";
-                        if (cachedSmart.size() > 1) label += " " + std::to_string(di);
+                        if (cachedSmart.size() > 1) label += " " + std::to_string(di + 1);
                         data.temperatures.push_back({label, cachedSmart[di].temperature});
                     }
                 }
