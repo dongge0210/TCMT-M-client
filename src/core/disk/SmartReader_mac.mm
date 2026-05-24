@@ -208,24 +208,32 @@ static const WCHAR* GetSmartAttrDesc(uint8_t id) {
 // ====================================================================
 // NVMe SMART
 // ====================================================================
+static FILE* sdbg() { static FILE* f = fopen("/tmp/smart_debug.log", "w"); if (f) setbuf(f, NULL); return f; }
 
 static bool ReadNVMeSmart(int diskIndex, PhysicalDiskSmartData &out) {
     char bsd[32];
     snprintf(bsd, sizeof(bsd), "disk%d", diskIndex);
 
     io_service_t media = GetIOMediaForBSD(bsd);
-    if (media == IO_OBJECT_NULL) return false;
+    if (media == IO_OBJECT_NULL) {
+        fprintf(sdbg(), "[smart] NVMe: GetIOMediaForBSD(%s) returned NULL\n", bsd);
+        return false;
+    }
 
     io_service_t nvmeCtrl = FindNVMeController(media);
     IOObjectRelease(media);
-    if (nvmeCtrl == IO_OBJECT_NULL) return false;
+    if (nvmeCtrl == IO_OBJECT_NULL) {
+        fprintf(sdbg(), "[smart] NVMe: FindNVMeController(%s) returned NULL\n", bsd);
+        return false;
+    }
 
     IOCFPlugInInterface **plugin = nullptr;
     SInt32 score = 0;
     bool ok = false;
 
-    if (IOCreatePlugInInterfaceForService(nvmeCtrl, kIONVMeSMARTUserClientTypeID,
-                                           kIOCFPlugInInterfaceID, &plugin, &score) == kIOReturnSuccess && plugin) {
+    kern_return_t kr = IOCreatePlugInInterfaceForService(nvmeCtrl, kIONVMeSMARTUserClientTypeID,
+                                           kIOCFPlugInInterfaceID, &plugin, &score);
+    if (kr == kIOReturnSuccess && plugin) {
         IONVMeSMARTInterface **iface = nullptr;
         HRESULT hr = (*plugin)->QueryInterface(plugin,
             CFUUIDGetUUIDBytes(kIONVMeSMARTInterfaceID), (void**)&iface);
@@ -271,13 +279,20 @@ static bool ReadNVMeSmart(int diskIndex, PhysicalDiskSmartData &out) {
                     u"通电时间", u"NVMe 盘累计通电运行小时数");
 
                 ok = true;
+            } else {
+                fprintf(sdbg(), "[smart] NVMe: SMARTReadData failed for %s\n", bsd);
             }
             (*iface)->Release(iface);
+        } else {
+            fprintf(sdbg(), "[smart] NVMe: QueryInterface failed for %s hr=0x%X\n", bsd, (unsigned)hr);
         }
         IODestroyPlugInInterface(plugin);
+    } else {
+        fprintf(sdbg(), "[smart] NVMe: IOCreatePlugInInterface failed for %s kr=%d\n", bsd, kr);
     }
 
     IOObjectRelease(nvmeCtrl);
+    fprintf(sdbg(), "[smart] NVMe: returning %s for %s\n", ok ? "OK" : "FAIL", bsd);
     return ok;
 }
 
@@ -400,10 +415,12 @@ static bool ReadATASmart(int diskIndex, PhysicalDiskSmartData &out) {
 // ====================================================================
 
 extern "C" bool SmartReaderMacRead(int diskIndex, PhysicalDiskSmartData &smartData) {
+    fprintf(sdbg(), "[smart] SmartReaderMacRead(disk%d) called\n", diskIndex);
     if (ReadNVMeSmart(diskIndex, smartData)) {
         wcs_ncopy(smartData.diskType, u"SSD", 15);
         return true;
     }
+    fprintf(sdbg(), "[smart] NVMe failed for disk%d, trying ATA...\n", diskIndex);
 
     if (ReadATASmart(diskIndex, smartData)) {
         // isSSD is set inside ReadATASmart when wear-leveling attrs are found.

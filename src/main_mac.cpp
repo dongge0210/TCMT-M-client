@@ -758,21 +758,21 @@ int main(int argc, char* argv[]) {
             std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
             data.timestamp = buf;
 
-            // Physical disks (SMART) — cache once, then feed TUI every loop
-            {
-                static std::vector<PhysicalDiskSmartData> cachedSmart;
-                static bool smartDone = false;
-                if (!smartDone) {
-                    try {
-                        SystemInfo tmp;
-                        DiskInfo().CollectSmartData(tmp);
-                        cachedSmart = std::move(tmp.physicalDisks);
-                        smartDone = true;
-                        Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks");
-                    } catch (...) {
-                        Logger::Error("SMART collection threw exception (need root?)");
-                    }
+            // Physical disks (SMART) — cache once, then feed TUI and IPC
+            static std::vector<PhysicalDiskSmartData> cachedSmart;
+            static bool smartDone = false;
+            if (!smartDone) {
+                try {
+                    SystemInfo tmp;
+                    DiskInfo().CollectSmartData(tmp);
+                    cachedSmart = std::move(tmp.physicalDisks);
+                    smartDone = true;
+                    Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks,"
+                        " first attrCount=" + (cachedSmart.empty() ? "0" : std::to_string(cachedSmart[0].attributeCount)));
+                } catch (...) {
+                    Logger::Error("SMART collection threw exception (need root?)");
                 }
+            }
                 data.physicalDisks.clear();
                 data.physicalDisks.reserve(cachedSmart.size());
                 for (const auto& src : cachedSmart) {
@@ -805,7 +805,6 @@ int main(int argc, char* argv[]) {
                     }
                     data.physicalDisks.push_back(std::move(pi));
                 }
-            }
 
             // Update TUI
             tuiApp.UpdateData(data);
@@ -896,22 +895,12 @@ int main(int argc, char* argv[]) {
                             b->temperatures[ti].value = static_cast<float>(data.temperatures[ti].second);
                             b->tempCount++;
                         }
-                        // Physical disks (SMART) — shared memory for IPC
+                        // Physical disks (SMART) — reuse TUI cache for IPC
                         {
-                            static std::vector<PhysicalDiskSmartData> cachedSmartIpc;
-                            static bool smartDoneIpc = false;
-                            if (!smartDoneIpc) {
-                                try {
-                                    SystemInfo tmp;
-                                    DiskInfo().CollectSmartData(tmp);
-                                    cachedSmartIpc = std::move(tmp.physicalDisks);
-                                    smartDoneIpc = true;
-                                } catch (...) {}
-                            }
                             b->physDiskCount = 0;
-                            for (size_t pi = 0; pi < std::min(cachedSmartIpc.size(), size_t(8)); ++pi) {
+                            for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
                                 auto& pd = b->physicalDisks[pi];
-                                const auto& src = cachedSmartIpc[pi];
+                                const auto& src = cachedSmart[pi];
                                 for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
                                     pd.model[k] = static_cast<char>(src.model[k]);
                                 pd.model[63] = '\0';
