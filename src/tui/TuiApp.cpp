@@ -507,7 +507,7 @@ void TuiApp::Run() {
             break;
         }
 
-        if (rows < 10 || cols < 20) {
+        if (rows < 24 || cols < 80) {
             clear();
             mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
             refresh();
