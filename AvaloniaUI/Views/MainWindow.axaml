@@ -33,11 +33,17 @@
                             <Setter Property="Padding" Value="15,10"/>
                             <Setter Property="CornerRadius" Value="8"/>
                             <Setter Property="Margin" Value="10,2"/>
+                            <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="Background" Value="#FF2A2A2A"/>
+                        </Style>
+                        <Style Selector="ListBoxItem:selected">
+                            <Setter Property="Background" Value="#FF4CAF50"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Style>
                     </ListBox.Styles>
                     <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}"/>
+                        <DataTemplate x:DataType="vm:ViewModelBase">
+                            <TextBlock Text="{Binding Title}" Foreground="White"/>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
