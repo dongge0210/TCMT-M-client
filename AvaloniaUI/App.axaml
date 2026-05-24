@@ -18,6 +18,7 @@
     <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
     <converters:BoolInvertConverter x:Key="BoolInvertConverter"/>
     <converters:PercentToWarningColorConverter x:Key="PercentToWarningColorConverter"/>
+    <converters:PercentToAngleConverter x:Key="PercentToAngleConverter"/>
   </Application.Resources>
 
   <TrayIcon.Icons>

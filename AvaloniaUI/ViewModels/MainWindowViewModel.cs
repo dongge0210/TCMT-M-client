@@ -15,6 +15,9 @@ namespace AvaloniaUI.ViewModels;
 
 public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
+    [ObservableProperty]
+    private ViewModelBase? _currentPage;
+
     public bool IsMacOS => OperatingSystem.IsMacOS();
     public bool IsNotMacOS => !OperatingSystem.IsMacOS();
     private IPCService? _ipcService;
@@ -30,6 +33,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public MainWindowViewModel()
     {
+        _currentPage = new DashboardViewModel();
         // Initialize placeholders BEFORE IPC starts — DataReady may fire synchronously
         SelectedGpu = new GpuData { Name = "等待数据..." };
         SelectedNetwork = new NetworkAdapterData { Name = "等待数据..." };
@@ -215,6 +219,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void UpdateSystemData(SystemInfo info)
     {
+        if (CurrentPage is DashboardViewModel dashboard)
+        {
+            dashboard.CpuUsage = info.CpuUsage;
+            dashboard.MemoryPercent = info.TotalMemory > 0 ? (double)info.UsedMemory / info.TotalMemory * 100 : 0;
+            dashboard.CpuName = info.CpuName;
+            dashboard.RamInfo = $"{FormatBytes(info.TotalMemory)} {info.RamType}";
+
+            // Update collections (simple sync for now)
+            UpdateCollection(dashboard.Disks, info.Disks);
+            UpdateCollection(dashboard.NetworkAdapters, info.Adapters);
+            UpdateCollection(dashboard.Temperatures, info.Temperatures);
+
+            dashboard.CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F2}W" : "";
+            dashboard.GpuPowerDisplay = info.GpuPower > 0 ? $"{info.GpuPower / 1000.0:F2}W" : "";
+            dashboard.AnePowerDisplay = info.AnePower > 0 ? $"{info.AnePower / 1000.0:F2}W" : "";
+            var totalMw = info.CpuPower + info.GpuPower + info.AnePower;
+            dashboard.TotalPowerDisplay = totalMw > 0 ? $"{totalMw / 1000.0:F2}W" : "";
+        }
+
         // CPU
         CpuName = string.IsNullOrWhiteSpace(info.CpuName) ? "未知CPU" : info.CpuName;
         PhysicalCores = info.PhysicalCores;

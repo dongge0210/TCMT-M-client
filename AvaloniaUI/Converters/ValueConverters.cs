@@ -33,6 +33,25 @@ public class NullToDefaultConverter : IValueConverter
     }
 }
 
+public class PercentToAngleConverter : IValueConverter
+{
+    public double MaxAngle { get; set; } = 260;
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is double percent)
+        {
+            return (percent / 100.0) * MaxAngle;
+        }
+        return 0.0;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
 public class BoolToColorConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
