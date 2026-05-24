@@ -1677,9 +1677,8 @@ int main(int argc, char* argv[]) {
                     // Add physical disk temps to unified temperature list
                     for (size_t di = 0; di < tuiData.physicalDisks.size(); ++di) {
                         if (tuiData.physicalDisks[di].temperature > 0) {
-                            std::string label = tuiData.physicalDisks[di].diskType;
+                            std::string label = tuiData.physicalDisks[di].model;
                             if (label.empty()) label = "Disk";
-                            if (tuiData.physicalDisks.size() > 1) label += " " + std::to_string(di + 1);
                             tuiData.temperatures.push_back({label, tuiData.physicalDisks[di].temperature});
                         }
                     }

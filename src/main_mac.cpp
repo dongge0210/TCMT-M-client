@@ -814,11 +814,8 @@ int main(int argc, char* argv[]) {
                 // Add physical disk temps to unified temperature list
                 for (size_t di = 0; di < cachedSmart.size(); ++di) {
                     if (cachedSmart[di].temperature > 0) {
-                        std::string label = std::string(cachedSmart[di].diskType, cachedSmart[di].diskType + 15);
-                        // Trim null padding from WCHAR
-                        label = label.c_str();
+                        std::string label = w2u(cachedSmart[di].model, 63);
                         if (label.empty()) label = "Disk";
-                        if (cachedSmart.size() > 1) label += " " + std::to_string(di + 1);
                         data.temperatures.push_back({label, cachedSmart[di].temperature});
                     }
                 }
