@@ -12,7 +12,6 @@
 
 #include "SmartReader.h"
 #include "../DataStruct/DataStruct.h"
-#include "../Utils/Logger.h"
 
 #include <algorithm>
 #include <cwchar>
