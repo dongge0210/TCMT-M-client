@@ -484,6 +484,12 @@ void TuiApp::Run() {
     InitColors();
 
     getmaxyx(stdscr, termRows_, termCols_);
+    if (termCols_ < 130 || termRows_ < 40) {
+        int r = (std::max)(termRows_, 40);
+        int c = (std::max)(termCols_, 130);
+        resize_term(r, c);
+        getmaxyx(stdscr, termRows_, termCols_);
+    }
 
     while (running_.load()) {
         int rows = termRows_, cols = termCols_;
