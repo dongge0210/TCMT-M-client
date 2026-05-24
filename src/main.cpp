@@ -1849,7 +1849,6 @@ int main(int argc, char* argv[]) {
 
                         historyLogger.WriteBatch(snapshots);
                         }
-                    }
 
                     loopCounter++;
                     
