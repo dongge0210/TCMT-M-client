@@ -775,22 +775,29 @@ int main(int argc, char* argv[]) {
             }
                 data.physicalDisks.clear();
                 data.physicalDisks.reserve(cachedSmart.size());
+                // WCHAR (char16_t) → UTF-8 helper
+                auto w2u = [](const WCHAR* s, int maxLen) -> std::string {
+                    std::string out;
+                    for (int i = 0; i < maxLen && s[i] != u'\0'; ++i) {
+                        uint16_t cp = static_cast<uint16_t>(s[i]);
+                        if (cp < 0x80) out += (char)cp;
+                        else if (cp < 0x800) { out += (char)(0xC0|(cp>>6)); out += (char)(0x80|(cp&0x3F)); }
+                        else { out += (char)(0xE0|(cp>>12)); out += (char)(0x80|((cp>>6)&0x3F)); out += (char)(0x80|(cp&0x3F)); }
+                    }
+                    return out;
+                };
                 for (const auto& src : cachedSmart) {
                     tcmt::TuiData::PhysicalDiskInfo pi;
-                    for (int k = 0; k < 63 && src.model[k] != u'\0'; ++k)
-                        pi.model += static_cast<char>(src.model[k]);
-                    for (int k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
-                        pi.serial += static_cast<char>(src.serialNumber[k]);
+                    pi.model = w2u(src.model, 63);
+                    pi.serial = w2u(src.serialNumber, 63);
                     pi.capacity = src.capacity;
                     pi.temperature = src.temperature;
                     pi.healthPct = src.healthPercentage;
                     pi.smartSupported = src.smartSupported;
                     pi.powerOnHours = src.powerOnHours;
                     pi.wearLeveling = src.wearLeveling;
-                    for (int k = 0; k < 15 && src.diskType[k] != u'\0'; ++k)
-                        pi.diskType += static_cast<char>(src.diskType[k]);
-                    for (int k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
-                        pi.interfaceType += static_cast<char>(src.interfaceType[k]);
+                    pi.diskType = w2u(src.diskType, 15);
+                    pi.interfaceType = w2u(src.interfaceType, 15);
                     pi.attributes.clear();
                     pi.attributes.reserve(src.attributeCount);
                     for (int ai = 0; ai < src.attributeCount; ++ai) {
@@ -799,8 +806,7 @@ int main(int argc, char* argv[]) {
                         ai2.current = src.attributes[ai].current;
                         ai2.worst = src.attributes[ai].worst;
                         ai2.rawValue = src.attributes[ai].rawValue;
-                        for (int k = 0; k < 63 && src.attributes[ai].name[k] != u'\0'; ++k)
-                            ai2.name += static_cast<char>(src.attributes[ai].name[k]);
+                        ai2.name = w2u(src.attributes[ai].name, 63);
                         pi.attributes.push_back(std::move(ai2));
                     }
                     data.physicalDisks.push_back(std::move(pi));
