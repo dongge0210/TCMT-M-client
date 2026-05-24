@@ -26,6 +26,7 @@
 
                 <!-- 导航菜单 -->
                 <ListBox Grid.Row="1" Background="Transparent" BorderThickness="0"
+                         ItemsSource="{Binding Pages}"
                          SelectedItem="{Binding CurrentPage}">
                     <ListBox.Styles>
                         <Style Selector="ListBoxItem">
@@ -34,8 +35,11 @@
                             <Setter Property="Margin" Value="10,2"/>
                         </Style>
                     </ListBox.Styles>
-                    <!-- Here we will add items. For now, just the Dashboard -->
-                    <vm:DashboardViewModel Title="Dashboard"/>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
                 </ListBox>
 
                 <!-- 底部设置/状态 -->

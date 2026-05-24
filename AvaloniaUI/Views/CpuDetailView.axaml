@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
+             x:Class="AvaloniaUI.Views.CpuDetailView"
+             x:DataType="vm:CpuDetailViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <TextBlock Grid.Row="0" Text="CPU Deep Dive" FontSize="24" FontWeight="Bold" Margin="20"/>
+        <StackPanel Grid.Row="1" Margin="20" Spacing="10">
+            <TextBlock Text="{Binding CpuName}" FontSize="18"/>
+            <TextBlock Text="{Binding CpuUsage, StringFormat='Usage: {0:F1}%'}"/>
+            <TextBlock Text="{Binding CpuTemperature, StringFormat='Temperature: {0:F1}°C'}"/>
+            <TextBlock Text="{Binding CpuFrequency, StringFormat='Clock: {0}'}"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

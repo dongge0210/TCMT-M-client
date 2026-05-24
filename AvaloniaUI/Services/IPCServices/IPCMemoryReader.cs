@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Threading;
 using Serilog;
@@ -64,10 +65,10 @@ public class IPCMemoryReader : IDisposable
                     return false;
                 }
 
-                if (OperatingSystem.IsMacOS())
-                    return OpenMacOS();
-                else
+                if (OperatingSystem.IsWindows())
                     return OpenWindows();
+                else
+                    return OpenUnix(); // Handles both macOS and Linux
             }
             catch (Exception ex)
             {
@@ -90,7 +91,9 @@ public class IPCMemoryReader : IDisposable
             {
                 try
                 {
+#pragma warning disable CA1416 // Validate platform compatibility locally
                     _mmf = MemoryMappedFile.OpenExisting(name, MemoryMappedFileRights.Read);
+#pragma warning restore CA1416
                     _accessor = _mmf.CreateViewAccessor(0, size, MemoryMappedFileAccess.Read);
                     Log.Information("IPC Memory: Opened {Name}, size={Size}", name, size);
                     return true;
@@ -107,9 +110,10 @@ public class IPCMemoryReader : IDisposable
         }
     }
 
-    private bool OpenMacOS()
+    private bool OpenUnix()
     {
-        // C++ IPCServer creates shm via shm_open + mmap
+        // C++ IPCServer creates shm via shm_open + mmap (POSIX)
+        // This works on both macOS and Linux.
         _shmFd = shm_open(IPCConstants.SharedMemoryPath, O_RDONLY, 0);
         if (_shmFd != -1)
         {
@@ -136,12 +140,12 @@ public class IPCMemoryReader : IDisposable
         }
 
         // Fallback: try reading as a regular file (compatibility)
-        return OpenMacOSFallback();
+        return OpenUnixFallback();
     }
 
-    private bool OpenMacOSFallback()
+    private bool OpenUnixFallback()
     {
-        string path = "/tmp/tcmt_shm.dat";
+        string path = OperatingSystem.IsMacOS() ? "/tmp/tcmt_shm.dat" : "/dev/shm/tcmt_shm.dat";
         if (!File.Exists(path))
         {
             Log.Error("IPC Memory: Fallback file {Path} not found either", path);
@@ -503,7 +507,7 @@ public class IPCMemoryReader : IDisposable
     {
         lock (_lock)
         {
-            if (OperatingSystem.IsMacOS())
+            if (!OperatingSystem.IsWindows())
             {
                 if (_shmPtr != IntPtr.Zero && _shmPtr != MAP_FAILED)
                 {

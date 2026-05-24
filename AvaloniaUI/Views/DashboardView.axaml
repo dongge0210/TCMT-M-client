@@ -32,8 +32,8 @@
             <StackPanel Spacing="20" HorizontalAlignment="Center">
               <TextBlock Text="PROCESSOR" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
               <Panel Width="160" Height="160">
-                <Arc Width="140" Height="140" Stroke="#FF333333" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeCap="Round"/>
-                <Arc Width="140" Height="140" Stroke="#FF4CAF50" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="#FF333333" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="#FF4CAF50" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F0}%}" FontSize="32" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="LOAD" FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
@@ -48,8 +48,8 @@
             <StackPanel Spacing="20" HorizontalAlignment="Center">
               <TextBlock Text="MEMORY" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
               <Panel Width="160" Height="160">
-                <Arc Width="140" Height="140" Stroke="#FF333333" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeCap="Round"/>
-                <Arc Width="140" Height="140" Stroke="#FF2196F3" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="#FF333333" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="#FF2196F3" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                     <TextBlock Text="{Binding MemoryPercent, StringFormat={}{0:F0}%}" FontSize="32" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="USED" FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
@@ -74,8 +74,8 @@
                         <TextBlock Text="{Binding DisplayName}" Foreground="White" FontSize="14" FontWeight="Bold"/>
                         <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="#FF4CAF50" FontSize="12" FontWeight="Bold"/>
                       </Grid>
-                      <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="4" Foreground="#FF4CAF50" Background="#FF333333" CornerRadius="2"/>
-                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{0} Total'}" Foreground="#FF666666" FontSize="11"/>
+                      <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="4" Foreground="#FF4CAF50" Background="#FF333333"/>
+                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} Total'}" Foreground="#FF666666" FontSize="11"/>
                     </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
