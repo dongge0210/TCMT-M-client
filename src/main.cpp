@@ -16,9 +16,13 @@ Please ignore this warning - the project structure doesn't support this scenario
 #endif
 #include <winsock2.h>
 #include <windows.h>
-#include <initguid.h>
-#include <usbiodef.h>
 #include <shellapi.h>
+
+// GUID_DEVINTERFACE_USB_HUB is not defined in any .cpp in this project;
+// define it here so the linker can find it.
+#include <guiddef.h>
+DEFINE_GUID(GUID_DEVINTERFACE_USB_HUB,
+    0xf18a0e88, 0xc30c, 0x11d0, 0x88, 0x15, 0x00, 0xa0, 0xc9, 0x06, 0xbe, 0xd8);
 #include <sddl.h>
 #include <Aclapi.h>
 #include <conio.h>
