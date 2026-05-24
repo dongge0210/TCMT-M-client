@@ -20,12 +20,45 @@
         </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid ColumnDefinitions="240,*">
-        <Border Grid.Column="0" Background="#FF1E1E1E" BorderThickness="0,0,1,0" BorderBrush="#FF333333">
-            <StackPanel Margin="0,30,0,0">
-                <TextBlock Text="TCMT" Margin="20,0" FontSize="24" FontWeight="Bold" Foreground="#FF4CAF50"/>
-                <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage}" 
-                         Background="Transparent" Margin="10">
+    <DockPanel>
+        <!-- 顶部标题栏 -->
+        <Border DockPanel.Dock="Top" Background="#FF1E1E1E" Padding="15,10" BorderBrush="#FF333333" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding WindowTitle}" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                    <Border Background="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}" CornerRadius="12" Padding="10,4">
+                        <TextBlock Text="{Binding ConnectionStatus}" Foreground="White" FontSize="11"/>
+                    </Border>
+                    <Button Content="重连" Command="{Binding ReconnectCommand}" FontSize="11" Padding="8,4"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 底部状态栏 -->
+        <Border DockPanel.Dock="Bottom" Background="#FF1E1E1E" Padding="15,5" BorderBrush="#FF333333" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="{Binding OsVersion}" Foreground="#FF666666" FontSize="11"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="15">
+                    <StackPanel Orientation="Horizontal" IsVisible="{Binding HasBattery}">
+                        <TextBlock Text="{Binding BatteryPercent, StringFormat={}{0}%}" Foreground="#FF4CAF50" FontSize="11"/>
+                        <TextBlock Text="{Binding BatteryLabel, StringFormat=' {0}'}" Foreground="#FF666666" FontSize="11"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding LastUpdate, StringFormat={}{0:HH:mm:ss}}" Foreground="#FF666666" FontSize="11"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 左侧侧边栏 -->
+        <Border DockPanel.Dock="Left" Width="240" Background="#FF1E1E1E" BorderBrush="#FF333333" BorderThickness="0,0,1,0">
+            <DockPanel Margin="0,30,0,0">
+                <TextBlock DockPanel.Dock="Top" Text="TCMT" Margin="20,0" FontSize="24" FontWeight="Bold" Foreground="#FF4CAF50"/>
+
+                <StackPanel DockPanel.Dock="Bottom" Margin="15" Spacing="10">
+                    <Button Content="设置" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#FF2A2A2A" Foreground="White"/>
+                    <Button Content="退出" Command="{Binding QuitCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Background="#FF442222" Foreground="#FFFF8888"/>
+                </StackPanel>
+
+                <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage}" Background="Transparent" Margin="10">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:ViewModelBase">
                             <Border Padding="15,10" CornerRadius="8">
@@ -34,8 +67,11 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-            </StackPanel>
+            </DockPanel>
         </Border>
-        <ContentControl Grid.Column="1" Content="{Binding CurrentPage}"/>
-    </Grid>
+
+        <!-- 右侧主区域 -->
+        <ContentControl Content="{Binding CurrentPage}"/>
+    </DockPanel>
 </Window>
+
