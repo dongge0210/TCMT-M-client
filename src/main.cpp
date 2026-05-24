@@ -16,6 +16,8 @@ Please ignore this warning - the project structure doesn't support this scenario
 #endif
 #include <winsock2.h>
 #include <windows.h>
+#include <initguid.h>
+#include <usbiodef.h>
 #include <shellapi.h>
 #include <sddl.h>
 #include <Aclapi.h>
