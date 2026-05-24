@@ -813,6 +813,19 @@ int main(int argc, char* argv[]) {
             if (ipcServer.IsRunning()) {
                     auto* b = static_cast<tcmt::ipc::IPCDataBlock*>(ipcServer.GetShmPtr());
                     if (b) {
+                        static int dumpN = 0;
+                        if (dumpN < 3) {
+                            for (const auto& pd : data.physicalDisks) {
+                                Logger::Info("=== SMART DISK: " + pd.model + " ===");
+                                Logger::Info("  temp=" + std::to_string(pd.temperature) + "C health=" + std::to_string(pd.healthPct)
+                                    + "% hours=" + std::to_string(pd.powerOnHours) + " wear=" + std::to_string(pd.wearLeveling));
+                                for (const auto& a : pd.attributes)
+                                    Logger::Info("  [" + std::to_string(a.id) + "] " + a.name
+                                        + " cur=" + std::to_string(a.current) + " worst=" + std::to_string(a.worst)
+                                        + " raw=" + std::to_string(a.rawValue));
+                            }
+                            dumpN++;
+                        }
                         // seqlock: mark write in progress (odd)
                         b->writeSequence++;
                         std::atomic_thread_fence(std::memory_order_release);

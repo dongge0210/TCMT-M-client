@@ -27,7 +27,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _disposed = false;
     private const int MaxChartPoints = 60;
     private int _consecutiveErrors = 0;
-    private int _dumpCount = 0;
     private const int MaxConsecutiveErrors = 5;
 
     // Track previous selections
@@ -36,9 +35,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public MainWindowViewModel()
     {
-        Pages.Add(new DashboardViewModel());
-        Pages.Add(new CpuDetailViewModel());
-        Pages.Add(new StorageDetailViewModel());
+        var dash = new DashboardViewModel();
+        dash.Title = "Dashboard";
+        var cpu = new CpuDetailViewModel();
+        cpu.Title = "CPU Details";
+        var storage = new StorageDetailViewModel();
+        storage.Title = "Storage & SMART";
+        
+        Pages.Add(dash);
+        Pages.Add(cpu);
+        Pages.Add(storage);
         
         CurrentPage = Pages[0];
         // Initialize placeholders BEFORE IPC starts — DataReady may fire synchronously
@@ -229,28 +235,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Broadcast update on the UI thread to prevent thread contention
         Dispatcher.UIThread.Post(() => {
             CurrentPage?.Update(info);
-
-            if (_dumpCount < 2) {
-                Log.Information("=== IPC DUMP #{N} ===", _dumpCount);
-                Log.Information("CPU: {N} Phys={Ph} Log={Lg} P={P} E={E} Use={U} Temp={T}C",
-                    info.CpuName, info.PhysicalCores, info.LogicalCores, info.PerformanceCores, info.EfficiencyCores, info.CpuUsage, info.CpuTemperature);
-                Log.Information("Freq: P-core={PF} E-core={EF} Base={BF}",
-                    info.PerformanceCoreFreq, info.EfficiencyCoreFreq, info.CpuBaseFreq);
-                Log.Information("Mem: Total={T} Used={U} Avail={A} Comp={C} Swap={SU}/{ST} {RT}-{RS}",
-                    info.TotalMemory, info.UsedMemory, info.AvailableMemory, info.CompressedMemory, info.SwapUsed, info.SwapTotal, info.RamType, info.RamSpeed);
-                Log.Information("Power: CPU={C} GPU={G} ANE={A} mW",
-                    info.CpuPower, info.GpuPower, info.AnePower);
-                Log.Information("GPU: Name={N} Freq={F} Temp={T}C GPUs={GC}",
-                    info.GpuName, info.GpuFreq, info.GpuTemperature, info.Gpus?.Count ?? 0);
-                Log.Information("Temps: {N} sensors Disks: {D} PhysDisks: {P}",
-                    info.Temperatures?.Count ?? 0, info.Disks?.Count ?? 0, info.PhysicalDisks?.Count ?? 0);
-                foreach (var t in info.Temperatures ?? new())
-                    Log.Information("  Temp: {N}={V}C", t.SensorName, t.Temperature);
-                foreach (var pd in info.PhysicalDisks ?? new())
-                    Log.Information("  PhysDisk: {M} {S} Cap={C} Temp={T}C Health={H}% Attrs={A}",
-                        pd.Model, pd.SerialNumber, pd.Capacity, pd.Temperature, pd.HealthPercentage, pd.Attributes?.Count ?? 0);
-                _dumpCount++;
-            }
 
             // CPU
             CpuName = string.IsNullOrWhiteSpace(info.CpuName) ? "未知CPU" : info.CpuName;

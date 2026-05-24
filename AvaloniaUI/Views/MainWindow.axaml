@@ -1,116 +1,27 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
-        xmlns:controls="clr-namespace:AvaloniaUI.Controls"
-        mc:Ignorable="d"
         x:Class="AvaloniaUI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
         Height="800" Width="1200"
-        MinHeight="600" MinWidth="900"
-        WindowStartupLocation="CenterScreen"
         Background="#FF121212">
-
     <Grid ColumnDefinitions="240,*">
-        
-        <!-- 左侧侧边栏 (Sidebar) -->
-        <Border Grid.Column="0" Background="#FF1E1E1E" BorderBrush="#FF333333" BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,*,Auto">
-                <!-- Logo / Title -->
-                <StackPanel Grid.Row="0" Margin="20,30,20,30">
-                    <TextBlock Text="TCMT" FontSize="24" FontWeight="Bold" Foreground="#FF4CAF50"/>
-                    <TextBlock Text="System Monitor" FontSize="12" Foreground="#FF666666"/>
-                </StackPanel>
-
-                <!-- 导航菜单 -->
-                <ListBox Grid.Row="1" Background="Transparent" BorderThickness="0"
-                         ItemsSource="{Binding Pages}"
-                         SelectedItem="{Binding CurrentPage}">
-                    <ListBox.Styles>
-                        <Style Selector="ListBoxItem">
-                            <Setter Property="Padding" Value="15,10"/>
-                            <Setter Property="CornerRadius" Value="8"/>
-                            <Setter Property="Margin" Value="10,2"/>
-                            <Setter Property="Foreground" Value="White"/>
-                            <Setter Property="Background" Value="#FF2A2A2A"/>
-                        </Style>
-                        <Style Selector="ListBoxItem:selected">
-                            <Setter Property="Background" Value="#FF4CAF50"/>
-                            <Setter Property="Foreground" Value="White"/>
-                        </Style>
-                    </ListBox.Styles>
+        <Border Grid.Column="0" Background="#FF1E1E1E" BorderThickness="0,0,1,0" BorderBrush="#FF333333">
+            <StackPanel Margin="0,30,0,0">
+                <TextBlock Text="TCMT" Margin="20,0" FontSize="24" FontWeight="Bold" Foreground="#FF4CAF50"/>
+                <ListBox ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage}" 
+                         Background="Transparent" Margin="10">
                     <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ViewModelBase">
-                            <TextBlock Text="{Binding Title}" Foreground="White"/>
+                        <DataTemplate>
+                            <Border Padding="15,10" CornerRadius="8">
+                                <TextBlock Text="{Binding Title}" Foreground="White" FontSize="14"/>
+                            </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-
-                <!-- 底部设置/状态 -->
-                <StackPanel Grid.Row="2" Margin="15" Spacing="10">
-                    <Button Content="设置" HorizontalAlignment="Stretch" Background="Transparent"/>
-                    <Button Content="退出" Command="{Binding QuitCommand}" HorizontalAlignment="Stretch" Background="#33FF5252"/>
-                </StackPanel>
-            </Grid>
+            </StackPanel>
         </Border>
-
-        <!-- 右侧主区域 -->
-        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
-            
-            <!-- 标题栏 (TitleBar) -->
-            <Border Grid.Row="0" Background="#FF1E1E1E" Padding="15,10" BorderBrush="#FF333333" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding WindowTitle}" FontSize="14" Foreground="White"/>
-                    </StackPanel>
-                    
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-                        <Border Background="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"
-                               CornerRadius="12" Padding="10,4">
-                            <TextBlock Text="{Binding ConnectionStatus}" Foreground="White" FontSize="11"/>
-                        </Border>
-                        <Button Content="重连" Command="{Binding ReconnectCommand}" FontSize="11" Padding="8,4"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- 页面内容 (Dynamic Content) -->
-            <ContentControl Grid.Row="1" Content="{Binding CurrentPage}">
-                <ContentControl.ContentTemplate>
-                    <DataTemplate>
-                        <!-- The ViewLocator will handle this mapping -->
-                    </DataTemplate>
-                </ContentControl.ContentTemplate>
-            </ContentControl>
-
-            <!-- 等待连接遮罩 -->
-            <Border Grid.Row="1" Background="#DD121212" 
-                    IsVisible="{Binding IsConnected, Converter={StaticResource BoolInvertConverter}}">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="20">
-                    <TextBlock Text="等待连接..." FontSize="20" Foreground="#FF666666"/>
-                    <ProgressBar IsIndeterminate="True" Width="200" Foreground="#FF4CAF50"/>
-                    <Button Content="重连" Command="{Binding ReconnectCommand}" HorizontalAlignment="Center"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 底部状态栏 -->
-            <Border Grid.Row="2" Background="#FF1E1E1E" Padding="15,5" BorderBrush="#FF333333" BorderThickness="0,1,0,0">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <TextBlock Text="{Binding OsVersion}" Foreground="#FF666666" FontSize="11"/>
-                    </StackPanel>
-                    
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="15">
-                        <StackPanel Orientation="Horizontal" IsVisible="{Binding HasBattery}">
-                            <TextBlock Text="{Binding BatteryPercent, StringFormat={}{0}%}" Foreground="#FF4CAF50" FontSize="11"/>
-                            <TextBlock Text="{Binding BatteryLabel, StringFormat=' {0}'}" Foreground="#FF666666" FontSize="11"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding LastUpdate, StringFormat={}{0:HH:mm:ss}}" Foreground="#FF666666" FontSize="11"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-        </Grid>
+        <ContentControl Grid.Column="1" Content="{Binding CurrentPage}"/>
     </Grid>
 </Window>
