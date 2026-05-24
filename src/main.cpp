@@ -1674,6 +1674,15 @@ int main(int argc, char* argv[]) {
                         for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
                     }
                     tuiData.temperatures = sysInfo.temperatures;
+                    // Add physical disk temps to unified temperature list
+                    for (size_t di = 0; di < tuiData.physicalDisks.size(); ++di) {
+                        if (tuiData.physicalDisks[di].temperature > 0) {
+                            std::string label = tuiData.physicalDisks[di].diskType;
+                            if (label.empty()) label = "Disk";
+                            if (tuiData.physicalDisks.size() > 1) label += " " + std::to_string(di);
+                            tuiData.temperatures.push_back({label, tuiData.physicalDisks[di].temperature});
+                        }
+                    }
                     if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
                         auto& tpm = sysInfo.tpms[0];
                         tuiData.tpmInfo = WinUtils::WstringToString(tpm.manufacturer)

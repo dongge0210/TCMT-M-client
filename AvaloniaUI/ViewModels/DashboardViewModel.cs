@@ -51,8 +51,10 @@ public partial class DashboardViewModel : ViewModelBase
         NetworkAdapters.Clear();
         foreach (var a in info.Adapters) NetworkAdapters.Add(a);
         
+        // Filter out inactive sensors (0°C)
         Temperatures.Clear();
-        foreach (var t in info.Temperatures) Temperatures.Add(t);
+        foreach (var t in info.Temperatures.Where(t => t.Temperature > 0)) 
+            Temperatures.Add(t);
 
         CpuPowerDisplay = info.CpuPower > 0 ? $"{info.CpuPower / 1000.0:F2}W" : "";
         GpuPowerDisplay = info.GpuPower > 0 ? $"{info.GpuPower / 1000.0:F2}W" : "";

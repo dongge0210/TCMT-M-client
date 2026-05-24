@@ -811,6 +811,17 @@ int main(int argc, char* argv[]) {
                     }
                     data.physicalDisks.push_back(std::move(pi));
                 }
+                // Add physical disk temps to unified temperature list
+                for (size_t di = 0; di < cachedSmart.size(); ++di) {
+                    if (cachedSmart[di].temperature > 0) {
+                        std::string label = std::string(cachedSmart[di].diskType, cachedSmart[di].diskType + 15);
+                        // Trim null padding from WCHAR
+                        label = label.c_str();
+                        if (label.empty()) label = "Disk";
+                        if (cachedSmart.size() > 1) label += " " + std::to_string(di);
+                        data.temperatures.push_back({label, cachedSmart[di].temperature});
+                    }
+                }
 
             // Update TUI
             tuiApp.UpdateData(data);

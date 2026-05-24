@@ -69,13 +69,13 @@
               <ItemsControl ItemsSource="{Binding Disks}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Margin="0,0,0,15" Spacing="8">
+                    <StackPanel Margin="0,0,0,10" Spacing="4">
                       <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Text="{Binding DisplayName}" Foreground="White" FontSize="14" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding DisplayName}" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
                         <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="#FF4CAF50" FontSize="12" FontWeight="Bold"/>
                       </Grid>
                       <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="4" Foreground="#FF4CAF50" Background="#FF333333"/>
-                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} Total'}" Foreground="#FF666666" FontSize="11"/>
+                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} total'}" Foreground="#FF666666" FontSize="10"/>
                     </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -85,21 +85,23 @@
 
           <!-- Network Bento -->
           <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="20" Margin="12,0,0,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="20">
+            <StackPanel Spacing="15">
               <TextBlock Text="NETWORK" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
               <ItemsControl ItemsSource="{Binding NetworkAdapters}">
                   <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                          <StackPanel Spacing="15">
-                              <StackPanel Spacing="5">
-                                  <TextBlock Text="DOWNLOAD" FontSize="10" Foreground="Gray"/>
-                                  <TextBlock Text="{Binding DownloadDisplay}" FontSize="24" FontWeight="Bold" Foreground="#FF4CAF50"/>
-                              </StackPanel>
-                              <StackPanel Spacing="5">
-                                  <TextBlock Text="UPLOAD" FontSize="10" Foreground="Gray"/>
-                                  <TextBlock Text="{Binding UploadDisplay}" FontSize="24" FontWeight="Bold" Foreground="#FF2196F3"/>
-                              </StackPanel>
-                              <TextBlock Text="{Binding Name}" Foreground="#FF666666" FontSize="11" TextWrapping="Wrap"/>
+                          <StackPanel Spacing="12">
+                              <TextBlock Text="{Binding Name}" Foreground="#FFB3B3B3" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                              <Grid ColumnDefinitions="*,*">
+                                  <StackPanel Grid.Column="0">
+                                      <TextBlock Text="DL" FontSize="9" Foreground="Gray"/>
+                                      <TextBlock Text="{Binding DownloadDisplay}" FontSize="18" FontWeight="Bold" Foreground="#FF4CAF50"/>
+                                  </StackPanel>
+                                  <StackPanel Grid.Column="1">
+                                      <TextBlock Text="UL" FontSize="9" Foreground="Gray"/>
+                                      <TextBlock Text="{Binding UploadDisplay}" FontSize="18" FontWeight="Bold" Foreground="#FF2196F3"/>
+                                  </StackPanel>
+                              </Grid>
                           </StackPanel>
                       </DataTemplate>
                   </ItemsControl.ItemTemplate>
