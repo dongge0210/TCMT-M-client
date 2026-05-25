@@ -16,10 +16,10 @@ struct SmbusModule {
     const char*    funcName;  // PawnIO function name to call
 };
 static const SmbusModule SMBUS_MODULES[] = {
-    { L"SMBUS_I801",    "i2c_smbus_read_word_data" },
-    { L"SMBUS_PIIX4",   "i2c_smbus_read_word_data" },
-    { L"SMBUS_NCT6793", "i2c_smbus_read_word_data" },
-    { L"SMBUS_SKYLAKE", "i2c_smbus_read_word_data" },
+    { L"SMBUS_I801",    "ioctl_smbus_xfer" },
+    { L"SMBUS_PIIX4",   "ioctl_smbus_xfer" },
+    { L"SMBUS_NCT6793", "ioctl_smbus_xfer" },
+    { L"SMBUS_SKYLAKE", "ioctl_smbus_xfer" },
 };
 
 // Load embedded .bin resource
@@ -35,13 +35,18 @@ static std::vector<uint8_t> LoadBinResource(const wchar_t* resName) {
     return std::vector<uint8_t>(data, data + size);
 }
 
+// PawnIO ioctl_smbus_xfer I2C_SMBUS constants
+static const uint64_t I2C_SMBUS_READ       = 1;
+static const uint64_t I2C_SMBUS_WORD_DATA  = 3;
+
 static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
                           uint8_t smbusAddr, uint8_t reg) {
-    uint64_t inBuf[2] = { smbusAddr, reg };
+    // ioctl_smbus_xfer input: [addr, read_write, command, protocol]
+    uint64_t inBuf[4] = { smbusAddr, I2C_SMBUS_READ, reg, I2C_SMBUS_WORD_DATA };
     uint64_t outBuf[1] = { 0 };
     uint32_t retSize = 0;
 
-    if (!pa.Execute(funcName, inBuf, 2, outBuf, 1, &retSize)) {
+    if (!pa.Execute(funcName, inBuf, 4, outBuf, 1, &retSize)) {
         static int failLog = 0;
         if (failLog < 2) {
             Logger::Debug(std::string("PawnIO Execute failed for ") + funcName +
