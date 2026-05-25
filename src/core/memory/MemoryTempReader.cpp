@@ -59,7 +59,10 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
     std::vector<DimmTempInfo> result;
     PawnIOWrapper pa;
 
-    if (!pa.Open()) return result;
+    if (!pa.Open()) {
+        Logger::Debug("MemoryTempReader: PawnIO device not available, skipping DIMM temps");
+        return result;
+    }
 
     // Load embedded SMBus modules
     struct LoadedMod { std::string func; bool ok; };
@@ -74,7 +77,11 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
     }
 
     if (mods.empty()) {
-        Logger::Debug("MemoryTempReader: no SMBus modules loaded from resources");
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            Logger::Info("MemoryTempReader: no SMBus modules loaded (embedded resources missing?)");
+            loggedOnce = true;
+        }
         return result;
     }
 
@@ -94,8 +101,12 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
         }
     }
 
-    Logger::Info(std::string("MemoryTempReader: found ") +
-                 std::to_string(result.size()) + " DIMMs");
+    static int logCount = 0;
+    if (logCount < 3) {
+        Logger::Info(std::string("MemoryTempReader: found ") +
+                     std::to_string(result.size()) + " DIMMs");
+        logCount++;
+    }
     return result;
 }
 #endif
