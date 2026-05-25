@@ -84,7 +84,8 @@ bool PawnIOWrapper::Execute(const char* funcName,
     size_t totalInSize = FN_LEN + inCount * sizeof(uint64_t);
     if (totalInSize < FN_LEN) totalInSize = FN_LEN;
     std::vector<uint8_t> inData(totalInSize, 0);
-    strncpy(reinterpret_cast<char*>(inData.data()), funcName, FN_LEN - 1);
+    for (size_t i = 0; i < FN_LEN - 1 && funcName[i]; i++)
+        inData[i] = static_cast<uint8_t>(funcName[i]);
     if (inBuf && inCount > 0)
         memcpy(inData.data() + FN_LEN, inBuf, inCount * sizeof(uint64_t));
 
