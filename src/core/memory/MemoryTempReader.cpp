@@ -35,41 +35,29 @@ static std::vector<uint8_t> LoadBinResource(const wchar_t* resName) {
     return std::vector<uint8_t>(data, data + size);
 }
 
-// PawnIO ioctl_smbus_xfer constants
-static const uint64_t I2C_SMBUS_READ             = 1;
-static const uint64_t I2C_SMBUS_I2C_BLOCK_DATA   = 8;
+static const uint64_t I2C_SMBUS_READ      = 1;
+static const uint64_t I2C_SMBUS_BYTE_DATA = 2;
+static const uint64_t I2C_SMBUS_WORD_DATA = 3;
 
 static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
                           uint8_t smbusAddr, uint8_t reg) {
-    // DDR5 SPD uses I2C block read: send register address, read 2 bytes
-    // ioctl_smbus_xfer input: [addr, read_write, command, protocol, byte_count]
-    uint64_t inBuf[5] = { smbusAddr, I2C_SMBUS_READ, reg,
-                          I2C_SMBUS_I2C_BLOCK_DATA, 2 };
-    uint64_t outBuf[2] = { 0, 0 };
+    // Try WORD_DATA first (reads reg and reg+1 in one transaction)
+    uint64_t inBuf[4] = { smbusAddr, I2C_SMBUS_READ, reg, I2C_SMBUS_WORD_DATA };
+    uint64_t outBuf[1] = { 0 };
     uint32_t retSize = 0;
 
-    if (!pa.Execute(funcName, inBuf, 5, outBuf, 2, &retSize)) {
-        static int failLog = 0;
-        if (failLog < 2) {
-            Logger::Debug(std::string("PawnIO Execute failed addr=0x") +
-                          std::to_string(smbusAddr));
-            failLog++;
-        }
+    if (!pa.Execute(funcName, inBuf, 4, outBuf, 1, &retSize))
         return -1.0;
-    }
 
-    uint8_t* bytes = (uint8_t*)outBuf;
-    uint8_t count = bytes[0];
-    if (count < 1) return -1.0;
-
-    // DDR5 SPD Hub Temperature (MR49-MR50): 11-bit signed, 0.25°C LSB
-    // MR49 (0x31) = bits [7:0], MR50 (0x32) = bits [10:8] + flags
-    uint8_t tlo = count >= 1 ? bytes[1] : 0;
-    uint8_t thi = count >= 2 ? bytes[2] : 0;
-    int16_t tempRaw = ((thi & 0x07) << 8) | tlo;
-    if (tempRaw & 0x0400) tempRaw |= 0xF800;  // sign-extend 11-bit
+    // WORD_DATA returns 16-bit value in outBuf[0]
+    uint16_t raw = (uint16_t)(outBuf[0] & 0xFFFF);
+    // DDR5 SPD: byte 0 (low) = temp bits [7:0], byte 1 (high bits [2:0]) = temp bits [10:8]
+    uint8_t tlo = raw & 0xFF;
+    uint8_t thi = (raw >> 8) & 0x07;
+    int16_t tempRaw = (thi << 8) | tlo;
+    if (tempRaw & 0x0400) tempRaw |= 0xF800;
     double tempC = tempRaw * 0.25;
-    return (tempC > -10.0 && tempC < 120.0) ? tempC : -1.0;
+    return (tempC > 0 && tempC < 120.0) ? tempC : -1.0;
 }
 
 bool MemoryTempReader::IsAvailable() {
