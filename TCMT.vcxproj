@@ -180,6 +180,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
     <ClCompile Include="src\core\memory\PawnIOWrapper.cpp" />
     <ClCompile Include="src\core\memory\MemoryTempReader.cpp" />
+    <ResourceCompile Include="src\resources.rc" />
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
     <ClCompile Include="src\core\power\PowerInfo.cpp" />
     <ClCompile Include="src\core\power\PowerMonitor.cpp" />

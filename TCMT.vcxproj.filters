@@ -137,6 +137,9 @@
     <ClCompile Include="src\core\memory\MemoryTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ResourceCompile Include="src\resources.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
     <ClCompile Include="src\core\gpu\GpuInfo.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
