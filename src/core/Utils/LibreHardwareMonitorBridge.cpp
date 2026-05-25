@@ -25,18 +25,31 @@ void LibreHardwareMonitorBridge::Initialize() {
         computer->IsCpuEnabled = true;
         computer->IsGpuEnabled = true;
         computer->IsStorageEnabled = true;
-        computer->IsMemoryEnabled = true;
         computer->Open();
         visitor = gcnew UpdateVisitor();
         initialized = true;
     }
     catch (System::IO::FileNotFoundException^ ex) {
-        // Use marshal_as to convert .NET string to std::string
-        std::string errorMsg = msclr::interop::marshal_as<std::string>(ex->Message);
+        System::String^ msg = ex->Message;
+        if (String::IsNullOrEmpty(msg)) msg = L"No message";
+        std::wstring wmsg(msg->Length, L'\0');
+        for (int i = 0; i < msg->Length; i++) wmsg[i] = msg[i];
+        // WideCharToMultiByte: convert wchar_t to UTF-8 safely
+        int len = WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string errorMsg(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, &errorMsg[0], len, nullptr, nullptr);
+        while (!errorMsg.empty() && errorMsg.back() == '\0') errorMsg.pop_back();
         Logger::Error("LibreHardwareMonitor initialization failed: " + errorMsg);
     }
     catch (System::Exception^ ex) {
-        std::string errorMsg = msclr::interop::marshal_as<std::string>(ex->Message);
+        System::String^ msg = ex->Message;
+        if (String::IsNullOrEmpty(msg)) msg = L"No message";
+        std::wstring wmsg(msg->Length, L'\0');
+        for (int i = 0; i < msg->Length; i++) wmsg[i] = msg[i];
+        int len = WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string errorMsg(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, &errorMsg[0], len, nullptr, nullptr);
+        while (!errorMsg.empty() && errorMsg.back() == '\0') errorMsg.pop_back();
         Logger::Error("LibreHardwareMonitor initialization exception: " + errorMsg);
     }
 }
