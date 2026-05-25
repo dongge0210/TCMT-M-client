@@ -1,8 +1,6 @@
 #ifdef TCMT_WINDOWS
 #include "PawnIOWrapper.h"
 #include "../Utils/Logger.h"
-#include <sstream>
-#include <iomanip>
 
 bool PawnIOWrapper::Open() {
     if (_hDevice != INVALID_HANDLE_VALUE) return true;
@@ -100,23 +98,6 @@ bool PawnIOWrapper::Execute(const char* funcName,
                               outData.data(), (DWORD)totalOutSize,
                               &bytesReturned, nullptr);
     if (!ok) return false;
-
-    // Debug: hex dump first N calls
-    static int dumpN = 0;
-    if (dumpN < 6) {
-        std::ostringstream oss;
-        oss << "PawnIO Execute: " << funcName << " in=" << inCount << " out=" << outCount;
-        oss << " [";
-        for (size_t i = 0; i < inData.size() && i < 64; i++)
-            oss << " " << std::setw(2) << std::setfill('0') << std::hex << (int)inData[i];
-        oss << " ] -> ret=" << std::dec << bytesReturned << " [";
-        size_t n = (std::min)((size_t)bytesReturned, outData.size());
-        for (size_t i = 0; i < n && i < 64; i++)
-            oss << " " << std::setw(2) << std::setfill('0') << std::hex << (int)outData[i];
-        oss << " ]";
-        Logger::Info(oss.str());
-        dumpN++;
-    }
 
     if (outBuf && outCount > 0) {
         memcpy(outBuf, outData.data(), (std::min)((size_t)bytesReturned, totalOutSize));

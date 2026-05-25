@@ -105,14 +105,14 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
         }
     }
 
-    // Probe SPD addresses
+    int dimmIdx = 0;
     for (uint8_t addr = SPD_ADDR_BEGIN; addr <= SPD_ADDR_END; addr++) {
         double t = ReadSpdTemp(s_pa, s_funcName.c_str(), addr, SPD_TEMP_REG);
         if (t >= 0.0) {
             DimmTempInfo info;
             info.temperature = t;
             char nameBuf[32];
-            snprintf(nameBuf, sizeof(nameBuf), "DIMM %02X", addr);
+            snprintf(nameBuf, sizeof(nameBuf), "DIMM %d", ++dimmIdx);
             info.name = nameBuf;
             result.push_back(info);
         }
