@@ -53,6 +53,10 @@ static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
     // The WORD_DATA gives us whatever is at that SMBus command offset.
     // DDR5 SPD Hub returns temperature in Celsius (8-bit unsigned at MR49).
     uint8_t t = (uint8_t)(outBuf[0] & 0xFF);
+    // DDR5 SPD Hub MR49: 0.5°C resolution (common for Kingston DIMMs)
+    double tempC = t * 0.5;
+    if (tempC > 10.0 && tempC < 110.0) return tempC;
+    // Fallback: treat as Celsius directly (some DIMMs)
     if (t > 10 && t < 120) return (double)t;
     return -1.0;
 }
@@ -88,30 +92,6 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
             Logger::Info("PawnIO: no SMBus module loaded");
             return result;
         }
-    }
-
-    // One-time probe: compare Hub MR vs NVM at same address
-    static bool firstProbe = true;
-    if (firstProbe && s_funcName.size()) {
-        firstProbe = false;
-        uint8_t probeAddr = SPD_ADDR_BEGIN;
-        uint64_t pOut[1] = {0};
-        // MR0 (MemReg=0, register 0) — should be vendor/device ID
-        uint64_t pIn[4] = { probeAddr, I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE_DATA };
-        if (s_pa.Execute(s_funcName.c_str(), pIn, 4, pOut, 1, nullptr))
-            Logger::Info("Hub MR0(reg0)=0x" + std::to_string((int)(pOut[0] & 0xFF)));
-        // NVM byte 0 (MemReg=1, addr 0x80) — should be SPD byte 0
-        pIn[2] = 0x80;
-        if (s_pa.Execute(s_funcName.c_str(), pIn, 4, pOut, 1, nullptr))
-            Logger::Info("NVM byte0(0x80)=0x" + std::to_string((int)(pOut[0] & 0xFF)));
-        // MR49 (MemReg=0, reg 0x31) — temperature
-        pIn[2] = 0x31;
-        if (s_pa.Execute(s_funcName.c_str(), pIn, 4, pOut, 1, nullptr))
-            Logger::Info("Hub MR49(reg0x31)=0x" + std::to_string((int)(pOut[0] & 0xFF)));
-        // NVM byte 0x31 (MemReg=1, addr 0xB1)
-        pIn[2] = 0xB1;
-        if (s_pa.Execute(s_funcName.c_str(), pIn, 4, pOut, 1, nullptr))
-            Logger::Info("NVM byte0x31(0xB1)=0x" + std::to_string((int)(pOut[0] & 0xFF)));
     }
 
     int dimmIdx = 0;
