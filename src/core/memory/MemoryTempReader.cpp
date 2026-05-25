@@ -39,9 +39,17 @@ static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
                           uint8_t smbusAddr, uint8_t reg) {
     uint64_t inBuf[2] = { smbusAddr, reg };
     uint64_t outBuf[1] = { 0 };
+    uint32_t retSize = 0;
 
-    if (!pa.Execute(funcName, inBuf, 2, outBuf, 1))
+    if (!pa.Execute(funcName, inBuf, 2, outBuf, 1, &retSize)) {
+        static int failLog = 0;
+        if (failLog < 2) {
+            Logger::Debug(std::string("PawnIO Execute failed for ") + funcName +
+                          " addr=0x" + std::to_string(smbusAddr));
+            failLog++;
+        }
         return -1.0;
+    }
 
     // DDR5 SPD: 10-bit signed, LSB = 0.25°C
     uint16_t raw = (uint16_t)(outBuf[0] & 0xFFFF);
