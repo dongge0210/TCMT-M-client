@@ -56,8 +56,15 @@ static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
         return -1.0;
     }
 
-    // DDR5 SPD: 10-bit signed, LSB = 0.25°C
     uint16_t raw = (uint16_t)(outBuf[0] & 0xFFFF);
+    static int dbgLog = 0;
+    if (dbgLog < 4) {
+        Logger::Info(std::string("PawnIO SMBus read addr=0x") + std::to_string(smbusAddr) +
+                     " reg=0x" + std::to_string(reg) + " raw=0x" + std::to_string(raw));
+        dbgLog++;
+    }
+
+    // DDR5 SPD: 10-bit signed, LSB = 0.25°C
     int16_t tempRaw = (int16_t)(raw & 0x03FF);
     if (tempRaw & 0x0200) tempRaw |= 0xFC00;
     double tempC = tempRaw * 0.25;
