@@ -49,15 +49,27 @@ static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
     if (!pa.Execute(funcName, inBuf, 4, outBuf, 1, &retSize))
         return -1.0;
 
-    // WORD_DATA returns 16-bit value in outBuf[0]
+    // WORD_DATA returns 16-bit value in outBuf[0] (little-endian)
     uint16_t raw = (uint16_t)(outBuf[0] & 0xFFFF);
-    // DDR5 SPD: byte 0 (low) = temp bits [7:0], byte 1 (high bits [2:0]) = temp bits [10:8]
-    uint8_t tlo = raw & 0xFF;
-    uint8_t thi = (raw >> 8) & 0x07;
-    int16_t tempRaw = (thi << 8) | tlo;
-    if (tempRaw & 0x0400) tempRaw |= 0xF800;
-    double tempC = tempRaw * 0.25;
-    return (tempC > 0 && tempC < 120.0) ? tempC : -1.0;
+    uint8_t tlo = raw & 0xFF;       // MR49 temperature low byte
+    uint8_t thi = (raw >> 8) & 0xFF; // MR50 flags + temperature high bits
+
+    // DDR5 SPD: try multiple decode strategies
+    // Strategy 1: low byte as 0.5°C unsigned (common for DDR5 SPD Hub)
+    double t1 = tlo * 0.5;
+    if (t1 > 10.0 && t1 < 110.0) return t1;
+
+    // Strategy 2: 11-bit signed, 0.25°C LSB
+    int16_t raw11 = ((thi & 0x07) << 8) | tlo;
+    if (raw11 & 0x0400) raw11 |= 0xF800;
+    double t2 = raw11 * 0.25;
+    if (t2 > 10.0 && t2 < 110.0) return t2;
+
+    // Strategy 3: full 16-bit as 0.25°C unsigned
+    double t3 = raw * 0.25;
+    if (t3 > 10.0 && t3 < 110.0) return t3;
+
+    return -1.0;
 }
 
 bool MemoryTempReader::IsAvailable() {
