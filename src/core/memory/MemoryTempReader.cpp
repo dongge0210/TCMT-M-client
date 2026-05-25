@@ -4,8 +4,6 @@
 #include "../Utils/Logger.h"
 
 #include <algorithm>
-#include <sstream>
-#include <iomanip>
 
 // DDR5 SPD Hub temperature register: offset 0x31 (TS_READ), 10-bit signed, 0.25°C/LSB
 static const uint8_t SPD_ADDR_BEGIN = 0x50;
@@ -60,23 +58,8 @@ static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
         return -1.0;
     }
 
-    // outBuf[0] = byte count + packed data for first 8 bytes
-    // byte 0 = count, byte 1..N = data
     uint8_t* bytes = (uint8_t*)outBuf;
     uint8_t count = bytes[0];
-    static int dbgLog = 0;
-    if (dbgLog < 4) {
-        std::ostringstream oss;
-        oss << "PawnIO SMBus addr=0x" << std::hex << (int)smbusAddr
-            << " reg=0x" << std::hex << (int)reg
-            << " count=" << std::dec << (int)count
-            << " data=" << std::hex;
-        for (int i = 1; i <= count && i <= 8; i++)
-            oss << " " << (int)bytes[i];
-        Logger::Info(oss.str());
-        dbgLog++;
-    }
-
     if (count < 1) return -1.0;
 
     // DDR5 SPD Hub Temperature (MR49-MR50): 11-bit signed, 0.25°C LSB
