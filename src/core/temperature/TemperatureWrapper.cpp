@@ -4,6 +4,7 @@
 #ifdef TCMT_WINDOWS
 #pragma managed
 #include "../Utils/LibreHardwareMonitorBridge.h"
+#include "../memory/MemoryTempReader.h"
 #pragma unmanaged
 
 bool TemperatureWrapper::initialized = false;
@@ -17,6 +18,9 @@ void TemperatureWrapper::Initialize() {
         initialized = false;
         Logger::Error("TemperatureWrapper: LibreHardwareMonitor initialization failed");
     }
+    // PawnIO DIMM temps don't need separate init — MemoryTempReader probes lazily
+    if (MemoryTempReader::IsAvailable())
+        Logger::Info("TemperatureWrapper: PawnIO detected, DIMM temp reading available");
 }
 
 void TemperatureWrapper::Cleanup() {
@@ -35,6 +39,18 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
             Logger::Warn("TemperatureWrapper::GetTemperatures: unknown exception caught");
         }
     }
+
+    // Add DIMM temperatures via PawnIO/SMBus (no-op if PawnIO not installed)
+    try {
+        auto dimms = MemoryTempReader::ReadAll();
+        for (const auto& d : dimms) {
+            if (d.temperature > 0)
+                temps.push_back({d.name, d.temperature});
+        }
+    } catch (...) {
+        Logger::Debug("MemoryTempReader: exception (no PawnIO?)");
+    }
+
     return temps;
 }
 
