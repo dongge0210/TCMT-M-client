@@ -18,9 +18,10 @@ void TemperatureWrapper::Initialize() {
         initialized = false;
         Logger::Error("TemperatureWrapper: LibreHardwareMonitor initialization failed");
     }
-    // PawnIO DIMM temps don't need separate init — MemoryTempReader probes lazily
     if (MemoryTempReader::IsAvailable())
-        Logger::Info("TemperatureWrapper: PawnIO detected, DIMM temp reading available");
+        Logger::Info("PawnIO: installed, DIMM temperature reading enabled");
+    else
+        Logger::Info("PawnIO: not installed, DIMM temperature unavailable");
 }
 
 void TemperatureWrapper::Cleanup() {
