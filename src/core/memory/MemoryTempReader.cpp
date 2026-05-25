@@ -37,41 +37,54 @@ static std::vector<uint8_t> LoadBinResource(const wchar_t* resName) {
     return std::vector<uint8_t>(data, data + size);
 }
 
-// PawnIO ioctl_smbus_xfer I2C_SMBUS constants
-static const uint64_t I2C_SMBUS_READ       = 1;
-static const uint64_t I2C_SMBUS_WORD_DATA  = 3;
+// PawnIO ioctl_smbus_xfer constants
+static const uint64_t I2C_SMBUS_READ             = 1;
+static const uint64_t I2C_SMBUS_I2C_BLOCK_DATA   = 8;
 
 static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
                           uint8_t smbusAddr, uint8_t reg) {
-    // ioctl_smbus_xfer input: [addr, read_write, command, protocol]
-    uint64_t inBuf[4] = { smbusAddr, I2C_SMBUS_READ, reg, I2C_SMBUS_WORD_DATA };
-    uint64_t outBuf[1] = { 0 };
+    // DDR5 SPD uses I2C block read: send register address, read 2 bytes
+    // ioctl_smbus_xfer input: [addr, read_write, command, protocol, byte_count]
+    uint64_t inBuf[5] = { smbusAddr, I2C_SMBUS_READ, reg,
+                          I2C_SMBUS_I2C_BLOCK_DATA, 2 };
+    uint64_t outBuf[2] = { 0, 0 };
     uint32_t retSize = 0;
 
-    if (!pa.Execute(funcName, inBuf, 4, outBuf, 1, &retSize)) {
+    if (!pa.Execute(funcName, inBuf, 5, outBuf, 2, &retSize)) {
         static int failLog = 0;
         if (failLog < 2) {
-            Logger::Debug(std::string("PawnIO Execute failed for ") + funcName +
-                          " addr=0x" + std::to_string(smbusAddr));
+            Logger::Debug(std::string("PawnIO Execute failed addr=0x") +
+                          std::to_string(smbusAddr));
             failLog++;
         }
         return -1.0;
     }
 
-    uint16_t raw = (uint16_t)(outBuf[0] & 0xFFFF);
+    // outBuf[0] = byte count + packed data for first 8 bytes
+    // byte 0 = count, byte 1..N = data
+    uint8_t* bytes = (uint8_t*)outBuf;
+    uint8_t count = bytes[0];
     static int dbgLog = 0;
     if (dbgLog < 4) {
         std::ostringstream oss;
-        oss << "PawnIO SMBus read addr=0x" << std::hex << (int)smbusAddr
+        oss << "PawnIO SMBus addr=0x" << std::hex << (int)smbusAddr
             << " reg=0x" << std::hex << (int)reg
-            << " raw=0x" << std::hex << raw;
+            << " count=" << std::dec << (int)count
+            << " data=" << std::hex;
+        for (int i = 1; i <= count && i <= 8; i++)
+            oss << " " << (int)bytes[i];
         Logger::Info(oss.str());
         dbgLog++;
     }
 
-    // DDR5 SPD: 10-bit signed, LSB = 0.25°C
-    int16_t tempRaw = (int16_t)(raw & 0x03FF);
-    if (tempRaw & 0x0200) tempRaw |= 0xFC00;
+    if (count < 1) return -1.0;
+
+    // DDR5 SPD Hub Temperature (MR49-MR50): 11-bit signed, 0.25°C LSB
+    // MR49 (0x31) = bits [7:0], MR50 (0x32) = bits [10:8] + flags
+    uint8_t tlo = count >= 1 ? bytes[1] : 0;
+    uint8_t thi = count >= 2 ? bytes[2] : 0;
+    int16_t tempRaw = ((thi & 0x07) << 8) | tlo;
+    if (tempRaw & 0x0400) tempRaw |= 0xF800;  // sign-extend 11-bit
     double tempC = tempRaw * 0.25;
     return (tempC > -10.0 && tempC < 120.0) ? tempC : -1.0;
 }
