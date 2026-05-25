@@ -139,6 +139,8 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\disk\DiskInfo.h" />
     <ClInclude Include="src\core\gpu\GpuInfo.h" />
     <ClInclude Include="src\core\memory\MemoryInfo.h" />
+    <ClInclude Include="src\core\memory\PawnIOWrapper.h" />
+    <ClInclude Include="src\core\memory\MemoryTempReader.h" />
     <ClInclude Include="src\core\network\NetworkAdapter.h" />
     <ClInclude Include="src\core\power\PowerInfo.h" />
     <ClInclude Include="src\core\power\PowerMonitor.h" />
@@ -176,6 +178,8 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\IPC\IPCServer.cpp" />
     <ClCompile Include="src\core\MCP\MCPServer.cpp" />
     <ClCompile Include="src\core\memory\MemoryInfo.cpp" />
+    <ClCompile Include="src\core\memory\PawnIOWrapper.cpp" />
+    <ClCompile Include="src\core\memory\MemoryTempReader.cpp" />
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
     <ClCompile Include="src\core\power\PowerInfo.cpp" />
     <ClCompile Include="src\core\power\PowerMonitor.cpp" />

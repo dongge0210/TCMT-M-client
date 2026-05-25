@@ -24,6 +24,12 @@
     <ClInclude Include="src\core\memory\MemoryInfo.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\memory\PawnIOWrapper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\memory\MemoryTempReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\network\NetworkAdapter.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -123,6 +129,12 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\memory\MemoryInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\memory\PawnIOWrapper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\memory\MemoryTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\gpu\GpuInfo.cpp">

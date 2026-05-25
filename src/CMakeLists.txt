@@ -24,6 +24,9 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/DiskInfo.cpp
+    # PawnIO DIMM temperature (Windows-only)
+    $<$<BOOL:${TCMT_WINDOWS}>:${CMAKE_CURRENT_SOURCE_DIR}/core/memory/PawnIOWrapper.cpp>
+    $<$<BOOL:${TCMT_WINDOWS}>:${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryTempReader.cpp>
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
