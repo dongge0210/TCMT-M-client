@@ -25,6 +25,7 @@ void LibreHardwareMonitorBridge::Initialize() {
         computer->IsCpuEnabled = true;
         computer->IsGpuEnabled = true;
         computer->IsStorageEnabled = true;
+        computer->IsMemoryEnabled = true;
         computer->Open();
         visitor = gcnew UpdateVisitor();
         initialized = true;
@@ -62,6 +63,16 @@ std::vector<std::pair<std::string, double>> LibreHardwareMonitorBridge::GetTempe
                 if (sensor->SensorType == SensorType::Temperature && sensor->Value.HasValue) {
                     std::string name = marshal_as<std::string>(sensor->Name);
                     temps.push_back({ name, sensor->Value.Value });
+                }
+            }
+        }
+        else if (hardware->HardwareType == HardwareType::Memory) {
+            int dimmIndex = 0;
+            for each (ISensor ^ sensor in hardware->Sensors) {
+                if (sensor->SensorType == SensorType::Temperature && sensor->Value.HasValue) {
+                    std::string label = "DIMM " + std::to_string(dimmIndex);
+                    temps.push_back({ label, sensor->Value.Value });
+                    dimmIndex++;
                 }
             }
         }
