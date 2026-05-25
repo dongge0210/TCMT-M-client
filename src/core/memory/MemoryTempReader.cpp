@@ -78,57 +78,43 @@ bool MemoryTempReader::IsAvailable() {
 
 std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
     std::vector<DimmTempInfo> result;
-    PawnIOWrapper pa;
+    static PawnIOWrapper s_pa;
+    static std::string s_funcName;
+    static bool s_probed = false;
 
-    if (!pa.Open()) {
-        Logger::Debug("MemoryTempReader: PawnIO device not available, skipping DIMM temps");
-        return result;
-    }
-
-    // Load embedded SMBus modules
-    struct LoadedMod { std::string func; bool ok; };
-    std::vector<LoadedMod> mods;
-    for (auto& m : SMBUS_MODULES) {
-        auto data = LoadBinResource(m.resName);
-        if (data.empty()) {
-            Logger::Debug(std::string("PawnIO: resource not found: ") +
-                          std::to_string((int)m.resName[0]));
-            continue;
+    if (!s_probed) {
+        s_probed = true;
+        if (!s_pa.Open()) {
+            Logger::Debug("MemoryTempReader: PawnIO device not available");
+            return result;
         }
-        Logger::Info(std::string("PawnIO: loading module from resource, ") +
-                     std::to_string(data.size()) + " bytes");
-        if (pa.LoadModuleFromMemory(data.data(), data.size(), m.funcName)) {
-            mods.push_back({ m.funcName, true });
-            Logger::Info(std::string("PawnIO: SMBus module loaded, ") +
+        for (auto& m : SMBUS_MODULES) {
+            auto data = LoadBinResource(m.resName);
+            if (data.empty()) continue;
+            Logger::Info(std::string("PawnIO: loading SMBus module, ") +
                          std::to_string(data.size()) + " bytes");
-            break;
-        } else {
-            Logger::Debug("PawnIO: LoadModuleFromMemory failed");
+            if (s_pa.LoadModuleFromMemory(data.data(), data.size(), m.funcName)) {
+                s_funcName = m.funcName;
+                Logger::Info("PawnIO: SMBus module loaded");
+                break;
+            }
         }
-    }
-
-    if (mods.empty()) {
-        static bool loggedOnce = false;
-        if (!loggedOnce) {
-            Logger::Info("MemoryTempReader: no SMBus modules loaded (embedded resources missing?)");
-            loggedOnce = true;
+        if (s_funcName.empty()) {
+            Logger::Info("PawnIO: no SMBus module loaded");
+            return result;
         }
-        return result;
     }
 
     // Probe SPD addresses
     for (uint8_t addr = SPD_ADDR_BEGIN; addr <= SPD_ADDR_END; addr++) {
-        for (auto& m : mods) {
-            double t = ReadSpdTemp(pa, m.func.c_str(), addr, SPD_TEMP_REG);
-            if (t >= 0.0) {
-                DimmTempInfo info;
-                info.temperature = t;
-                char nameBuf[32];
-                snprintf(nameBuf, sizeof(nameBuf), "DIMM %02X", addr);
-                info.name = nameBuf;
-                result.push_back(info);
-                break;
-            }
+        double t = ReadSpdTemp(s_pa, s_funcName.c_str(), addr, SPD_TEMP_REG);
+        if (t >= 0.0) {
+            DimmTempInfo info;
+            info.temperature = t;
+            char nameBuf[32];
+            snprintf(nameBuf, sizeof(nameBuf), "DIMM %02X", addr);
+            info.name = nameBuf;
+            result.push_back(info);
         }
     }
 

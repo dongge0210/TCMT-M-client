@@ -99,8 +99,12 @@ bool PawnIOWrapper::Execute(const char* funcName,
                               &bytesReturned, nullptr);
     if (!ok) return false;
 
-    if (outBuf && outCount > 0)
+    if (outBuf && outCount > 0) {
         memcpy(outBuf, outData.data(), (std::min)((size_t)bytesReturned, totalOutSize));
+        // NTSTATUS error: upper bit of lower 32 bits set
+        uint32_t ntStatus = (uint32_t)(outBuf[0] & 0xFFFFFFFFULL);
+        if (ntStatus & 0x80000000) return false;
+    }
     if (returnSize)
         *returnSize = bytesReturned;
 
