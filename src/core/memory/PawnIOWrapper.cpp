@@ -11,10 +11,18 @@ bool PawnIOWrapper::Open() {
                            FILE_ATTRIBUTE_NORMAL, nullptr);
 
     if (_hDevice == INVALID_HANDLE_VALUE) {
-        Logger::Debug("PawnIO: device not available (not installed or not running)");
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            Logger::Debug("PawnIO: device not available");
+            loggedOnce = true;
+        }
         return false;
     }
-    Logger::Info("PawnIO: device opened");
+    static bool openedLogged = false;
+    if (!openedLogged) {
+        Logger::Info("PawnIO: device opened, DIMM probing started");
+        openedLogged = true;
+    }
     return true;
 }
 
