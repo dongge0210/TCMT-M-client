@@ -103,8 +103,8 @@ bool EtwMonitor::Start() {
                                         TRACE_LEVEL_INFORMATION,
                                         0xFFFFFFFFFFFFFFFF,
                                         0, 0, nullptr);
-        if (enStatus != ERROR_SUCCESS) {
-            Logger::Info(std::string("EtwMonitor: EnableTraceEx2 failed for ") +
+        if (enStatus != ERROR_SUCCESS && enStatus != ERROR_NO_SYSTEM_RESOURCES) {
+            Logger::Warn(std::string("EtwMonitor: EnableTraceEx2 failed for ") +
                          kProviderNames[i] + " (err=" + std::to_string(enStatus) + ")");
         }
     }
