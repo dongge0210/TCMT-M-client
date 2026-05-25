@@ -79,13 +79,14 @@ bool PawnIOWrapper::Execute(const char* funcName,
                             uint32_t* returnSize) {
     if (_hDevice == INVALID_HANDLE_VALUE || !funcName) return false;
 
-    // Build combined input: function name + inBuf
-    size_t nameLen = strlen(funcName) + 1;
-    size_t totalInSize = nameLen + inCount * sizeof(uint64_t);
-    std::vector<uint8_t> inData(totalInSize);
-    memcpy(inData.data(), funcName, nameLen);
+    // PawnIO requires fixed 32-byte function name field
+    constexpr size_t FN_LEN = 32;
+    size_t totalInSize = FN_LEN + inCount * sizeof(uint64_t);
+    if (totalInSize < FN_LEN) totalInSize = FN_LEN;
+    std::vector<uint8_t> inData(totalInSize, 0);
+    strncpy(reinterpret_cast<char*>(inData.data()), funcName, FN_LEN - 1);
     if (inBuf && inCount > 0)
-        memcpy(inData.data() + nameLen, inBuf, inCount * sizeof(uint64_t));
+        memcpy(inData.data() + FN_LEN, inBuf, inCount * sizeof(uint64_t));
 
     size_t totalOutSize = outCount * sizeof(uint64_t);
     std::vector<uint8_t> outData(totalOutSize);

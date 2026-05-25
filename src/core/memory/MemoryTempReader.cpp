@@ -91,25 +91,11 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
                      std::to_string(data.size()) + " bytes");
         if (pa.LoadModuleFromMemory(data.data(), data.size(), m.funcName)) {
             mods.push_back({ m.funcName, true });
-            // Probe known function names on first load
-            static bool probed = false;
-            if (!probed) {
-                probed = true;
-                const char* probeFuncs[] = {
-                    "ioctl_smbus_xfer", "ioctl_identity", "ioctl_clock_freq",
-                    "main", "i801_init", "i2c_smbus_read_word_data",
-                };
-                Logger::Info("PawnIO: probing module functions:");
-                for (auto fn : probeFuncs) {
-                    uint64_t dummy[1] = {0};
-                    uint32_t rs = 0;
-                    bool ok = pa.Execute(fn, dummy, 0, dummy, 0, &rs);
-                    Logger::Info(std::string("  ") + fn + (ok ? " -> OK" : " -> FAIL"));
-                }
-            }
+            Logger::Info(std::string("PawnIO: SMBus module loaded, ") +
+                         std::to_string(data.size()) + " bytes");
             break;
         } else {
-            Logger::Info("PawnIO: LoadModuleFromMemory failed");
+            Logger::Debug("PawnIO: LoadModuleFromMemory failed");
         }
     }
 
