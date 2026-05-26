@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
+#include <chrono>
 
 namespace tcmt {
 
@@ -410,22 +411,39 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
-    int maxPairs = 4; // 8 sensors max, 2 per line
     int halfW = maxW / 2;
+    const int ROWS_PER_PAGE = 3;        // 3 rows = 6 sensors
+    const int TOTAL_ROWS    = 4;        // 3 content + 1 page indicator
 
     // Collect sensors to display: skip per-core CPU sensors, keep everything else
     std::vector<std::pair<std::string, double>> displayTemps;
     for (const auto& [name, temp] : data.temperatures) {
-        // Skip individual CPU core sensors (e.g. "CPU Core 1") but keep CPU Die
         bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos);
         if (!isPerCoreSensor) {
             displayTemps.push_back({name, temp});
         }
     }
 
-    for (int p = 0; p < maxPairs && static_cast<size_t>(p * 2) < displayTemps.size(); p++) {
-        int leftIdx = p * 2;
-        int rightIdx = p * 2 + 1;
+    int totalPages = (static_cast<int>(displayTemps.size()) + 5) / 6;
+    bool needPaging = totalPages > 1;
+
+    // Auto-advance page every 3 seconds when >6 sensors
+    static int currentPage = 0;
+    static auto lastPageFlip = std::chrono::steady_clock::now();
+    if (needPaging) {
+        auto tNow = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(tNow - lastPageFlip).count() >= 3) {
+            currentPage = (currentPage + 1) % totalPages;
+            lastPageFlip = tNow;
+        }
+    } else {
+        currentPage = 0;
+    }
+
+    int startIdx = currentPage * ROWS_PER_PAGE * 2;
+    for (int p = 0; p < ROWS_PER_PAGE; p++) {
+        int leftIdx = startIdx + p * 2;
+        if (leftIdx >= static_cast<int>(displayTemps.size())) break;
 
         auto [nameL, tempL] = displayTemps[leftIdx];
         auto labelL = TrimRight(nameL, halfW - 9);
@@ -434,6 +452,7 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
         wattroff(win, COLOR_PAIR(tcL));
 
+        int rightIdx = leftIdx + 1;
         if (rightIdx < static_cast<int>(displayTemps.size())) {
             auto [nameR, tempR] = displayTemps[rightIdx];
             auto labelR = TrimRight(nameR, halfW - 9);
@@ -444,6 +463,14 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         }
         lines++;
     }
+
+    // Page indicator
+    if (needPaging) {
+        std::string pageStr = "[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]";
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, pageStr.c_str());
+        lines++;
+    }
+
     return lines;
 }
 

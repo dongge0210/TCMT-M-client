@@ -76,11 +76,9 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
         for (auto& m : SMBUS_MODULES) {
             auto data = LoadBinResource(m.resName);
             if (data.empty()) continue;
-            Logger::Info(std::string("PawnIO: loading SMBus module, ") +
-                         std::to_string(data.size()) + " bytes");
             if (s_pa.LoadModuleFromMemory(data.data(), data.size(), m.funcName)) {
                 s_funcName = m.funcName;
-                Logger::Info("PawnIO: SMBus module loaded");
+                Logger::Debug("PawnIO: SMBus module loaded");
                 break;
             }
         }
@@ -126,12 +124,6 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
         }
     }
 
-    static int logCount = 0;
-    if (logCount < 3) {
-        Logger::Info(std::string("MemoryTempReader: found ") +
-                     std::to_string(result.size()) + " DIMMs");
-        logCount++;
-    }
     return result;
 }
 #endif
