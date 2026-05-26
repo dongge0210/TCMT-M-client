@@ -119,7 +119,7 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 data.compressedMemory.store(0);
             }
 #elif defined(TCMT_WINDOWS)
-            // Windows: read compressed memory via PDH \Memory\Modified Page List Bytes
+            // Windows: read compressed memory via PDH \Memory\Memory Compression
             {
                 static void* hQuery = nullptr;
                 static void* hCounter = nullptr;
@@ -127,7 +127,7 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 if (!pdhReady) {
                     if (PdhOpenQueryW(nullptr, 0, (PDH_HQUERY*)&hQuery) == 0) {
                         if (PdhAddEnglishCounterW((PDH_HQUERY)hQuery,
-                            L"\\Memory\\Modified Page List Bytes", 0,
+                            L"\\Memory\\Memory Compression", 0,
                             (PDH_HCOUNTER*)&hCounter) == 0) {
                             pdhReady = true;
                         }
