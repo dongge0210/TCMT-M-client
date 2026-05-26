@@ -75,13 +75,15 @@ std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
 
     // Read all cores for max + average
     double coreMax = 0, coreSum = 0, packageTemp = 0;
-    int validCores = 0;
+    int validCores = 0, triedCores = 0, failMsr = 0, failValid = 0;
     for (int i = 0; i < s_coreCount && i < 32; i++) {
         uint64_t val = 0;
-        if (!ReadMsrOnCore(s_pa, MSR_IA32_THERM_STATUS, i, &val))
+        if (!ReadMsrOnCore(s_pa, MSR_IA32_THERM_STATUS, i, &val)) {
+            failMsr++;
             continue;
+        }
         uint32_t eax = (uint32_t)val;
-        if ((eax & 0x80000000) == 0) continue;
+        if ((eax & 0x80000000) == 0) { failValid++; continue; }
         uint32_t dig = (eax >> 16) & 0x7F;
         int tempC = (int)s_tjMax - (int)dig;
         if (tempC < 0 || tempC > 125) continue;
@@ -90,6 +92,14 @@ std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
         if (tempC > coreMax) coreMax = tempC;
         coreSum += tempC;
         validCores++;
+        triedCores++;
+    }
+    static bool logged = false;
+    if (!logged) {
+        Logger::Info(std::string("CpuTempReader: tried ") + std::to_string(s_coreCount) +
+                     " cores, " + std::to_string(triedCores) + " valid, " +
+                     std::to_string(failMsr) + " msr-fail, " + std::to_string(failValid) + " valid-fail");
+        logged = true;
     }
     if (validCores == 0) return result;
 
