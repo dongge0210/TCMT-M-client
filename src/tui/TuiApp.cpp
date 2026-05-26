@@ -412,7 +412,8 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     int halfW = maxW / 2;
-    const int CONTENT_ROWS = 3;      // 6 sensors max (2 per row)
+    const int CONTENT_ROWS = 2;      // 4 sensors per page (2 per row)
+    const int PANEL_ROWS    = 4;     // fixed: 1 header + 2 content + 1 page indicator
 
     // Collect sensors to display: skip per-core CPU sensors
     std::vector<std::pair<std::string, double>> displayTemps;
@@ -421,7 +422,8 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
             displayTemps.push_back({name, temp});
     }
 
-    int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + 5) / 6);
+    int perPage = CONTENT_ROWS * 2;
+    int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
     bool needPaging = totalPages > 1;
 
     static int currentPage = 0;
@@ -460,17 +462,18 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         lines++;
     }
 
-    // Fill remaining rows to keep fixed height (prevent bounce)
+    // Fill remaining content rows (fixed panel height, no bounce)
     while (lines < 1 + CONTENT_ROWS)
         lines++;
 
-    // Page indicator
-    if (needPaging) {
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2,
+    // Page indicator (always at row 4)
+    if (needPaging)
+        mvwprintw(win, y + PANEL_ROWS - 1, x0 + 2, "%.*s", maxW - 2,
                   ("[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]").c_str());
-    }
+    else
+        mvwprintw(win, y + PANEL_ROWS - 1, x0 + 2, "%.*s", maxW - 2, "");
 
-    return 1 + CONTENT_ROWS;  // fixed height: header + 3 content rows
+    return PANEL_ROWS;
 }
 
 int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
