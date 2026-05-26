@@ -54,7 +54,16 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         Logger::Debug("MemoryTempReader: exception (no PawnIO?)");
     }
 
-    // Add per-core CPU temperatures via PawnIO/MSR (independent of LHM)
+    // Filter out LHM CPU/GPU temps (use PawnIO direct reads instead)
+    std::vector<std::pair<std::string, double>> filtered;
+    for (const auto& t : temps) {
+        if (t.first.find("CPU") == std::string::npos &&
+            t.first.find("Core") == std::string::npos)
+            filtered.push_back(t);
+    }
+    temps = std::move(filtered);
+
+    // Replace with PawnIO direct MSR readings
     auto cpuTemps = CpuTempReader::ReadAll();
     for (const auto& ct : cpuTemps)
         temps.push_back({ct.name, ct.temperature});
