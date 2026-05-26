@@ -412,7 +412,7 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     int halfW = maxW / 2;
-    const int CONTENT_ROWS = 3;      // 6 sensors per page (2 per row)
+    const int CONTENT_ROWS = 4;      // 8 sensors per page (2 per row)
 
     // Collect sensors to display: skip per-core CPU sensors
     std::vector<std::pair<std::string, double>> displayTemps;
