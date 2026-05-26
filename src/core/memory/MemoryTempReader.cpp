@@ -35,32 +35,17 @@ static std::vector<uint8_t> LoadBinResource(const wchar_t* resName) {
     return std::vector<uint8_t>(data, data + size);
 }
 
-static const uint64_t I2C_SMBUS_WRITE     = 0;
 static const uint64_t I2C_SMBUS_READ      = 1;
 static const uint64_t I2C_SMBUS_BYTE_DATA = 2;
 
-// SPD5118 Hub MR write: select MR register by writing to reg 0x00
-static bool HubWriteMR(PawnIOWrapper& pa, const char* funcName,
-                       uint8_t addr, uint8_t mr) {
-    uint64_t wBuf[5] = { addr, I2C_SMBUS_WRITE, 0x00, I2C_SMBUS_BYTE_DATA, mr };
-    uint64_t out[1] = {0};
-    return pa.Execute(funcName, wBuf, 5, out, 0, nullptr);
-}
-
 static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
-                          uint8_t smbusAddr, uint8_t mr) {
-    // Step 1: Select MR by writing to reg 0 (MR select)
-    if (!HubWriteMR(pa, funcName, smbusAddr, mr))
+                          uint8_t smbusAddr, uint8_t reg) {
+    uint64_t inBuf[4] = { smbusAddr, I2C_SMBUS_READ, reg, I2C_SMBUS_BYTE_DATA };
+    uint64_t outBuf[1] = { 0 };
+    if (!pa.Execute(funcName, inBuf, 4, outBuf, 1, nullptr))
         return -1.0;
-
-    // Step 2: Read the selected MR from reg 0
-    uint64_t rdBuf[4] = { smbusAddr, I2C_SMBUS_READ, 0x00, I2C_SMBUS_BYTE_DATA };
-    uint64_t rdOut[1] = { 0 };
-    if (!pa.Execute(funcName, rdBuf, 4, rdOut, 1, nullptr))
-        return -1.0;
-
-    uint8_t t = (uint8_t)(rdOut[0] & 0xFF);
-    if (t > 10 && t < 120) return (double)t;  // SPD Hub MR49: 1°C resolution
+    uint8_t t = (uint8_t)(outBuf[0] & 0xFF);
+    if (t > 10 && t < 120) return (double)t * 0.5;  // best-effort 0.5°C decode
     return -1.0;
 }
 
