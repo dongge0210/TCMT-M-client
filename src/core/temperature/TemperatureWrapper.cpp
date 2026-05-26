@@ -56,28 +56,12 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
 
     // Add CPU package temperature via PawnIO/MSR (independent of LHM)
     double cpuTemp = CpuTempReader::ReadPackageTemp();
-    if (cpuTemp > 0) {
+    if (cpuTemp > 0)
         temps.push_back({"CPU Package (PawnIO)", cpuTemp});
-        // Log comparison with LHM CPU temp
-        static int cmpN = 0;
-        if (cmpN < 5) {
-            double lhmCpu = -1;
-            for (const auto& t : temps) {
-                if (t.first.find("CPU Package") != std::string::npos ||
-                    t.first.find("Core") != std::string::npos) {
-                    lhmCpu = t.second;
-                    break;
-                }
-            }
-            Logger::Info(std::string("PawnIO CPU=") + std::to_string(cpuTemp) +
-                         "C  LHM CPU~=" + std::to_string(lhmCpu) + "C");
-            cmpN++;
-        }
-    }
 
     // One-time dump: compare LHM vs PawnIO temperature sources
     static int dumpN = 0;
-    if (dumpN < 3) {
+    if (dumpN < 1) {
         Logger::Info("=== Temperature sources (LHM=" + std::to_string(lhmCount) +
                      " + PawnIO=" + std::to_string(temps.size() - lhmCount) +
                      " = " + std::to_string(temps.size()) + " total) ===");

@@ -75,6 +75,10 @@ std::vector<std::pair<std::string, double>> LibreHardwareMonitorBridge::GetTempe
             for each (ISensor ^ sensor in hardware->Sensors) {
                 if (sensor->SensorType == SensorType::Temperature && sensor->Value.HasValue) {
                     std::string name = marshal_as<std::string>(sensor->Name);
+                    // Filter out Max/Average aggregate sensors
+                    if (name.find("Max") != std::string::npos ||
+                        name.find("Average") != std::string::npos)
+                        continue;
                     temps.push_back({ name, sensor->Value.Value });
                 }
             }
