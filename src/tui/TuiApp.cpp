@@ -412,22 +412,18 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     int halfW = maxW / 2;
-    const int ROWS_PER_PAGE = 3;        // 3 rows = 6 sensors
-    const int TOTAL_ROWS    = 4;        // 3 content + 1 page indicator
+    const int CONTENT_ROWS = 3;      // 6 sensors max (2 per row)
 
-    // Collect sensors to display: skip per-core CPU sensors, keep everything else
+    // Collect sensors to display: skip per-core CPU sensors
     std::vector<std::pair<std::string, double>> displayTemps;
     for (const auto& [name, temp] : data.temperatures) {
-        bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos);
-        if (!isPerCoreSensor) {
+        if (name.find("CPU Core ") == std::string::npos)
             displayTemps.push_back({name, temp});
-        }
     }
 
-    int totalPages = (static_cast<int>(displayTemps.size()) + 5) / 6;
+    int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + 5) / 6);
     bool needPaging = totalPages > 1;
 
-    // Auto-advance page every 3 seconds when >6 sensors
     static int currentPage = 0;
     static auto lastPageFlip = std::chrono::steady_clock::now();
     if (needPaging) {
@@ -440,12 +436,12 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         currentPage = 0;
     }
 
-    int startIdx = currentPage * ROWS_PER_PAGE * 2;
-    for (int p = 0; p < ROWS_PER_PAGE; p++) {
+    int startIdx = currentPage * CONTENT_ROWS * 2;
+    for (int p = 0; p < CONTENT_ROWS; p++) {
         int leftIdx = startIdx + p * 2;
         if (leftIdx >= static_cast<int>(displayTemps.size())) break;
 
-        auto [nameL, tempL] = displayTemps[leftIdx];
+        auto& [nameL, tempL] = displayTemps[leftIdx];
         auto labelL = TrimRight(nameL, halfW - 9);
         int tcL = (tempL > 80) ? 4 : (tempL > 60) ? 3 : 2;
         wattron(win, COLOR_PAIR(tcL));
@@ -454,7 +450,7 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 
         int rightIdx = leftIdx + 1;
         if (rightIdx < static_cast<int>(displayTemps.size())) {
-            auto [nameR, tempR] = displayTemps[rightIdx];
+            auto& [nameR, tempR] = displayTemps[rightIdx];
             auto labelR = TrimRight(nameR, halfW - 9);
             int tcR = (tempR > 80) ? 4 : (tempR > 60) ? 3 : 2;
             wattron(win, COLOR_PAIR(tcR));
@@ -464,14 +460,17 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         lines++;
     }
 
+    // Fill remaining rows to keep fixed height (prevent bounce)
+    while (lines < 1 + CONTENT_ROWS)
+        lines++;
+
     // Page indicator
     if (needPaging) {
-        std::string pageStr = "[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]";
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, pageStr.c_str());
-        lines++;
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2,
+                  ("[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]").c_str());
     }
 
-    return lines;
+    return 1 + CONTENT_ROWS;  // fixed height: header + 3 content rows
 }
 
 int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
