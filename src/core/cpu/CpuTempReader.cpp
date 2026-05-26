@@ -19,47 +19,90 @@ static std::vector<uint8_t> LoadResource(const wchar_t* name) {
     return std::vector<uint8_t>(data, data + size);
 }
 
+static int GetProcessorCount() {
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int)si.dwNumberOfProcessors;
+}
+
+// Read MSR on a specific logical processor by setting thread affinity
+static bool ReadMsrOnCore(PawnIOWrapper& pa, uint32_t msr, int coreIdx, uint64_t* outVal) {
+    HANDLE hThread = GetCurrentThread();
+    DWORD_PTR origAffinity = SetThreadAffinityMask(hThread, (DWORD_PTR)1 << coreIdx);
+    if (origAffinity == 0) return false;
+
+    uint64_t inBuf[1] = { msr };
+    uint64_t outBuf[1] = { 0 };
+    bool ok = pa.Execute("ioctl_read_msr", inBuf, 1, outBuf, 1, nullptr);
+
+    SetThreadAffinityMask(hThread, origAffinity);
+    if (!ok) return false;
+    *outVal = outBuf[0];
+    return true;
+}
+
 bool CpuTempReader::IsAvailable() {
     return PawnIOWrapper::IsInstalled();
 }
 
-double CpuTempReader::ReadPackageTemp() {
+std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
+    std::vector<CpuCoreTemp> result;
     static PawnIOWrapper s_pa;
     static bool s_ready = false;
+    static uint32_t s_tjMax = 100;
+    static int s_coreCount = 0;
 
     if (!s_ready) {
-        if (!s_pa.Open()) return -1.0;
+        if (!s_pa.Open()) return result;
         auto data = LoadResource(INTEL_MSR_RES);
-        if (data.empty()) return -1.0;
+        if (data.empty()) return result;
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_read_msr"))
-            return -1.0;
+            return result;
+
+        // Read TjMax once (same for all cores)
+        uint64_t tjOut[1] = {0};
+        uint64_t tjIn[1] = { MSR_IA32_TEMPERATURE_TARGET };
+        if (s_pa.Execute("ioctl_read_msr", tjIn, 1, tjOut, 1, nullptr))
+            s_tjMax = ((uint32_t)tjOut[0] >> 16) & 0xFF;
+
+        s_coreCount = GetProcessorCount();
         s_ready = true;
-        Logger::Info("CpuTempReader: Intel MSR module ready");
+        Logger::Info(std::string("CpuTempReader: ready, TjMax=") + std::to_string(s_tjMax) +
+                     "C, " + std::to_string(s_coreCount) + " cores");
     }
 
-    uint64_t tjOut[1] = {0}, rdOut[1] = {0};
-    uint64_t tjIn[1] = { MSR_IA32_TEMPERATURE_TARGET };
-    uint64_t rdIn[1] = { MSR_IA32_THERM_STATUS };
+    if (!s_ready) return result;
 
-    if (!s_pa.Execute("ioctl_read_msr", tjIn, 1, tjOut, 1, nullptr))
-        return -1.0;
-    uint32_t tjMax = ((uint32_t)tjOut[0] >> 16) & 0xFF;
+    // Read per-core temperatures
+    double packageSum = 0;
+    int validCores = 0;
+    for (int i = 0; i < s_coreCount && i < 32; i++) {
+        uint64_t val = 0;
+        if (!ReadMsrOnCore(s_pa, MSR_IA32_THERM_STATUS, i, &val))
+            continue;
+        uint32_t eax = (uint32_t)val;
+        if ((eax & 0x80000000) == 0) continue;  // VALID bit
 
-    if (!s_pa.Execute("ioctl_read_msr", rdIn, 1, rdOut, 1, nullptr))
-        return -1.0;
-    uint32_t rdEax = (uint32_t)rdOut[0];
-    if ((rdEax & 0x80000000) == 0) return -1.0;  // VALID bit must be set
-    uint32_t dig = (rdEax >> 16) & 0x7F;
+        uint32_t dig = (eax >> 16) & 0x7F;
+        int tempC = (int)s_tjMax - (int)dig;
+        if (tempC < 0 || tempC > 125) continue;
 
-    int tempC = (int)tjMax - (int)dig;
-    if (tempC < 0 || tempC > 125) return -1.0;
-
-    static int lastTemp = -1;
-    if (tempC != lastTemp) {
-        Logger::Info(std::string("CpuTempReader: ") + std::to_string(tempC) +
-                     "C (TjMax=" + std::to_string(tjMax) + " dig=" + std::to_string(dig) + ")");
-        lastTemp = tempC;
+        CpuCoreTemp ct;
+        ct.name = "Core #" + std::to_string(i);
+        ct.temperature = (double)tempC;
+        result.push_back(ct);
+        packageSum += tempC;
+        validCores++;
     }
-    return (double)tempC;
+
+    // Add package average if we have core data
+    if (validCores > 0) {
+        CpuCoreTemp pkg;
+        pkg.name = "CPU Package (PawnIO)";
+        pkg.temperature = packageSum / validCores;
+        result.push_back(pkg);
+    }
+
+    return result;
 }
 #endif

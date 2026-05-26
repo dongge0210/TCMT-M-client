@@ -2,13 +2,19 @@
 
 #ifdef TCMT_WINDOWS
 #include <cstdint>
+#include <string>
+#include <vector>
+
+struct CpuCoreTemp {
+    std::string name;
+    double temperature;
+};
 
 class CpuTempReader {
 public:
-    // Returns CPU package temperature in Celsius, or -1 if unavailable
-    static double ReadPackageTemp();
+    // Returns all core temperatures + package, or empty if unavailable
+    static std::vector<CpuCoreTemp> ReadAll();
 
-    // Check if Intel MSR or AMD SMU module was loaded
     static bool IsAvailable();
 };
 #endif

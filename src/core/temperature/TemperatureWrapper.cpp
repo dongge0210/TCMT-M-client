@@ -54,10 +54,10 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         Logger::Debug("MemoryTempReader: exception (no PawnIO?)");
     }
 
-    // Add CPU package temperature via PawnIO/MSR (independent of LHM)
-    double cpuTemp = CpuTempReader::ReadPackageTemp();
-    if (cpuTemp > 0)
-        temps.push_back({"CPU Package (PawnIO)", cpuTemp});
+    // Add per-core CPU temperatures via PawnIO/MSR (independent of LHM)
+    auto cpuTemps = CpuTempReader::ReadAll();
+    for (const auto& ct : cpuTemps)
+        temps.push_back({ct.name, ct.temperature});
 
     // One-time dump: compare LHM vs PawnIO temperature sources
     static int dumpN = 0;
