@@ -34,20 +34,18 @@ double CpuTempReader::ReadPackageTemp() {
     if (!s_loaded) {
         s_loaded = true;
         if (!s_pa.Open()) {
-            Logger::Debug("CpuTempReader: PawnIO not available");
+            Logger::Info("CpuTempReader: PawnIO device not available");
             return -1.0;
         }
-
-        // Try Intel MSR module
         auto data = LoadResource(INTEL_MSR_RES);
+        Logger::Info(std::string("CpuTempReader: IntelMSR resource ") +
+                     (data.empty() ? "NOT FOUND" : "loaded " + std::to_string(data.size()) + " bytes"));
         if (!data.empty() && s_pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_read_msr")) {
             s_intel = true;
-        } else {
-            // Try AMD module (future)
+            Logger::Info("CpuTempReader: Intel MSR module loaded");
         }
-
         if (!s_intel) {
-            Logger::Debug("CpuTempReader: no CPU temp module loaded");
+            Logger::Info("CpuTempReader: no CPU temp module loaded");
             return -1.0;
         }
     }
