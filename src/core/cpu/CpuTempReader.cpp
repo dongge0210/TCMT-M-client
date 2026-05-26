@@ -93,15 +93,6 @@ std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
     }
     if (validCores == 0) return result;
 
-    static int logN = 0;
-    if (logN < 2) {
-        Logger::Info(std::string("CpuTempReader: ") + std::to_string(validCores) +
-                     " cores → Pkg=" + std::to_string((int)packageTemp) +
-                     " Max=" + std::to_string((int)coreMax) +
-                     " Avg=" + std::to_string((int)(coreSum/validCores)));
-        logN++;
-    }
-
     result.push_back({"CPU Package", packageTemp});
     result.push_back({"CPU Core Max", coreMax});
     result.push_back({"CPU Core Average", coreSum / validCores});
