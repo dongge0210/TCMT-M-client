@@ -758,19 +758,20 @@ int main(int argc, char* argv[]) {
             std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
             data.timestamp = buf;
 
-            // Physical disks (SMART) — cache once, then feed TUI and IPC
+            // Physical disks (SMART) — refresh every 60 seconds
             static std::vector<PhysicalDiskSmartData> cachedSmart;
-            static bool smartDone = false;
-            if (!smartDone) {
+            static auto lastSmartRefresh = std::chrono::steady_clock::now() - std::chrono::seconds(61);
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastSmartRefresh).count() >= 60) {
                 try {
                     SystemInfo tmp;
                     DiskInfo().CollectSmartData(tmp);
-                    cachedSmart = std::move(tmp.physicalDisks);
-                    smartDone = true;
-                    Logger::Info("SMART collected " + std::to_string(cachedSmart.size()) + " physical disks,"
-                        " first attrCount=" + (cachedSmart.empty() ? "0" : std::to_string(cachedSmart[0].attributeCount)));
+                    if (!tmp.physicalDisks.empty()) {
+                        cachedSmart = std::move(tmp.physicalDisks);
+                    }
+                    lastSmartRefresh = now;
                 } catch (...) {
-                    Logger::Error("SMART collection threw exception (need root?)");
+                    Logger::Error("SMART refresh threw exception");
                 }
             }
                 data.physicalDisks.clear();
