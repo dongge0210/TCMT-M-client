@@ -30,6 +30,9 @@
     <ClInclude Include="src\core\memory\MemoryTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\cpu\CpuTempReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\network\NetworkAdapter.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -135,6 +138,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\memory\MemoryTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\cpu\CpuTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ResourceCompile Include="src\resources.rc">

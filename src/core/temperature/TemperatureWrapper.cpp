@@ -5,6 +5,7 @@
 #pragma managed
 #include "../Utils/LibreHardwareMonitorBridge.h"
 #include "../memory/MemoryTempReader.h"
+#include "../cpu/CpuTempReader.h"
 #pragma unmanaged
 
 bool TemperatureWrapper::initialized = false;
@@ -52,6 +53,11 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
     } catch (...) {
         Logger::Debug("MemoryTempReader: exception (no PawnIO?)");
     }
+
+    // Add CPU package temperature via PawnIO/MSR (independent of LHM)
+    double cpuTemp = CpuTempReader::ReadPackageTemp();
+    if (cpuTemp > 0)
+        temps.push_back({"CPU Package (PawnIO)", cpuTemp});
 
     // One-time dump: compare LHM vs PawnIO temperature sources
     static int dumpN = 0;
