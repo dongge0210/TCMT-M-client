@@ -243,11 +243,6 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 
 #ifndef TCMT_MACOS
-    if (data.gpuMemory > 0) {
-        auto memStr = FormatSize(data.gpuMemory);
-        mvwprintw(win, y + lines, x0 + 2, "VRAM: %.*s", maxW - 8, memStr.c_str());
-        lines++;
-    }
     if (data.gpuMemoryPercent > 1 && data.gpuMemory > 0) {
         uint64_t used = (uint64_t)(data.gpuMemory * data.gpuMemoryPercent / 100.0);
         auto usedStr = FormatSize(used);
