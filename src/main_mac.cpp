@@ -761,18 +761,15 @@ int main(int argc, char* argv[]) {
             // Physical disks (SMART) — refresh every 60 seconds
             static std::vector<PhysicalDiskSmartData> cachedSmart;
             static auto lastSmartRefresh = std::chrono::steady_clock::now() - std::chrono::seconds(61);
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastSmartRefresh).count() >= 60) {
+            auto nowSt = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(nowSt - lastSmartRefresh).count() >= 60) {
                 try {
                     SystemInfo tmp;
                     DiskInfo().CollectSmartData(tmp);
-                    if (!tmp.physicalDisks.empty()) {
+                    if (!tmp.physicalDisks.empty())
                         cachedSmart = std::move(tmp.physicalDisks);
-                    }
-                    lastSmartRefresh = now;
-                } catch (...) {
-                    Logger::Error("SMART refresh threw exception");
-                }
+                    lastSmartRefresh = nowSt;
+                } catch (...) {}
             }
                 data.physicalDisks.clear();
                 data.physicalDisks.reserve(cachedSmart.size());
