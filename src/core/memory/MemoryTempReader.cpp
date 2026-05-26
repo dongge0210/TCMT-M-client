@@ -35,17 +35,25 @@ static std::vector<uint8_t> LoadBinResource(const wchar_t* resName) {
     return std::vector<uint8_t>(data, data + size);
 }
 
+static const uint64_t I2C_SMBUS_WRITE     = 0;
 static const uint64_t I2C_SMBUS_READ      = 1;
-static const uint64_t I2C_SMBUS_BYTE_DATA = 2;
+static const uint64_t I2C_SMBUS_WORD_DATA = 3;
 
 static double ReadSpdTemp(PawnIOWrapper& pa, const char* funcName,
                           uint8_t smbusAddr, uint8_t reg) {
-    uint64_t inBuf[4] = { smbusAddr, I2C_SMBUS_READ, reg, I2C_SMBUS_BYTE_DATA };
+    // DDR5 SPD Hub MR49:MR50 temperature (JEDEC JESD300-5B)
+    // WORD_DATA at register 0x31 reads both MR49 (low) and MR50 (high)
+    uint64_t inBuf[4] = { smbusAddr, I2C_SMBUS_READ, reg, I2C_SMBUS_WORD_DATA };
     uint64_t outBuf[1] = { 0 };
     if (!pa.Execute(funcName, inBuf, 4, outBuf, 1, nullptr))
         return -1.0;
-    uint8_t t = (uint8_t)(outBuf[0] & 0xFF);
-    if (t > 10 && t < 120) return (double)t * 0.5;  // best-effort 0.5°C decode
+
+    // Decode: raw16 >> 2, sign-extend 10-bit, * 0.25°C
+    uint16_t raw = (uint16_t)(outBuf[0] & 0xFFFF);
+    int16_t val = (int16_t)(raw >> 2);
+    if (val & 0x0200) val |= 0xFC00;  // sign-extend from bit 9 (was bit 11 pre-shift)
+    double tempC = val * 0.25;
+    if (tempC > 0.0 && tempC < 120.0) return tempC;
     return -1.0;
 }
 
@@ -79,6 +87,29 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
         if (s_funcName.empty()) {
             Logger::Info("PawnIO: no SMBus module loaded");
             return result;
+        }
+    }
+
+    // One-time: enable SPD Hub temperature sensors
+    static bool sensorsEnabled = false;
+    if (!sensorsEnabled && !s_funcName.empty()) {
+        sensorsEnabled = true;
+        for (uint8_t addr = SPD_ADDR_BEGIN; addr <= SPD_ADDR_END; addr++) {
+            // Read MR26 (0x1A) — temperature config
+            uint64_t cfgIn[4] = { addr, I2C_SMBUS_READ, 0x1A, 2 }; // BYTE_DATA
+            uint64_t cfgOut[1] = {0};
+            if (s_pa.Execute(s_funcName.c_str(), cfgIn, 4, cfgOut, 1, nullptr)) {
+                uint8_t cfg = (uint8_t)(cfgOut[0] & 0xFF);
+                if (cfg & 0x01) {
+                    // Temperature sensor disabled — enable it
+                    cfg &= ~0x01;
+                    Logger::Info(std::string("PawnIO: enabling temp sensor on DIMM at 0x") +
+                                 std::to_string(addr));
+                    // MR26 write = BYTE_DATA write: [addr, WRITE=0, reg=0x1A, BYTE_DATA=2, value]
+                    uint64_t wrBuf[5] = { addr, 0, 0x1A, 2, cfg };
+                    s_pa.Execute(s_funcName.c_str(), wrBuf, 5, nullptr, 0, nullptr);
+                }
+            }
         }
     }
 
