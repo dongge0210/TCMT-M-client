@@ -73,36 +73,21 @@ std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
 
     if (!s_ready) return result;
 
-    // Read per-core temperatures
-    double packageSum = 0;
-    int validCores = 0;
-    for (int i = 0; i < s_coreCount && i < 32; i++) {
-        uint64_t val = 0;
-        if (!ReadMsrOnCore(s_pa, MSR_IA32_THERM_STATUS, i, &val))
-            continue;
-        uint32_t eax = (uint32_t)val;
-        if ((eax & 0x80000000) == 0) continue;  // VALID bit
+    // Read first core's temperature as package proxy (all cores share same tjMax)
+    uint64_t val = 0;
+    if (!ReadMsrOnCore(s_pa, MSR_IA32_THERM_STATUS, 0, &val))
+        return result;
+    uint32_t eax = (uint32_t)val;
+    if ((eax & 0x80000000) == 0) return result;
 
-        uint32_t dig = (eax >> 16) & 0x7F;
-        int tempC = (int)s_tjMax - (int)dig;
-        if (tempC < 0 || tempC > 125) continue;
+    uint32_t dig = (eax >> 16) & 0x7F;
+    int tempC = (int)s_tjMax - (int)dig;
+    if (tempC < 0 || tempC > 125) return result;
 
-        CpuCoreTemp ct;
-        ct.name = "Core #" + std::to_string(i);
-        ct.temperature = (double)tempC;
-        result.push_back(ct);
-        packageSum += tempC;
-        validCores++;
-    }
-
-    // Add package average if we have core data
-    if (validCores > 0) {
-        CpuCoreTemp pkg;
-        pkg.name = "CPU Package (PawnIO)";
-        pkg.temperature = packageSum / validCores;
-        result.push_back(pkg);
-    }
-
+    CpuCoreTemp pkg;
+    pkg.name = "CPU Package (PawnIO)";
+    pkg.temperature = (double)tempC;
+    result.push_back(pkg);
     return result;
 }
 #endif
