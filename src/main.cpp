@@ -1316,6 +1316,7 @@ int main(int argc, char* argv[]) {
                     sysInfo.gpuBrand = cachedGpuBrand;
                     sysInfo.gpuMemory = cachedGpuMemory;
                     sysInfo.gpuCoreFreq = cachedGpuCoreFreq;
+                    sysInfo.gpuFreq = cachedGpuCoreFreq;  // NVML real-time clock → TUI
                     sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
                     sysInfo.gpuUsage = cachedGpuUsage;
 
