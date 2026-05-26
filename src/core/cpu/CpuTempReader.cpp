@@ -47,7 +47,9 @@ double CpuTempReader::ReadPackageTemp() {
 
     if (!s_pa.Execute("ioctl_read_msr", rdIn, 1, rdOut, 1, nullptr))
         return -1.0;
-    uint32_t dig = ((uint32_t)rdOut[0] >> 16) & 0x7F;
+    uint32_t rdEax = (uint32_t)rdOut[0];
+    if ((rdEax & 0x80000000) == 0) return -1.0;  // VALID bit must be set
+    uint32_t dig = (rdEax >> 16) & 0x7F;
 
     int tempC = (int)tjMax - (int)dig;
     if (tempC < 0 || tempC > 125) return -1.0;
