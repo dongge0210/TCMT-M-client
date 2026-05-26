@@ -57,7 +57,7 @@ double CpuTempReader::ReadPackageTemp() {
     uint64_t tjOut[1] = { 0 };
     static int dbgN = 0;
     if (!s_pa.Execute("ioctl_read_msr", tjIn, 1, tjOut, 1, nullptr)) {
-        if (dbgN < 2) { Logger::Info("CpuTempReader: MSR 0x1A2 read FAILED"); dbgN++; }
+        if (dbgN < 5) { Logger::Info("CpuTempReader: MSR 0x1A2 read FAILED"); dbgN++; }
         return -1.0;
     }
     uint32_t tjRaw = (uint32_t)tjOut[0];
@@ -67,13 +67,13 @@ double CpuTempReader::ReadPackageTemp() {
     uint64_t rdIn[1] = { MSR_IA32_THERM_STATUS };
     uint64_t rdOut[1] = { 0 };
     if (!s_pa.Execute("ioctl_read_msr", rdIn, 1, rdOut, 1, nullptr)) {
-        if (dbgN < 2) { Logger::Info("CpuTempReader: MSR 0x19C read FAILED"); dbgN++; }
+        if (dbgN < 5) { Logger::Info("CpuTempReader: MSR 0x19C read FAILED"); dbgN++; }
         return -1.0;
     }
     uint32_t rdRaw = (uint32_t)rdOut[0];
     uint32_t digReadout = (rdRaw >> 16) & 0x7F;
 
-    if (dbgN < 2) {
+    if (dbgN < 5) {
         Logger::Info(std::string("CpuTempReader: TjMax raw=") + std::to_string(tjRaw) +
                      " tjMax=" + std::to_string(tjMax) +
                      " therm raw=" + std::to_string(rdRaw) +
