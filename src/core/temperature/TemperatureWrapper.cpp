@@ -43,7 +43,6 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
     }
 
     // Add DIMM temperatures via PawnIO/SMBus (no-op if PawnIO not installed)
-    size_t lhmCount = temps.size();
     try {
         auto dimms = MemoryTempReader::ReadAll();
         for (const auto& d : dimms) {
@@ -67,19 +66,6 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
     auto cpuTemps = CpuTempReader::ReadAll();
     for (const auto& ct : cpuTemps)
         temps.push_back({ct.name, ct.temperature});
-
-    // One-time dump: compare LHM vs PawnIO temperature sources
-    static int dumpN = 0;
-    if (dumpN < 1) {
-        Logger::Info("=== Temperature sources (LHM=" + std::to_string(lhmCount) +
-                     " + PawnIO=" + std::to_string(temps.size() - lhmCount) +
-                     " = " + std::to_string(temps.size()) + " total) ===");
-        for (size_t i = 0; i < temps.size(); i++) {
-            Logger::Info(std::string(i < lhmCount ? "  [LHM] " : "  [PawnIO] ") +
-                         temps[i].first + " = " + std::to_string(temps[i].second) + " C");
-        }
-        dumpN++;
-    }
 
     return temps;
 }
