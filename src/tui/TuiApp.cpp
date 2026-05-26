@@ -412,14 +412,12 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     int halfW = maxW / 2;
-    const int CONTENT_ROWS = 4;      // 8 sensors per page (2 per row)
+    const int CONTENT_ROWS = 3;      // 6 sensors per page (2 per row)
 
-    // Collect sensors to display: skip per-core CPU sensors
+    // All sensors are pre-filtered upstream; display everything
     std::vector<std::pair<std::string, double>> displayTemps;
-    for (const auto& [name, temp] : data.temperatures) {
-        if (name.find("CPU Core ") == std::string::npos)
-            displayTemps.push_back({name, temp});
-    }
+    for (const auto& [name, temp] : data.temperatures)
+        displayTemps.push_back({name, temp});
 
     int perPage = CONTENT_ROWS * 2;
     int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
