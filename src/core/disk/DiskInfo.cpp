@@ -374,13 +374,16 @@ std::vector<DiskData> DiskInfo::GetDisks() {
 // Collect SMART data - available on all platforms
 void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
     FILE* fp = popen("system_profiler SPNVMeDataType -json 2>/dev/null", "r");
-    if (!fp) { fp = popen("system_profiler SPSerialATADataType -json 2>/dev/null", "r"); if (!fp) return; }
+    if (!fp) { fp = popen("system_profiler SPSerialATADataType -json 2>/dev/null", "r"); if (!fp) { Logger::Info("SMART: popen failed"); return; } }
 
     std::string json;
     char buf[4096];
     while (fgets(buf, sizeof(buf), fp)) json += buf;
     int rc = pclose(fp);
-    if (rc != 0 || json.empty()) return;
+    if (rc != 0 || json.empty()) {
+        Logger::Info(std::string("SMART: pclose rc=") + std::to_string(rc) + " len=" + std::to_string(json.size()));
+        return;
+    }
 
     auto j = nlohmann::json::parse(json, nullptr, false);
     if (j.is_discarded()) return;
