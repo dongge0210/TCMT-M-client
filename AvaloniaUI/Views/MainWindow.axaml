@@ -6,7 +6,7 @@
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding WindowTitle}"
         Height="800" Width="1200"
-        Background="#FF121212">
+        Background="#FF0D0D0D">
 
     <Window.DataTemplates>
         <DataTemplate DataType="vm:DashboardViewModel">
@@ -26,37 +26,34 @@
         </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid ColumnDefinitions="240,*">
+    <Grid ColumnDefinitions="200,*">
         <!-- Sidebar -->
-        <Border Grid.Column="0" Background="#FF1E1E1E" BorderThickness="0,0,1,0" BorderBrush="#FF2A2A2A">
+        <Border Grid.Column="0" Background="#FF141414" BorderThickness="0,0,1,0" BorderBrush="#FF1F1F1F">
             <Grid RowDefinitions="Auto,*,Auto">
-                <!-- Logo & App Title -->
-                <StackPanel Grid.Row="0" Margin="24,28,24,16">
+                <!-- Logo -->
+                <StackPanel Grid.Row="0" Margin="20,24,20,20">
                     <Grid ColumnDefinitions="Auto,*">
-                        <Border Grid.Column="0" Width="36" Height="36" CornerRadius="10" Background="#FF4CAF50" Margin="0,0,12,0">
-                            <TextBlock Text="T" FontSize="20" FontWeight="Bold" Foreground="White"
+                        <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="#FF4CAF50">
+                            <TextBlock Text="T" FontSize="16" FontWeight="SemiBold" Foreground="White"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="TCMT" FontSize="18" FontWeight="Bold" Foreground="White"/>
-                            <TextBlock Text="System Monitor" FontSize="10" Foreground="#FF666666"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <TextBlock Text="TCMT" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
+                            <TextBlock Text="Monitor" FontSize="9" Foreground="#FF555555"/>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
 
                 <!-- Navigation -->
                 <ListBox Grid.Row="1" ItemsSource="{Binding Pages}" SelectedItem="{Binding CurrentPage}"
-                         Background="Transparent" Margin="8,0"
-                         BorderThickness="0">
+                         Background="Transparent" Margin="10,0" BorderThickness="0">
                     <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ViewModelBase">
-                            <Border Padding="14,11" CornerRadius="10" Margin="0,2">
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="16"
-                                               Foreground="#FF999999" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Title}" Foreground="White"
-                                               FontSize="13" FontWeight="Medium" VerticalAlignment="Center"/>
-                                </Grid>
+                        <DataTemplate x:DataType="vm:ViewModelBase">
+                            <Border Padding="12,10" CornerRadius="8" Margin="0,3">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="{Binding Icon}" FontSize="14"/>
+                                    <TextBlock Text="{Binding Title}" Foreground="#FF999999" FontSize="12" VerticalAlignment="Center"/>
+                                </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -73,39 +70,36 @@
                                 </ControlTemplate>
                             </Setter>
                         </Style>
-                        <Style Selector="ListBoxItem:pointerover /template/ContentPresenter#PART_ContentPresenter">
-                            <Setter Property="(Panel.Background)" Value="#FF2A2A2A"/>
+                        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="(Panel.Background)" Value="#FF1F1F1F"/>
                         </Style>
-                        <Style Selector="ListBoxItem:selected /template/ContentPresenter#PART_ContentPresenter">
-                            <Setter Property="(Panel.Background)" Value="#FF2D2D2D"/>
+                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="(Panel.Background)" Value="#FF1A1A1A"/>
                         </Style>
-                        <Style Selector="ListBoxItem:selected:focus /template/ContentPresenter#PART_ContentPresenter">
-                            <Setter Property="(Panel.Background)" Value="#FF2D2D2D"/>
-                        </Style>
-                        <Style Selector="ListBoxItem:focus-visible /template/ContentPresenter#PART_ContentPresenter">
-                            <Setter Property="(Panel.Background)" Value="#FF2D2D2D"/>
+                        <Style Selector="ListBoxItem:selected TextBlock">
+                            <Setter Property="Foreground" Value="White"/>
                         </Style>
                     </ListBox.Styles>
                 </ListBox>
 
-                <!-- Footer: Connection Status -->
-                <StackPanel Grid.Row="2" Margin="20,0,20,20" Spacing="10">
-                    <Separator Background="#FF333333" Height="1"/>
-                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,8,0,0">
-                        <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"
-                                 Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" Foreground="#FF888888"
-                                   FontSize="10" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <!-- Footer -->
+                <StackPanel Grid.Row="2" Margin="16,0,16,16" Spacing="8">
+                    <Separator Background="#FF1F1F1F" Height="1"/>
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,6,0,0">
+                        <Ellipse Grid.Column="0" Width="7" Height="7" VerticalAlignment="Center"
+                                 Fill="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding ConnectionStatus}" Foreground="#FF555555"
+                                   FontSize="9" VerticalAlignment="Center" Margin="6,0,0,0"/>
                         <Button Grid.Column="2" Command="{Binding ReconnectCommand}" IsVisible="{Binding !IsConnected}"
-                                Padding="6,2" FontSize="9" CornerRadius="6" Background="#FF333333" Foreground="White"
-                                BorderThickness="0" Content="重连" VerticalAlignment="Center"/>
+                                Content="重连" FontSize="8" Padding="4,2" CornerRadius="4"
+                                Background="#FF1F1F1F" Foreground="#FF666666" BorderThickness="0"/>
                     </Grid>
-                    <TextBlock Text="{Binding LastUpdate, StringFormat='{}{0:HH:mm:ss}'}" Foreground="#FF555555" FontSize="9"/>
+                    <TextBlock Text="{Binding LastUpdate, StringFormat='{}{0:HH:mm:ss}'}" Foreground="#FF333333" FontSize="8"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Main Content Area -->
+        <!-- Main Content -->
         <ContentControl Grid.Column="1" Content="{Binding CurrentPage}"/>
     </Grid>
 </Window>

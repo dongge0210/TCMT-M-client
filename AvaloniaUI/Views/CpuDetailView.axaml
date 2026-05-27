@@ -1,108 +1,90 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
-             xmlns:converters="clr-namespace:AvaloniaUI.Converters"
              x:Class="AvaloniaUI.Views.CpuDetailView"
-             x:DataType="vm:CpuDetailViewModel">
+             x:DataType="vm:CpuDetailViewModel"
+             Background="#FF0D0D0D">
 
   <Design.DataContext>
-    <vm:CpuDetailViewModel CpuName="AMD Ryzen 9 7950X" CpuUsage="42.5" CpuTemperature="68.0" CpuFrequency="5700"/>
+    <vm:CpuDetailViewModel CpuName="AMD Ryzen 9 7950X" CpuUsage="42.5" CpuTemperature="68.0" CpuFrequency="5700" PhysicalCores="16" LogicalCores="32"/>
   </Design.DataContext>
 
-  <Grid RowDefinitions="Auto,*">
-    <!-- Header -->
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="30,28,30,0">
-      <StackPanel>
-        <TextBlock Text="Processor Details" FontSize="26" FontWeight="Bold" Foreground="White"/>
-        <TextBlock Text="{Binding CpuName}" FontSize="13" Foreground="#FF888888" Margin="0,4,0,0"/>
-      </StackPanel>
-      <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="12" Padding="14,10" BorderBrush="#FF2A2A2A" BorderThickness="1">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBlock Text="⚡" FontSize="18" VerticalAlignment="Center"/>
-          <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F1}%}" FontSize="20" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+  <ScrollViewer Padding="40,30">
+    <StackPanel Spacing="24">
+      
+      <!-- Header -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Text="CPU" FontSize="32" FontWeight="Bold" Foreground="White"/>
+          <TextBlock Text="{Binding CpuName}" FontSize="13" Foreground="#FF666666" Margin="0,4,0,0"/>
         </StackPanel>
-      </Border>
-    </Grid>
+        <Border Background="#FF1A1A1A" CornerRadius="10" Padding="16,12" BorderBrush="#FF252525" BorderThickness="1">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="⚡" FontSize="16" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F0}%}" FontSize="22" FontWeight="Bold" Foreground="#FF4CAF50" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Border>
+      </Grid>
 
-    <!-- Content -->
-    <ScrollViewer Grid.Row="1" Padding="30,20">
-      <StackPanel Spacing="20">
-
-        <!-- Row 1: Main Gauge + Core Info -->
-        <Grid ColumnDefinitions="280,*">
-          <!-- CPU Usage Arc -->
-          <Border Grid.Column="0" Background="#FF1E1E1E" CornerRadius="20" Padding="24" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="16" HorizontalAlignment="Center">
-              <TextBlock Text="UTILIZATION" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
-              <Panel Width="180" Height="180">
-                <Arc Width="160" Height="160" Stroke="#FF333333" StrokeThickness="16" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
-                <Arc Width="160" Height="160" Stroke="#FF4CAF50" StrokeThickness="16" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                  <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F1}%}" FontSize="36" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
-                  <TextBlock Text="Current Load" FontSize="11" Foreground="Gray" HorizontalAlignment="Center"/>
-                </StackPanel>
-              </Panel>
-              <TextBlock Text="{Binding CpuFrequency}" Foreground="#FFB3B3B3" FontSize="15" FontFamily="Consolas,Monospace" HorizontalAlignment="Center"/>
-            </StackPanel>
-          </Border>
-
-          <!-- Core Configuration -->
-          <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="20" Padding="24" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="18">
-              <TextBlock Text="CORE CONFIGURATION" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
-
-              <!-- Physical / Logical -->
-              <Grid ColumnDefinitions="*,*">
-                <Border Background="#FF252525" CornerRadius="12" Padding="18,14" Margin="0,0,10,0">
-                  <StackPanel Spacing="4">
-                    <TextBlock Text="Physical Cores" FontSize="9" Foreground="Gray"/>
-                    <TextBlock Text="{Binding PhysicalCores}" FontSize="28" FontWeight="Bold" Foreground="White"/>
-                  </StackPanel>
-                </Border>
-                <Border Grid.Column="1" Background="#FF252525" CornerRadius="12" Padding="18,14" Margin="10,0,0,0">
-                  <StackPanel Spacing="4">
-                    <TextBlock Text="Logical Cores" FontSize="9" Foreground="Gray"/>
-                    <TextBlock Text="{Binding LogicalCores}" FontSize="28" FontWeight="Bold" Foreground="White"/>
-                  </StackPanel>
-                </Border>
-              </Grid>
-
-              <!-- Features -->
-              <Grid ColumnDefinitions="*,*">
-                <StackPanel Spacing="8">
-                  <TextBlock Text="Features" FontSize="9" Foreground="Gray"/>
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Border Background="#FF2A2A2A" CornerRadius="6" Padding="8,4">
-                      <TextBlock Text="HT" FontSize="10" Foreground="#FFAAAAAA"/>
-                    </Border>
-                    <Border Background="#FF2A2A2A" CornerRadius="6" Padding="8,4">
-                      <TextBlock Text="VM" FontSize="10" Foreground="#FFAAAAAA"/>
-                    </Border>
-                  </StackPanel>
-                </StackPanel>
-              </Grid>
-            </StackPanel>
-          </Border>
-        </Grid>
-
-        <!-- Row 2: Temperature Card -->
-        <Border Background="#FF1E1E1E" CornerRadius="20" Padding="24" BorderBrush="#FF2A2A2A" BorderThickness="1">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <StackPanel Grid.Column="0" Spacing="4" MinWidth="120">
-              <TextBlock Text="TEMPERATURE" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
-              <TextBlock Text="{Binding CpuTemperature, StringFormat={}{0:F1}°C}" FontSize="36" FontWeight="Bold" Foreground="White"/>
-              <TextBlock Text="Package Temp" FontSize="11" Foreground="Gray"/>
-            </StackPanel>
-            <Separator Grid.Column="1" Background="#FF333333" Height="40" Margin="20,0" VerticalAlignment="Center"/>
-            <StackPanel Grid.Column="2" Spacing="4" MinWidth="120">
-              <TextBlock Text="FREQUENCY" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
-              <TextBlock Text="{Binding CpuFrequency}" FontSize="24" FontWeight="Bold" Foreground="White" FontFamily="Consolas,Monospace"/>
-              <TextBlock Text="P-Core Clock" FontSize="11" Foreground="Gray"/>
-            </StackPanel>
-          </Grid>
+      <!-- Main Stats Grid -->
+      <Grid ColumnDefinitions="*,*,*">
+        
+        <!-- Usage Card -->
+        <Border Grid.Column="0" Background="#FF141414" CornerRadius="16" Padding="24" BorderBrush="#FF1F1F1F" BorderThickness="1" Margin="0,0,16,0">
+          <StackPanel Spacing="12">
+            <TextBlock Text="USAGE" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
+            <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F1}%}" FontSize="36" FontWeight="Bold" Foreground="White"/>
+            <ProgressBar Value="{Binding CpuUsage}" Maximum="100" Height="4" CornerRadius="2">
+              <ProgressBar.Styles>
+                <Style Selector="ProgressBar">
+                  <Setter Property="Background" Value="#FF1F1F1F"/>
+                  <Setter Property="Foreground" Value="#FF4CAF50"/>
+                </Style>
+              </ProgressBar.Styles>
+            </ProgressBar>
+          </StackPanel>
         </Border>
 
-      </StackPanel>
-    </ScrollViewer>
-  </Grid>
+        <!-- Temperature Card -->
+        <Border Grid.Column="1" Background="#FF141414" CornerRadius="16" Padding="24" BorderBrush="#FF1F1F1F" BorderThickness="1" Margin="8,0">
+          <StackPanel Spacing="12">
+            <TextBlock Text="TEMPERATURE" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
+            <TextBlock Text="{Binding CpuTemperature, StringFormat={}{0:F0}°C}" FontSize="36" FontWeight="Bold" Foreground="White"/>
+            <TextBlock Text="Package" FontSize="11" Foreground="#FF666666"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Frequency Card -->
+        <Border Grid.Column="2" Background="#FF141414" CornerRadius="16" Padding="24" BorderBrush="#FF1F1F1F" BorderThickness="1" Margin="16,0,0,0">
+          <StackPanel Spacing="12">
+            <TextBlock Text="FREQUENCY" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
+            <TextBlock Text="{Binding CpuFrequency}" FontSize="24" FontWeight="Bold" Foreground="White" FontFamily="Consolas,Monospace"/>
+            <TextBlock Text="P-Core" FontSize="11" Foreground="#FF666666"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- Core Info -->
+      <Border Background="#FF141414" CornerRadius="16" Padding="24" BorderBrush="#FF1F1F1F" BorderThickness="1">
+        <StackPanel Spacing="16">
+          <TextBlock Text="CORES" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
+          <Grid ColumnDefinitions="*,*">
+            <Border Background="#FF1A1A1A" CornerRadius="12" Padding="20,16" Margin="0,0,8,0">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Physical Cores" FontSize="11" Foreground="#FF666666"/>
+                <TextBlock Text="{Binding PhysicalCores}" FontSize="32" FontWeight="Bold" Foreground="White"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Background="#FF1A1A1A" CornerRadius="12" Padding="20,16" Margin="8,0,0,0">
+              <StackPanel Spacing="6">
+                <TextBlock Text="Logical Cores" FontSize="11" Foreground="#FF666666"/>
+                <TextBlock Text="{Binding LogicalCores}" FontSize="32" FontWeight="Bold" Foreground="White"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>
