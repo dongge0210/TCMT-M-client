@@ -119,29 +119,15 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 data.compressedMemory.store(0);
             }
 #elif defined(TCMT_WINDOWS)
-            // Windows: read compressed memory via PDH \Memory\Memory Compression
+            // Windows: estimate compressed memory from commit charge.
+            // CommitTotal includes both real allocations and the compression store.
             {
-                static void* hQuery = nullptr;
-                static void* hCounter = nullptr;
-                static bool pdhReady = false;
-                if (!pdhReady) {
-                    if (PdhOpenQueryW(nullptr, 0, (PDH_HQUERY*)&hQuery) == 0) {
-                        if (PdhAddEnglishCounterW((PDH_HQUERY)hQuery,
-                            L"\\Memory\\Memory Compression", 0,
-                            (PDH_HCOUNTER*)&hCounter) == 0) {
-                            pdhReady = true;
-                        }
-                    }
-                }
-                if (pdhReady) {
-                    PdhCollectQueryData((PDH_HQUERY)hQuery);
-                    PDH_FMT_COUNTERVALUE v;
-                    if (PdhGetFormattedCounterValue((PDH_HCOUNTER)hCounter,
-                        PDH_FMT_LARGE, nullptr, &v) == 0) {
-                        data.compressedMemory.store(v.largeValue);
-                    }
-                } else {
-                    data.compressedMemory.store(0);
+                PERFORMANCE_INFORMATION pi = { sizeof(PERFORMANCE_INFORMATION) };
+                if (GetPerformanceInfo(&pi, sizeof(pi))) {
+                    uint64_t commitBytes = (uint64_t)pi.CommitTotal * pi.PageSize;
+                    uint64_t physicalUsed = (uint64_t)(pi.PhysicalTotal - pi.PhysicalAvailable) * pi.PageSize;
+                    if (commitBytes > physicalUsed)
+                        data.compressedMemory.store(commitBytes - physicalUsed);
                 }
             }
 #endif
