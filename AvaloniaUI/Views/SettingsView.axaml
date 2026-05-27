@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
+             x:Class="AvaloniaUI.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <Design.DataContext>
+    <vm:SettingsViewModel AppVersion="v0.14" IPCStatus="Connected"/>
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="30,28,30,0">
+      <TextBlock Text="Settings" FontSize="26" FontWeight="Bold" Foreground="White"/>
+      <TextBlock Text="Application configuration and system info" FontSize="13" Foreground="#FF888888" Margin="0,4,0,0"/>
+    </StackPanel>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Padding="30,20">
+      <StackPanel Spacing="20">
+
+        <!-- About Section -->
+        <Border Background="#FF1E1E1E" CornerRadius="16" Padding="24" BorderBrush="#FF2A2A2A" BorderThickness="1">
+          <StackPanel Spacing="16">
+            <TextBlock Text="ABOUT" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+            <Grid ColumnDefinitions="Auto,*">
+              <Border Width="48" Height="48" CornerRadius="12" Background="#FF4CAF50" Margin="0,0,16,0">
+                <TextBlock Text="T" FontSize="26" FontWeight="Bold" Foreground="White"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="TCMT - 系统硬件监视器" FontSize="16" FontWeight="SemiBold" Foreground="White"/>
+                <TextBlock Text="{Binding AppVersion}" FontSize="12" Foreground="#FF888888"/>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Connection Section -->
+        <Border Background="#FF1E1E1E" CornerRadius="16" Padding="24" BorderBrush="#FF2A2A2A" BorderThickness="1">
+          <StackPanel Spacing="16">
+            <TextBlock Text="CONNECTION" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+            <StackPanel Spacing="12">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="IPC Backend" Foreground="White" FontSize="14"/>
+                <TextBlock Text="{Binding IpcStatus}" Foreground="#FF4CAF50" FontSize="13" FontWeight="Medium"/>
+              </Grid>
+              <Separator Background="#FF333333"/>
+              <TextBlock Text="Data is collected via shared memory IPC from the native monitoring service."
+                         Foreground="#FF666666" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Theme placeholder -->
+        <Border Background="#FF1E1E1E" CornerRadius="16" Padding="24" BorderBrush="#FF2A2A2A" BorderThickness="1">
+          <StackPanel Spacing="16">
+            <TextBlock Text="APPEARANCE" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Theme" Foreground="White" FontSize="14"/>
+              <Border Background="#FF2A2A2A" CornerRadius="8" Padding="10,6">
+                <TextBlock Text="Dark (Fluent)" Foreground="#FFB3B3B3" FontSize="12"/>
+              </Border>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

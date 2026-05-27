@@ -37,14 +37,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         var dash = new DashboardViewModel();
         dash.Title = "Dashboard";
+        dash.Icon = "📊";
         var cpu = new CpuDetailViewModel();
         cpu.Title = "CPU Details";
+        cpu.Icon = "🖥️";
         var storage = new StorageDetailViewModel();
         storage.Title = "Storage & SMART";
+        storage.Icon = "💾";
+        var network = new NetworkDetailViewModel();
+        network.Title = "Network";
+        network.Icon = "🌐";
+        var settings = new SettingsViewModel();
+        settings.Title = "Settings";
+        settings.Icon = "⚙️";
         
         Pages.Add(dash);
         Pages.Add(cpu);
         Pages.Add(storage);
+        Pages.Add(network);
+        Pages.Add(settings);
         
         CurrentPage = Pages[0];
         // Initialize placeholders BEFORE IPC starts — DataReady may fire synchronously
