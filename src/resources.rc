@@ -4,3 +4,4 @@ SMBUS_PIIX4     RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonito
 SMBUS_NCT6793   RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/SmbusNCT6793.bin"
 SMBUS_SKYLAKE   RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/SmbusIntelSkylakeIMC.bin"
 INTEL_MSR       RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/IntelMSR.bin"
+LPC_IO          RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/LpcIO.bin"

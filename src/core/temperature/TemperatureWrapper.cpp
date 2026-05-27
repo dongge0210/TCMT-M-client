@@ -6,6 +6,7 @@
 #include "../Utils/LibreHardwareMonitorBridge.h"
 #include "../memory/MemoryTempReader.h"
 #include "../cpu/CpuTempReader.h"
+#include "BoardTempReader.h"
 #pragma unmanaged
 
 bool TemperatureWrapper::initialized = false;
@@ -66,6 +67,11 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
     auto cpuTemps = CpuTempReader::ReadAll();
     for (const auto& ct : cpuTemps)
         temps.push_back({ct.name, ct.temperature});
+
+    // Add motherboard temperatures via PawnIO/SuperIO
+    auto boardTemps = BoardTempReader::ReadAll();
+    for (const auto& bt : boardTemps)
+        temps.push_back({bt.name, bt.temperature});
 
     return temps;
 }
