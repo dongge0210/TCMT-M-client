@@ -41,31 +41,41 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         s_ready = true;
         if (!s_pa.Open()) return result;
         auto data = LoadResource(LPCIO_RES);
-        if (data.empty()) { Logger::Info("BoardTemp: LPC IO resource not found"); return result; }
+        if (data.empty()) { Logger::Info("BoardTemp: LPCIO resource not found"); return result; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_find_bars")) {
             Logger::Info("BoardTemp: LpcIO module failed to load"); return result;
         }
 
-        // Find Super I/O hardware monitor base address
-        uint64_t out[1] = {0};
-        if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, out, 0, nullptr)) {
-            Logger::Info("BoardTemp: find_bars failed"); return result;
+        // Enter Super I/O config mode (0x87 twice to enter, for Nuvoton/ITE/Winbond)
+        uint64_t enter87[2] = { 0x2E, 0x87 };
+        s_pa.Execute("ioctl_pio_outb", enter87, 2, nullptr, 0, nullptr);
+        s_pa.Execute("ioctl_pio_outb", enter87, 2, nullptr, 0, nullptr);
+
+        // Find bars
+        if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr)) {
+            Logger::Info("BoardTemp: find_bars failed");
+            // Exit config mode
+            uint64_t exitAA[2] = { 0x2E, 0xAA };
+            s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
+            return result;
         }
 
-        // Read HW monitor base from Super I/O registers 0x60-0x61
-        uint64_t selIn[1] = { 0x0B }; // logical device 0Bh = HW monitor
+        // Select HW monitor logical device (0x0B)
+        uint64_t selIn[1] = { 0x0B };
         s_pa.Execute("ioctl_select_slot", selIn, 1, nullptr, 0, nullptr);
 
-        uint64_t baseHi[1] = { 0x60 };
-        uint64_t baseLo[1] = { 0x61 };
+        // Read base address from registers 0x60 (high) + 0x61 (low)
         uint64_t hi[1] = {0}, lo[1] = {0};
-        if (s_pa.Execute("ioctl_superio_inb", baseHi, 1, hi, 1, nullptr) &&
-            s_pa.Execute("ioctl_superio_inb", baseLo, 1, lo, 1, nullptr)) {
+        uint64_t reg60[1] = { 0x60 }, reg61[1] = { 0x61 };
+        if (s_pa.Execute("ioctl_superio_inb", reg60, 1, hi, 1, nullptr) &&
+            s_pa.Execute("ioctl_superio_inb", reg61, 1, lo, 1, nullptr)) {
             s_base = (uint16_t)(((hi[0] & 0xFF) << 8) | (lo[0] & 0xFF));
-            Logger::Info(std::string("BoardTemp: HW monitor base=0x") + std::to_string(s_base));
-        } else {
-            Logger::Info("BoardTemp: failed to read HW monitor base");
+            Logger::Info(std::string("BoardTemp: base=0x") + std::to_string(s_base));
         }
+
+        // Exit config mode
+        uint64_t exitAA[2] = { 0x2E, 0xAA };
+        s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
     }
 
     if (s_base == 0) return result;
