@@ -124,6 +124,24 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
         }
     }
 
+    // Probe SMBus 0x48-0x4F for motherboard temp sensors (LM75 family)
+    for (uint8_t addr = 0x48; addr <= 0x4F; addr++) {
+        uint64_t probeIn[4] = { addr, I2C_SMBUS_READ, 0x00, I2C_SMBUS_WORD_DATA };
+        uint64_t probeOut[1] = {0};
+        if (s_pa.Execute(s_funcName.c_str(), probeIn, 4, probeOut, 1, nullptr)) {
+            uint16_t raw = (uint16_t)(probeOut[0] & 0xFFFF);
+            uint16_t be = ((raw & 0xFF) << 8) | (raw >> 8); // SMBus LE → BE
+            int16_t tRaw = (int16_t)(be >> 5);
+            if (tRaw & 0x0400) tRaw |= 0xF800;
+            double tC = tRaw * 0.125;
+            if (tC > 0 && tC < 120) {
+                char nameBuf[32];
+                snprintf(nameBuf, sizeof(nameBuf), "SMBus 0x%02X", addr);
+                result.push_back({nameBuf, tC});
+            }
+        }
+    }
+
     return result;
 }
 #endif
