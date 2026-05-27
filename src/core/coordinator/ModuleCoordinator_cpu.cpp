@@ -15,8 +15,8 @@
 #include <memory>
 
 #ifdef TCMT_WINDOWS
-#include <pdh.h>
-#pragma comment(lib, "pdh.lib")
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 #endif
 
 #ifdef TCMT_MACOS
