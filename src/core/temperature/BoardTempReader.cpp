@@ -42,33 +42,40 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         if (!s_pa.Open()) return result;
         auto data = LoadResource(LPCIO_RES);
         if (data.empty()) { Logger::Info("BoardTemp: LPCIO resource not found"); return result; }
-        if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_find_bars")) {
+        if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_pio_inb")) {
             Logger::Info("BoardTemp: LpcIO module failed to load"); return result;
         }
 
-        // Enter Super I/O config mode (0x87 twice to enter, for Nuvoton/ITE/Winbond)
+        // Select register port (0=0x2E, 1=0x4E)
+        uint64_t slotIn[1] = { 0 };
+        s_pa.Execute("ioctl_select_slot", slotIn, 1, nullptr, 0, nullptr);
+
+        // Find Super I/O bars (LpcPort calls this first, without entering config mode)
+        if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr)) {
+            Logger::Info("BoardTemp: find_bars failed");
+            return result;
+        }
+
+        // Now enter config mode and read HW monitor base
         uint64_t enter87[2] = { 0x2E, 0x87 };
         s_pa.Execute("ioctl_pio_outb", enter87, 2, nullptr, 0, nullptr);
         s_pa.Execute("ioctl_pio_outb", enter87, 2, nullptr, 0, nullptr);
 
-        // Find bars
-        if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr)) {
-            Logger::Info("BoardTemp: find_bars failed");
-            // Exit config mode
-            uint64_t exitAA[2] = { 0x2E, 0xAA };
-            s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
-            return result;
+        // Read chip ID
+        uint64_t chipIn[1] = { 0x20 }, chipOut[1] = {0};
+        if (s_pa.Execute("ioctl_superio_inb", chipIn, 1, chipOut, 1, nullptr)) {
+            Logger::Info(std::string("BoardTemp: chip=0x") + std::to_string((int)(chipOut[0] & 0xFF)));
         }
 
-        // Select HW monitor logical device (0x0B)
-        uint64_t selIn[1] = { 0x0B };
-        s_pa.Execute("ioctl_select_slot", selIn, 1, nullptr, 0, nullptr);
+        // Select HW monitor (logical device 0x0B)
+        uint64_t devSel[2] = { 0x07, 0x0B };
+        s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
 
-        // Read base address from registers 0x60 (high) + 0x61 (low)
+        // Read base address (reg 0x60-0x61)
+        uint64_t r60[1] = { 0x60 }, r61[1] = { 0x61 };
         uint64_t hi[1] = {0}, lo[1] = {0};
-        uint64_t reg60[1] = { 0x60 }, reg61[1] = { 0x61 };
-        if (s_pa.Execute("ioctl_superio_inb", reg60, 1, hi, 1, nullptr) &&
-            s_pa.Execute("ioctl_superio_inb", reg61, 1, lo, 1, nullptr)) {
+        if (s_pa.Execute("ioctl_superio_inb", r60, 1, hi, 1, nullptr) &&
+            s_pa.Execute("ioctl_superio_inb", r61, 1, lo, 1, nullptr)) {
             s_base = (uint16_t)(((hi[0] & 0xFF) << 8) | (lo[0] & 0xFF));
             Logger::Info(std::string("BoardTemp: base=0x") + std::to_string(s_base));
         }
