@@ -15,8 +15,8 @@
 #include <memory>
 
 #ifdef TCMT_WINDOWS
-#include <pdh.h>
-#pragma comment(lib, "pdh.lib")
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 #endif
 
 #ifdef TCMT_MACOS
@@ -119,27 +119,21 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 data.compressedMemory.store(0);
             }
 #elif defined(TCMT_WINDOWS)
-            // Windows: read compressed memory via PDH (needs 2 collects)
+            // Windows: estimate compressed memory = CommitTotal - PhysicalUsed - PageFileUsed.
+            // The compression store lives in physical memory and counts toward commit.
             {
-                static void* hQuery = nullptr;
-                static void* hCounter = nullptr;
-                static bool pdhReady = false;
-                if (!pdhReady) {
-                    if (PdhOpenQueryW(nullptr, 0, (PDH_HQUERY*)&hQuery) == 0) {
-                        if (PdhAddEnglishCounterW((PDH_HQUERY)hQuery,
-                            L"\\Memory\\Memory Compression", 0,
-                            (PDH_HCOUNTER*)&hCounter) == 0) {
-                            PdhCollectQueryData((PDH_HQUERY)hQuery); // warm-up
-                            pdhReady = true;
-                        }
-                    }
-                }
-                if (pdhReady) {
-                    PdhCollectQueryData((PDH_HQUERY)hQuery);
-                    PDH_FMT_COUNTERVALUE v;
-                    if (PdhGetFormattedCounterValue((PDH_HCOUNTER)hCounter,
-                        PDH_FMT_LARGE, nullptr, &v) == 0) {
-                        data.compressedMemory.store(v.largeValue);
+                PERFORMANCE_INFORMATION pi = { sizeof(PERFORMANCE_INFORMATION) };
+                if (GetPerformanceInfo(&pi, sizeof(pi))) {
+                    uint64_t commitB = (uint64_t)pi.CommitTotal * pi.PageSize;
+                    uint64_t physUsed = (uint64_t)(pi.PhysicalTotal - pi.PhysicalAvailable) * pi.PageSize;
+                    // Subtract pagefile-backed commit (approximate)
+                    MEMORYSTATUSEX msx = { sizeof(msx) };
+                    if (GlobalMemoryStatusEx(&msx)) {
+                        uint64_t pagefileUsed = msx.ullTotalPageFile - msx.ullAvailPageFile;
+                        uint64_t commitDedup = (commitB > physUsed + pagefileUsed)
+                            ? (commitB - physUsed - pagefileUsed) : 0;
+                        if (commitDedup > 0 && commitDedup < (uint64_t)32ULL * 1024 * 1024 * 1024)
+                            data.compressedMemory.store(commitDedup);
                     }
                 }
             }
