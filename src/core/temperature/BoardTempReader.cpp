@@ -5,19 +5,39 @@
 
 static const wchar_t* LPCIO_RES = L"LPC_IO";
 
-// NCT6798D temperature source data (register, halfRegister, halfBit)
+// NCT6798D temperature source data (full LHM Group D set)
+// addr: 16-bit register address (upper byte = bank, lower byte = register)
+// halfAddr: 16-bit half-register address (0 if no fractional)
+// halfBit: bit position for fractional (0 if no fractional)
 // Temperature = ((signed_byte << 1) | halfBit) * 0.5°C
 static const struct {
     const char* name;
-    uint8_t reg;
-    uint8_t halfReg;
-    int halfBit; // -1 if no fractional
+    uint16_t addr;
+    uint16_t halfAddr;
+    int halfBit;
 } TEMP_SOURCES[] = {
-    {"PECI_0",  0x73, 0x74, 7},
-    {"CPUTIN",  0x75, 0x76, 7},
-    {"SYSTIN",  0x77, 0x78, 7},
-    {"AUXTIN0", 0x79, 0x7A, 7},
-    {"AUXTIN1", 0x7B, 0x7C, 7},
+    {"PECI_0",              0x0073, 0x0074, 7},
+    {"CPUTIN",              0x0075, 0x0076, 7},
+    {"SYSTIN",              0x0077, 0x0078, 7},
+    {"AUXTIN0",             0x0079, 0x007A, 7},
+    {"AUXTIN1",             0x007B, 0x007C, 7},
+    {"AUXTIN2",             0x007D, 0x007E, 7},
+    {"AUXTIN3",             0x04A0, 0x049E, 6},
+    {"AUXTIN4",             0x0027, 0,      0},
+    {"TSENSOR",             0x04A2, 0x04A1, 7},
+    {"SMBUSMASTER0",        0x0150, 0x0151, 7},
+    {"SMBUSMASTER1",        0x0670, 0,      0},
+    {"PECI_1",              0x0672, 0,      0},
+    {"PCH_CHIP_CPU_MAX",    0x0674, 0,      0},
+    {"PCH_CHIP",            0x0676, 0,      0},
+    {"PCH_CPU",             0x0678, 0,      0},
+    {"PCH_MCH",             0x067A, 0,      0},
+    {"AGENT0_DIMM0",        0x0405, 0,      0},
+    {"AGENT0_DIMM1",        0x0406, 0,      0},
+    {"AGENT1_DIMM0",        0x0407, 0,      0},
+    {"AGENT1_DIMM1",        0x0408, 0,      0},
+    {"BYTE_TEMP0",          0x0419, 0,      0},
+    {"BYTE_TEMP1",          0x041A, 0,      0},
 };
 
 static std::vector<uint8_t> LoadResource(const wchar_t* name) {
@@ -37,26 +57,25 @@ bool BoardTempReader::IsAvailable() {
 }
 
 // Read a byte from HW monitor register via banked access (NCT6798D protocol)
-// port: HW monitor base address
+// addr: 16-bit address (upper byte = bank, lower byte = register)
 // Writes bank select (0x4E) to port+5, bank value to port+6
 // Writes register to port+5, reads value from port+6
-static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint8_t reg) {
+static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint16_t addr) {
+    uint8_t bank = (uint8_t)(addr >> 8);
+    uint8_t reg = (uint8_t)(addr & 0xFF);
     uint64_t args[2];
     uint64_t out[1] = {0};
 
-    // Write BANK_SELECT_REGISTER (0x4E) to address port (port + 5)
-    args[0] = port + 5; args[1] = 0x4E;
-    pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
+    if (bank != 0) {
+        args[0] = port + 5; args[1] = 0x4E;
+        pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
+        args[0] = port + 6; args[1] = bank;
+        pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
+    }
 
-    // Write bank=0 to data port (port + 6)
-    args[0] = port + 6; args[1] = 0;
-    pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
-
-    // Write register to address port (port + 5)
     args[0] = port + 5; args[1] = reg;
     pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
 
-    // Read data port (port + 6)
     args[0] = port + 6;
     if (!pa.Execute("ioctl_pio_inb", args, 1, out, 1, nullptr))
         return 0;
@@ -138,14 +157,15 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (s_base == 0 || s_base < 0x100) return result;
 
     // Read temperature sources using NCT6798D protocol
-    for (int i = 0; i < 5; i++) {
-        uint8_t raw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].reg);
+    int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
+    for (int i = 0; i < count; i++) {
+        uint8_t raw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].addr);
         if (raw == 0xFF || raw == 0x00) continue;
 
         // NCT6798D formula: (signed_byte << 1) | halfBit, then * 0.5
         int value = (int8_t)raw << 1;
-        if (TEMP_SOURCES[i].halfBit >= 0) {
-            uint8_t halfRaw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].halfReg);
+        if (TEMP_SOURCES[i].halfBit > 0) {
+            uint8_t halfRaw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].halfAddr);
             value |= (halfRaw >> TEMP_SOURCES[i].halfBit) & 0x1;
         }
         double temp = value * 0.5;
