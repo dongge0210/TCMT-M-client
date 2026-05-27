@@ -52,6 +52,23 @@ static void RunSystemProfiler() {
     int rssi = 0, channel = 0;
     double txRate = 0;
 
+    // Fallback: CoreWLAN direct access (works without Location Services on macOS 14+)
+    if (ssid.empty()) {
+        @autoreleasepool {
+            CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
+            if (iface) {
+                NSString* nssid = iface.ssid;
+                if (nssid && nssid.length > 0) ssid = nssid.UTF8String;
+                NSString* nbssid = iface.bssid;
+                if (nbssid && nbssid.length > 0) bssid = nbssid.UTF8String;
+                rssi = (int)iface.rssiValue;
+                if (iface.wlanChannel) {
+                    channel = iface.wlanChannel.channelNumber;
+                }
+            }
+        }
+    }
+
     try {
         auto j = nlohmann::json::parse(json.empty() ? "{}" : json);
         if (j.contains("SPAirPortDataType") && j["SPAirPortDataType"].is_array()) {
