@@ -766,8 +766,6 @@ int main(int argc, char* argv[]) {
                 try {
                     SystemInfo tmp;
                     DiskInfo().CollectSmartData(tmp);
-                    Logger::Info("SMART refresh: " + std::to_string(tmp.physicalDisks.size()) + " disks,"
-                        " attrCount=" + (tmp.physicalDisks.empty() ? "0" : std::to_string(tmp.physicalDisks[0].attributeCount)));
                     if (!tmp.physicalDisks.empty())
                         cachedSmart = std::move(tmp.physicalDisks);
                     lastSmartRefresh = nowSt;
