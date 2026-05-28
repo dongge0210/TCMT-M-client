@@ -628,18 +628,13 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
     tuiApp.Start();
 
-    // Install SMJobBless helper for accelerometer (BMI284).
-    // Pops system password dialog once; helper runs as root daemon.
-    // NOTE: The helper ignores SIGTERM (launchd/system noise) to stay alive.
+    // Accelerometer (BMI284) — uses direct async HID callback path.
+    // No SMJobBless helper required — the interrupt-driven input report
+    // path works from user-space on macOS 15+ without root.
     {
-        AccelSensor tmpAccel;  // check if BMI284 exists
+        AccelSensor tmpAccel;
         if (tmpAccel.GetData().hasDevice) {
-            Logger::Info("Installing sensor helper (SMJobBless)...");
-            bool blessed = AccelSensor::BlessHelper();
-            Logger::Info(blessed
-                ? "Sensor helper installed/started"
-                : "Sensor helper install deferred or failed (will retry)");
-            tmpAccel.Refresh();
+            Logger::Info("Accelerometer detected (async HID path)");
             if (tmpAccel.GetData().valid)
                 Logger::Info("Accelerometer reading OK");
         }

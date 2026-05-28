@@ -4,6 +4,16 @@
 `dev`
 
 ## Current State
+- **Accelerometer (BMI284) — 异步 HID 回调路径**
+  - 不再需要 SMJobBless 特权助⼿（不再弹出 root 密码对话框）
+  - 使用 `IOHIDDeviceRegisterInputReportWithTimeStampCallback`（中断驱动输入报告路径）
+  - **macOS 15 `motionRestrictedService = Yes` 只阻断同步 `IOHIDDeviceGetReport`，不阻断异步回调路径**
+  - 需要先唤醒 `AppleSPUHIDDriver`（设置 `SensorPropertyReportingState=1`, `SensorPropertyPowerState=1`, `ReportInterval=1000`）
+  - 参考实现：`olvvier/apple-silicon-accelerometer`（已在 macOS 15.6.1 M3 Pro 验证）
+  - 22 字节 HID 报告格式：`x` int32 LE @ offset 6, `y` @ 10, `z` @ 14, /65536 → g
+  - TUI Sensors 面板中显示 `Accel: x.xx y.yy z.zz g`
+  - SHM 路径作为向后兼容的兜底（如果旧版 SMJobBless 助⼿仍在运行）
+  - 后台线程 `tcmt-accel-async` 运行 CFRunLoop 接收 HID 回调
 - macOS 15+ WiFi SSID 修复完成
   - `.app` bundle 打包 + Apple Development 证书签名 + Info.plist 定位描述
   - CoreLocation `requestWhenInUseAuthorization` 触发权限弹窗
@@ -14,13 +24,16 @@
   - TUI 右侧 Displays 面板展示所有屏幕信息
 - **Thermal State** — 读取 `NSProcessInfo.processInfo.thermalState`（0=Nominal / 1=Fairly Serious / 2=Critical）
   - TUI Power 面板中显示 Thermal 状态，Critical 时红色高亮
-- **Accelerometer (BMI284)** — 已添加 `AccelSensor` 模块 + SMJobBless 特权 helper
-  - macOS 15 `motionRestrictedService = Yes` 内核级阻断所有运动传感器
-  - TUI 优雅显示 "N/A"
 - **温度读取** — 修复 M4 Mac Mini SMC key 兼容性
   - M1/M2/M3: `Tp*`(P-Core), `Te*`(E-Core), `Tg*`(GPU)
   - M4: `TPD*`(P-Core), `TDeL`+`Te*`(E-Core), `Tg*`(GPU), `TRD*`(RAM), `TB*T`(Board)... 共 112 个温度传感器
   - AppleSMCKeysEndpoint 匹配策略：先按类名直接查找（M4），再回退到 AppleSMC 子节点遍历（M1/M2/M3）
+- **温度白名单过滤** — 按 Stats app 模式，只显示已知有用传感器并分组取均值
+  - 白名单参考来源：Stats `values.swift` (exelban/Stats) + VirtualSMC `SMCSensorKeys.txt` (acidanthera/VirtualSMC)
+  - 分组合计：P-Core (8~11 键→1 均值)、E-Core (4~5 键→1 均值)、GPU (10+ 键→1 均值)、RAM (10+ 键→1 均值)
+  - 个体传感器：Heatsink、Board #0/#1/#2、WiFi、Ambient LP/RF、VRM 等
+  - 显示由 112→约 15-20 个条目，大幅精简
+  - 非白名单 SMC key（如 Th*、Ts*、TV* 等）完全隐藏
 
 ## 构建方式 (macOS)
 ```bash

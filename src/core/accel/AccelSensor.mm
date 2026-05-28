@@ -1,18 +1,19 @@
 // AccelSensor.mm — BMI284 accelerometer on Apple Silicon
 //
-// Primary: SMJobBless helper (running as root) writes XYZ to POSIX SHM.
-// Fallback: direct IOKit HID read (may fail with kIOReturnNotPermitted on macOS 15).
+// Primary path: async HID callback via IOHIDDeviceRegisterInputReportWithTimeStampCallback.
+//   Works on macOS 15+ WITHOUT root — the interrupt-driven input report kernel path
+//   is NOT blocked by motionRestrictedService.
+//   Requires waking AppleSPUHIDDriver with SensorPropertyReportingState=1 etc.
 //
-// The helper binary is embedded in the .app bundle:
-//   Contents/Library/LaunchServices/com.tcmt.sensorhelper
+// Fallback: POSIX SHM from SMJobBless helper (legacy; helper may or may not be running).
+//
+// Architecture backed by research:
+//   - olvvier/apple-silicon-accelerometer (MIT) — async HID + driver wake confirmed working
+//   - macOS 15 motionRestrictedService blocks only synchronous IOHIDDeviceGetReport
 
 #import <IOKit/IOKitLib.h>
 #import <IOKit/hid/IOHIDDevice.h>
-#import <IOKit/hid/IOHIDManager.h>
 #import <CoreFoundation/CoreFoundation.h>
-#import <ServiceManagement/ServiceManagement.h>
-#import <Security/AuthorizationDB.h>
-#import <Security/Authorization.h>
 
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -25,51 +26,103 @@
 #include "core/Utils/Logger.h"
 
 // ---------------------------------------------------------------------------
-// Constants (must match helper)
+// Async HID callback — fires on a background CFRunLoop for each input report.
+// The extra uint64_t timestamp parameter is what distinguishes this from the
+// plain IOHIDDeviceRegisterInputReportCallback (which is also blocked).
 // ---------------------------------------------------------------------------
-static const uint32_t kUsagePage  = 0xFF00;
-static const uint32_t kUsageAccel = 3;
-static const int      kReportLen  = 22;
-static const int      kDataOffset = 6;
+struct AsyncHidContext {
+    std::atomic<uint64_t>* updateCount;
+    std::atomic<int32_t>*  ax;
+    std::atomic<int32_t>*  ay;
+    std::atomic<int32_t>*  az;
+    IOHIDDeviceRef         dev;
+    CFRunLoopRef           runLoop;
+};
 
-static const double kScale = 1.0 / (65536.0 * 9.80665);  // Q16 -> g
+static void on_input_report_ts(void* ctx, IOReturn result, void* sender,
+                                IOHIDReportType type, uint32_t reportID,
+                                uint8_t* report, CFIndex len,
+                                uint64_t timestamp)
+{
+    (void)sender; (void)type; (void)reportID; (void)timestamp;
+    if (result != kIOReturnSuccess) return;
+    if (len < (CFIndex)(kDataOffset + 12)) return;
 
-// ---------------------------------------------------------------------------
-// Shared memory helpers
-// ---------------------------------------------------------------------------
-bool AccelSensor::TryShmRead() {
-    if (shmPtr_ == nullptr) return false;
-
-    AccelShm* shm = (AccelShm*)shmPtr_;
-    if (shm->magic != kShmMagic) return false;
-
-    // Volatile read — updateCount is the consistency frontier
-    uint64_t uc = shm->updateCount;
-    __sync_synchronize();
-    if (uc == 0) return false;
-
-    // Scale raw Q16 to g: 1 Q16 = 1/65536 of a unit, and BMI284 reports m/s²
-    // so Q16 / 65536 / 9.80665 = g
-    data_.x = (double)shm->x * kScale;
-    data_.y = (double)shm->y * kScale;
-    data_.z = (double)shm->z * kScale;
-    data_.valid = true;
-    return true;
-}
-
-void AccelSensor::CloseShm() {
-    if (shmPtr_) {
-        munmap(shmPtr_, kShmSize);
-        shmPtr_ = nullptr;
-    }
-    if (shmFd_ >= 0) {
-        close(shmFd_);
-        shmFd_ = -1;
-    }
+    auto* c = (AsyncHidContext*)ctx;
+    int32_t rx, ry, rz;
+    memcpy(&rx, report + kDataOffset,      sizeof(rx));
+    memcpy(&ry, report + kDataOffset + 4,  sizeof(ry));
+    memcpy(&rz, report + kDataOffset + 8,  sizeof(rz));
+    c->ax->store(rx, std::memory_order_relaxed);
+    c->ay->store(ry, std::memory_order_relaxed);
+    c->az->store(rz, std::memory_order_relaxed);
+    c->updateCount->fetch_add(1, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------
-// Direct IOKit read (user-space fallback)
+// Wake the AppleSPUHIDDriver — sets properties that tell the driver to
+// start delivering interrupt reports. Without this, the callback may never fire.
+// ---------------------------------------------------------------------------
+static bool wake_spu_driver(void) {
+    CFMutableDictionaryRef matching = IOServiceMatching("AppleSPUHIDDriver");
+    if (!matching) return false;
+
+    io_iterator_t iter;
+    kern_return_t kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iter);
+    if (kr != KERN_SUCCESS) return false;
+
+    bool woken = false;
+    io_object_t driver;
+    while ((driver = IOIteratorNext(iter)) != 0) {
+        // Get parent AppleSPUHIDDevice to verify this is the accelerometer
+        io_service_t parent = 0;
+        IORegistryEntryGetParentEntry(driver, kIOServicePlane, &parent);
+        if (!parent) { IOObjectRelease(driver); continue; }
+
+        CFMutableDictionaryRef props = NULL;
+        kr = IORegistryEntryCreateCFProperties(parent, &props, kCFAllocatorDefault, 0);
+        if (kr == KERN_SUCCESS && props) {
+            CFTypeRef upRef = CFDictionaryGetValue(props, CFSTR("PrimaryUsagePage"));
+            CFTypeRef uRef  = CFDictionaryGetValue(props, CFSTR("PrimaryUsage"));
+            int32_t up = 0, u = 0;
+            if (upRef && CFGetTypeID(upRef) == CFNumberGetTypeID())
+                CFNumberGetValue((CFNumberRef)upRef, kCFNumberSInt32Type, &up);
+            if (uRef  && CFGetTypeID(uRef) == CFNumberGetTypeID())
+                CFNumberGetValue((CFNumberRef)uRef,  kCFNumberSInt32Type, &u);
+
+            if ((uint32_t)up == kUsagePage && (uint32_t)u == kUsageAccel) {
+                // Found accelerometer — wake this driver
+                int32_t one = 1;
+                int32_t interval = 1000;  // 1000 µs = 1 ms interval
+                CFNumberRef val;
+
+                val = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &one);
+                IORegistryEntrySetCFProperty(driver, CFSTR("SensorPropertyReportingState"), val);
+                CFRelease(val);
+
+                val = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &one);
+                IORegistryEntrySetCFProperty(driver, CFSTR("SensorPropertyPowerState"), val);
+                CFRelease(val);
+
+                val = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &interval);
+                IORegistryEntrySetCFProperty(driver, CFSTR("ReportInterval"), val);
+                CFRelease(val);
+
+                Logger::Debug("Accel: woken AppleSPUHIDDriver (SensorPropertyReportingState=1, ReportInterval=1000)");
+                woken = true;
+            }
+            CFRelease(props);
+        }
+        IOObjectRelease(parent);
+        IOObjectRelease(driver);
+        if (woken) break;
+    }
+    IOObjectRelease(iter);
+    return woken;
+}
+
+// ---------------------------------------------------------------------------
+// Find accelerometer IOService in IORegistry
 // ---------------------------------------------------------------------------
 static io_service_t FindAccelService() {
     CFMutableDictionaryRef matching = IOServiceMatching("AppleSPUHIDDevice");
@@ -109,10 +162,132 @@ static io_service_t FindAccelService() {
 }
 
 // ---------------------------------------------------------------------------
-// Constructor / Destructor
+// SHM helpers (legacy SMJobBless path)
+// ---------------------------------------------------------------------------
+bool AccelSensor::TryShmRead() {
+    if (shmPtr_ == nullptr) return false;
+
+    AccelShm* shm = (AccelShm*)shmPtr_;
+    if (shm->magic != kShmMagic) return false;
+
+    uint64_t uc = shm->updateCount;
+    __sync_synchronize();
+    if (uc == 0) return false;
+
+    data_.x = (double)shm->x * kScale;
+    data_.y = (double)shm->y * kScale;
+    data_.z = (double)shm->z * kScale;
+    data_.valid = true;
+    return true;
+}
+
+void AccelSensor::CloseShm() {
+    if (shmPtr_) {
+        munmap(shmPtr_, kShmSize);
+        shmPtr_ = nullptr;
+    }
+    if (shmFd_ >= 0) {
+        close(shmFd_);
+        shmFd_ = -1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Async HID: background thread running CFRunLoop for HID callbacks
+// ---------------------------------------------------------------------------
+bool AccelSensor::StartAsyncHid() {
+    // 1. Wake the SPU driver — critical for reports to start flowing
+    wake_spu_driver();
+
+    // 2. Find the accelerometer service
+    io_service_t service = FindAccelService();
+    if (!service) {
+        Logger::Debug("Accel: no BMI284 hardware found");
+        return false;
+    }
+
+    IOHIDDeviceRef dev = IOHIDDeviceCreate(kCFAllocatorDefault, service);
+    IOObjectRelease(service);
+    if (!dev) return false;
+
+    IOReturn kr = IOHIDDeviceOpen(dev, 0);
+    if (kr != kIOReturnSuccess) {
+        Logger::Warn("Accel: IOHIDDeviceOpen failed (0x" + 
+                     std::to_string(kr) + ")");
+        CFRelease(dev);
+        return false;
+    }
+
+    data_.hasDevice = true;
+
+    // Store in context for the thread
+    AsyncHidContext* ctx = new AsyncHidContext;
+    ctx->updateCount = &asyncUpdateCount_;
+    ctx->ax = &ax_;
+    ctx->ay = &ay_;
+    ctx->az = &az_;
+    ctx->dev = dev;
+
+    // Pre-allocate report buffer
+    uint8_t* reportBuf = new uint8_t[kReportLen];
+
+    // Allocate context on heap, thread owns it
+    asyncStarted_ = true;
+    asyncThread_ = std::thread([this, dev, ctx, reportBuf]() {
+        pthread_setname_np("tcmt-accel-async");
+
+        ctx->runLoop = CFRunLoopGetCurrent();
+
+        // Register timestamped callback (NOT the plain one — different kernel path)
+        IOHIDDeviceRegisterInputReportWithTimeStampCallback(dev, reportBuf, kReportLen,
+                                                             on_input_report_ts, ctx);
+
+        IOHIDDeviceScheduleWithRunLoop(dev, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+
+        Logger::Info("Accel: async HID thread started");
+
+        // Run loop — processes HID callbacks
+        while (asyncStarted_) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.5, false);
+        }
+
+        // Cleanup
+        IOHIDDeviceUnscheduleFromRunLoop(dev, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+        IOHIDDeviceClose(dev, 0);
+        CFRelease(dev);
+        delete[] reportBuf;
+        delete ctx;
+        Logger::Debug("Accel: async HID thread exited");
+    });
+    asyncThread_.detach();
+    return true;
+}
+
+void AccelSensor::StopAsyncHid() {
+    asyncStarted_ = false;
+    // Thread will exit on next CFRunLoopRunInMode timeout
+}
+
+bool AccelSensor::ReadAsyncSample() {
+    uint64_t uc = asyncUpdateCount_.load(std::memory_order_acquire);
+    if (uc == 0) return false;
+
+    int32_t rx = ax_.load(std::memory_order_relaxed);
+    int32_t ry = ay_.load(std::memory_order_relaxed);
+    int32_t rz = az_.load(std::memory_order_relaxed);
+
+    data_.x = (double)rx * kScale;
+    data_.y = (double)ry * kScale;
+    data_.z = (double)rz * kScale;
+    data_.valid = true;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Constructor — try SHM first (fast, if helper running), else start async HID
 // ---------------------------------------------------------------------------
 AccelSensor::AccelSensor() {
-    // 1. Try opening existing SHM (helper already running)
+    // 1. Try opening existing SHM (helper already running from previous launch)
     shmFd_ = shm_open(kShmName, O_RDONLY, 0);
     if (shmFd_ >= 0) {
         shmPtr_ = mmap(nullptr, kShmSize, PROT_READ, MAP_SHARED, shmFd_, 0);
@@ -122,121 +297,62 @@ AccelSensor::AccelSensor() {
                 data_.hasDevice = true;
                 data_.valid = true;
                 TryShmRead();
-                return;  // SHM works — done
+                Logger::Info("Accel: reading from SHM (helper active)");
+                return;
             }
         } else {
             shmPtr_ = nullptr;
         }
     }
 
-    // 2. Try direct IOKit read (user-space — may be blocked on macOS 15)
-    io_service_t service = FindAccelService();
-    if (!service) return;  // no accelerometer hardware
-
-    data_.hasDevice = true;
-    IOHIDDeviceRef dev = IOHIDDeviceCreate(kCFAllocatorDefault, service);
-    IOObjectRelease(service);
-    if (!dev) return;
-
-    IOReturn kr = IOHIDDeviceOpen(dev, 0);
-    if (kr == kIOReturnSuccess) {
-        uint8_t buf[64] = {};
-        CFIndex len = sizeof(buf);
-        kr = IOHIDDeviceGetReport(dev, kIOHIDReportTypeInput, 0, buf, &len);
-        if (kr == kIOReturnSuccess && len >= (CFIndex)(kDataOffset + 12)) {
-            int32_t rx, ry, rz;
-            memcpy(&rx, buf + kDataOffset,      sizeof(rx));
-            memcpy(&ry, buf + kDataOffset + 4,  sizeof(ry));
-            memcpy(&rz, buf + kDataOffset + 8,  sizeof(rz));
-            data_.x = (double)rx * kScale;
-            data_.y = (double)ry * kScale;
-            data_.z = (double)rz * kScale;
-            data_.valid = true;
+    // 2. SHM not available — start direct async HID path (no root needed)
+    Logger::Info("Accel: starting async HID path (no SMJobBless required)");
+    if (StartAsyncHid()) {
+        // Give the callback a moment to fire
+        for (int i = 0; i < 20 && !ReadAsyncSample(); ++i) {
+            usleep(50000); // 50ms * 20 = 1s total
         }
-        IOHIDDeviceClose(dev, 0);
+        if (data_.valid) {
+            Logger::Info("Accel: async HID path working");
+        } else {
+            Logger::Warn("Accel: async HID path started but no data yet");
+        }
     }
-    CFRelease(dev);
 }
 
 AccelSensor::~AccelSensor() {
+    StopAsyncHid();
     CloseShm();
 }
 
+// ---------------------------------------------------------------------------
+// Refresh — called periodically from main loop
+// ---------------------------------------------------------------------------
 void AccelSensor::Refresh() {
-    // Try SHM first (fast, no privileges needed)
+    // 1. Try SHM (fast, if helper running)
     if (TryShmRead()) return;
 
-    // If SHM exists but is stale, helper might not be running — trigger install
-    if (shmPtr_ != nullptr) {
-        // SHM is open but no data → helper might have died, re-install
-        BlessHelper();
+    // 2. Try async HID path
+    if (asyncStarted_) {
+        if (ReadAsyncSample()) return;
+
+        // If async thread started but no data after initial warmup,
+        // try re-waking the driver
+        static int reWarmCount = 0;
+        if (++reWarmCount >= 60) {  // ~30 seconds
+            reWarmCount = 0;
+            Logger::Debug("Accel: re-waking SPU driver");
+            wake_spu_driver();
+        }
         return;
     }
 
-    // No SHM at all — try to open it (helper may have started in background)
-    shmFd_ = shm_open(kShmName, O_RDONLY, 0);
-    if (shmFd_ >= 0) {
-        shmPtr_ = mmap(nullptr, kShmSize, PROT_READ, MAP_SHARED, shmFd_, 0);
-        if (shmPtr_ && shmPtr_ != MAP_FAILED) {
-            TryShmRead();
-            return;
-        }
-        shmPtr_ = nullptr;
+    // 3. No path active — try to start async HID (maybe it failed first time)
+    //    Only try once per ~10 seconds to avoid log spam
+    static int retryCount = 0;
+    if (++retryCount >= 20) {
+        retryCount = 0;
+        Logger::Info("Accel: retrying async HID start");
+        StartAsyncHid();
     }
-}
-
-// ---------------------------------------------------------------------------
-// SMJobBless — install & start the privileged helper
-// ---------------------------------------------------------------------------
-bool AccelSensor::BlessHelper() {
-    CFStringRef helperID = CFSTR("com.tcmt.sensorhelper");
-
-    // Avoid popping root dialog on every launch — check if helper already installed.
-    // SMJobBless copies binary to /Library/PrivilegedHelperTools/ + registers with launchd.
-    // Once installed, launchd auto-restarts it on crash/boot; SHM will appear shortly.
-    {
-        struct stat st;
-        if (stat("/Library/PrivilegedHelperTools/com.tcmt.sensorhelper", &st) == 0) {
-            return true;  // already installed, launchd manages lifecycle
-        }
-    }
-
-    // Set up authorization for privileged helper install (first time only)
-    AuthorizationRef authRef = NULL;
-    AuthorizationItem authItem = {
-        kSMRightBlessPrivilegedHelper, 0, NULL, 0
-    };
-    AuthorizationRights authRights = { 1, &authItem };
-    AuthorizationFlags authFlags =
-        kAuthorizationFlagDefaults
-        | kAuthorizationFlagInteractionAllowed
-        | kAuthorizationFlagExtendRights;
-
-    OSStatus status = AuthorizationCreate(&authRights,
-                                           kAuthorizationEmptyEnvironment,
-                                           authFlags, &authRef);
-    if (status != errAuthorizationSuccess) return false;
-
-    CFErrorRef error = NULL;
-    Boolean result = SMJobBless(kSMDomainSystemLaunchd,
-                                 helperID, authRef, &error);
-
-    if (error) {
-        CFStringRef desc = CFErrorCopyDescription(error);
-        if (desc) {
-            char buf[256] = {};
-            CFStringGetCString(desc, buf, sizeof(buf), kCFStringEncodingUTF8);
-            Logger::Warn(std::string("SMJobBless failed: ") + buf);
-            CFRelease(desc);
-        }
-        CFRelease(error);
-    }
-
-    AuthorizationFree(authRef, kAuthorizationFlagDefaults);
-
-    if (result) {
-        Logger::Info("SMJobBless: helper installed/started");
-        return true;
-    }
-    return false;
 }
