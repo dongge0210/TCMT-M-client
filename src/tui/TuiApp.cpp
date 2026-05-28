@@ -6,6 +6,9 @@
 #include <iomanip>
 #include <sstream>
 #include <chrono>
+#include <wchar.h>
+#include <clocale>
+#include <cstdlib>
 
 namespace tcmt {
 
@@ -111,6 +114,61 @@ std::string TuiApp::TrimRight(const std::string& s, size_t maxLen) {
     if (s.size() <= maxLen) return s;
     return s.substr(0, maxLen);
 }
+
+// ── UTF-8 display width helpers (CJK-aware) ──────────────────────────
+// Returns column display width of a UTF-8 string (2 for CJK chars).
+static int utf8_display_width(const std::string& s) {
+    if (s.empty()) return 0;
+    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
+    if (wlen == (size_t)-1) return (int)s.size();  // not valid UTF-8, fallback
+    std::wstring wstr(wlen, L'\0');
+    std::mbstowcs(&wstr[0], s.c_str(), wlen);
+    int w = wcswidth(wstr.c_str(), wlen);
+    return (w >= 0) ? w : (int)s.size();
+}
+
+// Truncate a UTF-8 string so its display width ≤ maxW, appending "~" if cut.
+static std::string utf8_truncate(const std::string& s, int maxW) {
+    if (maxW < 1) return std::string();
+    if (utf8_display_width(s) <= maxW) return s;
+
+    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
+    if (wlen == (size_t)-1) {
+        // Fallback: byte truncation
+        return s.substr(0, std::max(0, maxW - 1)) + "~";
+    }
+    std::wstring wstr(wlen, L'\0');
+    std::mbstowcs(&wstr[0], s.c_str(), wlen);
+
+    int targetW = maxW - 1;  // leave room for "~"
+    int curW = 0;
+    size_t i = 0;
+    for (; i < wlen; i++) {
+        int cw = wcwidth(wstr[i]);
+        if (cw < 0) cw = 1;
+        if (curW + cw > targetW) break;
+        curW += cw;
+    }
+
+    // Convert wide chars back to UTF-8
+    std::string out;
+    for (size_t j = 0; j < i; j++) {
+        wchar_t wc = wstr[j];
+        if (wc < 0x80)      { out += (char)wc; }
+        else if (wc < 0x800) { out += (char)(0xC0 | (wc >> 6));
+                               out += (char)(0x80 | (wc & 0x3F)); }
+        else if (wc < 0x10000) { out += (char)(0xE0 | (wc >> 12));
+                                out += (char)(0x80 | ((wc >> 6) & 0x3F));
+                                out += (char)(0x80 | (wc & 0x3F)); }
+        else                { out += (char)(0xF0 | (wc >> 18));
+                               out += (char)(0x80 | ((wc >> 12) & 0x3F));
+                               out += (char)(0x80 | ((wc >> 6) & 0x3F));
+                               out += (char)(0x80 | (wc & 0x3F)); }
+    }
+    out += "~";
+    return out;
+}
+// ─────────────────────────────────────────────────────────────────────
 
 void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     int rows, cols;
@@ -571,10 +629,14 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     if (nameW < 6) nameW = 6;
 
     for (const auto& p : data.topProcesses) {
-        // Clamp name width
+        // Pad/truncate name to exact display width (CJK-safe)
         std::string name = p.name;
-        if ((int)name.size() > nameW)
-            name = name.substr(0, nameW - 1) + "~";
+        int dw = utf8_display_width(name);
+        if (dw > nameW) {
+            name = utf8_truncate(name, nameW);
+        } else if (dw < nameW) {
+            name.append(nameW - dw, ' ');
+        }
 
         // Format PID
         std::string pidStr = std::to_string(p.pid);
@@ -590,8 +652,8 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         int cpuColor = (p.cpuPercent > 50) ? 4 : (p.cpuPercent > 20) ? 3 : 2;
         wattron(win, COLOR_PAIR(cpuColor));
         mvwprintw(win, y + lines, x0 + 2,
-                  "%-*s %6s %4s %5.1f%%",
-                  nameW, name.c_str(), pidStr.c_str(), memStr.c_str(), p.cpuPercent);
+                  "%s %6s %4s %5.1f%%",
+                  name.c_str(), pidStr.c_str(), memStr.c_str(), p.cpuPercent);
         wattroff(win, COLOR_PAIR(cpuColor));
         lines++;
     }
