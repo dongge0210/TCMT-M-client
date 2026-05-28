@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- SMJobBless / SMAppService requires CFBundleIdentifier to match the
+         SMJobBless() label / SMAppService daemon name -->
+    <key>CFBundleIdentifier</key>
+    <string>com.tcmt.sensorhelper</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- SMAuthorizedClients: which apps may install this helper.
+         Must match the calling app's code signing requirement. -->
+    <key>SMAuthorizedClients</key>
+    <array>
+        <string>identifier "com.tcmt.hardwaremonitor" and anchor apple generic and certificate leaf[subject.OU] = "8VXZS5M92N"</string>
+    </array>
+
+    <!-- Launchd configuration -->
+    <key>Label</key>
+    <string>com.tcmt.sensorhelper</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/tcmt-sensorhelper.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/tcmt-sensorhelper.log</string>
+</dict>
+</plist>

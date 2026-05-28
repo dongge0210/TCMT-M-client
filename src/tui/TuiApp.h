@@ -126,6 +126,7 @@ struct TuiData {
     double batteryTemp = 0.0;        // Celsius
     int batteryAmperage = 0;         // mA (+=charging, -=discharging)
     int batteryVoltage = 0;          // mV
+    double chargerWatts = 0.0;       // connected charger rated wattage
     bool batteryIsCharging = false;
 
     double cpuPower = 0.0;
@@ -181,6 +182,21 @@ struct TuiData {
     double loadAvg15 = 0.0;
     int processCount = 0;
 
+    // ALS (Ambient Light Sensor)
+    bool alsValid = false;
+    double alsLux = 0.0;
+
+    // Accelerometer (BMI284 IMU)
+    struct AccelInfo {
+        bool hasDevice = false;    // BMI284 present on this machine
+        bool valid = false;        // current sample valid
+        // (reserved for future use)
+        double x = 0.0;           // X axis (g)
+        double y = 0.0;           // Y axis (g)
+        double z = 0.0;           // Z axis (g, ~1g at rest)
+    };
+    AccelInfo accel;
+
     // Top processes (by memory, top ~7)
     struct ProcessTopEntry {
         pid_t pid = 0;
@@ -229,6 +245,7 @@ private:
     int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility

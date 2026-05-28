@@ -43,6 +43,8 @@
 #include "core/IPC/IPCServer.h"
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/process/ProcessTop.h"
+#include "core/als/ALSensor.h"
+#include "core/accel/AccelSensor.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
@@ -626,6 +628,23 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
     tuiApp.Start();
 
+    // Install SMJobBless helper for accelerometer (BMI284).
+    // Pops system password dialog once; helper runs as root daemon.
+    // NOTE: The helper ignores SIGTERM (launchd/system noise) to stay alive.
+    {
+        AccelSensor tmpAccel;  // check if BMI284 exists
+        if (tmpAccel.GetData().hasDevice) {
+            Logger::Info("Installing sensor helper (SMJobBless)...");
+            bool blessed = AccelSensor::BlessHelper();
+            Logger::Info(blessed
+                ? "Sensor helper installed/started"
+                : "Sensor helper install deferred or failed (will retry)");
+            tmpAccel.Refresh();
+            if (tmpAccel.GetData().valid)
+                Logger::Info("Accelerometer reading OK");
+        }
+    }
+
     // Start history logger (SQLite)
     HistoryLogger historyLogger;
     historyLogger.SetRetentionDays(30);
@@ -755,13 +774,17 @@ int main(int argc, char* argv[]) {
               data.btDeviceCount = static_cast<int>(bd.devices.size());
             }
 
-            // Display monitors, battery health & thermal state (every ~3 seconds, like WiFi)
+            // Display monitors, battery health, ALS, accelerometer & thermal state (every ~3 seconds)
             static int displayCtr = 0;
             static DisplayInfo s_display;
             static BatteryHealth s_battery;
+            static ALSensor s_als;
+            static AccelSensor s_accel;
             if (++displayCtr >= 6) { displayCtr = 0;
                 try { s_display.Detect(); } catch (...) {}
                 try { s_battery.Detect(); } catch (...) {}
+                try { s_als.Detect(); } catch (...) {}
+                try { s_accel.Refresh(); } catch (...) {}
 
                 // Thermal state (available since macOS 10.10.3, well below our 11.0 target)
 #ifdef __OBJC__
@@ -794,7 +817,26 @@ int main(int argc, char* argv[]) {
                 data.batteryTemp = bd.temperature;
                 data.batteryAmperage = bd.amperage;
                 data.batteryVoltage = bd.voltage;
+                data.chargerWatts = bd.chargerWatts;
                 data.batteryIsCharging = bd.isCharging;
+            }
+
+            // ALS (ambient light sensor)
+            {
+                const auto& ad = s_als.GetData();
+                data.alsValid = ad.valid;
+                data.alsLux = ad.lux;
+            }
+
+            // Accelerometer (BMI284 IMU) — via SHM (SMJobBless) or direct HID
+            {
+                const auto& ad = s_accel.GetData();
+                data.accel.hasDevice = ad.hasDevice;
+                data.accel.valid = ad.valid;
+                (void)ad;
+                data.accel.x = ad.x;
+                data.accel.y = ad.y;
+                data.accel.z = ad.z;
             }
 
             // System uptime / load / process count / top processes

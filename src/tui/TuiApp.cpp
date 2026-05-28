@@ -611,7 +611,37 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
                           dir, powerMw / 1000.0);
             }
         }
+        // Charger rated wattage
+        if (data.chargerWatts > 0) {
+            mvwprintw(win, y + lines++, x0 + 2, "Charger: %.0f W", data.chargerWatts);
+        }
         // Battery temp — shown in Temperature panel (from TemperatureWrapper/iokit_battery_temp)
+    }
+
+    return lines;
+}
+
+int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    bool hasSensor = data.alsValid || data.accel.hasDevice;
+    if (!hasSensor) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Sensors");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    // ALS
+    if (data.alsValid) {
+        mvwprintw(win, y + lines++, x0 + 2, "ALS:  %.0f lux", data.alsLux);
+    }
+
+    // Accelerometer (via CoreMotion on Apple Silicon)
+    if (data.accel.hasDevice && data.accel.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Accel: %.2f %.2f %.2f g",
+                  data.accel.x, data.accel.y, data.accel.z);
+    } else if (data.accel.hasDevice) {
+        mvwprintw(win, y + lines++, x0 + 2, "Accel: waiting...");
     }
 
     return lines;
@@ -787,6 +817,9 @@ void TuiApp::Run() {
             }
             if (ry < maxY) {
                 ry += DrawDisplayPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawAccelPanel(stdscr, data, ry, rx, rightW);
             }
             if (ry < maxY) {
                 ry += DrawTpmPanel(stdscr, data, ry, rx, rightW);

@@ -47,6 +47,8 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/display/DisplayInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/AccelSensor.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
@@ -176,6 +178,8 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
     ${CMAKE_CURRENT_SOURCE_DIR}/core/battery
     ${CMAKE_CURRENT_SOURCE_DIR}/core/process
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/als
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/accel
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
 
@@ -259,6 +263,42 @@ if(TCMT_MACOS)
         target_link_libraries(TCMTCore PRIVATE ${IOKIT_LIB})
         message(STATUS "  IOKit.framework: ${IOKIT_LIB}")
     endif()
+    find_library(SERVICEMANAGEMENT_LIB ServiceManagement)
+    find_library(SECURITY_LIB Security)
+    if(SERVICEMANAGEMENT_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${SERVICEMANAGEMENT_LIB})
+        message(STATUS "  ServiceManagement.framework: ${SERVICEMANAGEMENT_LIB}")
+    endif()
+    if(SECURITY_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${SECURITY_LIB})
+        message(STATUS "  Security.framework: ${SECURITY_LIB}")
+    endif()
+endif()
+
+# ============================================================
+# SMJobBless privileged helper (BMI284 accelerometer)
+# ============================================================
+if(TCMT_MACOS)
+    # Build the helper executable
+    add_executable(tcmt_sensor_helper
+        ${CMAKE_CURRENT_SOURCE_DIR}/helper/tcmt_sensor_helper.c
+    )
+    target_link_libraries(tcmt_sensor_helper PRIVATE
+        "-framework IOKit"
+        "-framework CoreFoundation"
+    )
+    # Embed CFBundle Info.plist into __TEXT,__info_plist (CFBundleIdentifier, SMAuthorizedClients)
+    target_link_options(tcmt_sensor_helper PRIVATE
+        "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/helper/com.tcmt.sensorhelper.info.plist"
+    )
+    # Embed launchd plist into __TEXT,__launchd_plist (Label, KeepAlive — required by SMJobBless)
+    target_link_options(tcmt_sensor_helper PRIVATE
+        "-Wl,-sectcreate,__TEXT,__launchd_plist,${CMAKE_CURRENT_SOURCE_DIR}/helper/com.tcmt.sensorhelper.launchd.plist"
+    )
+    set_target_properties(tcmt_sensor_helper PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+    )
 endif()
 
 # ============================================================
@@ -320,15 +360,31 @@ elseif(TCMT_MACOS)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M-Info.plist"
             "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Info.plist"
-        # Sign with real Apple Development certificate (NOT ad-hoc).
-        # CoreLocation requestWhenInUseAuthorization silently fails on
-        # macOS 15+ with ad-hoc signing — it requires a trusted identity.
-        # NOTE: intentionally NO --entitlements — com.apple.developer.
-        # location-wifi triggers AMFI kill on macOS even with a real cert
-        # unless provisioned via Apple Developer portal. The CoreLocation
-        # dialog itself only needs the real cert + Info.plist.
+        # Copy SMJobBless helper to Contents/Library/LaunchServices/
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:tcmt_sensor_helper>"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices/com.tcmt.sensorhelper"
+        # Sign helper individually with explicit identifier (required for SMJobBless)
         COMMAND codesign --force --sign
             "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
+            --timestamp --options runtime
+            --identifier "com.tcmt.sensorhelper"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices/com.tcmt.sensorhelper"
+        # Sign app bundle (with real Apple Development cert).
+        # CoreLocation requestWhenInUseAuthorization silently fails on
+        # macOS 15+ with ad-hoc signing — it requires a trusted identity.
+        # NOTE: intentionally NO com.apple.developer.location-wifi
+        # entitlement — it triggers AMFI kill on macOS even with a real cert
+        # unless provisioned via Apple Developer portal. The CoreLocation
+        # dialog itself only needs the real cert + Info.plist.
+        # --entitlements provides disable-library-validation so the hardened
+        # runtime process can load Homebrew ncurses (different Team ID).
+        COMMAND codesign --force --sign
+            "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
+            --timestamp --options runtime
+            --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M.entitlements"
             "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
         COMMENT "Creating TCMT-M.app bundle with Apple Development signature"
     )
