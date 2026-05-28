@@ -15,6 +15,7 @@
 #import <Security/Authorization.h>
 
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
@@ -190,7 +191,17 @@ void AccelSensor::Refresh() {
 bool AccelSensor::BlessHelper() {
     CFStringRef helperID = CFSTR("com.tcmt.sensorhelper");
 
-    // Set up authorization for privileged helper install
+    // Avoid popping root dialog on every launch — check if helper already installed.
+    // SMJobBless copies binary to /Library/PrivilegedHelperTools/ + registers with launchd.
+    // Once installed, launchd auto-restarts it on crash/boot; SHM will appear shortly.
+    {
+        struct stat st;
+        if (stat("/Library/PrivilegedHelperTools/com.tcmt.sensorhelper", &st) == 0) {
+            return true;  // already installed, launchd manages lifecycle
+        }
+    }
+
+    // Set up authorization for privileged helper install (first time only)
     AuthorizationRef authRef = NULL;
     AuthorizationItem authItem = {
         kSMRightBlessPrivilegedHelper, 0, NULL, 0
