@@ -391,10 +391,158 @@ typedef struct {
 
 static io_connect_t g_as_smc_conn = 0;
 static std::mutex  g_as_smc_mutex;
-static std::vector<std::string> g_as_smc_cpu_keys;
-static std::vector<std::string> g_as_smc_gpu_keys;
+// Individual temperature key with category
+enum class SmcTempCategory {
+    PCore,   // Performance core
+    ECore,   // Efficiency core  
+    GPU,     // Graphics
+    Cache,   // Cache / memory fabric
+    RAM,     // DRAM / memory module
+    Board,   // Board / near-SoC
+    Heatsink,// Thermal head / heatsink
+    IO,      // I/O processor
+    VRM,     // Voltage regulator
+    Other    // Other miscellaneous
+};
+
+struct SmcTempEntry {
+    std::string key;      // SMC key name (4 chars)
+    SmcTempCategory cat;
+    std::string displayName; // Human-readable label
+};
+
+static std::vector<SmcTempEntry> g_as_smc_temp_keys;
 static std::unordered_map<std::string, AsKeyInfo> g_as_smc_key_info_cache;
 static bool g_as_smc_ready = false;
+
+// Categorize an SMC temperature key by its name
+// M1/M2/M3: Tp*=P-Core, Te*=E-Core, Tg*=GPU, Ts*=SuperCore (M5+)
+// M4: TPD*=P-Core, TDeL=E-Core, Tg*=GPU (still works), TRD*=RAM, TB*T=Board
+static SmcTempEntry categorize_temp_key(const std::string& key) {
+    SmcTempEntry e;
+    e.key = key;
+    e.cat = SmcTempCategory::Other;
+    e.displayName = key;
+    
+    // Try to decode known key patterns
+    if (key.size() < 2) return e;
+    
+    auto setCat = [&](SmcTempCategory c, const char* name) {
+        e.cat = c;
+        e.displayName = name;
+    };
+    
+    // M4 P-core: TPD0..TPD7, TPDX, TPMP, TPSP
+    if (key[0] == 'T' && key[1] == 'P') {
+        if (key.size() >= 4 && key[2] == 'D') {
+            char n = key[3];
+            if (n >= '0' && n <= '9') setCat(SmcTempCategory::PCore, (std::string("P-Core #") + n).c_str());
+            else if (n == 'X') setCat(SmcTempCategory::PCore, "P-Core Max");
+        } else if (key == "TPMP") setCat(SmcTempCategory::PCore, "P-Core (MP)");
+        else if (key == "TPSP") setCat(SmcTempCategory::PCore, "P-Core (SP)");
+        return e;
+    }
+    // M1-M3 P-core: Tp* (lowercase p)
+    if (key[0] == 'T' && key[1] == 'p') {
+        setCat(SmcTempCategory::PCore, ("P-Core (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // E-core: TDeL (M4), Te* (M1-M3)
+    if (key[0] == 'T' && key[1] == 'e') {
+        if (key.size() >= 4 && key[2] >= '0' && key[2] <= '9')
+            setCat(SmcTempCategory::ECore, (std::string("E-Core #") + key[2] + key[3]).c_str());
+        else
+            setCat(SmcTempCategory::ECore, ("E-Core (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    if (key == "TDeL") { setCat(SmcTempCategory::ECore, "E-Core"); return e; }
+    
+    // GPU: Tg* (both M4 and M1-M3)
+    if (key[0] == 'T' && key[1] == 'g') {
+        setCat(SmcTempCategory::GPU, ("GPU (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // Cluster/SoC sensors: Ts* (on M4 these are various cluster sensors, not SuperCores)
+    if (key[0] == 'T' && key[1] == 's') {
+        if (key.size() >= 4 && key[2] >= '0' && key[2] <= '9')
+            setCat(SmcTempCategory::Other, ("Cluster #" + std::string(1, key[2])).c_str());
+        else
+            setCat(SmcTempCategory::Other, ("Sensor (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // Heatsink (lowercase): Th* (M4: Th04-Th0M etc.)
+    if (key[0] == 'T' && key[1] == 'h') {
+        if (key.size() >= 4)
+            setCat(SmcTempCategory::Heatsink, ("Heatsink #" + std::string(1, key[2]) + key[3]).c_str());
+        else
+            setCat(SmcTempCategory::Heatsink, ("Heatsink (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // Memory controller: Tm* (M4: Tm0B)
+    if (key[0] == 'T' && key[1] == 'm') {
+        setCat(SmcTempCategory::RAM, ("MCtrl (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // Cache/Memory fabric
+    if (key[0] == 'T' && key[1] == 'C') {
+        if (key == "TCHP") setCat(SmcTempCategory::Cache, "Cache (HP)");
+        else if (key == "TCMb") setCat(SmcTempCategory::Cache, "Cache (MB)");
+        else if (key == "TCMz") setCat(SmcTempCategory::Cache, "Cache (MZ)");
+        else setCat(SmcTempCategory::Cache, ("Cache (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // RAM: TRD*
+    if (key[0] == 'T' && key[1] == 'R') {
+        if (key.size() >= 4 && key[2] == 'D') {
+            char n = key[3];
+            if (n >= '0' && n <= '9') setCat(SmcTempCategory::RAM, (std::string("RAM #") + n).c_str());
+            else if (n == 'X') setCat(SmcTempCategory::RAM, "RAM Max");
+            else setCat(SmcTempCategory::RAM, ("RAM (" + key.substr(2) + ")").c_str());
+        } else {
+            setCat(SmcTempCategory::RAM, ("RAM (" + key.substr(2) + ")").c_str());
+        }
+        return e;
+    }
+    // Board: TB*T
+    if (key[0] == 'T' && key[1] == 'B') {
+        if (key == "TB0T") setCat(SmcTempCategory::Board, "Board #0");
+        else if (key == "TB1T") setCat(SmcTempCategory::Board, "Board #1");
+        else if (key == "TB2T") setCat(SmcTempCategory::Board, "Board #2");
+        else setCat(SmcTempCategory::Board, ("Board (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // Heatsink: TH*
+    if (key[0] == 'T' && key[1] == 'H') {
+        if (key == "TH0T") setCat(SmcTempCategory::Heatsink, "Heatsink");
+        else if (key == "TH0x") setCat(SmcTempCategory::Heatsink, "Heatsink (x)");
+        else setCat(SmcTempCategory::Heatsink, ("Heatsink (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    // I/O Processor
+    if (key == "TIOP") { setCat(SmcTempCategory::IO, "I/O Processor"); return e; }
+    // VRM
+    if (key == "TMVR") { setCat(SmcTempCategory::VRM, "VRM"); return e; }
+    if (key == "TVD0") { setCat(SmcTempCategory::VRM, "VRM (D)"); return e; }
+    if (key == "TVA0") { setCat(SmcTempCategory::VRM, "VRM (A)"); return e; }
+    if (key == "TVM0") { setCat(SmcTempCategory::VRM, "VRM (M)"); return e; }
+    if (key == "TVM1") { setCat(SmcTempCategory::VRM, "VRM (M1)"); return e; }
+    // Miscellaneous known sensors
+    if (key == "T5SP") { setCat(SmcTempCategory::Other, "Sensor 5SP"); return e; }
+    if (key == "TAOL") { setCat(SmcTempCategory::Other, "Ambient"); return e; }
+    if (key == "TDBP") { setCat(SmcTempCategory::Other, "Debug Probe"); return e; }
+    if (key == "TSCD") { setCat(SmcTempCategory::Other, "SCD"); return e; }
+    if (key == "TW0P") { setCat(SmcTempCategory::Other, "WiFi"); return e; }
+    if (key[0] == 'T' && key[1] == 'V') {
+        // Various voltage-region temps
+        setCat(SmcTempCategory::Other, ("Sensor (" + key.substr(2) + ")").c_str());
+        return e;
+    }
+    
+    // Default: include as misc temperatures
+    e.displayName = key;
+    e.cat = SmcTempCategory::Other;
+    return e;
+}
 
 static bool as_smc_open(void) {
     if (g_as_smc_conn != 0) return true;
@@ -404,62 +552,59 @@ static bool as_smc_open(void) {
     mach_port_t masterPort = kIOMasterPortDefault;
 #pragma clang diagnostic pop
 
+    kern_return_t kr;
+    io_service_t service = 0;
+
+    // Strategy 1: AppleSMCKeysEndpoint is a top-level service on M4 Macs
+    // (child of RTBuddyEndpointService, visible via IOServiceMatching)
+    service = IOServiceGetMatchingService(masterPort,
+                                          IOServiceMatching("AppleSMCKeysEndpoint"));
+    if (service) {
+        kr = IOServiceOpen(service, mach_task_self(), 0, &g_as_smc_conn);
+        IOObjectRelease(service);
+        if (kr == KERN_SUCCESS) {
+            Logger::Info("TemperatureWrapper: AppleSMCKeysEndpoint opened directly");
+            return true;
+        }
+    }
+
+    // Strategy 2: On M1/M2/M3, AppleSMCKeysEndpoint is a child of AppleSMC
     io_iterator_t iter = 0;
     CFDictionaryRef match = IOServiceMatching("AppleSMC");
-    if (!match) {
-        // DEBUG REMOVED
-        // fprintf(stderr, "[temp] AS SMC: IOServiceMatching returned NULL\n");
-        return false;
-    }
-    kern_return_t kr = IOServiceGetMatchingServices(masterPort, match, &iter);
-    if (kr != KERN_SUCCESS) {
-        // DEBUG REMOVED
-        // fprintf(stderr, "[temp] AS SMC: IOServiceGetMatchingServices failed kr=%d\n", kr);
-        return false;
-    }
-
-    // Also try parent iteration to find nested children
-    io_iterator_t childIter = 0;
-    io_registry_entry_t entry;
-    int foundCount = 0;
-
-    // First pass: iterate top-level AppleSMC entries
-    while ((entry = IOIteratorNext(iter)) != 0) {
-        foundCount++;
-        char nameBuf[128] = {};
-        // Try IORegistryEntryGetName first (always works)
-        IORegistryEntryGetName(entry, nameBuf);
-        if (strcmp(nameBuf, "AppleSMCKeysEndpoint") == 0) {
-            kr = IOServiceOpen(entry, mach_task_self(), 0, &g_as_smc_conn);
-            IOObjectRelease(entry);
-            break;
-        }
-
-        // Check children of this entry
-        if (IORegistryEntryGetChildIterator(entry, kIOServicePlane, &childIter) == KERN_SUCCESS) {
-            io_registry_entry_t child;
-            int childIdx = 0;
-            while ((child = IOIteratorNext(childIter)) != 0) {
-                childIdx++;
-                char cname[128] = {};
-                IORegistryEntryGetName(child, cname);
-                // DEBUG REMOVED
-        // fprintf(stderr, "[temp] AS SMC:   child #%d name='%s'\n", childIdx, cname);
-                if (strcmp(cname, "AppleSMCKeysEndpoint") == 0) {
-                    kr = IOServiceOpen(child, mach_task_self(), 0, &g_as_smc_conn);
-                    // DEBUG REMOVED
-        // fprintf(stderr, "[temp] AS SMC: child IOServiceOpen kr=%d conn=%u\n", kr, g_as_smc_conn);
-                    IOObjectRelease(child);
+    if (match) {
+        kr = IOServiceGetMatchingServices(masterPort, match, &iter);
+        if (kr == KERN_SUCCESS) {
+            io_registry_entry_t entry;
+            while ((entry = IOIteratorNext(iter)) != 0) {
+                char nameBuf[128] = {};
+                IORegistryEntryGetName(entry, nameBuf);
+                if (strcmp(nameBuf, "AppleSMCKeysEndpoint") == 0) {
+                    kr = IOServiceOpen(entry, mach_task_self(), 0, &g_as_smc_conn);
+                    IOObjectRelease(entry);
                     break;
                 }
-                IOObjectRelease(child);
+                // Check children
+                io_iterator_t childIter = 0;
+                if (IORegistryEntryGetChildIterator(entry, kIOServicePlane, &childIter) == KERN_SUCCESS) {
+                    io_registry_entry_t child;
+                    while ((child = IOIteratorNext(childIter)) != 0) {
+                        char cname[128] = {};
+                        IORegistryEntryGetName(child, cname);
+                        if (strcmp(cname, "AppleSMCKeysEndpoint") == 0) {
+                            kr = IOServiceOpen(child, mach_task_self(), 0, &g_as_smc_conn);
+                            IOObjectRelease(child);
+                            break;
+                        }
+                        IOObjectRelease(child);
+                    }
+                    IOObjectRelease(childIter);
+                    if (g_as_smc_conn != 0) { IOObjectRelease(entry); break; }
+                }
+                IOObjectRelease(entry);
             }
-            IOObjectRelease(childIter);
-            if (g_as_smc_conn != 0) { IOObjectRelease(entry); break; }
+            IOObjectRelease(iter);
         }
-        IOObjectRelease(entry);
     }
-    IOObjectRelease(iter);
 
     // SMC scan done
     if (kr != KERN_SUCCESS || g_as_smc_conn == 0) {
@@ -590,10 +735,10 @@ static void as_smc_enumerate(void) {
     Logger::Info("TemperatureWrapper: AS SMC has " + std::to_string(totalKeys) + " keys");
     if (totalKeys == 0 || totalKeys > 65535) return;
 
-    g_as_smc_cpu_keys.clear();
-    g_as_smc_gpu_keys.clear();
+    g_as_smc_temp_keys.clear();
+    g_as_smc_key_info_cache.clear();
 
-    int dbgLimit = 20;
+    int pCount = 0, eCount = 0, gCount = 0, otherCount = 0;
     for (uint32_t i = 0; i < totalKeys; i++) {
         char k[5] = {};
         if (!as_smc_key_by_index(i, k)) continue;
@@ -609,30 +754,34 @@ static void as_smc_enumerate(void) {
         dt[2] = (ki.dataType >>  8) & 0xFF;
         dt[3] =  ki.dataType        & 0xFF;
 
-        if (dbgLimit > 0 && k[0] >= ' ' && k[1] >= ' ') {
-            dbgLimit--;
-        }
-
+        // Temperature keys: 4-byte float32, key starts with 'T'
         if (ki.dataSize != 4) continue;
+        if (dt[0] != 'f' || dt[1] != 'l') continue;
+        if (k[0] != 'T') continue;
 
-        // Tp=performance core, Te=efficiency core, Ts=super core (M5+), Tg=GPU
-        if (k[0] == 'T' && k[1] == 'g') {
-            g_as_smc_gpu_keys.push_back(std::string(k));
-            g_as_smc_key_info_cache[std::string(k)] = ki;
-        } else if (k[0] == 'T' && (k[1] == 'p' || k[1] == 'e' || k[1] == 's')) {
-            g_as_smc_cpu_keys.push_back(std::string(k));
-            g_as_smc_key_info_cache[std::string(k)] = ki;
+        std::string keyStr(k);
+        auto entry = categorize_temp_key(keyStr);
+        g_as_smc_temp_keys.push_back(entry);
+        g_as_smc_key_info_cache[keyStr] = ki;
+
+        switch (entry.cat) {
+            case SmcTempCategory::PCore: pCount++; break;
+            case SmcTempCategory::ECore: eCount++; break;
+            case SmcTempCategory::GPU:   gCount++; break;
+            default: otherCount++; break;
         }
     }
 
     g_as_smc_ready = true;
-    Logger::Info("TemperatureWrapper: AS SMC CPU keys="
-                 + std::to_string(g_as_smc_cpu_keys.size())
-                 + " GPU keys=" + std::to_string(g_as_smc_gpu_keys.size()));
+    Logger::Info("TemperatureWrapper: AS SMC P-Core="
+                 + std::to_string(pCount) + " E-Core=" + std::to_string(eCount)
+                 + " GPU=" + std::to_string(gCount) + " Other=" + std::to_string(otherCount)
+                 + " Total=" + std::to_string(g_as_smc_temp_keys.size()));
 }
 
 // Read temperatures from Apple Silicon SMC (with cache for reliability)
 static std::vector<std::pair<std::string, double>> g_as_smc_cached_temps;
+static int64_t g_as_smc_refresh_count = 0;
 
 static std::vector<std::pair<std::string, double>> as_smc_read_temps(void) {
     std::vector<std::pair<std::string, double>> temps;
@@ -651,23 +800,22 @@ static std::vector<std::pair<std::string, double>> as_smc_read_temps(void) {
         if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0) return 0.0;
         return as_smc_decode_temp(out.bytes, &it->second);
     };
-    double cpuSum = 0.0; int cpuN = 0;
-    double gpuSum = 0.0; int gpuN = 0;
-    for (const auto& k : g_as_smc_cpu_keys) {
-        double v = readKey(k);
-        if (v > 10.0 && v < 150.0) { cpuSum += v; cpuN++; }
-    }
-    for (const auto& k : g_as_smc_gpu_keys) {
-        double v = readKey(k);
-        if (v > 10.0 && v < 150.0) { gpuSum += v; gpuN++; }
-    }
-    if (cpuN > 0) temps.push_back({"CPU Die", cpuSum / cpuN});
-    if (gpuN > 0) temps.push_back({"GPU Die", gpuSum / gpuN});
 
-    if (temps.size() >= 1)
+    // Read each individual sensor and output with descriptive name
+    for (const auto& entry : g_as_smc_temp_keys) {
+        double v = readKey(entry.key);
+        if (v > 10.0 && v < 150.0) {
+            temps.push_back({entry.displayName, v});
+        }
+    }
+
+    // Cache: if we got at least some valid readings, update cache
+    if (temps.size() >= 3) {
         g_as_smc_cached_temps = temps;
-    else if (!g_as_smc_cached_temps.empty())
+        g_as_smc_refresh_count++;
+    } else if (!g_as_smc_cached_temps.empty()) {
         temps = g_as_smc_cached_temps;
+    }
 
     return temps;
 }
@@ -1016,9 +1164,8 @@ void TemperatureWrapper::Initialize() {
 #else
     if (as_smc_open()) {
         as_smc_enumerate();
-        Logger::Info("TemperatureWrapper: AS SMC ready, CPU="
-                     + std::to_string(g_as_smc_cpu_keys.size())
-                     + " GPU=" + std::to_string(g_as_smc_gpu_keys.size()) + " keys");
+        Logger::Info("TemperatureWrapper: AS SMC ready, "
+                     + std::to_string(g_as_smc_temp_keys.size()) + " temp keys");
     } else {
         // DEBUG REMOVED
         // fprintf(stderr, "[temp] AS SMC open failed\n");
@@ -1050,8 +1197,7 @@ void TemperatureWrapper::Cleanup() {
     if (g_as_smc_conn) {
         std::lock_guard<std::mutex> lock(g_as_smc_mutex);
         g_as_smc_ready = false;
-        g_as_smc_cpu_keys.clear();
-        g_as_smc_gpu_keys.clear();
+        g_as_smc_temp_keys.clear();
         g_as_smc_key_info_cache.clear();
         g_as_smc_cached_temps.clear();
         IOServiceClose(g_as_smc_conn);
