@@ -972,7 +972,9 @@ static const char* kGpuKeys[] = {
 
 // =====================================================================
 // Battery temperature via AppleSmartBattery (no root needed)
-// Temperature value is in centidegrees (×100 °C), e.g. 3018 → 30.18°C
+// Value follows SMBus Smart Battery Data Spec: tenths of Kelvin (decikelvin)
+//   e.g. 3079 → 307.9K → 34.75°C
+// Confirmed empirically: matches coconutBattery, VirtualSMC, and iStats#71
 // =====================================================================
 static double iokit_battery_temp(void) {
 #pragma clang diagnostic push
@@ -990,7 +992,8 @@ static double iokit_battery_temp(void) {
     if (ref && CFGetTypeID(ref) == CFNumberGetTypeID()) {
         SInt64 raw = 0;
         if (CFNumberGetValue((CFNumberRef)ref, kCFNumberSInt64Type, &raw)) {
-            result = raw / 100.0;
+            // decikelvin → Celsius: raw/10 - 273.15
+            result = (raw / 10.0) - 273.15;
         }
         if (ref) CFRelease(ref);
     }
