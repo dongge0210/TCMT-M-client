@@ -117,6 +117,17 @@ struct TuiData {
     std::string hardwareModel;
     int batteryPercent = -1;  // -1 = no battery
     bool acOnline = false;
+
+    // Battery health (macOS AppleSmartBattery)
+    int batteryCycleCount = 0;
+    int batteryDesignCapacity = 0;   // mAh
+    int batteryMaxCapacity = 0;      // mAh (actual max, may be degraded)
+    double batteryHealthPercent = 0.0;
+    double batteryTemp = 0.0;        // Celsius
+    int batteryAmperage = 0;         // mA (+=charging, -=discharging)
+    int batteryVoltage = 0;          // mV
+    bool batteryIsCharging = false;
+
     double cpuPower = 0.0;
     double gpuPower = 0.0;
     double anePower = 0.0;
@@ -142,10 +153,42 @@ struct TuiData {
     std::string wifiBand;
     std::string wifiGen;
     double wifiTxRate = 0;
+    bool wifiLocationDenied = false; // macOS 15+: SSID blocked by Location Services
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
     int btDeviceCount = 0;
+
+    // Display monitors
+    struct DisplayInfo {
+        std::string name;
+        int width = 0;
+        int height = 0;
+        int refreshRate = 0;    // Hz
+        bool isHDR = false;
+        bool isBuiltin = false;
+        double backingScale = 1.0;
+    };
+    std::vector<DisplayInfo> displays;
+
+    // Thermal state (macOS NSProcessInfoThermalState)
+    int thermalState = 0;       // 0=nominal, 1=fairlySerious, 2=critical
+
+    // System uptime / load / process
+    uint64_t uptimeSeconds = 0;
+    double loadAvg1 = 0.0;
+    double loadAvg5 = 0.0;
+    double loadAvg15 = 0.0;
+    int processCount = 0;
+
+    // Top processes (by memory, top ~7)
+    struct ProcessTopEntry {
+        pid_t pid = 0;
+        std::string name;
+        uint64_t memoryBytes = 0;
+        double cpuPercent = 0.0;
+    };
+    std::vector<ProcessTopEntry> topProcesses;
 
     // Timestamp
     std::string timestamp;
@@ -184,7 +227,9 @@ private:
     int DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);

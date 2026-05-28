@@ -44,6 +44,9 @@ if(TCMT_MACOS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/display/DisplayInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
@@ -171,6 +174,8 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb
     ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
     ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/battery
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/process
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
 
@@ -300,7 +305,33 @@ if(TCMT_WINDOWS)
         )
     endif()
 elseif(TCMT_MACOS)
-    # macOS executable settings
+    # macOS: build .app bundle so CoreLocation/SSID permission dialog works.
+    # Use generator expressions so the bundle lands alongside the binary
+    # regardless of CMAKE_RUNTIME_OUTPUT_DIRECTORY.
+    add_custom_command(TARGET TCMT-M POST_BUILD
+        # Always start fresh to avoid stale signature hash mismatch
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/MacOS"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:TCMT-M>"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/MacOS/TCMT-M"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M-Info.plist"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Info.plist"
+        # Sign with real Apple Development certificate (NOT ad-hoc).
+        # CoreLocation requestWhenInUseAuthorization silently fails on
+        # macOS 15+ with ad-hoc signing — it requires a trusted identity.
+        # NOTE: intentionally NO --entitlements — com.apple.developer.
+        # location-wifi triggers AMFI kill on macOS even with a real cert
+        # unless provisioned via Apple Developer portal. The CoreLocation
+        # dialog itself only needs the real cert + Info.plist.
+        COMMAND codesign --force --sign
+            "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
+        COMMENT "Creating TCMT-M.app bundle with Apple Development signature"
+    )
 endif()
 
 message(STATUS "TCMT-M build configured successfully")

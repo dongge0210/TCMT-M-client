@@ -339,15 +339,20 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
 
     if (data.hasWiFi) {
         bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
-        std::string wifiStr = hasData ? "On" : "Disconnected";
-        if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
-        if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
-        if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
-        if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
-        if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
-        if (!data.wifiBand.empty()) wifiStr += "  " + data.wifiBand;
-        if (!data.wifiGen.empty()) wifiStr += "  " + data.wifiGen;
-        if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
+        std::string wifiStr;
+        if (data.wifiLocationDenied) {
+            wifiStr = "On  SSID unavailable (Location Services)";
+        } else {
+            wifiStr = hasData ? "On" : "Disconnected";
+            if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
+            if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
+            if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
+            if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
+            if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
+            if (!data.wifiBand.empty()) wifiStr += "  " + data.wifiBand;
+            if (!data.wifiGen.empty()) wifiStr += "  " + data.wifiGen;
+            if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
+        }
         wifiStr = TrimRight(wifiStr, maxW - 8);
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
@@ -368,6 +373,34 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             : "Off";
         lines++;  // blank line between WiFi and BT
         mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
+        lines++;
+    }
+
+    return lines;
+}
+
+int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    if (data.displays.empty()) return 0;
+    int lines = 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y + lines, x0, "%.*s", maxW, "Displays");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    lines++;
+
+    for (const auto& d : data.displays) {
+        std::string line = d.name;
+        line += " " + std::to_string(d.width) + "x" + std::to_string(d.height);
+        if (d.refreshRate > 0)
+            line += " @" + std::to_string(d.refreshRate) + "Hz";
+        if (d.isHDR)
+            line += " HDR";
+        if (d.isBuiltin)
+            line += " (built-in)";
+        else
+            line += " scale=" + std::to_string(d.backingScale).substr(0, 3);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, TrimRight(line, maxW - 4).c_str());
         lines++;
     }
 
@@ -430,8 +463,10 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         currentPage = 0;
     }
 
+    int actualRows = 0;
     int startIdx = currentPage * CONTENT_ROWS * 2;
-    for (int p = 0; p < CONTENT_ROWS; p++) {
+    int limit = needPaging ? CONTENT_ROWS : static_cast<int>(displayTemps.size());
+    for (int p = 0; p < limit; p++) {
         int leftIdx = startIdx + p * 2;
         if (leftIdx >= static_cast<int>(displayTemps.size())) break;
 
@@ -452,34 +487,44 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
             wattroff(win, COLOR_PAIR(tcR));
         }
         lines++;
+        actualRows = p + 1;
     }
 
-    // Fill remaining content rows
-    while (lines < 1 + CONTENT_ROWS)
-        lines++;
-
-    // Page indicator (4th row after 3 content rows)
     if (needPaging) {
+        // Fill remaining content rows
+        while (lines < 1 + CONTENT_ROWS)
+            lines++;
+        // Page indicator
         mvwprintw(win, y + lines++, x0 + 2, "%.*s", maxW - 2,
                   ("[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]").c_str());
+        return 1 + CONTENT_ROWS + 1; // header + 3 content + 1 page row
     } else {
-        lines++;
+        return 1 + actualRows; // header + actual sensor rows only
     }
-
-    return 1 + CONTENT_ROWS + 1; // header + 3 content + 1 page row
 }
 
 int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    // Only show if any power data is available
-    bool hasData = (data.cpuPower > 0 || data.gpuPower > 0 || data.anePower > 0);
-    if (!hasData) return 0;
+    bool hasPower = (data.cpuPower > 0 || data.gpuPower > 0 || data.anePower > 0);
+    bool hasBattery = (data.batteryCycleCount > 0 || data.batteryHealthPercent > 0);
+    if (!hasPower && !hasBattery && data.thermalState == 0) return 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(win, y, x0, "%.*s", maxW, "Power");
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
+    // Thermal state
+    if (data.thermalState > 0) {
+        static const char* labels[] = {"", "Fairly Serious", "Critical"};
+        const char* label = (data.thermalState < 3) ? labels[data.thermalState] : "Unknown";
+        int pair = (data.thermalState >= 2) ? 4 : 3;
+        wattron(win, COLOR_PAIR(pair) | A_BOLD);
+        mvwprintw(win, y + lines++, x0 + 2, "Thermal: %s", label);
+        wattroff(win, COLOR_PAIR(pair) | A_BOLD);
+    }
+
+    // Power consumption
     double totalPower = 0.0;
     if (data.cpuPower > 0)
         mvwprintw(win, y + lines++, x0 + 2, "CPU:   %.2f W", data.cpuPower / 1000.0);
@@ -489,7 +534,69 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
     mvwprintw(win, y + lines++, x0 + 4, "Total: %.2f W", totalPower);
 
+    // Battery health
+    if (hasBattery) {
+        if (lines > 1) lines++;  // blank line separator
+        mvwprintw(win, y + lines++, x0 + 2, "Cycles: %d", data.batteryCycleCount);
+        // Health %
+        int hp = (int)(data.batteryHealthPercent + 0.5);
+        int hpColor = (hp < 60) ? 4 : (hp < 80) ? 3 : 2;
+        wattron(win, COLOR_PAIR(hpColor));
+        mvwprintw(win, y + lines++, x0 + 2, "Health: %d%%", hp);
+        wattroff(win, COLOR_PAIR(hpColor));
+        // Charge/discharge power
+        if (data.batteryAmperage != 0 && data.batteryVoltage > 0) {
+            int64_t powerMw = (int64_t)std::abs(data.batteryAmperage) * (int64_t)data.batteryVoltage / 1000;
+            if (powerMw > 0) {
+                const char* dir = (data.batteryAmperage > 0) ? "Chg" : "Dchg";
+                mvwprintw(win, y + lines++, x0 + 2, "Power: %s %.2f W",
+                          dir, powerMw / 1000.0);
+            }
+        }
+        // Battery temp — shown in Temperature panel (from TemperatureWrapper/iokit_battery_temp)
+    }
+
     return lines;
+}
+
+int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 15 || data.topProcesses.empty()) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Processes (Top by Memory)");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    int nameW = maxW - 30;  // room for pid(7) + mem(5) + cpu(7) + spaces
+    if (nameW < 6) nameW = 6;
+
+    for (const auto& p : data.topProcesses) {
+        // Clamp name width
+        std::string name = p.name;
+        if ((int)name.size() > nameW)
+            name = name.substr(0, nameW - 1) + "~";
+
+        // Format PID
+        std::string pidStr = std::to_string(p.pid);
+
+        // Format memory
+        std::string memStr;
+        if (p.memoryBytes >= (uint64_t)1024 * 1024 * 1024)
+            memStr = std::to_string(p.memoryBytes / (1024 * 1024 * 1024)) + "G";
+        else
+            memStr = std::to_string(p.memoryBytes / (1024 * 1024)) + "M";
+
+        // Format CPU%
+        int cpuColor = (p.cpuPercent > 50) ? 4 : (p.cpuPercent > 20) ? 3 : 2;
+        wattron(win, COLOR_PAIR(cpuColor));
+        mvwprintw(win, y + lines, x0 + 2,
+                  "%-*s %6s %4s %5.1f%%",
+                  nameW, name.c_str(), pidStr.c_str(), memStr.c_str(), p.cpuPercent);
+        wattroff(win, COLOR_PAIR(cpuColor));
+        lines++;
+    }
+
+    return lines + 1;  // +1 bottom padding
 }
 
 void TuiApp::Run() {
@@ -497,6 +604,7 @@ void TuiApp::Run() {
 
     initscr();
     cursesActive_ = true;
+    ESCDELAY = 25;   // 25ms Esc timeout (default 1000ms) — fix "half-exit" feel
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
@@ -592,6 +700,12 @@ void TuiApp::Run() {
             if (ly < maxY) {
                 ly += DrawMemoryPanel(stdscr, data, ly, lx, leftW);
             }
+            if (ly < maxY) {
+                ly += 2;  // blank rows before processes
+            }
+            if (ly < maxY) {
+                ly += DrawProcessPanel(stdscr, data, ly, lx, leftW);
+            }
         }
         if (ly > maxY) ly = maxY;
 
@@ -608,6 +722,9 @@ void TuiApp::Run() {
             // WiFi & Bluetooth supplementary info after Network
             if (ry < maxY) {
                 ry += DrawWifiBluetoothPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawDisplayPanel(stdscr, data, ry, rx, rightW);
             }
             if (ry < maxY) {
                 ry += DrawTpmPanel(stdscr, data, ry, rx, rightW);
@@ -701,6 +818,24 @@ void TuiApp::Run() {
             wattron(stdscr, COLOR_PAIR(color));
             mvwprintw(stdscr, sysTop, cols - static_cast<int>(batStr.size()) - 2, "%s", batStr.c_str());
             wattroff(stdscr, COLOR_PAIR(color));
+        }
+
+        // System line 2: uptime | load | processes
+        if (data.uptimeSeconds > 0) {
+            std::string uptimeStr;
+            uint64_t days = data.uptimeSeconds / 86400;
+            uint64_t hours = (data.uptimeSeconds % 86400) / 3600;
+            uint64_t mins = (data.uptimeSeconds % 3600) / 60;
+            if (days > 0) uptimeStr = std::to_string(days) + "d ";
+            uptimeStr += std::to_string(hours) + "h " + std::to_string(mins) + "m";
+            mvwprintw(stdscr, sysTop + 1, 2, "Uptime: %s", uptimeStr.c_str());
+        }
+        if (data.loadAvg1 > 0) {
+            mvwprintw(stdscr, sysTop + 1, 2 + 18, "Load: %.2f %.2f %.2f",
+                      data.loadAvg1, data.loadAvg5, data.loadAvg15);
+        }
+        if (data.processCount > 0) {
+            mvwprintw(stdscr, sysTop + 1, cols - 18, "Procs: %d", data.processCount);
         }
 
         refresh();

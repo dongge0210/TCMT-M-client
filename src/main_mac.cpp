@@ -17,6 +17,8 @@
 #include <sys/types.h>
 #include <mach/mach_time.h>
 #include <mach/mach.h>
+#include <sys/sysctl.h>
+#include <libproc.h>
 #include <mach/vm_statistics.h>
 #include <sys/stat.h>
 
@@ -31,6 +33,8 @@
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
 #include "core/bluetooth/BluetoothInfo.h"
+#include "core/display/DisplayInfo.h"
+#include "core/battery/BatteryHealth.h"
 #include "core/notifications/DeviceChangeNotifier.h"
 #include "core/notifications/UserNotifier.h"
 #include "core/MCP/MCPServer.h"
@@ -38,6 +42,7 @@
 #include "core/DataStruct/DataStruct.h"
 #include "core/IPC/IPCServer.h"
 #include "core/temperature/TemperatureWrapper.h"
+#include "core/process/ProcessTop.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
@@ -743,10 +748,89 @@ int main(int argc, char* argv[]) {
               data.wifiChannel = wd.channel;
               data.wifiSecurity = wd.security;
               data.wifiTxRate = wd.txRate;
+              data.wifiLocationDenied = wd.locationDenied;
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
               data.btPowerOn = bd.adapter.powerOn;
               data.btDeviceCount = static_cast<int>(bd.devices.size());
+            }
+
+            // Display monitors, battery health & thermal state (every ~3 seconds, like WiFi)
+            static int displayCtr = 0;
+            static DisplayInfo s_display;
+            static BatteryHealth s_battery;
+            if (++displayCtr >= 6) { displayCtr = 0;
+                try { s_display.Detect(); } catch (...) {}
+                try { s_battery.Detect(); } catch (...) {}
+
+                // Thermal state (available since macOS 10.10.3, well below our 11.0 target)
+#ifdef __OBJC__
+                NSProcessInfoThermalState ts = [[NSProcessInfo processInfo] thermalState];
+                data.thermalState = (int)ts;
+#endif
+            }
+            {
+                data.displays.clear();
+                for (const auto& d : s_display.GetDisplays()) {
+                    tcmt::TuiData::DisplayInfo di;
+                    di.name = d.name;
+                    di.width = d.width;
+                    di.height = d.height;
+                    di.refreshRate = d.refreshRate;
+                    di.isHDR = d.isHDR;
+                    di.isBuiltin = d.isBuiltin;
+                    di.backingScale = d.backingScale;
+                    data.displays.push_back(di);
+                }
+            }
+
+            // Battery health
+            {
+                const auto& bd = s_battery.GetData();
+                data.batteryCycleCount = bd.cycleCount;
+                data.batteryDesignCapacity = bd.designCapacity;
+                data.batteryMaxCapacity = bd.maxCapacity;
+                data.batteryHealthPercent = bd.healthPercent;
+                data.batteryTemp = bd.temperature;
+                data.batteryAmperage = bd.amperage;
+                data.batteryVoltage = bd.voltage;
+                data.batteryIsCharging = bd.isCharging;
+            }
+
+            // System uptime / load / process count / top processes
+            static ProcessTop s_procTop;
+            static int procCtr = 0;
+            {
+                // Uptime via sysctl kern.boottime
+                struct timeval boottime;
+                size_t len = sizeof(boottime);
+                if (sysctlbyname("kern.boottime", &boottime, &len, NULL, 0) == 0) {
+                    data.uptimeSeconds = (uint64_t)(time(NULL) - boottime.tv_sec);
+                }
+                // Load average
+                double load[3];
+                if (getloadavg(load, 3) == 3) {
+                    data.loadAvg1 = load[0];
+                    data.loadAvg5 = load[1];
+                    data.loadAvg15 = load[2];
+                }
+                // Process count
+                int n = proc_listallpids(NULL, 0);
+                if (n > 0) data.processCount = n;
+
+                // Top processes — refresh every ~3s (same cadence as WiFi/Display)
+                if (++procCtr >= 6) { procCtr = 0;
+                    try { s_procTop.Refresh(); } catch (...) {}
+                }
+                data.topProcesses.clear();
+                for (const auto& e : s_procTop.GetTop()) {
+                    tcmt::TuiData::ProcessTopEntry pe;
+                    pe.pid = e.pid;
+                    pe.name = e.name;
+                    pe.memoryBytes = e.memoryBytes;
+                    pe.cpuPercent = e.cpuPercent;
+                    data.topProcesses.push_back(pe);
+                }
             }
 
             // Timestamp
