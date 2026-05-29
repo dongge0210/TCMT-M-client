@@ -651,8 +651,8 @@ static SmcTempEntry categorize_temp_key(const std::string& key) {
     if (key == "TSCD") { setCat(SmcTempCategory::Other, "SCD"); return e; }
     if (key == "TW0P") { setCat(SmcTempCategory::Other, "WiFi"); return e; }
     if (key[0] == 'T' && key[1] == 'V') {
-        // Various voltage-region temps (VRM)
-        setCat(SmcTempCategory::VRM, ("VRM (" + key.substr(2) + ")").c_str());
+        // Various voltage-region temps
+        setCat(SmcTempCategory::Other, ("Sensor (" + key.substr(2) + ")").c_str());
         return e;
     }
     
