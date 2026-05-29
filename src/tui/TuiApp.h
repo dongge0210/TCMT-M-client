@@ -183,8 +183,13 @@ struct TuiData {
     int processCount = 0;
 
     // ALS (Ambient Light Sensor)
+    struct AlsChannelInfo {
+        bool valid = false;
+        uint32_t r = 0, g = 0, b = 0;   // RGB raw counts
+    };
     bool alsValid = false;
     double alsLux = 0.0;
+    AlsChannelInfo alsChannels;
 
     // Accelerometer / Attitude (BMI284 DMP gravity vector, 0xFF00/3)
     struct AccelInfo {

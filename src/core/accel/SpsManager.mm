@@ -119,10 +119,25 @@ void SpsManager::HidCallback(void* ctx, IOReturn result, void* sender,
         break;
     }
     case SpsType::ALS: {
-        if (len < 4) return;
-        int32_t raw;
-        memcpy(&raw, report, 4);
-        s->sv.store(raw, std::memory_order_relaxed);
+        // 122-byte report: lux float32 LE at offset 40, raw RGBC uint32 LE at 20-35
+        if (len < 44) return;
+        float lux;
+        memcpy(&lux, report + 40, 4);
+        s->alsLux.store(lux, std::memory_order_relaxed);
+        // Raw RGBC channels (offset 20, 24, 28, 32 — uint32 LE)
+        uint32_t r, g, b, c;
+        memcpy(&r, report + 20, 4);
+        memcpy(&g, report + 24, 4);
+        memcpy(&b, report + 28, 4);
+        memcpy(&c, report + 32, 4);
+        s->alsRawR.store(r, std::memory_order_relaxed);
+        s->alsRawG.store(g, std::memory_order_relaxed);
+        s->alsRawB.store(b, std::memory_order_relaxed);
+        s->alsRawC.store(c, std::memory_order_relaxed);
+        // Store lux as sv for backward compat (bit-punned int32)
+        int32_t luxInt;
+        memcpy(&luxInt, &lux, 4);
+        s->sv.store(luxInt, std::memory_order_relaxed);
         s->updateCount.fetch_add(1, std::memory_order_release);
         break;
     }
@@ -342,8 +357,8 @@ void SpsManager::Refresh() {
             break;
         }
         case SpsType::ALS: {
-            int32_t raw = s->sv.load(std::memory_order_relaxed);
-            s->sample1 = { (double)raw, true }; // raw ALS
+            float lux = s->alsLux.load(std::memory_order_relaxed);
+            s->sample1 = { (double)lux, true }; // lux in lux
             break;
         }
         case SpsType::ApplePriv1: {

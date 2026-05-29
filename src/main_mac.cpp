@@ -816,11 +816,29 @@ int main(int argc, char* argv[]) {
                 data.batteryIsCharging = bd.isCharging;
             }
 
-            // ALS (ambient light sensor)
+            // ALS (ambient light sensor) — from SPU HID callback (SpsManager)
+            // Provides real-time lux + RGBC raw channels at sensor rate (~100Hz).
+            // Falls back to IORegistry polling (s_als) if SpsManager ALS is unavailable.
             {
-                const auto& ad = s_als.GetData();
-                data.alsValid = ad.valid;
-                data.alsLux = ad.lux;
+                bool alsFromSps = false;
+                for (auto& s : s_sps.Sensors()) {
+                    if (s->type == SpsType::ALS && s->sample1.valid) {
+                        data.alsValid = true;
+                        data.alsLux = s->sample1.value;
+                        data.alsChannels.r = s->alsRawR.load(std::memory_order_relaxed);
+                        data.alsChannels.g = s->alsRawG.load(std::memory_order_relaxed);
+                        data.alsChannels.b = s->alsRawB.load(std::memory_order_relaxed);
+                        data.alsChannels.valid = true;
+                        alsFromSps = true;
+                        break;
+                    }
+                }
+                // Fallback: IORegistry polling (ALSensor)
+                if (!alsFromSps) {
+                    const auto& ad = s_als.GetData();
+                    data.alsValid = ad.valid;
+                    data.alsLux = ad.lux;
+                }
             }
 
             // SPU sensors — read latest samples from SpsManager

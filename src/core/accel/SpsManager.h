@@ -63,6 +63,11 @@ struct SpsSensor {
     // Scalar sensors
     std::atomic<int32_t> sv{0};
 
+    // ALS-specific: lux value decoded from HID report (float32 @ offset 40)
+    std::atomic<float> alsLux{0.0f};
+    // ALS raw RGBC channels (uint16 stored in uint32 for atomic — offset 20-35)
+    std::atomic<uint32_t> alsRawR{0}, alsRawG{0}, alsRawB{0}, alsRawC{0};
+
     SpsSample3Axis  sample3;   // decoded 3-axis value (after Refresh)
     SpsSampleScalar sample1;   // decoded scalar value (after Refresh)
 };

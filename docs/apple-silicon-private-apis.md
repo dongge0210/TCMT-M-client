@@ -128,9 +128,31 @@ Offset  Type    Description
 
 #### ALS (Ambient Light Sensor) (0xFF00/4) — 122 bytes
 
-- **Complex multi-field report** containing lux, flicker, color temp, and frame metadata
-- Currently stored as raw first 4 bytes int32 (parsed elsewhere via `ALSensor` class)
-- Format not fully decoded — lux value is extracted through a separate IOHID path
+Decoded format (verified via sensor_recorder 15s capture with varying light levels):
+
+```
+Offset  Type    Description
+───────────────────────────────────────
+0-3     —       Report header (byte0=0xEC, byte1=seq, byte2=0x04, byte3=0x00)
+4-7     uint32  Microsecond timestamp (rapidly varying)
+8-11    uint32  HID event counter (shared with Temp sensor — same value at same t)
+12-19   —       Padding / reserved (zeros)
+20-23   uint32  Raw channel 0 (uint16 stored as LE uint32) — likely Red
+24-27   uint32  Raw channel 1 (uint16 stored as LE uint32) — likely Green
+28-31   uint32  Raw channel 2 (uint16 stored as LE uint32) — likely Blue
+32-35   uint32  Raw channel 3 (uint16 stored as LE uint32) — likely Clear
+36-39   uint32  Raw channel 4 (sum / extra channel)
+40-43   float32 IEEE 754, LE — **Calibrated lux value**
+44-67   —       Padding / reserved (zeros)
+68-...  —       Extended metadata / flicker detection (partially decoded)
+```
+
+- **Lux extraction**: bytes 40-43 as `float32` LE → lux
+- **Verified range**: 142–545 lux (dim lighting room) — tracks light changes correctly
+- **Raw channels (offset 20-35)**: correlate with RGBC. All 4 channels increase/decrease proportionally with light, ratios shift slightly with color temperature changes. Upper 16 bits are always zero — effectively uint16 per channel.
+- **HID event counter at offset 8**: same as Temp sensor at offset 8 — shared global counter
+- **Timing**: reports arrive at ~100Hz, independent of main loop cadence
+- **Previously**: stored as raw first 4 bytes (meaningless). Now decoded in SpsManager with lux + RGBC display in TUI Sensors panel.
 
 #### BMI284 Die Temperature (0xFF00/5) — 14 bytes
 
@@ -232,3 +254,5 @@ Offset  Type    Description
 2. **Motion Heartbeat (0xFF0C/1)**: not a motion data sensor — it's a ~0.4Hz pipeline liveliness indicator. Counter at byte 4 increments every 2.54s regardless of device motion.
 3. **DeviceMotion6 (0xFF0C/5)**: requires CoreMotion activity. SPU fusion engine is lazy — if no CM consumer is registered, the sensor never fires.
 4. **IMU die vs ambient**: the 0xFF00/5 temperature is the BMI284 chip itself (~30°C idle), not CPU/GPU or case temperature. Useful as a proxy for overall chassis heat soak.
+5. **ALS lux at offset 40-43**: the calibrated lux value is at bytes 40-43 as `float32 LE`, not in the first 4 bytes. Previous code storing `report[0..3]` as raw int32 captured only the report header — the lux value was 40 bytes deep in the 122-byte report.
+6. **ALS raw channels at offset 20-35**: four uint32 LE values, effectively uint16 (upper 16 bits always zero). These are raw RGBC ADC counts from the VD6286 sensor. They correlate with light level and can feel color temperature shifts via R/G and B/G ratios.
