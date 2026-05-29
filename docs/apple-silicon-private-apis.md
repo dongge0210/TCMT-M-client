@@ -74,4 +74,161 @@ Same path as temperature but with `kIOHIDEventTypePower = 25`:
 | `IOPMrootDomain` | `IOServiceMatching("IOPMrootDomain")` | Clamshell, power management |
 | `AppleARMThermalSensor` | `ioreg -l -r -c AppleARMThermalSensor` | Multi-point temps |
 | `AppleT8103ThermalZone` (M1) / `AppleT8112ThermalZone` (M2) | IORegistry | SoC thermal zones |
-| `AppleSPUHIDDevice` | HID page `0xFF00` | MEMS accelerometer/gyro (M3+ MBP) |
+| `AppleSPUHIDDevice` | HID page `0xFF00` | MEMS accelerometer/gyro/ALS/lid (M2 MacBook Air+ via SpsManager) |
+
+## Apple SPU HID Sensors — Full Decode Reference
+
+> Discovered 2026-05-29 via `sensor_recorder` tool on MacBook Air M2 (BMI284 IMU).
+> Manager: `src/core/accel/SpsManager.mm` — async `IOHIDDeviceRegisterInputReportWithTimeStampCallback`.
+
+### Enumeration
+
+8 HID devices under `IOHIDDevice` with conforms-to `AppleSPUHIDDriver`:
+
+| Usage Page | Usage | Sensor Type | Report Len | SpsType Enum |
+|-----------|-------|-------------|-----------|-------------|
+| `0xFF00` | 3 | Gravity / Attitude | 22 B | `Gravity` |
+| `0xFF00` | 4 | Ambient Light (ALS) | 122 B | `ALS` |
+| `0xFF00` | 5 | BMI284 Die Temperature | 14 B | `Temp` |
+| `0xFF00` | 9 | Gyroscope | 22 B | `Gyro` |
+| `0xFF00` | 255 (0xFF) | Top-level device | 1 B | (device, not data) |
+| `0x0020` | 138 | Lid Angle | 8 B (3 used) | `LidAngle` |
+| `0xFF0C` | 1 | Motion Heartbeat | 5 B | `ApplePriv1` |
+| `0xFF0C` | 5 | DeviceMotion6 Fusion | 100 B | `ApplePriv5` |
+
+### Sensor Format Details
+
+#### Gravity / Attitude (0xFF00/3) — 22 bytes
+
+```
+Offset  Type    Description
+────────────────────────────────────
+0-1     uint8   seq, frameCnt
+2-21    3×int32 X, Y, Z in Q16 fixed-point
+```
+
+- **Scale**: 1 Q16 = 1/65536 g
+- **Modulus**: √(x²+y²+z²) ≈ 1.0 g (verified at rest: ~0.9995—1.002)
+- **Dead zone**: X/Y < 0.015 → 0.0 (flat-on-table idle noise)
+- **Z is ~1g** at rest (handbook-up orientation)
+
+#### Gyroscope (0xFF00/9) — 22 bytes
+
+```
+Offset  Type    Description
+────────────────────────────────────
+0-1     uint8   seq, frameCnt
+2-21    3×int32 X, Y, Z in Q16 fixed-point
+```
+
+- **Scale**: 1 Q16 = 1/65536 °/s
+- **LSB**: ±2000°/s range / 32768 = 0.061 °/s per count (BMI284)
+- **Dead zone**: |value| < 0.1 → 0.0 (covers ±1 LSB quantization noise)
+- **At rest**: all three axes ≈ 0.0
+
+#### ALS (Ambient Light Sensor) (0xFF00/4) — 122 bytes
+
+- **Complex multi-field report** containing lux, flicker, color temp, and frame metadata
+- Currently stored as raw first 4 bytes int32 (parsed elsewhere via `ALSensor` class)
+- Format not fully decoded — lux value is extracted through a separate IOHID path
+
+#### BMI284 Die Temperature (0xFF00/5) — 14 bytes
+
+```
+Offset  Type    Description
+───────────────────────────────────────
+0       uint8   ReportID (0x05)
+1       uint8   Sequence number
+2       uint8   Frame counter
+3-4     int16   Temperature, LE, Q8.8 fixed-point
+5-7     uint8   Padding / reserved
+8-11    uint32  HID event counter (shared — same value seen in ALS reports at this offset)
+12-13   uint8   Padding
+```
+
+- **Scale**: Q8.8 → value/256 °C
+- **Typical idle**: 0x1E80 = 30.5 °C (IMU die, not CPU/GPU)
+- **HID event counter at offset 8**: confirmed by cross-referencing identical values in ALS reports at same offset — NOT a temperature field
+- **Decoded**: bytes 3-4 as LE int16
+
+#### Lid Angle (0x0020/138) — 8 bytes (3 used)
+
+```
+Offset  Type    Description
+────────────────────────────────────
+0       uint8   ReportID (0x01)
+1-2     uint16  Lid angle, LE, bottom 9 bits valid
+3-7     (unused)
+```
+
+- **Range**: 0—511 counts → scaled to 0—360°
+- **0°** = closed lid, **~130°** = typical laptop open position
+- **Bottom 9 bits mask**: `raw & 0x1FF`
+
+#### Motion Heartbeat — AppleVendorMotion (0xFF0C/1) — 5 bytes
+
+```
+Offset  Type    Description
+────────────────────────────────────
+0       uint8   Event flag (0x03=pair start, 0x02=pair end, 0x50=init burst)
+1       uint8   Event sub-type
+2       uint8   Data / reserved
+3       uint8   Padding (usually 0x00)
+4       uint8   Monotonic heartbeat counter
+```
+
+- **Apple HID usage**: `kHIDUsage_AppleVendorMotion_Motion` (page `kHIDPage_AppleVendorMotion = 0xFF0C`, usage 1)
+- **Period**: ~2.54 seconds (0.39 Hz), **independent of physical motion**
+- **Pair pattern**: each heartbeat fires 2 reports in quick succession:
+  1. `03 02 00 00 04` (event type 0x03, subtype 0x02)
+  2. `02 01 02 00 NN` (event type 0x02) where NN increments: 0x57 → 0x58 → ...
+- **Status check**: counter increments monotonically → SPU fusion pipeline is alive; if counter stalls → SPU may have crashed
+
+#### DeviceMotion6 Fusion — AppleVendorMotion (0xFF0C/5) — 100 bytes
+
+```
+Offset  Type    Description
+─────────────────────────────────────
+0-3     int32   Raw fusion data (first 4 bytes)
+4-99    —       96 bytes, format unknown
+```
+
+- **Apple HID usage**: `kHIDUsage_AppleVendorMotion_DeviceMotion6` (page 0xFF0C, usage 5)
+- **Lazy pipeline**: report **never fires** without an active CoreMotion consumer (e.g. `CMMotionManager startDeviceMotionUpdates`). The SPU fusion engine powers down when no client is connected.
+- **Not captured** by `sensor_recorder` because no CoreMotion consumer was active during recording
+- **100-byte report** likely contains quaternion + gravity + acceleration + rotation rate from CMDeviceMotion
+
+### SpsManager Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│  main_mac.cpp (main loop, ~500ms)              │
+│  s_sps.Refresh() → atomic loads → TuiApp data  │
+└─────────────────────┬───────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────┐
+│  SpsManager (background CFRunLoop thread)       │
+│  ┌───────────────────────────────────────────┐  │
+│  │  Enumerate: IOServiceMatching("AppleSPU-  │  │
+│  │  HIDDriver") → open all                   │  │
+│  ├───────────────────────────────────────────┤  │
+│  │  Callback: HidCallback() per sensor       │  │
+│  │  → atomic store (v1/v2/v3/sv/updateCount) │  │
+│  ├───────────────────────────────────────────┤  │
+│  │  Refresh(): atomic load → decode → sample │  │
+│  │  (3-axis → sample3, scalar → sample1)    │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+- **No root required**: async HID input report callback works from user-space on macOS 15+ (Apple Silicon)
+- **No SMJobBless helper**: replaced the old SMJobBless+SHM approach
+- **Thread-safe**: atomic stores from callback thread, atomic loads from main loop thread
+- **Dead zones**: applied at Refresh() level so all consumers get clean data
+
+### Key Discoveries
+
+1. **Temperature offset**: bytes 3-4 (not 8), LE int16 Q8.8. Bytes 8-11 are a shared HID event counter (same value appears in ALS reports at same offset).
+2. **Motion Heartbeat (0xFF0C/1)**: not a motion data sensor — it's a ~0.4Hz pipeline liveliness indicator. Counter at byte 4 increments every 2.54s regardless of device motion.
+3. **DeviceMotion6 (0xFF0C/5)**: requires CoreMotion activity. SPU fusion engine is lazy — if no CM consumer is registered, the sensor never fires.
+4. **IMU die vs ambient**: the 0xFF00/5 temperature is the BMI284 chip itself (~30°C idle), not CPU/GPU or case temperature. Useful as a proxy for overall chassis heat soak.
