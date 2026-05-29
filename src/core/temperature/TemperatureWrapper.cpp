@@ -583,7 +583,7 @@ static SmcTempEntry categorize_temp_key(const std::string& key) {
     // Cluster/SoC sensors: Ts* (on M4 these are various cluster sensors, not SuperCores)
     if (key[0] == 'T' && key[1] == 's') {
         if (key.size() >= 4 && key[2] >= '0' && key[2] <= '9')
-            setCat(SmcTempCategory::Other, ("Cluster #" + std::string(1, key[2])).c_str());
+            setCat(SmcTempCategory::Other, ("Cluster #" + key.substr(2)).c_str());
         else
             setCat(SmcTempCategory::Other, ("Sensor (" + key.substr(2) + ")").c_str());
         return e;
