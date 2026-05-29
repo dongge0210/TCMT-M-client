@@ -19,6 +19,11 @@
 
 #include "LogBuffer.h"
 #include <string>
+// pid_t: POSIX on macOS/Linux, need explicit definition on Windows
+#ifdef _WIN32
+#include <process.h>  // defines _getpid()
+typedef DWORD pid_t;
+#endif
 #include <vector>
 #include <mutex>
 #include <atomic>

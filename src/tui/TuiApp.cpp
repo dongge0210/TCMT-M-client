@@ -1,3 +1,8 @@
+// MSVC deprecation noise suppression (must come before any includes)
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <curses.h>
 #include "TuiApp.h"
 #include <ctime>
@@ -9,6 +14,47 @@
 #include <wchar.h>
 #include <clocale>
 #include <cstdlib>
+
+// ── Portable wcwidth/wcswidth (missing on Windows/PDCurses) ────────
+#ifndef wcswidth
+static int portable_wcwidth(wchar_t wc) {
+    // Zero-width characters
+    if (wc == 0x200B || wc == 0x200C || wc == 0x200D || wc == 0xFEFF) return 0;
+    // CJK / wide characters
+    if ((wc >= 0x1100 && wc <= 0x115F) ||  // Hangul Jamo
+        (wc >= 0x2E80 && wc <= 0x9FFF) ||  // CJK Radicals .. CJK Unified
+        (wc >= 0xA000 && wc <= 0xA4FF) ||  // Yi
+        (wc >= 0xAC00 && wc <= 0xD7AF) ||  // Hangul Syllables
+        (wc >= 0xF900 && wc <= 0xFAFF) ||  // CJK Compatibility
+        (wc >= 0xFE10 && wc <= 0xFE19) ||  // Vertical forms
+        (wc >= 0xFE30 && wc <= 0xFE6F) ||  // CJK Compatibility Forms
+        (wc >= 0xFF01 && wc <= 0xFF60) ||  // Fullwidth Forms
+        (wc >= 0xFFE0 && wc <= 0xFFE6) ||  // Fullwidth Signs
+        (wc >= 0x20000 && wc <= 0x2FFFF))  // CJK Extension B+
+        return 2;
+    // Control characters
+    if (wc < 0x20 || (wc >= 0x7F && wc < 0xA0)) return -1;
+    return 1;
+}
+
+static int portable_wcswidth(const wchar_t* wcs, size_t n) {
+    int w = 0;
+    for (size_t i = 0; i < n && wcs[i]; i++) {
+        int cw = portable_wcwidth(wcs[i]);
+        if (cw < 0) return -1;
+        w += cw;
+    }
+    return w;
+}
+
+#ifndef wcwidth
+#define wcwidth portable_wcwidth
+#endif
+#ifndef wcswidth
+#define wcswidth portable_wcswidth
+#endif
+#endif
+// ─────────────────────────────────────────────────────────────────────
 
 namespace tcmt {
 
@@ -154,16 +200,17 @@ static std::string utf8_truncate(const std::string& s, int maxW) {
     std::string out;
     for (size_t j = 0; j < i; j++) {
         wchar_t wc = wstr[j];
-        if (wc < 0x80)      { out += (char)wc; }
-        else if (wc < 0x800) { out += (char)(0xC0 | (wc >> 6));
-                               out += (char)(0x80 | (wc & 0x3F)); }
-        else if (wc < 0x10000) { out += (char)(0xE0 | (wc >> 12));
-                                out += (char)(0x80 | ((wc >> 6) & 0x3F));
-                                out += (char)(0x80 | (wc & 0x3F)); }
-        else                { out += (char)(0xF0 | (wc >> 18));
-                               out += (char)(0x80 | ((wc >> 12) & 0x3F));
-                               out += (char)(0x80 | ((wc >> 6) & 0x3F));
-                               out += (char)(0x80 | (wc & 0x3F)); }
+        unsigned int uc = (unsigned int)wc;
+        if (uc < 0x80)      { out += (char)uc; }
+        else if (uc < 0x800) { out += (char)(0xC0 | (uc >> 6));
+                                out += (char)(0x80 | (uc & 0x3F)); }
+        else if (uc < 0x10000) { out += (char)(0xE0 | (uc >> 12));
+                                out += (char)(0x80 | ((uc >> 6) & 0x3F));
+                                out += (char)(0x80 | (uc & 0x3F)); }
+        else                { out += (char)(0xF0 | (uc >> 18));
+                                out += (char)(0x80 | ((uc >> 12) & 0x3F));
+                                out += (char)(0x80 | ((uc >> 6) & 0x3F));
+                                out += (char)(0x80 | (uc & 0x3F)); }
     }
     out += "~";
     return out;
@@ -731,7 +778,9 @@ void TuiApp::Run() {
 
     initscr();
     cursesActive_ = true;
+#ifndef __PDCURSES__
     ESCDELAY = 25;   // 25ms Esc timeout (default 1000ms) — fix "half-exit" feel
+#endif
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
