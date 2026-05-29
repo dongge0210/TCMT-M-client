@@ -14,6 +14,7 @@
 #include <wchar.h>
 #include <clocale>
 #include <cstdlib>
+#include <map>
 
 // ── Portable wcwidth/wcswidth (missing on Windows/PDCurses) ────────
 #ifndef wcswidth
@@ -545,56 +546,65 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     int halfW = maxW / 2;
-    const int CONTENT_ROWS = 3;      // 6 sensors per page (2 per row)
 
-    // Aggregate VRM entries into one average line, keep others as-is
-    std::vector<std::pair<std::string, double>> displayTemps;
-    double vrmSum = 0;
-    int vrmCount = 0;
+    // Aggregate all temperatures by category
+    struct CatAgg { double maxVal = 0; int count = 0; double sum = 0; };
+    std::map<std::string, CatAgg> cats;
     for (const auto& [name, temp] : data.temperatures) {
-        if (name.rfind("VRM", 0) == 0) {  // starts with "VRM"
-            vrmSum += temp;
-            vrmCount++;
-        } else {
-            displayTemps.push_back({name, temp});
-        }
+        std::string cat;
+        if (name.rfind("P-Core", 0) == 0 || name.rfind("E-Core", 0) == 0)
+            cat = "CPU";
+        else if (name.rfind("GPU", 0) == 0)
+            cat = "GPU";
+        else if (name.rfind("VRM", 0) == 0)
+            cat = "VRM";
+        else if (name.rfind("Heatsink", 0) == 0)
+            cat = "Heatsink";
+        else if (name.rfind("Cache", 0) == 0)
+            cat = "Cache";
+        else if (name.rfind("MCtrl", 0) == 0 || name.rfind("RAM", 0) == 0)
+            cat = "RAM";
+        else if (name == "Battery")
+            cat = "Battery";
+        else if (name == "IMU")
+            cat = "IMU";
+        else if (name.rfind("I/O", 0) == 0)
+            cat = "I/O";
+        else
+            continue;  // drop uncategorized noise
+
+        CatAgg& a = cats[cat];
+        a.maxVal = std::max(a.maxVal, temp);
+        a.count++;
+        a.sum += temp;
     }
-    if (vrmCount > 0)
-        displayTemps.insert(displayTemps.begin(), {"VRM", vrmSum / vrmCount});
 
-    int perPage = CONTENT_ROWS * 2;
-    int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
-    bool needPaging = totalPages > 1;
+    // Build display list
+    std::vector<std::pair<std::string, double>> displayTemps;
+    auto add = [&](const std::string& label, double val) {
+        displayTemps.emplace_back(label, val);
+    };
+    auto it = cats.find("CPU");    if (it != cats.end()) add("CPU",    it->second.maxVal);
+    it = cats.find("GPU");         if (it != cats.end()) add("GPU",    it->second.maxVal);
+    it = cats.find("VRM");         if (it != cats.end()) add("VRM",    it->second.sum / it->second.count);
+    it = cats.find("Heatsink");    if (it != cats.end()) add("Heatsink", it->second.maxVal);
+    it = cats.find("RAM");         if (it != cats.end()) add("RAM",    it->second.maxVal);
+    it = cats.find("Cache");       if (it != cats.end()) add("Cache",  it->second.maxVal);
+    it = cats.find("I/O");         if (it != cats.end()) add("I/O",    it->second.maxVal);
+    it = cats.find("Battery");     if (it != cats.end()) add("Battery", it->second.maxVal);
+    it = cats.find("IMU");         if (it != cats.end()) add("IMU",    it->second.maxVal);
 
-    static int currentPage = 0;
-    static auto lastPageFlip = std::chrono::steady_clock::now();
-    if (needPaging) {
-        auto tNow = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(tNow - lastPageFlip).count() >= 3) {
-            currentPage = (currentPage + 1) % totalPages;
-            lastPageFlip = tNow;
-        }
-    } else {
-        currentPage = 0;
-    }
-
-    int actualRows = 0;
-    int startIdx = currentPage * CONTENT_ROWS * 2;
-    int limit = needPaging ? CONTENT_ROWS : static_cast<int>(displayTemps.size());
-    for (int p = 0; p < limit; p++) {
-        int leftIdx = startIdx + p * 2;
-        if (leftIdx >= static_cast<int>(displayTemps.size())) break;
-
-        auto& [nameL, tempL] = displayTemps[leftIdx];
+    // Render 2 per row, no paging
+    for (size_t i = 0; i < displayTemps.size(); i++) {
+        auto& [nameL, tempL] = displayTemps[i];
         auto labelL = TrimRight(nameL, halfW - 9);
         int tcL = (tempL > 80) ? 4 : (tempL > 60) ? 3 : 2;
         wattron(win, COLOR_PAIR(tcL));
         mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
         wattroff(win, COLOR_PAIR(tcL));
 
-        int rightIdx = leftIdx + 1;
-        if (rightIdx < static_cast<int>(displayTemps.size())) {
-            auto& [nameR, tempR] = displayTemps[rightIdx];
+        if (++i < displayTemps.size()) {
+            auto& [nameR, tempR] = displayTemps[i];
             auto labelR = TrimRight(nameR, halfW - 9);
             int tcR = (tempR > 80) ? 4 : (tempR > 60) ? 3 : 2;
             wattron(win, COLOR_PAIR(tcR));
@@ -602,20 +612,9 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
             wattroff(win, COLOR_PAIR(tcR));
         }
         lines++;
-        actualRows = p + 1;
     }
 
-    if (needPaging) {
-        // Fill remaining content rows
-        while (lines < 1 + CONTENT_ROWS)
-            lines++;
-        // Page indicator
-        mvwprintw(win, y + lines++, x0 + 2, "%.*s", maxW - 2,
-                  ("[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]").c_str());
-        return 1 + CONTENT_ROWS + 1; // header + 3 content + 1 page row
-    } else {
-        return 1 + actualRows; // header + actual sensor rows only
-    }
+    return 1 + lines - 1; // header + sensor rows
 }
 
 int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
