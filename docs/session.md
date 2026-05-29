@@ -1,20 +1,22 @@
-# Session State (2026-05-28)
+# Session State (2026-05-29)
 
 ## Branch
 `dev`
 
 ## Current State
-- **Accelerometer (BMI284) — 异步 HID 回调路径**
-  - 不再需要 SMJobBless 特权助⼿（不再弹出 root 密码对话框）
-  - 使用 `IOHIDDeviceRegisterInputReportWithTimeStampCallback`（中断驱动输入报告路径）
-  - **macOS 15 `motionRestrictedService = Yes` 只阻断同步 `IOHIDDeviceGetReport`，不阻断异步回调路径**
-  - 需要先唤醒 `AppleSPUHIDDriver`（设置 `SensorPropertyReportingState=1`, `SensorPropertyPowerState=1`, `ReportInterval=1000`）
-  - 参考实现：`olvvier/apple-silicon-accelerometer`（已在 macOS 15.6.1 M3 Pro 验证）
-  - 22 字节 HID 报告格式：`x` int32 LE @ offset 6, `y` @ 10, `z` @ 14, /65536 → g
-  - TUI Sensors 面板中显示 `Accel: x.xx y.yy z.zz g`
-  - SHM 路径作为向后兼容的兜底（如果旧版 SMJobBless 助⼿仍在运行）
-  - 后台线程 `tcmt-accel-async` 运行 CFRunLoop 接收 HID 回调
-- macOS 15+ WiFi SSID 修复完成
+- **SpsManager — Unified Apple SPU HID Sensor Monitor**
+  - 单后台线程 + CFRunLoop 读取所有 `AppleSPUHIDDevice` 传感器
+  - 自动枚举 0xFF00/3(重力)、0xFF00/9(陀螺仪)、0xFF00/4(ALS)、0x0020/138(开盖角度)
+  - 未知传感器 (0xFF00/5, 0xFF0C/1, 0xFF0C/5) 前 5 次回调 dump 原始 hex
+  - 使用 `IOHIDDeviceRegisterInputReportWithTimeStampCallback`（中断驱动，macOS 15+ 无需 root）
+  - 启动时唤醒全部 `AppleSPUHIDDriver`（`SensorPropertyReportingState=1`, `SensorPropertyPowerState=1`, `ReportInterval=1000`）
+  - TUI Sensors 面板显示: ALS、Gravity (g)、Gyro (deg/s)、Lid Angle (°)
+- **Accelerometer (BMI284) 技术验证完成**
+  - 22 字节 HID 报告格式：x int32 LE @ offset 6, y @ 10, z @ 14, /65536 → g
+  - 已验证模长约 1g（静止时），倾斜时分量变化正确
+  - 废弃了 SMJobBless 特权助手路径（代码保留，不再编译）
+  - 旧 helper PID 8741 仍可通过 launchd 残留运行，SpsManager 完全忽略其 SHM
+- **macOS 15+ WiFi SSID 修复完成**
   - `.app` bundle 打包 + Apple Development 证书签名 + Info.plist 定位描述
   - CoreLocation `requestWhenInUseAuthorization` 触发权限弹窗
   - 用户授权后 CWInterface.ssid 正常读取、不再被 `redacted`
@@ -58,11 +60,14 @@ msbuild TCMT.sln /p:Configuration=Debug /p:Platform=x64
 - **`com.apple.developer.location-wifi` entitlement**：不需要——CoreLocation 弹窗 + Info.plist 即可让 CWInterface.ssid 正常工作；该 entitlement 在 macOS 上即使真证书也触发 AMFI kill
 - **system_profiler 兜底**：已过滤 `<redacted>` 字符串，识别到后设 `locationDenied` flag
 - **AppKit 依赖**：DisplayInfo.mm 需要 `AppKit.framework`（已在 `cmake/Platform.cmake` 中添加）；`CoreGraphics.framework` 系统自带链接
+- **unknown sensor 格式待识别**：0xFF00/5, 0xFF0C/1, 0xFF0C/5 的原始 hex 已 dump 到日志，需进一步分析确定数据类型
 
 ## 遗留问题
 - CPU 逻辑核心数在 Apple Silicon 上冗余（无超线程）
 - Windows SMART 表格数据待验证
 - IPCService ViewModel 集成稳定性
+- SpsManager 未知传感器格式解码（0xFF00/5, 0xFF0C/1, 0xFF0C/5）
+- AccelSensor.h/.mm 可与 SpsManager 合并（旧单传感器封装可删除）
 
 ## 用户习惯
 - 零编译警告容忍

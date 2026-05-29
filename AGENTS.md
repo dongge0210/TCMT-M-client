@@ -6,6 +6,8 @@
 # ─── macOS (Apple Silicon) ───
 # C++ core (TCMT-M, ncurses TUI)
 cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
+# IMPORTANT: run from .app bundle (not bare binary) for CoreLocation/SSID:
+#   ./build/src/TCMT-M.app/Contents/MacOS/TCMT-M
 # AvaloniaUI (separate, reads SHM)
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 

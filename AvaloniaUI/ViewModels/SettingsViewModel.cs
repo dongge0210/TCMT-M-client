@@ -1,11 +1,35 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using TCMT.Avalonia.Core;
+using TCMT.Avalonia.Models;
+using TCMT.Avalonia.Themes;
 
-namespace AvaloniaUI.ViewModels;
+namespace TCMT.Avalonia.ViewModels;
 
 public partial class SettingsViewModel : ViewModelBase
 {
-    [ObservableProperty] private string _appVersion = "v0.14";
-    [ObservableProperty] private string _ipcStatus = "Unknown";
+    private readonly IThemeService _themeService;
 
-    public override string ToString() => "Settings";
+    [ObservableProperty]
+    private AppTheme _currentTheme = AppTheme.Dark;
+
+    [ObservableProperty]
+    private string _appVersion = AppConstants.AppVersion;
+
+    public SettingsViewModel(IThemeService themeService)
+    {
+        _themeService = themeService;
+        Title = "Settings";
+        Icon = "⚙️";
+        CurrentTheme = _themeService.CurrentTheme;
+    }
+
+    partial void OnCurrentThemeChanged(AppTheme value)
+    {
+        _themeService.SetTheme(value);
+    }
+
+    public override void Update(SystemInfo info)
+    {
+        // Settings doesn't need hardware updates
+    }
 }

@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.MemoryView"
+             x:DataType="vm:MemoryViewModel">
+
+  <Design.DataContext>
+    <vm:MemoryViewModel Title="Memory" TotalMemory="32 GB" UsedMemory="16 GB" MemoryPercent="50"/>
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="32,28,32,0">
+      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+      <TextBlock Text="Memory Usage Details" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+    </StackPanel>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="20">
+        
+        <!-- Memory Gauge -->
+        <Border Theme="{StaticResource CardBorder}">
+          <Grid ColumnDefinitions="Auto,*">
+            <StackPanel Grid.Column="0" Spacing="16" HorizontalAlignment="Center" Margin="0,0,32,0">
+              <TextBlock Text="MEMORY USAGE" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
+              <Panel Width="200" Height="200">
+                <Arc Width="180" Height="180" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="18" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="180" Height="180" Stroke="{StaticResource SecondaryBrush}" StrokeThickness="18" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                  <TextBlock Text="{Binding MemoryPercent, StringFormat={}{0:F1}%}" FontSize="40" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                  <TextBlock Text="USED" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
+                </StackPanel>
+              </Panel>
+            </StackPanel>
+
+            <Grid Grid.Column="1" RowDefinitions="*,*,*" VerticalAlignment="Center">
+              <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Total Memory" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="{Binding TotalMemory}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </StackPanel>
+              <StackPanel Grid.Row="1" Spacing="4" Margin="0,16,0,0">
+                <TextBlock Text="Used Memory" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="{Binding UsedMemory}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
+              </StackPanel>
+              <StackPanel Grid.Row="2" Spacing="4" Margin="0,16,0,0">
+                <TextBlock Text="Available" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="{Binding AvailableMemory}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+              </StackPanel>
+            </Grid>
+          </Grid>
+        </Border>
+
+        <!-- Memory Details -->
+        <Grid ColumnDefinitions="*,*">
+          <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
+            <StackPanel Spacing="12">
+              <TextBlock Text="MEMORY INFO" Theme="{StaticResource SectionHeader}"/>
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="RAM Type" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Grid.Column="1" Text="{Binding RamType}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="RAM Speed" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Grid.Column="1" Text="{Binding RamSpeed, StringFormat={}{0} MHz}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRamInfo}">
+                  <TextBlock Text="Compressed" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Grid.Column="1" Text="{Binding CompressedMemory}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
+          <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0" IsVisible="{Binding HasSwap}">
+            <StackPanel Spacing="12">
+              <TextBlock Text="SWAP" Theme="{StaticResource SectionHeader}"/>
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Swap Used" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Grid.Column="1" Text="{Binding SwapUsedDisplay}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Swap Total" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Grid.Column="1" Text="{Binding SwapTotalDisplay}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
+                </Grid>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -190,6 +190,22 @@ struct SystemInfo {
     bool btPowerOn = false;
     int btDeviceCount = 0;
 
+    // Display monitors
+    struct DisplayData {
+        std::string name;
+        int width = 0;          // pixels
+        int height = 0;         // pixels
+        int refreshRate = 0;    // Hz
+        bool isHDR = false;
+        bool isBuiltin = false;
+        double backingScale = 1.0;
+    };
+    std::vector<DisplayData> displays;
+    bool displayDirty = false;   // set when display config changes
+
+    // Thermal state (macOS NSProcessInfoThermalState)
+    int thermalState = 0;        // 0=nominal, 1=fairlySerious, 2=critical
+
     PlatformSystemTime lastUpdate;
 };
 

@@ -406,143 +406,132 @@ enum class SmcTempCategory {
 };
 
 struct SmcTempEntry {
-    std::string key;      // SMC key name (4 chars)
+    std::string key;         // SMC key name (4 chars)
     SmcTempCategory cat;
     std::string displayName; // Human-readable label
+    std::string groupLabel;  // non-empty = average with same-label keys, empty = individual
 };
+
+// Whitelist entry: category + group for averaging + display name
+struct SmcWhitelistEntry {
+    SmcTempCategory cat = SmcTempCategory::Other;
+    std::string groupLabel;   // non-empty: average all keys sharing this label
+    std::string displayName;  // shown for individual entries; used as group label fallback
+};
+
+// Whitelist lookup — exact keys + known prefixes.
+// Only keys returning true here appear in the temperature display.
+// Keys sharing a groupLabel are averaged into one sensor (Stats app pattern).
+//
+// Reference sources for known SMC temperature keys:
+//
+//   1. Stats (exelban/Stats) — per-SoC-generation sensor mapping with averaging
+//      https://github.com/exelban/Stats/blob/master/Modules/Sensors/values.swift
+//      The M4 entries (TPD*, TDeL, TRD*) and the avg-groups (P-Core, E-Core,
+//      GPU, RAM) are derived from this source.
+//
+//   2. VirtualSMC (acidanthera/VirtualSMC) — SMC key naming convention docs
+//      https://github.com/acidanthera/VirtualSMC/blob/master/Docs/SMCSensorKeys.txt
+//      Key format: T(type)(component)(instance)(function) where type=p/e/g/s/B/h,
+//      component=D(ie)/P(roximity)/H(eatsink), etc.
+static std::pair<bool, SmcWhitelistEntry> lookup_whitelist(const std::string& key) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+    static const std::unordered_map<std::string, SmcWhitelistEntry> kExact = {
+        // ── P-Cores (M1/M2/M3) ──────────────────────────────────
+        {"Tp01", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp05", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp09", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0D", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0V", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0Y", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0b", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0e", {SmcTempCategory::PCore, "P-Core"}},
+        // ── P-Cores (M4: TPD*) ──────────────────────────────────
+        {"TPD0", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD1", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD2", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD3", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD4", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD5", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD6", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD7", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPDX", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPMP", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPSP", {SmcTempCategory::PCore, "P-Core"}},
+        // ── E-Cores (M1/M2/M3) ──────────────────────────────────
+        {"Te05", {SmcTempCategory::ECore, "E-Core"}},
+        {"Te0S", {SmcTempCategory::ECore, "E-Core"}},
+        {"Te09", {SmcTempCategory::ECore, "E-Core"}},
+        {"Te0H", {SmcTempCategory::ECore, "E-Core"}},
+        // ── E-Core (M4) ─────────────────────────────────────────
+        {"TDeL", {SmcTempCategory::ECore, "E-Core"}},
+        // ── GPU (universal on AS) ───────────────────────────────
+        // Key pattern: Tg0 + letter (Tg0G, Tg0g, Tg0j … Tg0r)
+        // Handled via prefix in the wildcard section below.
+        // ── RAM (M1/M2/M3) ──────────────────────────────────────
+        {"Tm0p", {SmcTempCategory::RAM, "RAM"}},
+        {"Tm1p", {SmcTempCategory::RAM, "RAM"}},
+        {"Tm2p", {SmcTempCategory::RAM, "RAM"}},
+        // ── RAM (M4: TRD*) ──────────────────────────────────────
+        {"TRD0", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD1", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD2", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD3", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD4", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD5", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD6", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD7", {SmcTempCategory::RAM, "RAM"}},
+        {"TRDX", {SmcTempCategory::RAM, "RAM"}},
+        // ── Individual known sensors ────────────────────────────
+        {"TH0x", {SmcTempCategory::Heatsink, "",  "Heatsink"}},
+        {"TB0T", {SmcTempCategory::Board,    "",  "Board #0"}},
+        {"TB1T", {SmcTempCategory::Board,    "",  "Board #1"}},
+        {"TB2T", {SmcTempCategory::Board,    "",  "Board #2"}},
+        {"TW0P", {SmcTempCategory::Other,    "",  "WiFi/BT"}},
+        {"TaLP", {SmcTempCategory::Other,    "",  "Ambient LP"}},
+        {"TaRF", {SmcTempCategory::Other,    "",  "Ambient RF"}},
+        {"TAOL", {SmcTempCategory::Other,    "",  "Ambient Light"}},
+        {"TVM0", {SmcTempCategory::VRM,      "",  "VRM (M0)"}},
+        {"TVM1", {SmcTempCategory::VRM,      "",  "VRM (M1)"}},
+        {"TVD0", {SmcTempCategory::VRM,      "",  "VRM (D0)"}},
+        {"TVA0", {SmcTempCategory::VRM,      "",  "VRM (A0)"}},
+        {"TIOP", {SmcTempCategory::IO,       "",  "I/O Processor"}},
+        {"TMVR", {SmcTempCategory::VRM,      "",  "VRM (Mem)"}},
+        {"TCHP", {SmcTempCategory::Cache,    "",  "Cache HP"}},
+        {"TCMb", {SmcTempCategory::Cache,    "",  "Cache MB"}},
+        {"TCMz", {SmcTempCategory::Cache,    "",  "Cache MZ"}},
+        {"TSCD", {SmcTempCategory::Other,    "",  "SCD"}},
+    };
+    auto it = kExact.find(key);
+    if (it != kExact.end()) return {true, it->second};
+
+    // ── Prefix matches ─────────────────────────────────────────
+
+    // GPU: Tg0 + any fourth char (covers Tg0G … Tg0r and future)
+    if (key.size() == 4 && key[0] == 'T' && key[1] == 'g' && key[2] == '0') {
+        return {true, {SmcTempCategory::GPU, "GPU"}};
+    }
+    // TPD* numeric: TPD0-TPD9 (TPDX is exact-matched above)
+    if (key.size() == 4 && key[0] == 'T' && key[1] == 'P' && key[2] == 'D') {
+        char n = key[3];
+        if (n >= '0' && n <= '9')
+            return {true, {SmcTempCategory::PCore, "P-Core"}};
+    }
+    // TRD* numeric: TRD0-TRD9 (TRDX is exact-matched above)
+    if (key.size() == 4 && key[0] == 'T' && key[1] == 'R' && key[2] == 'D') {
+        char n = key[3];
+        if (n >= '0' && n <= '9')
+            return {true, {SmcTempCategory::RAM, "RAM"}};
+    }
+
+    // Not whitelisted — hide this sensor
+    return {false, {}};
+}
 
 static std::vector<SmcTempEntry> g_as_smc_temp_keys;
 static std::unordered_map<std::string, AsKeyInfo> g_as_smc_key_info_cache;
 static bool g_as_smc_ready = false;
-
-// Categorize an SMC temperature key by its name
-// M1/M2/M3: Tp*=P-Core, Te*=E-Core, Tg*=GPU, Ts*=SuperCore (M5+)
-// M4: TPD*=P-Core, TDeL=E-Core, Tg*=GPU (still works), TRD*=RAM, TB*T=Board
-static SmcTempEntry categorize_temp_key(const std::string& key) {
-    SmcTempEntry e;
-    e.key = key;
-    e.cat = SmcTempCategory::Other;
-    e.displayName = key;
-    
-    // Try to decode known key patterns
-    if (key.size() < 2) return e;
-    
-    auto setCat = [&](SmcTempCategory c, const char* name) {
-        e.cat = c;
-        e.displayName = name;
-    };
-    
-    // M4 P-core: TPD0..TPD7, TPDX, TPMP, TPSP
-    if (key[0] == 'T' && key[1] == 'P') {
-        if (key.size() >= 4 && key[2] == 'D') {
-            char n = key[3];
-            if (n >= '0' && n <= '9') setCat(SmcTempCategory::PCore, (std::string("P-Core #") + n).c_str());
-            else if (n == 'X') setCat(SmcTempCategory::PCore, "P-Core Max");
-        } else if (key == "TPMP") setCat(SmcTempCategory::PCore, "P-Core (MP)");
-        else if (key == "TPSP") setCat(SmcTempCategory::PCore, "P-Core (SP)");
-        return e;
-    }
-    // M1-M3 P-core: Tp* (lowercase p)
-    if (key[0] == 'T' && key[1] == 'p') {
-        setCat(SmcTempCategory::PCore, ("P-Core (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // E-core: TDeL (M4), Te* (M1-M3)
-    if (key[0] == 'T' && key[1] == 'e') {
-        if (key.size() >= 4 && key[2] >= '0' && key[2] <= '9')
-            setCat(SmcTempCategory::ECore, (std::string("E-Core #") + key[2] + key[3]).c_str());
-        else
-            setCat(SmcTempCategory::ECore, ("E-Core (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    if (key == "TDeL") { setCat(SmcTempCategory::ECore, "E-Core"); return e; }
-    
-    // GPU: Tg* (both M4 and M1-M3)
-    if (key[0] == 'T' && key[1] == 'g') {
-        setCat(SmcTempCategory::GPU, ("GPU (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // Cluster/SoC sensors: Ts* (on M4 these are various cluster sensors, not SuperCores)
-    if (key[0] == 'T' && key[1] == 's') {
-        if (key.size() >= 4 && key[2] >= '0' && key[2] <= '9')
-            setCat(SmcTempCategory::Other, ("Cluster #" + std::string(1, key[2])).c_str());
-        else
-            setCat(SmcTempCategory::Other, ("Sensor (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // Heatsink (lowercase): Th* (M4: Th04-Th0M etc.)
-    if (key[0] == 'T' && key[1] == 'h') {
-        if (key.size() >= 4)
-            setCat(SmcTempCategory::Heatsink, ("Heatsink #" + std::string(1, key[2]) + key[3]).c_str());
-        else
-            setCat(SmcTempCategory::Heatsink, ("Heatsink (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // Memory controller: Tm* (M4: Tm0B)
-    if (key[0] == 'T' && key[1] == 'm') {
-        setCat(SmcTempCategory::RAM, ("MCtrl (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // Cache/Memory fabric
-    if (key[0] == 'T' && key[1] == 'C') {
-        if (key == "TCHP") setCat(SmcTempCategory::Cache, "Cache (HP)");
-        else if (key == "TCMb") setCat(SmcTempCategory::Cache, "Cache (MB)");
-        else if (key == "TCMz") setCat(SmcTempCategory::Cache, "Cache (MZ)");
-        else setCat(SmcTempCategory::Cache, ("Cache (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // RAM: TRD*
-    if (key[0] == 'T' && key[1] == 'R') {
-        if (key.size() >= 4 && key[2] == 'D') {
-            char n = key[3];
-            if (n >= '0' && n <= '9') setCat(SmcTempCategory::RAM, (std::string("RAM #") + n).c_str());
-            else if (n == 'X') setCat(SmcTempCategory::RAM, "RAM Max");
-            else setCat(SmcTempCategory::RAM, ("RAM (" + key.substr(2) + ")").c_str());
-        } else {
-            setCat(SmcTempCategory::RAM, ("RAM (" + key.substr(2) + ")").c_str());
-        }
-        return e;
-    }
-    // Board: TB*T
-    if (key[0] == 'T' && key[1] == 'B') {
-        if (key == "TB0T") setCat(SmcTempCategory::Board, "Board #0");
-        else if (key == "TB1T") setCat(SmcTempCategory::Board, "Board #1");
-        else if (key == "TB2T") setCat(SmcTempCategory::Board, "Board #2");
-        else setCat(SmcTempCategory::Board, ("Board (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // Heatsink: TH*
-    if (key[0] == 'T' && key[1] == 'H') {
-        if (key == "TH0T") setCat(SmcTempCategory::Heatsink, "Heatsink");
-        else if (key == "TH0x") setCat(SmcTempCategory::Heatsink, "Heatsink (x)");
-        else setCat(SmcTempCategory::Heatsink, ("Heatsink (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    // I/O Processor
-    if (key == "TIOP") { setCat(SmcTempCategory::IO, "I/O Processor"); return e; }
-    // VRM
-    if (key == "TMVR") { setCat(SmcTempCategory::VRM, "VRM"); return e; }
-    if (key == "TVD0") { setCat(SmcTempCategory::VRM, "VRM (D)"); return e; }
-    if (key == "TVA0") { setCat(SmcTempCategory::VRM, "VRM (A)"); return e; }
-    if (key == "TVM0") { setCat(SmcTempCategory::VRM, "VRM (M)"); return e; }
-    if (key == "TVM1") { setCat(SmcTempCategory::VRM, "VRM (M1)"); return e; }
-    // Miscellaneous known sensors
-    if (key == "T5SP") { setCat(SmcTempCategory::Other, "Sensor 5SP"); return e; }
-    if (key == "TAOL") { setCat(SmcTempCategory::Other, "Ambient"); return e; }
-    if (key == "TDBP") { setCat(SmcTempCategory::Other, "Debug Probe"); return e; }
-    if (key == "TSCD") { setCat(SmcTempCategory::Other, "SCD"); return e; }
-    if (key == "TW0P") { setCat(SmcTempCategory::Other, "WiFi"); return e; }
-    if (key[0] == 'T' && key[1] == 'V') {
-        // Various voltage-region temps
-        setCat(SmcTempCategory::Other, ("Sensor (" + key.substr(2) + ")").c_str());
-        return e;
-    }
-    
-    // Default: include as misc temperatures
-    e.displayName = key;
-    e.cat = SmcTempCategory::Other;
-    return e;
-}
 
 static bool as_smc_open(void) {
     if (g_as_smc_conn != 0) return true;
@@ -739,6 +728,7 @@ static void as_smc_enumerate(void) {
     g_as_smc_key_info_cache.clear();
 
     int pCount = 0, eCount = 0, gCount = 0, otherCount = 0;
+    int totalTemps = 0, whitelisted = 0;
     for (uint32_t i = 0; i < totalKeys; i++) {
         char k[5] = {};
         if (!as_smc_key_by_index(i, k)) continue;
@@ -759,8 +749,20 @@ static void as_smc_enumerate(void) {
         if (dt[0] != 'f' || dt[1] != 'l') continue;
         if (k[0] != 'T') continue;
 
+        totalTemps++;
         std::string keyStr(k);
-        auto entry = categorize_temp_key(keyStr);
+
+        // Whitelist gate: skip sensors not in our known list
+        auto [found, wl] = lookup_whitelist(keyStr);
+        if (!found) continue;
+        whitelisted++;
+
+        SmcTempEntry entry;
+        entry.key         = keyStr;
+        entry.cat         = wl.cat;
+        entry.groupLabel  = wl.groupLabel;
+        entry.displayName = wl.displayName.empty() ? wl.groupLabel : wl.displayName;
+
         g_as_smc_temp_keys.push_back(entry);
         g_as_smc_key_info_cache[keyStr] = ki;
 
@@ -773,10 +775,12 @@ static void as_smc_enumerate(void) {
     }
 
     g_as_smc_ready = true;
-    Logger::Info("TemperatureWrapper: AS SMC P-Core="
-                 + std::to_string(pCount) + " E-Core=" + std::to_string(eCount)
-                 + " GPU=" + std::to_string(gCount) + " Other=" + std::to_string(otherCount)
-                 + " Total=" + std::to_string(g_as_smc_temp_keys.size()));
+    Logger::Info("TemperatureWrapper: AS SMC " + std::to_string(totalTemps)
+                 + " temp keys, " + std::to_string(whitelisted) + " whitelisted"
+                 + " (P-Core=" + std::to_string(pCount)
+                 + " E-Core=" + std::to_string(eCount)
+                 + " GPU=" + std::to_string(gCount)
+                 + " Other=" + std::to_string(otherCount) + ")");
 }
 
 // Read temperatures from Apple Silicon SMC (with cache for reliability)
@@ -801,16 +805,32 @@ static std::vector<std::pair<std::string, double>> as_smc_read_temps(void) {
         return as_smc_decode_temp(out.bytes, &it->second);
     };
 
-    // Read each individual sensor and output with descriptive name
+    // Phase 1: read all whitelisted sensors, group by groupLabel
+    // groupLabel non-empty → average with siblings
+    // groupLabel empty     → individual sensor (use displayName directly)
+    std::unordered_map<std::string, std::vector<double>> groups;
+    int validReadings = 0;
     for (const auto& entry : g_as_smc_temp_keys) {
         double v = readKey(entry.key);
-        if (v > 10.0 && v < 150.0) {
-            temps.push_back({entry.displayName, v});
-        }
+        if (v <= 10.0 || v >= 150.0) continue;
+        validReadings++;
+        std::string label = entry.groupLabel.empty() ? entry.displayName : entry.groupLabel;
+        groups[label].push_back(v);
     }
 
+    // Phase 2: flatten — average groups, pass through individuals
+    for (const auto& [label, values] : groups) {
+        double sum = 0.0;
+        for (double v : values) sum += v;
+        double avg = sum / static_cast<double>(values.size());
+        temps.push_back({label, avg});
+    }
+    // Sort by category order: P-Core → E-Core → GPU → RAM → rest
+    // (We use label alphabetical as a reasonable proxy)
+    std::sort(temps.begin(), temps.end());
+
     // Cache: if we got at least some valid readings, update cache
-    if (temps.size() >= 3) {
+    if (validReadings >= 3) {
         g_as_smc_cached_temps = temps;
         g_as_smc_refresh_count++;
     } else if (!g_as_smc_cached_temps.empty()) {

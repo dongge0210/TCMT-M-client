@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>TCMT-M</string>
+	<key>CFBundleDisplayName</key>
+	<string>TCMT Hardware Monitor</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.tcmt.hardwaremonitor</string>
+	<key>CFBundleVersion</key>
+	<string>0.14.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.14.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>TCMT-M</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TCMT needs Location Services to read Wi-Fi network information (SSID) on macOS 15+.</string>
+	<key>SMPrivilegedExecutables</key>
+	<dict>
+		<key>com.tcmt.sensorhelper</key>
+		<string>identifier "com.tcmt.sensorhelper" and anchor apple generic and certificate leaf[subject.OU] = "8VXZS5M92N"</string>
+	</dict>
+</dict>
+</plist>

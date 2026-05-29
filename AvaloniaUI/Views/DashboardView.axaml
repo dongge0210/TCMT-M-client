@@ -2,80 +2,81 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="1000"
-             x:Class="AvaloniaUI.Views.DashboardView"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="900"
+             x:Class="TCMT.Avalonia.Views.DashboardView"
              x:DataType="vm:DashboardViewModel">
-  
+
   <Design.DataContext>
-    <vm:DashboardViewModel Title="System Overview" CpuUsage="42" MemoryPercent="65" CpuName="AMD Ryzen 9" RamInfo="32GB DDR4"/>
+    <vm:DashboardViewModel Title="Dashboard" CpuUsage="42" MemoryPercent="65" CpuName="AMD Ryzen 9 5950X" RamInfo="32GB DDR4"/>
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*">
-    <!-- Header Area -->
-    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="30,30,30,0">
-        <StackPanel>
-            <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="White"/>
-            <TextBlock Text="System Health Overview" FontSize="13" Foreground="Gray" Margin="0,5,0,0"/>
-        </StackPanel>
-        <TextBlock Grid.Column="1" Text="TCMT v0.14" FontSize="11" Foreground="#33FFFFFF" VerticalAlignment="Bottom"/>
+    <!-- Header -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="32,28,32,0">
+      <StackPanel>
+        <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+        <TextBlock Text="System Health Overview" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+      </StackPanel>
+      <TextBlock Grid.Column="1" Text="TCMT v2.0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Bottom"/>
     </Grid>
-    
-    <!-- Content Area (Bento Grid) -->
-    <ScrollViewer Grid.Row="1" Padding="30,20">
-      <StackPanel Spacing="24">
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="20">
         
-        <!-- Row 1: Primary Gauges -->
+        <!-- Row 1: CPU & Memory Gauges -->
         <Grid ColumnDefinitions="*,*">
           <!-- CPU Card -->
-          <Border Grid.Column="0" Background="#FF1E1E1E" CornerRadius="20" Margin="0,0,12,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="20" HorizontalAlignment="Center">
-              <TextBlock Text="PROCESSOR" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
+          <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
+            <StackPanel Spacing="16" HorizontalAlignment="Center">
+              <TextBlock Text="PROCESSOR" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
               <Panel Width="160" Height="160">
-                <Arc Width="140" Height="140" Stroke="#FF333333" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
-                <Arc Width="140" Height="140" Stroke="#FF4CAF50" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="{StaticResource PrimaryBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F0}%}" FontSize="32" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock Text="LOAD" FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
+                  <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F0}%}" Theme="{StaticResource MetricValue}"/>
+                  <TextBlock Text="LOAD" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
                 </StackPanel>
               </Panel>
-              <TextBlock Text="{Binding CpuName}" Foreground="#FFB3B3B3" FontSize="14" TextAlignment="Center"/>
+              <TextBlock Text="{Binding CpuName}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
           </Border>
 
           <!-- Memory Card -->
-          <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="20" Margin="12,0,0,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="20" HorizontalAlignment="Center">
-              <TextBlock Text="MEMORY" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1" HorizontalAlignment="Center"/>
+          <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
+            <StackPanel Spacing="16" HorizontalAlignment="Center">
+              <TextBlock Text="MEMORY" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
               <Panel Width="160" Height="160">
-                <Arc Width="140" Height="140" Stroke="#FF333333" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
-                <Arc Width="140" Height="140" Stroke="#FF2196F3" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
+                <Arc Width="140" Height="140" Stroke="{StaticResource SecondaryBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="{Binding MemoryPercent, StringFormat={}{0:F0}%}" FontSize="32" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock Text="USED" FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
+                  <TextBlock Text="{Binding MemoryPercent, StringFormat={}{0:F0}%}" Theme="{StaticResource MetricValue}"/>
+                  <TextBlock Text="USED" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
                 </StackPanel>
               </Panel>
-              <TextBlock Text="{Binding RamInfo}" Foreground="#FFB3B3B3" FontSize="14" TextAlignment="Center"/>
+              <TextBlock Text="{Binding RamInfo}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14" TextAlignment="Center"/>
             </StackPanel>
           </Border>
         </Grid>
 
         <!-- Row 2: Storage & Network -->
         <Grid ColumnDefinitions="*,320">
-          <!-- Storage Bento -->
-          <Border Grid.Column="0" Background="#FF1E1E1E" CornerRadius="20" Margin="0,0,12,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="15">
-              <TextBlock Text="STORAGE" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+          <!-- Storage -->
+          <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
+            <StackPanel Spacing="12">
+              <TextBlock Text="STORAGE" Theme="{StaticResource SectionHeader}"/>
               <ItemsControl ItemsSource="{Binding Disks}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <StackPanel Margin="0,0,0,10" Spacing="4">
+                  <DataTemplate x:DataType="models:DiskData">
+                    <StackPanel Margin="0,0,0,8" Spacing="4">
                       <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Text="{Binding DisplayName}" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                        <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="#FF4CAF50" FontSize="12" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding DisplayName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="{StaticResource PrimaryBrush}" FontSize="12" FontWeight="Bold"/>
                       </Grid>
-                      <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="4" Foreground="#FF4CAF50" Background="#FF333333"/>
-                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} total'}" Foreground="#FF666666" FontSize="10"/>
+                      <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="4" Foreground="{StaticResource PrimaryBrush}" Background="{StaticResource SurfaceLightBrush}"/>
+                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} total'}" Foreground="{StaticResource TextMutedBrush}" FontSize="10"/>
                     </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -83,80 +84,80 @@
             </StackPanel>
           </Border>
 
-          <!-- Network Bento -->
-          <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="20" Margin="12,0,0,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-            <StackPanel Spacing="15">
-              <TextBlock Text="NETWORK" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
+          <!-- Network -->
+          <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
+            <StackPanel Spacing="12">
+              <TextBlock Text="NETWORK" Theme="{StaticResource SectionHeader}"/>
               <ItemsControl ItemsSource="{Binding NetworkAdapters}">
-                  <ItemsControl.ItemTemplate>
-                      <DataTemplate>
-                          <StackPanel Spacing="12">
-                              <TextBlock Text="{Binding Name}" Foreground="#FFB3B3B3" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                              <Grid ColumnDefinitions="*,*">
-                                  <StackPanel Grid.Column="0">
-                                      <TextBlock Text="DL" FontSize="9" Foreground="Gray"/>
-                                      <TextBlock Text="{Binding DownloadDisplay}" FontSize="18" FontWeight="Bold" Foreground="#FF4CAF50"/>
-                                  </StackPanel>
-                                  <StackPanel Grid.Column="1">
-                                      <TextBlock Text="UL" FontSize="9" Foreground="Gray"/>
-                                      <TextBlock Text="{Binding UploadDisplay}" FontSize="18" FontWeight="Bold" Foreground="#FF2196F3"/>
-                                  </StackPanel>
-                              </Grid>
-                          </StackPanel>
-                      </DataTemplate>
-                  </ItemsControl.ItemTemplate>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:NetworkAdapterData">
+                    <StackPanel Spacing="10">
+                      <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                      <Grid ColumnDefinitions="*,*">
+                        <StackPanel Grid.Column="0">
+                          <TextBlock Text="DL" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="{Binding DownloadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                          <TextBlock Text="UL" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="{Binding UploadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
           </Border>
         </Grid>
 
-        <!-- Row 3: Power & Sensors -->
+        <!-- Row 3: Power & Temperature -->
         <Grid ColumnDefinitions="320,*">
-             <!-- Power Card -->
-             <Border Grid.Column="0" Background="#FF1E1E1E" CornerRadius="20" Margin="0,0,12,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-                <StackPanel Spacing="15">
-                    <TextBlock Text="POWER" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
-                    <TextBlock Text="{Binding TotalPowerDisplay}" FontSize="32" FontWeight="Bold" Foreground="#FFFFD700"/>
-                    <Grid ColumnDefinitions="*,*,*">
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="CPU" FontSize="9" Foreground="Gray"/>
-                            <TextBlock Text="{Binding CpuPowerDisplay}" FontSize="12" Foreground="White"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1">
-                            <TextBlock Text="GPU" FontSize="9" Foreground="Gray"/>
-                            <TextBlock Text="{Binding GpuPowerDisplay}" FontSize="12" Foreground="White"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="ANE" FontSize="9" Foreground="Gray"/>
-                            <TextBlock Text="{Binding AnePowerDisplay}" FontSize="12" Foreground="White"/>
-                        </StackPanel>
-                    </Grid>
+          <!-- Power -->
+          <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
+            <StackPanel Spacing="12">
+              <TextBlock Text="POWER" Theme="{StaticResource SectionHeader}"/>
+              <TextBlock Text="{Binding TotalPowerDisplay}" FontSize="32" FontWeight="Bold" Foreground="{StaticResource GoldBrush}"/>
+              <Grid ColumnDefinitions="*,*,*">
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="CPU" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                  <TextBlock Text="{Binding CpuPowerDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
                 </StackPanel>
-             </Border>
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="GPU" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                  <TextBlock Text="{Binding GpuPowerDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="ANE" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                  <TextBlock Text="{Binding AnePowerDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </Border>
 
-             <!-- Sensors Card -->
-             <Border Grid.Column="1" Background="#FF1E1E1E" CornerRadius="20" Margin="12,0,0,0" Padding="25" BorderBrush="#FF2A2A2A" BorderThickness="1">
-                <StackPanel Spacing="15">
-                    <TextBlock Text="TEMPERATURE SENSORS" Foreground="#FF666666" FontSize="11" FontWeight="Bold" LetterSpacing="1"/>
-                    <ItemsControl ItemsSource="{Binding Temperatures}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel Orientation="Horizontal"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="#FF2A2A2A" CornerRadius="8" Padding="12,8" Margin="0,0,10,10">
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <TextBlock Text="{Binding SensorName}" Foreground="Gray" FontSize="12"/>
-                                        <TextBlock Text="{Binding TemperatureDisplay}" Foreground="White" FontSize="12" FontWeight="Bold"/>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-             </Border>
+          <!-- Temperature Sensors -->
+          <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
+            <StackPanel Spacing="12">
+              <TextBlock Text="TEMPERATURE SENSORS" Theme="{StaticResource SectionHeader}"/>
+              <ItemsControl ItemsSource="{Binding Temperatures}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:TemperatureData">
+                    <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,8" Margin="0,0,8,8">
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding SensorName}" Foreground="{StaticResource TextMutedBrush}" FontSize="12"/>
+                        <TextBlock Text="{Binding TemperatureDisplay}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" FontWeight="Bold"/>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
         </Grid>
 
       </StackPanel>

@@ -161,7 +161,9 @@ public:
 
         runLoopThread_ = std::thread([this]() {
             CFRunLoopRef rl = CFRunLoopGetCurrent();
-            notifyPort_ = IONotificationPortCreate(kIOMainPortDefault);
+            // kIOMasterPortDefault deprecated on 12+; kIOMainPortDefault requires 12+;
+            // IONotificationPortCreate(0) works identically on all versions with zero warnings.
+            notifyPort_ = IONotificationPortCreate(0);
             if (!notifyPort_) return;
 
             CFRunLoopSourceRef src = IONotificationPortGetRunLoopSource(notifyPort_);

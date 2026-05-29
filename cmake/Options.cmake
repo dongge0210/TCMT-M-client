@@ -58,8 +58,10 @@ function(tcmt_set_compile_options)
         if(TCMT_MACOS)
             add_compile_options(
                 -mmacosx-version-min=11.0  # 最低macOS版本
-                -stdlib=libc++
             )
+            # -stdlib=libc++ is C++-only; applying it to C files triggers
+            # "unused during compilation" warning. Set via CXX flags only.
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
         endif()
     endif()
 

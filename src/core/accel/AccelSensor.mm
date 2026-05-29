@@ -15,12 +15,8 @@
 #import <IOKit/hid/IOHIDDevice.h>
 #import <CoreFoundation/CoreFoundation.h>
 
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
-#include <cstdio>
 
 #include "AccelSensor.h"
 #include "core/Utils/Logger.h"
@@ -162,37 +158,6 @@ static io_service_t FindAccelService() {
 }
 
 // ---------------------------------------------------------------------------
-// SHM helpers (legacy SMJobBless path)
-// ---------------------------------------------------------------------------
-bool AccelSensor::TryShmRead() {
-    if (shmPtr_ == nullptr) return false;
-
-    AccelShm* shm = (AccelShm*)shmPtr_;
-    if (shm->magic != kShmMagic) return false;
-
-    uint64_t uc = shm->updateCount;
-    __sync_synchronize();
-    if (uc == 0) return false;
-
-    data_.x = (double)shm->x * kScale;
-    data_.y = (double)shm->y * kScale;
-    data_.z = (double)shm->z * kScale;
-    data_.valid = true;
-    return true;
-}
-
-void AccelSensor::CloseShm() {
-    if (shmPtr_) {
-        munmap(shmPtr_, kShmSize);
-        shmPtr_ = nullptr;
-    }
-    if (shmFd_ >= 0) {
-        close(shmFd_);
-        shmFd_ = -1;
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Async HID: background thread running CFRunLoop for HID callbacks
 // ---------------------------------------------------------------------------
 bool AccelSensor::StartAsyncHid() {
@@ -284,33 +249,16 @@ bool AccelSensor::ReadAsyncSample() {
 }
 
 // ---------------------------------------------------------------------------
-// Constructor — try SHM first (fast, if helper running), else start async HID
+// Constructor — direct async HID path only.
+// SHM path from old SMJobBless helper is intentionally skipped:
+// the old helper may still be running from a previous install and its
+// stale SHM would prevent us from exercising the new HID callback.
 // ---------------------------------------------------------------------------
 AccelSensor::AccelSensor() {
-    // 1. Try opening existing SHM (helper already running from previous launch)
-    shmFd_ = shm_open(kShmName, O_RDONLY, 0);
-    if (shmFd_ >= 0) {
-        shmPtr_ = mmap(nullptr, kShmSize, PROT_READ, MAP_SHARED, shmFd_, 0);
-        if (shmPtr_ && shmPtr_ != MAP_FAILED) {
-            AccelShm* shm = (AccelShm*)shmPtr_;
-            if (shm->magic == kShmMagic && shm->updateCount > 0) {
-                data_.hasDevice = true;
-                data_.valid = true;
-                TryShmRead();
-                Logger::Info("Accel: reading from SHM (helper active)");
-                return;
-            }
-        } else {
-            shmPtr_ = nullptr;
-        }
-    }
-
-    // 2. SHM not available — start direct async HID path (no root needed)
     Logger::Info("Accel: starting async HID path (no SMJobBless required)");
     if (StartAsyncHid()) {
-        // Give the callback a moment to fire
         for (int i = 0; i < 20 && !ReadAsyncSample(); ++i) {
-            usleep(50000); // 50ms * 20 = 1s total
+            usleep(50000);
         }
         if (data_.valid) {
             Logger::Info("Accel: async HID path working");
@@ -322,17 +270,15 @@ AccelSensor::AccelSensor() {
 
 AccelSensor::~AccelSensor() {
     StopAsyncHid();
-    CloseShm();
 }
 
 // ---------------------------------------------------------------------------
 // Refresh — called periodically from main loop
 // ---------------------------------------------------------------------------
 void AccelSensor::Refresh() {
-    // 1. Try SHM (fast, if helper running)
-    if (TryShmRead()) return;
+    // SHM path intentionally removed — old SMJobBless helper may still
+    // be running from a previous install; we always use direct async HID.
 
-    // 2. Try async HID path
     if (asyncStarted_) {
         if (ReadAsyncSample()) return;
 

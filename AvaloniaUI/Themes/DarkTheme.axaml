@@ -1,0 +1,67 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Background Colors -->
+    <Color x:Key="BackgroundColor">#FF0D0D0D</Color>
+    <Color x:Key="SurfaceColor">#FF1E1E1E</Color>
+    <Color x:Key="SurfaceLightColor">#FF2A2A2A</Color>
+    <Color x:Key="BorderColor">#FF1F1F1F</Color>
+    
+    <!-- Text Colors -->
+    <Color x:Key="TextPrimaryColor">#FFFFFFFF</Color>
+    <Color x:Key="TextSecondaryColor">#FFB3B3B3</Color>
+    <Color x:Key="TextMutedColor">#FF666666</Color>
+    
+    <!-- Accent Colors -->
+    <Color x:Key="PrimaryColor">#FF4CAF50</Color>
+    <Color x:Key="SecondaryColor">#FF2196F3</Color>
+    <Color x:Key="WarningColor">#FFFF9800</Color>
+    <Color x:Key="DangerColor">#FFF44336</Color>
+    <Color x:Key="GoldColor">#FFFFD700</Color>
+
+    <!-- Brushes -->
+    <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+    <SolidColorBrush x:Key="SurfaceLightBrush" Color="{StaticResource SurfaceLightColor}" />
+    <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMutedColor}" />
+    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource PrimaryColor}" />
+    <SolidColorBrush x:Key="SecondaryBrush" Color="{StaticResource SecondaryColor}" />
+    <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+    <SolidColorBrush x:Key="GoldBrush" Color="{StaticResource GoldColor}" />
+
+    <!-- Card Style -->
+    <ControlTheme x:Key="CardBorder" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Padding" Value="24" />
+    </ControlTheme>
+
+    <!-- Section Header Style -->
+    <ControlTheme x:Key="SectionHeader" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="LetterSpacing" Value="1" />
+
+    </ControlTheme>
+
+    <!-- Metric Value Style -->
+    <ControlTheme x:Key="MetricValue" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="32" />
+        <Setter Property="FontWeight" Value="Bold" />
+    </ControlTheme>
+
+    <!-- Metric Label Style -->
+    <ControlTheme x:Key="MetricLabel" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+        <Setter Property="FontSize" Value="10" />
+    </ControlTheme>
+
+</ResourceDictionary>

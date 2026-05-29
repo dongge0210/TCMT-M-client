@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 
-namespace AvaloniaUI.Views;
+namespace TCMT.Avalonia.Views;
 
 public partial class DashboardView : UserControl
 {

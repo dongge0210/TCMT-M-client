@@ -51,6 +51,13 @@ void BatteryHealth::Detect() {
             // Voltage (mV)
             data_.voltage = [dict[@"Voltage"] intValue];
 
+            // Charger details (adapter rated wattage)
+            NSDictionary* adapter = dict[@"AdapterDetails"];
+            if (adapter && [adapter isKindOfClass:[NSDictionary class]]) {
+                NSNumber* watts = adapter[@"Watts"];
+                if (watts) data_.chargerWatts = [watts doubleValue];
+            }
+
             // Charging / AC status
             data_.isCharging = [dict[@"IsCharging"] boolValue];
             data_.externalConnected = [dict[@"ExternalConnected"] boolValue];

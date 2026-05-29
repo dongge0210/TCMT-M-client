@@ -13,6 +13,7 @@ struct BatteryHealthData {
     bool present = false;
     int amperage = 0;            // mA (positive=charging, negative=discharging)
     int voltage = 0;             // mV
+    double chargerWatts = 0.0;   // connected charger rated wattage (0 = unknown)
 };
 
 class BatteryHealth {

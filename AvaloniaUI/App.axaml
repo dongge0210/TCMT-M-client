@@ -2,12 +2,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:converters="clr-namespace:AvaloniaUI.Converters"
-             xmlns:controls="clr-namespace:AvaloniaUI.Controls"
-             xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
+             xmlns:local="clr-namespace:TCMT.Avalonia"
+             xmlns:themes="clr-namespace:TCMT.Avalonia.Themes"
              mc:Ignorable="d"
-             x:Class="AvaloniaUI.App"
-             x:DataType="vm:MainWindowViewModel"
+             x:Class="TCMT.Avalonia.App"
              RequestedThemeVariant="Dark">
 
   <Application.Styles>
@@ -15,27 +13,12 @@
   </Application.Styles>
 
   <Application.Resources>
-    <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
-    <converters:BoolInvertConverter x:Key="BoolInvertConverter"/>
-    <converters:PercentToWarningColorConverter x:Key="PercentToWarningColorConverter"/>
-    <converters:PercentToAngleConverter x:Key="PercentToAngleConverter"/>
-    <converters:SelectedPageConverter x:Key="SelectedPageConverter"/>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://TCMT.Avalonia/Themes/DarkTheme.axaml" />
+        <ResourceInclude Source="avares://TCMT.Avalonia/Core/Converters/Converters.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
   </Application.Resources>
-
-  <TrayIcon.Icons>
-    <TrayIcons>
-      <TrayIcon Icon="/Assets/avalonia-logo.ico"
-                ToolTipText="TCMT - 系统硬件监视器"
-                Command="{Binding ShowWindowCommand}">
-        <TrayIcon.Menu>
-          <NativeMenu>
-            <NativeMenuItem Header="显示" Command="{Binding ShowWindowCommand}" />
-            <NativeMenuItemSeparator />
-            <NativeMenuItem Header="退出" Command="{Binding QuitCommand}" />
-          </NativeMenu>
-        </TrayIcon.Menu>
-      </TrayIcon>
-    </TrayIcons>
-  </TrayIcon.Icons>
 
 </Application>

@@ -1,0 +1,14 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:converters="clr-namespace:TCMT.Avalonia.Core.Converters">
+
+    <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+    <converters:BoolInvertConverter x:Key="BoolInvertConverter"/>
+    <converters:PercentToAngleConverter x:Key="PercentToAngleConverter"/>
+    <converters:PercentToWarningColorConverter x:Key="PercentToWarningColorConverter"/>
+    <converters:NullToDefaultConverter x:Key="NullToDefaultConverter"/>
+    <converters:BytesToHumanReadableConverter x:Key="BytesToHumanReadableConverter"/>
+    <converters:FrequencyConverter x:Key="FrequencyConverter"/>
+    <converters:PowerConverter x:Key="PowerConverter"/>
+
+</ResourceDictionary>

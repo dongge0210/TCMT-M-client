@@ -1,64 +1,63 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:AvaloniaUI.ViewModels"
-             x:Class="AvaloniaUI.Views.SettingsView"
-             x:DataType="vm:SettingsViewModel"
-             Background="#FF0D0D0D">
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:themes="clr-namespace:TCMT.Avalonia.Themes"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
 
   <Design.DataContext>
-    <vm:SettingsViewModel AppVersion="v0.14" IPCStatus="Connected"/>
+    <vm:SettingsViewModel Title="Settings" />
   </Design.DataContext>
 
-  <ScrollViewer Padding="40,30">
-    <StackPanel Spacing="24">
-
-      <!-- Header -->
-      <StackPanel>
-        <TextBlock Text="Settings" FontSize="32" FontWeight="Bold" Foreground="White"/>
-        <TextBlock Text="Application configuration and system info" FontSize="13" Foreground="#FF666666" Margin="0,4,0,0"/>
-      </StackPanel>
-
-      <!-- About -->
-      <Border Background="#FF141414" CornerRadius="12" Padding="20" BorderBrush="#FF1F1F1F" BorderThickness="1">
-        <StackPanel Spacing="12">
-          <TextBlock Text="ABOUT" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
-          <Grid ColumnDefinitions="Auto,*">
-            <Border Width="40" Height="40" CornerRadius="10" Background="#FF4CAF50" Margin="0,0,12,0">
-              <TextBlock Text="T" FontSize="20" FontWeight="Bold" Foreground="White"
-                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <StackPanel VerticalAlignment="Center">
-              <TextBlock Text="TCMT - 系统硬件监视器" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-              <TextBlock Text="{Binding AppVersion}" FontSize="11" Foreground="#FF666666"/>
-            </StackPanel>
-          </Grid>
-        </StackPanel>
-      </Border>
-
-      <!-- Connection -->
-      <Border Background="#FF141414" CornerRadius="12" Padding="20" BorderBrush="#FF1F1F1F" BorderThickness="1">
-        <StackPanel Spacing="12">
-          <TextBlock Text="CONNECTION" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="IPC Backend" Foreground="White" FontSize="13"/>
-            <TextBlock Text="{Binding IpcStatus}" Foreground="#FF4CAF50" FontSize="12" FontWeight="Medium"/>
-          </Grid>
-        </StackPanel>
-      </Border>
-
-      <!-- Appearance -->
-      <Border Background="#FF141414" CornerRadius="12" Padding="20" BorderBrush="#FF1F1F1F" BorderThickness="1">
-        <StackPanel Spacing="12">
-          <TextBlock Text="APPEARANCE" Foreground="#FF555555" FontSize="10" FontWeight="Bold"/>
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="Theme" Foreground="White" FontSize="13"/>
-            <Border Background="#FF1F1F1F" CornerRadius="6" Padding="8,5">
-              <TextBlock Text="Dark" Foreground="#FF888888" FontSize="11"/>
-            </Border>
-          </Grid>
-        </StackPanel>
-      </Border>
-
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="32,28,32,0">
+      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+      <TextBlock Text="Application Settings" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
     </StackPanel>
-  </ScrollViewer>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+        
+        <!-- Appearance -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="16">
+            <TextBlock Text="APPEARANCE" Theme="{StaticResource SectionHeader}"/>
+            
+            <StackPanel Spacing="8">
+              <TextBlock Text="Theme" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <ComboBox SelectedItem="{Binding CurrentTheme}" Width="200">
+                <ComboBox.Items>
+                  <themes:AppTheme>Dark</themes:AppTheme>
+                  <themes:AppTheme>Light</themes:AppTheme>
+                </ComboBox.Items>
+              </ComboBox>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- About -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="ABOUT" Theme="{StaticResource SectionHeader}"/>
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Application" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="TCMT - 系统硬件监视器" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="Version" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding AppVersion}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+              </Grid>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.20)
 project(TCMT-M
     VERSION 0.14.0
     DESCRIPTION "TCMT Windows Client - Cross-platform hardware monitoring tool"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 # Set C++20 standard
