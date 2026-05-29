@@ -48,7 +48,7 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/AccelSensor.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/SpsManager.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
