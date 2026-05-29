@@ -369,7 +369,7 @@ elseif(TCMT_MACOS)
         # Sign helper individually with explicit identifier (required for SMJobBless)
         COMMAND codesign --force --sign
             "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
-            --timestamp --options runtime
+            --options runtime
             --identifier "com.tcmt.sensorhelper"
             "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices/com.tcmt.sensorhelper"
         # Sign app bundle (with real Apple Development cert).
@@ -383,7 +383,7 @@ elseif(TCMT_MACOS)
         # runtime process can load Homebrew ncurses (different Team ID).
         COMMAND codesign --force --sign
             "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
-            --timestamp --options runtime
+            --options runtime
             --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M.entitlements"
             "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
         COMMENT "Creating TCMT-M.app bundle with Apple Development signature"

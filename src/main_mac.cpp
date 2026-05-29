@@ -812,7 +812,6 @@ int main(int argc, char* argv[]) {
                 data.batteryTemp = bd.temperature;
                 data.batteryAmperage = bd.amperage;
                 data.batteryVoltage = bd.voltage;
-                data.chargerWatts = bd.chargerWatts;
                 data.batteryIsCharging = bd.isCharging;
             }
 
