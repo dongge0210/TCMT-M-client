@@ -186,16 +186,51 @@ struct TuiData {
     bool alsValid = false;
     double alsLux = 0.0;
 
-    // Accelerometer (BMI284 IMU)
+    // Accelerometer / Attitude (BMI284 DMP gravity vector, 0xFF00/3)
     struct AccelInfo {
         bool hasDevice = false;    // BMI284 present on this machine
         bool valid = false;        // current sample valid
-        // (reserved for future use)
         double x = 0.0;           // X axis (g)
         double y = 0.0;           // Y axis (g)
         double z = 0.0;           // Z axis (g, ~1g at rest)
     };
     AccelInfo accel;
+
+    // Gyroscope (BMI284 DMP angular velocity, 0xFF00/9)
+    struct GyroInfo {
+        bool valid = false;
+        double x = 0.0, y = 0.0, z = 0.0; // deg/s
+    };
+    GyroInfo gyro;
+
+    // Lid angle (hinge angle detection, 0x0020/138)
+    struct LidInfo {
+        bool valid = false;
+        double angle = 0.0; // degrees (0–360)
+    };
+    LidInfo lidAngle;
+
+    // SPU Temperature (BMI284 die / IMU ambient, 0xFF00/5)
+    struct SpuTempInfo {
+        bool valid = false;
+        double celsius = 0.0;
+    };
+    SpuTempInfo spuTemp;
+
+    // AppleVendorMotion_Motion heartbeat (0xFF0C/1)
+    struct MotionHeartbeatInfo {
+        bool valid = false;
+        uint8_t counter = 0;   // report[4] — monotonic counter, increments ~every 2.5s
+        uint8_t eventFlag = 0; // report[0] — 0x03=pair start, 0x02=pair end
+    };
+    MotionHeartbeatInfo motionHb;
+
+    // AppleVendorMotion_DeviceMotion6 fusion (0xFF0C/5, needs CoreMotion)
+    struct DeviceMotionInfo {
+        bool valid = false;
+        double raw = 0.0; // first 4 bytes as int32 (placeholder until format known)
+    };
+    DeviceMotionInfo deviceMotion;
 
     // Top processes (by memory, top ~7)
     struct ProcessTopEntry {

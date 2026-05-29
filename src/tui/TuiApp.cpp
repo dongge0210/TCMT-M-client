@@ -623,7 +623,9 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
 
 int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    bool hasSensor = data.alsValid || data.accel.hasDevice;
+    bool hasSensor = data.alsValid || data.accel.hasDevice || data.gyro.valid ||
+                     data.lidAngle.valid ||
+                     data.motionHb.valid || data.deviceMotion.valid;
     if (!hasSensor) return 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -631,17 +633,39 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
-    // ALS
+    // ALS (ambient light sensor)
     if (data.alsValid) {
-        mvwprintw(win, y + lines++, x0 + 2, "ALS:  %.0f lux", data.alsLux);
+        mvwprintw(win, y + lines++, x0 + 2, "ALS:     %.0f lux", data.alsLux);
     }
 
-    // Accelerometer (via CoreMotion on Apple Silicon)
+    // Accelerometer — gravity/orientation vector (0xFF00/3)
     if (data.accel.hasDevice && data.accel.valid) {
-        mvwprintw(win, y + lines++, x0 + 2, "Accel: %.2f %.2f %.2f g",
+        mvwprintw(win, y + lines++, x0 + 2, "Gravity: %.2f %.2f %.2f g",
                   data.accel.x, data.accel.y, data.accel.z);
     } else if (data.accel.hasDevice) {
-        mvwprintw(win, y + lines++, x0 + 2, "Accel: waiting...");
+        mvwprintw(win, y + lines++, x0 + 2, "Gravity: waiting...");
+    }
+
+    // Gyroscope — angular velocity (0xFF00/9)
+    if (data.gyro.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Gyro:    %.2f %.2f %.2f deg/s",
+                  data.gyro.x, data.gyro.y, data.gyro.z);
+    }
+
+    // Lid angle (0x0020/138)
+    if (data.lidAngle.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Lid:     %.1f\xc2\xb0", data.lidAngle.angle);
+    }
+
+    // Motion heartbeat (0xFF0C/1 — SPU fusion liveliness indicator)
+    if (data.motionHb.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Heart:   cnt=%u type=0x%02x",
+                  (unsigned)data.motionHb.counter, (unsigned)data.motionHb.eventFlag);
+    }
+
+    // DeviceMotion fusion (0xFF0C/5 — CMDeviceMotion, only when CoreMotion active)
+    if (data.deviceMotion.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Fusion:  raw=%.0f", data.deviceMotion.raw);
     }
 
     return lines;

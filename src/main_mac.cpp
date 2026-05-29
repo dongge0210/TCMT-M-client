@@ -44,7 +44,7 @@
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/process/ProcessTop.h"
 #include "core/als/ALSensor.h"
-#include "core/accel/AccelSensor.h"
+#include "core/accel/SpsManager.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
@@ -628,16 +628,16 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
     tuiApp.Start();
 
-    // Accelerometer (BMI284) — uses direct async HID callback path.
-    // No SMJobBless helper required — the interrupt-driven input report
-    // path works from user-space on macOS 15+ without root.
-    {
-        AccelSensor tmpAccel;
-        if (tmpAccel.GetData().hasDevice) {
-            Logger::Info("Accelerometer detected (async HID path)");
-            if (tmpAccel.GetData().valid)
-                Logger::Info("Accelerometer reading OK");
-        }
+    // SPU Sensor Manager — reads ALL AppleSPUHIDDevice sensors via
+    // asynchronous IOHIDDevice input report callbacks (no root needed).
+    // Includes: gravity/orientation vector, gyroscope, ALS, lid angle.
+    static SpsManager s_sps;
+    if (!s_sps.Start()) {
+        Logger::Warn("SpsManager: no SPU HID sensors found — sensor features disabled");
+    } else {
+        Logger::Info("SpsManager started with " + std::to_string(s_sps.Sensors().size()) + " sensors");
+        for (auto& s : s_sps.Sensors())
+            Logger::Info("  " + s->name);
     }
 
     // Start history logger (SQLite)
@@ -774,19 +774,19 @@ int main(int argc, char* argv[]) {
             static DisplayInfo s_display;
             static BatteryHealth s_battery;
             static ALSensor s_als;
-            static AccelSensor s_accel;
             if (++displayCtr >= 6) { displayCtr = 0;
                 try { s_display.Detect(); } catch (...) {}
                 try { s_battery.Detect(); } catch (...) {}
                 try { s_als.Detect(); } catch (...) {}
-                try { s_accel.Refresh(); } catch (...) {}
+            }
+            // SPU sensors: SpsManager refreshes all sensors atomically (~500ms)
+            try { s_sps.Refresh(); } catch (...) {}
 
                 // Thermal state (available since macOS 10.10.3, well below our 11.0 target)
 #ifdef __OBJC__
-                NSProcessInfoThermalState ts = [[NSProcessInfo processInfo] thermalState];
-                data.thermalState = (int)ts;
+            NSProcessInfoThermalState ts = [[NSProcessInfo processInfo] thermalState];
+            data.thermalState = (int)ts;
 #endif
-            }
             {
                 data.displays.clear();
                 for (const auto& d : s_display.GetDisplays()) {
@@ -823,15 +823,68 @@ int main(int argc, char* argv[]) {
                 data.alsLux = ad.lux;
             }
 
-            // Accelerometer (BMI284 IMU) — via SHM (SMJobBless) or direct HID
+            // SPU sensors — read latest samples from SpsManager
             {
-                const auto& ad = s_accel.GetData();
-                data.accel.hasDevice = ad.hasDevice;
-                data.accel.valid = ad.valid;
-                (void)ad;
-                data.accel.x = ad.x;
-                data.accel.y = ad.y;
-                data.accel.z = ad.z;
+                data.accel = tcmt::TuiData::AccelInfo{};
+                data.gyro = tcmt::TuiData::GyroInfo{};
+                data.lidAngle = tcmt::TuiData::LidInfo{};
+                bool hasGravitySensor = false;
+
+                for (auto& s : s_sps.Sensors()) {
+                    switch (s->type) {
+                    case SpsType::Gravity:
+                        hasGravitySensor = true;
+                        if (s->sample3.valid) {
+                            data.accel.hasDevice = true;
+                            data.accel.valid = true;
+                            data.accel.x = s->sample3.x;
+                            data.accel.y = s->sample3.y;
+                            data.accel.z = s->sample3.z;
+                        }
+                        break;
+                    case SpsType::Gyro:
+                        if (s->sample3.valid) {
+                            data.gyro.valid = true;
+                            data.gyro.x = s->sample3.x;
+                            data.gyro.y = s->sample3.y;
+                            data.gyro.z = s->sample3.z;
+                        }
+                        break;
+                    case SpsType::LidAngle:
+                        if (s->sample1.valid) {
+                            data.lidAngle.valid = true;
+                            data.lidAngle.angle = s->sample1.value;
+                        }
+                        break;
+                    case SpsType::Temp:
+                        if (s->sample1.valid) {
+                            data.spuTemp.valid = true;
+                            data.spuTemp.celsius = s->sample1.value;
+                        }
+                        break;
+                    case SpsType::ApplePriv1:
+                        if (s->sample1.valid) {
+                            data.motionHb.valid = true;
+                            data.motionHb.counter = (uint8_t)s->sv.load(std::memory_order_relaxed);
+                            data.motionHb.eventFlag = (uint8_t)s->v1.load(std::memory_order_relaxed);
+                        }
+                        break;
+                    case SpsType::ApplePriv5:
+                        if (s->sample1.valid) {
+                            data.deviceMotion.valid = true;
+                            data.deviceMotion.raw = s->sample1.value;
+                        }
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                // If HID device exists but no callback data yet, mark available but invalid
+                if (hasGravitySensor && !data.accel.valid)
+                    data.accel.hasDevice = true;
+                // IMU die temp → unified temperature list
+                if (data.spuTemp.valid)
+                    data.temperatures.push_back({"IMU", data.spuTemp.celsius});
             }
 
             // System uptime / load / process count / top processes
