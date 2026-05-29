@@ -547,10 +547,20 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int halfW = maxW / 2;
     const int CONTENT_ROWS = 3;      // 6 sensors per page (2 per row)
 
-    // All sensors are pre-filtered upstream; display everything
+    // Aggregate VRM entries into one average line, keep others as-is
     std::vector<std::pair<std::string, double>> displayTemps;
-    for (const auto& [name, temp] : data.temperatures)
-        displayTemps.push_back({name, temp});
+    double vrmSum = 0;
+    int vrmCount = 0;
+    for (const auto& [name, temp] : data.temperatures) {
+        if (name.rfind("VRM", 0) == 0) {  // starts with "VRM"
+            vrmSum += temp;
+            vrmCount++;
+        } else {
+            displayTemps.push_back({name, temp});
+        }
+    }
+    if (vrmCount > 0)
+        displayTemps.insert(displayTemps.begin(), {"VRM", vrmSum / vrmCount});
 
     int perPage = CONTENT_ROWS * 2;
     int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
