@@ -636,11 +636,13 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     // ALS (ambient light sensor) — lux + raw RGBC channels
     if (data.alsValid) {
         if (data.alsChannels.valid) {
-            mvwprintw(win, y + lines, x0 + 2, "ALS:     %.0f lux  R:%-4u G:%-4u B:%-4u",
-                      data.alsLux,
-                      (unsigned)data.alsChannels.r,
-                      (unsigned)data.alsChannels.g,
-                      (unsigned)data.alsChannels.b);
+            uint32_t alsMax = std::max({data.alsChannels.r, data.alsChannels.g, data.alsChannels.b});
+            if (alsMax == 0) alsMax = 1;
+            uint8_t alsR = (uint8_t)(data.alsChannels.r * 255 / alsMax);
+            uint8_t alsG = (uint8_t)(data.alsChannels.g * 255 / alsMax);
+            uint8_t alsB = (uint8_t)(data.alsChannels.b * 255 / alsMax);
+            mvwprintw(win, y + lines, x0 + 2, "ALS:     %.0f lux  R:%-3u G:%-3u B:%-3u",
+                      data.alsLux, alsR, alsG, alsB);
             lines++;
         } else {
             mvwprintw(win, y + lines++, x0 + 2, "ALS:     %.0f lux", data.alsLux);
