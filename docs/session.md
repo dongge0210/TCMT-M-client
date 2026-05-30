@@ -1,4 +1,4 @@
-# Session State (2026-05-29)
+# Session State (2026-05-30)
 
 ## Branch
 `dev`
@@ -30,12 +30,8 @@
   - M1/M2/M3: `Tp*`(P-Core), `Te*`(E-Core), `Tg*`(GPU)
   - M4: `TPD*`(P-Core), `TDeL`+`Te*`(E-Core), `Tg*`(GPU), `TRD*`(RAM), `TB*T`(Board)... 共 112 个温度传感器
   - AppleSMCKeysEndpoint 匹配策略：先按类名直接查找（M4），再回退到 AppleSMC 子节点遍历（M1/M2/M3）
-- **温度白名单过滤** — 按 Stats app 模式，只显示已知有用传感器并分组取均值
-  - 白名单参考来源：Stats `values.swift` (exelban/Stats) + VirtualSMC `SMCSensorKeys.txt` (acidanthera/VirtualSMC)
-  - 分组合计：P-Core (8~11 键→1 均值)、E-Core (4~5 键→1 均值)、GPU (10+ 键→1 均值)、RAM (10+ 键→1 均值)
-  - 个体传感器：Heatsink、Board #0/#1/#2、WiFi、Ambient LP/RF、VRM 等
-  - 显示由 112→约 15-20 个条目，大幅精简
-  - 非白名单 SMC key（如 Th*、Ts*、TV* 等）完全隐藏
+  - TUI Temps 面板显示所有 SMC 传感器，自动分页（3秒翻页，每页6条）
+  - Cluster 传感器命名修复：显示完整后缀（如 `Cluster #0A` / `#0B` / `#0C`）
 
 ## 构建方式 (macOS)
 ```bash
@@ -52,6 +48,24 @@ msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v14
 msbuild TCMT.sln /p:Configuration=Debug /p:Platform=x64
 ```
 
+## 本次 Session 改动 (2026-05-30)
+
+### 显示 & 兼容
+- **ALS RGBC 归一化** — 原始 ADC 值（4位数）→ 除以 max(R,G,B)×255，显示 0-255 范围
+- **Windows/PDCurses 兼容** — pid_t 定义、便携 wcwidth/wcswidth 实现、ESCDELAY guard、_CRT_SECURE_NO_WARNINGS、wchar_t >> 强制转型
+- **Cluster 命名修复** — `key.substr(2)` 代替 `std::string(1, key[2])`，显示完整后缀（`Cluster #0A` / `#0B` 而非全变 `#0`）
+
+### 清理
+- `.DS_Store` × 20+ 删除
+- `AvaloniaUI.backup/` 删除
+- cmake 缓存清理后修复 `LANGUAGES C CXX`（tcmt_sensor_helper.c 需要 C）
+- `main_mac.cpp` 删除已不存在的 `chargerWatts` 引用
+
+### 尝试后撤回
+- VRM 单独聚合 → 撤回（用户要求还原）
+- 全部温度按类别聚合（CPU/GPU/VRM/RAM 等）→ 撤回（用户要求还原）
+- TV* catch-all 改为 VRM 命名 → 同步撤回
+
 ## 已知约束
 - **macOS 15+ 定位权限**：必须从 `.app` bundle 启动，且用 Apple Development 证书签名（ad-hoc 签名下 `requestWhenInUseAuthorization` 静默失败）
 - **DisplayInfo**：`NSScreen.localizedName` 需 macOS 14+；`CGDisplayIsBuiltin` 在某些 Apple Silicon 机型上可能返回 0 导致内置屏未被标记
@@ -66,8 +80,13 @@ msbuild TCMT.sln /p:Configuration=Debug /p:Platform=x64
 - CPU 逻辑核心数在 Apple Silicon 上冗余（无超线程）
 - Windows SMART 表格数据待验证
 - IPCService ViewModel 集成稳定性
+<<<<<<< HEAD
 - SpsManager 未知传感器格式解码（0xFF00/5, 0xFF0C/1, 0xFF0C/5）
 - AccelSensor.h/.mm 可与 SpsManager 合并（旧单传感器封装可删除）
+=======
+- `kIOMainPortDefault` 需 macOS 12.0 但 deploy target 设 11.0（编译警告）
+- Apple 签名时间戳服务器不稳定（`--timestamp` 临时移除）
+>>>>>>> 99dde4eb (docs: update session.md with 2026-05-30 changes)
 
 ## 用户习惯
 - 零编译警告容忍
