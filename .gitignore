@@ -123,3 +123,4 @@ tools/ioreport/ioreport_dump
 .gemini/
 gha-creds-*.json
 .github/commands/
+.codegraph/daemon.pid
