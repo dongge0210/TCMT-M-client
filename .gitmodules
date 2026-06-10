@@ -19,9 +19,6 @@
 [submodule "src/third_party/curl"]
 	path = src/third_party/curl
 	url = https://github.com/dongge0210/curl.git
-[submodule "src/third_party/websocketpp"]
-	path = src/third_party/websocketpp
-	url = https://github.com/dongge0210/websocketpp.git
 [submodule "src/third_party/tpm2-tss"]
 	path = src/third_party/tpm2-tss
 	url = https://github.com/dongge0210/tpm2-tss.git
