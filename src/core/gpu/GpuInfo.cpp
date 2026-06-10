@@ -536,6 +536,203 @@ void GpuInfo::RefreshUsage() {
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <cstring>
+#include <algorithm>
+#include <cwctype>
+#include <unistd.h>
+
+static std::string ReadSysfsStr(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs) return {};
+    std::string val;
+    std::getline(ifs, val);
+    return val;
+}
+
+static uint16_t ReadSysfsHex16(const std::string& path) {
+    std::string s = ReadSysfsStr(path);
+    if (s.empty()) return 0;
+    uint16_t v = 0;
+    std::stringstream ss(s);
+    ss >> std::hex >> v;
+    return v;
+}
+
+static uint64_t ReadSysfsUint64(const std::string& path) {
+    std::string s = ReadSysfsStr(path);
+    if (s.empty()) return 0;
+    try { return std::stoull(s); }
+    catch (...) { return 0; }
+}
+
+static unsigned int ReadSysfsUint(const std::string& path) {
+    std::string s = ReadSysfsStr(path);
+    if (s.empty()) return 0;
+    try { return static_cast<unsigned int>(std::stoul(s)); }
+    catch (...) { return 0; }
+}
+
+static std::string VendorName(uint16_t vid) {
+    switch (vid) {
+        case 0x1002: return "AMD";
+        case 0x10de: return "NVIDIA";
+        case 0x8086: return "Intel";
+        case 0x1af4: return "Red Hat/QEMU";
+        case 0x15ad: return "VMware";
+        case 0x80ee: return "Oracle VM";
+        default:     return "Unknown";
+    }
+}
+
+GpuInfo::GpuInfo() {
+    DetectGpusViaSysfs();
+}
+
+GpuInfo::~GpuInfo() {
+    Logger::Info("GPU information detection complete");
+}
+
+bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
+    std::wstring lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+    const std::wstring keywords[] = {
+        L"virtual", L"qemu", L"virtio", L"vmware", L"virtualbox",
+        L"llvmpipe", L"software", L"display"
+    };
+    for (const auto& kw : keywords)
+        if (lower.find(kw) != std::wstring::npos) return true;
+    return false;
+}
+
+void GpuInfo::DetectGpusViaSysfs() {
+    gpuList.clear();
+
+    DIR* dir = opendir("/sys/class/drm/");
+    if (!dir) {
+        Logger::Error("GpuInfo: cannot open /sys/class/drm/");
+        return;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name(entry->d_name);
+        if (name.compare(0, 4, "card") != 0) continue;
+        if (name.find('-', 4) != std::string::npos) continue;
+
+        std::string devPath = "/sys/class/drm/" + name + "/device/";
+
+        uint16_t vendorId = ReadSysfsHex16(devPath + "vendor");
+        uint16_t deviceId = ReadSysfsHex16(devPath + "device");
+        if (vendorId == 0 && deviceId == 0) continue;
+
+        GpuData data;
+        data.isNvidia = (vendorId == 0x10de);
+        data.isIntegrated = (vendorId == 0x8086);
+        data.isVirtual = (vendorId == 0x1af4 || vendorId == 0x15ad || vendorId == 0x80ee);
+
+        std::string prodName = ReadSysfsStr(devPath + "product_name");
+        if (!prodName.empty()) {
+            data.name = std::wstring(prodName.begin(), prodName.end());
+        } else {
+            std::string fallback = VendorName(vendorId) + " GPU ("
+                + std::to_string(vendorId) + ":" + std::to_string(deviceId) + ")";
+            data.name = std::wstring(fallback.begin(), fallback.end());
+        }
+
+        data.deviceId = std::wstring(name.begin(), name.end());
+
+        data.isVirtual = data.isVirtual || IsVirtualGpu(data.name);
+
+        // GPU memory
+        if (vendorId == 0x1002) {
+            data.dedicatedMemory = ReadSysfsUint64(devPath + "mem_info_vram_total");
+        }
+
+        // GPU usage
+        if (vendorId == 0x1002) {
+            data.usage = static_cast<double>(ReadSysfsUint(devPath + "gpu_busy_percent"));
+        } else if (vendorId == 0x8086) {
+            unsigned int act = ReadSysfsUint(devPath + "gt_act_freq_mhz");
+            unsigned int maxV = ReadSysfsUint(devPath + "gt_max_freq_mhz");
+            if (maxV > 0)
+                data.usage = (static_cast<double>(act) / static_cast<double>(maxV)) * 100.0;
+        }
+
+        // GPU temperature via hwmon
+        std::string hwmonDir = devPath + "hwmon/";
+        DIR* hwmon = opendir(hwmonDir.c_str());
+        if (hwmon) {
+            struct dirent* hwEntry;
+            while ((hwEntry = readdir(hwmon)) != nullptr) {
+                std::string hn(hwEntry->d_name);
+                if (hn.compare(0, 5, "hwmon") != 0) continue;
+                std::string raw = ReadSysfsStr(hwmonDir + hn + "/temp1_input");
+                if (!raw.empty()) {
+                    try {
+                        data.temperature = static_cast<unsigned int>(std::stoul(raw) / 1000);
+                    } catch (...) {}
+                    break;
+                }
+            }
+            closedir(hwmon);
+        }
+
+        gpuList.push_back(data);
+
+        std::string gpuNameStr(data.name.begin(), data.name.end());
+        Logger::Info("Detected GPU: " + gpuNameStr +
+            " (virtual: " + (data.isVirtual ? "yes" : "no") +
+            ", NVIDIA: " + (data.isNvidia ? "yes" : "no") +
+            ", integrated: " + (data.isIntegrated ? "yes" : "no") + ")");
+    }
+    closedir(dir);
+}
+
+void GpuInfo::RefreshUsage() {
+    for (auto& gpu : gpuList) {
+        std::string cardName(gpu.deviceId.begin(), gpu.deviceId.end());
+        std::string devPath = "/sys/class/drm/" + cardName + "/device/";
+
+        uint16_t vid = ReadSysfsHex16(devPath + "vendor");
+        if (vid == 0) continue;
+
+        if (vid == 0x1002) {
+            gpu.usage = static_cast<double>(ReadSysfsUint(devPath + "gpu_busy_percent"));
+        } else if (vid == 0x8086) {
+            unsigned int act = ReadSysfsUint(devPath + "gt_act_freq_mhz");
+            unsigned int maxV = ReadSysfsUint(devPath + "gt_max_freq_mhz");
+            if (maxV > 0)
+                gpu.usage = (static_cast<double>(act) / static_cast<double>(maxV)) * 100.0;
+        }
+
+        // Re-read temperature
+        std::string hwmonDir = devPath + "hwmon/";
+        DIR* hwmon = opendir(hwmonDir.c_str());
+        if (hwmon) {
+            struct dirent* hwEntry;
+            while ((hwEntry = readdir(hwmon)) != nullptr) {
+                std::string hn(hwEntry->d_name);
+                if (hn.compare(0, 5, "hwmon") != 0) continue;
+                std::string raw = ReadSysfsStr(hwmonDir + hn + "/temp1_input");
+                if (!raw.empty()) {
+                    try {
+                        gpu.temperature = static_cast<unsigned int>(std::stoul(raw) / 1000);
+                    } catch (...) {}
+                    break;
+                }
+            }
+            closedir(hwmon);
+        }
+    }
+}
+
+const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
+
 #else
 #error "Unsupported platform"
 #endif

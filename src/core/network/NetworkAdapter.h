@@ -25,6 +25,20 @@ typedef uint32_t DWORD;
 #include <map>
 #endif
 
+#ifdef TCMT_LINUX
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <linux/if_link.h>
+#include <sys/ioctl.h>
+#include <linux/sockios.h>
+#include <cstring>
+#include <fstream>
+#include <map>
+#endif
+
 class WmiManager;
 
 class NetworkAdapter {
@@ -47,6 +61,8 @@ public:
     explicit NetworkAdapter(WmiManager& manager);
 #elif defined(TCMT_MACOS)
     NetworkAdapter();
+#elif defined(TCMT_LINUX)
+    NetworkAdapter();
 #endif
     ~NetworkAdapter();
 
@@ -68,6 +84,12 @@ private:
     void QueryWmiAdapterInfo();
     void SafeRelease(IUnknown* pInterface);
     WmiManager& wmiManager;
+#endif
+
+#if defined(TCMT_LINUX)
+    std::map<std::string, uint64_t> prevRxBytes;
+    std::map<std::string, uint64_t> prevTxBytes;
+    uint64_t prevSampleTimeMs;
 #endif
 
     std::vector<AdapterInfo> adapters;

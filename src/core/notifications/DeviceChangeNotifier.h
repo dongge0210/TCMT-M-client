@@ -229,7 +229,7 @@ private:
 // ======================== Fallback ========================
 class DeviceChangeNotifier {
 public:
-    enum DeviceClass { USB, Bluetooth };
+    enum DeviceClass { USB, Bluetooth, USB_Hub };
     explicit DeviceChangeNotifier(DeviceClass) {}
     bool Poll() { return true; }
 };

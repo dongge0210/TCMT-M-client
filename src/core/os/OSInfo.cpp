@@ -66,6 +66,70 @@ OSInfo::OSInfo() {
     }
 }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <sys/utsname.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <unistd.h>
+
+OSInfo::OSInfo() {
+    // Kernel version via uname()
+    struct utsname buf;
+    std::string kernelVersion;
+    if (uname(&buf) == 0) {
+        kernelVersion = std::string(buf.sysname) + " " + buf.release;
+    } else {
+        kernelVersion = "Unknown";
+    }
+
+    // Distro name from /etc/os-release
+    std::string distroName = "Linux";
+    std::ifstream osRelease("/etc/os-release");
+    if (osRelease.is_open()) {
+        std::string line;
+        while (std::getline(osRelease, line)) {
+            if (line.substr(0, 12) == "PRETTY_NAME=") {
+                size_t start = line.find('"');
+                size_t end = line.rfind('"');
+                if (start != std::string::npos && end > start) {
+                    distroName = line.substr(start + 1, end - start - 1);
+                }
+                break;
+            }
+        }
+    } else {
+        // Fallback: try /etc/lsb-release
+        std::ifstream lsbRelease("/etc/lsb-release");
+        if (lsbRelease.is_open()) {
+            std::string line;
+            while (std::getline(lsbRelease, line)) {
+                if (line.substr(0, 11) == "DISTRIB_DESCRIPTION=") {
+                    size_t start = line.find('"');
+                    size_t end = line.rfind('"');
+                    if (start != std::string::npos && end > start) {
+                        distroName = line.substr(start + 1, end - start - 1);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    osVersion = distroName + " (" + kernelVersion + ")";
+
+    // Machine model from DMI
+    std::ifstream dmiProduct("/sys/devices/virtual/dmi/id/product_name");
+    if (dmiProduct.is_open()) {
+        std::getline(dmiProduct, model);
+        dmiProduct.close();
+    }
+    if (model.empty()) {
+        model = "Unknown Linux Machine";
+    }
+}
+
 #else
 #error "Unsupported platform"
 #endif
@@ -73,8 +137,10 @@ OSInfo::OSInfo() {
 bool OSInfo::HasTpm() {
 #if defined(TCMT_WINDOWS)
     return true; // Actual detection via TpmBridge
+#elif defined(TCMT_LINUX)
+    return (access("/sys/class/tpm/tpm0/", F_OK) == 0) || (access("/dev/tpm0", F_OK) == 0);
 #else
-    return false; // No TPM support on macOS/Linux
+    return false; // No TPM support on macOS
 #endif
 }
 

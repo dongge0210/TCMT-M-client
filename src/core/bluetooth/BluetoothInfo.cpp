@@ -136,7 +136,86 @@ void BluetoothInfo::Detect() {
 }
 
 // ============================================================================
-// Non-Windows stub
+// Linux Implementation (sysfs)
+// ============================================================================
+#elif defined(TCMT_LINUX)
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <cstring>
+#include <cstdio>
+#include <memory>
+#include <unistd.h>
+
+void BluetoothInfo::Clear() {
+    data_ = BluetoothData{};
+}
+
+static std::string ReadSysfsStr(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs) return {};
+    std::string val;
+    std::getline(ifs, val);
+    return val;
+}
+
+static std::string ExecCmd(const std::string& cmd) {
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) return {};
+    std::string result;
+    char buf[256];
+    while (fgets(buf, sizeof(buf), pipe.get()) != nullptr)
+        result += buf;
+    return result;
+}
+
+void BluetoothInfo::Detect() {
+    Clear();
+
+    DIR* dir = opendir("/sys/class/bluetooth/");
+    if (!dir) {
+        Logger::Debug("BluetoothInfo: no Bluetooth adapter found");
+        return;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name(entry->d_name);
+        if (name.compare(0, 3, "hci") != 0) continue;
+
+        std::string btPath = "/sys/class/bluetooth/" + name + "/";
+        std::string addr = ReadSysfsStr(btPath + "address");
+        if (addr.empty()) continue;
+
+        data_.adapter.detected = true;
+        data_.adapter.address = addr;
+        data_.adapter.powerOn = true;
+
+        std::string devName = ReadSysfsStr(btPath + "name");
+        if (!devName.empty()) {
+            data_.adapter.name = devName;
+        } else {
+            // Fallback: try hcitool
+            std::string hciOut = ExecCmd("hcitool dev 2>/dev/null");
+            if (hciOut.find(name) != std::string::npos) {
+                data_.adapter.name = name;
+            } else {
+                data_.adapter.name = "Bluetooth Adapter (" + name + ")";
+            }
+        }
+        break; // Use first adapter only
+    }
+    closedir(dir);
+
+    // Device list is not populated via simple sysfs reading
+    // Full device enumeration requires D-Bus (bluez)
+
+    Logger::Debug("BluetoothInfo: detected adapter \"" + data_.adapter.name +
+                  "\" with " + std::to_string(data_.devices.size()) + " device(s)");
+}
+
+// ============================================================================
+// macOS stub
 // ============================================================================
 #else
 void BluetoothInfo::Clear() {

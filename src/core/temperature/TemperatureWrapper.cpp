@@ -1418,6 +1418,154 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
 
 bool TemperatureWrapper::IsInitialized() { return initialized; }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <cstring>
+#include <algorithm>
+#include <set>
+#include <cmath>
+#include <map>
+
+bool TemperatureWrapper::initialized = false;
+
+void TemperatureWrapper::Initialize() {
+    initialized = true;
+    Logger::Debug("TemperatureWrapper: initialized (Linux sysfs)");
+}
+
+void TemperatureWrapper::Cleanup() {
+    initialized = false;
+}
+
+static double ReadTempMillideg(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return 0.0;
+    int64_t milli = 0;
+    ifs >> milli;
+    if (ifs.fail()) return 0.0;
+    return static_cast<double>(milli) / 1000.0;
+}
+
+static std::string ReadLine(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return "";
+    std::string val;
+    std::getline(ifs, val);
+    val.erase(0, val.find_first_not_of(" \t\n\r"));
+    val.erase(val.find_last_not_of(" \t\n\r") + 1);
+    return val;
+}
+
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+    std::vector<std::pair<std::string, double>> temps;
+    if (!initialized) return temps;
+
+    DIR* tzDir = opendir("/sys/class/thermal");
+    if (tzDir) {
+        struct dirent* entry;
+        while ((entry = readdir(tzDir)) != nullptr) {
+            std::string name(entry->d_name);
+            if (name.find("thermal_zone") != 0) continue;
+
+            std::string base = "/sys/class/thermal/" + name;
+            std::string type = ReadLine(base + "/type");
+            if (type.empty()) continue;
+
+            double temp = ReadTempMillideg(base + "/temp");
+            if (temp <= 0.0 || temp > 200.0) continue;
+
+            temps.push_back({type, temp});
+        }
+        closedir(tzDir);
+    }
+
+    DIR* hwDir = opendir("/sys/class/hwmon");
+    if (hwDir) {
+        struct dirent* entry;
+        while ((entry = readdir(hwDir)) != nullptr) {
+            std::string name(entry->d_name);
+            if (name.find("hwmon") != 0) continue;
+
+            std::string base = "/sys/class/hwmon/" + name;
+            std::string hwmonName = ReadLine(base + "/name");
+            if (hwmonName.empty()) hwmonName = name;
+
+            DIR* hwEntryDir = opendir(base.c_str());
+            if (!hwEntryDir) continue;
+
+            std::map<int, std::string> labels;
+            std::map<int, double> inputs;
+
+            struct dirent* hwentry;
+            while ((hwentry = readdir(hwEntryDir)) != nullptr) {
+                std::string fname(hwentry->d_name);
+                if (fname.find("temp") != 0) continue;
+
+                std::string rest = fname.substr(4);
+                size_t usPos = rest.find('_');
+                if (usPos == std::string::npos) continue;
+
+                int idx = 0;
+                try {
+                    idx = std::stoi(rest.substr(0, usPos));
+                } catch (...) {
+                    continue;
+                }
+
+                std::string suffix = rest.substr(usPos);
+                if (suffix == "_label")
+                    labels[idx] = ReadLine(base + "/" + fname);
+                else if (suffix == "_input")
+                    inputs[idx] = ReadTempMillideg(base + "/" + fname);
+            }
+            closedir(hwEntryDir);
+
+            for (const auto& input : inputs) {
+                int idx = input.first;
+                double val = input.second;
+                if (val <= 0.0 || val > 200.0) continue;
+
+                std::string label;
+                auto lit = labels.find(idx);
+                if (lit != labels.end() && !lit->second.empty())
+                    label = hwmonName + " " + lit->second;
+                else
+                    label = hwmonName + " Sensor #" + std::to_string(idx);
+
+                temps.push_back({label, val});
+            }
+        }
+        closedir(hwDir);
+    }
+
+    std::vector<std::pair<std::string, double>> deduped;
+    for (const auto& t : temps) {
+        bool dup = false;
+        for (const auto& d : deduped) {
+            if (std::abs(t.second - d.second) < 0.5) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup)
+            deduped.push_back(t);
+    }
+
+    return deduped;
+}
+
+bool TemperatureWrapper::IsInitialized() { return initialized; }
+
+double GetPmPCoreFreq() { return 0.0; }
+double GetPmECoreFreq() { return 0.0; }
+double GetPmGpuFreq() { return 0.0; }
+double GetPmCpuPower() { return 0.0; }
+double GetPmGpuPower() { return 0.0; }
+double GetPmAnePower() { return 0.0; }
+
 #else
 #error "Unsupported platform"
 #endif

@@ -307,6 +307,79 @@ void BoardInfo::Detect() {
                   " serial=" + serialNumber);
 }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+
+void BoardInfo::Detect() {
+    Logger::Debug("BoardInfo: Detecting board data via sysfs DMI");
+
+    auto ReadDmi = [](const std::string& file) -> std::string {
+        std::ifstream ifs("/sys/devices/virtual/dmi/id/" + file);
+        if (!ifs) return {};
+        std::string val;
+        std::getline(ifs, val);
+        return val;
+    };
+
+    manufacturer = ReadDmi("board_vendor");
+    product = ReadDmi("board_name");
+    version = ReadDmi("board_version");
+    serialNumber = ReadDmi("product_serial");
+    biosVendor = ReadDmi("bios_vendor");
+    biosVersion = ReadDmi("bios_version");
+    biosDate = ReadDmi("bios_date");
+    systemUuid = ReadDmi("product_uuid");
+
+    std::string prodName = ReadDmi("product_name");
+    if (product.empty() && !prodName.empty()) {
+        product = prodName;
+    }
+
+    // Chassis type from DMI
+    std::string chassisStr = ReadDmi("chassis_type");
+    if (!chassisStr.empty()) {
+        int cv = 0;
+        try { cv = std::stoi(chassisStr); } catch (...) {}
+        switch (cv) {
+            case 1:  chassisType = "Other"; break;
+            case 2:  chassisType = "Unknown"; break;
+            case 3:  chassisType = "Desktop"; break;
+            case 4:  chassisType = "Low Profile Desktop"; break;
+            case 5:  chassisType = "Pizza Box"; break;
+            case 6:  chassisType = "Mini Tower"; break;
+            case 7:  chassisType = "Tower"; break;
+            case 8:  chassisType = "Portable"; break;
+            case 9:  chassisType = "Laptop"; break;
+            case 10: chassisType = "Notebook"; break;
+            case 11: chassisType = "Handheld"; break;
+            case 12: chassisType = "Docking Station"; break;
+            case 13: chassisType = "All-in-One"; break;
+            case 14: chassisType = "Sub-Notebook"; break;
+            case 15: chassisType = "Space-Saving"; break;
+            case 16: chassisType = "Lunch Box"; break;
+            case 17: chassisType = "Main System Chassis"; break;
+            case 18: chassisType = "Expansion Chassis"; break;
+            case 19: chassisType = "Sub-Chassis"; break;
+            case 20: chassisType = "Bus Expansion Chassis"; break;
+            case 21: chassisType = "Peripheral Chassis"; break;
+            case 22: chassisType = "Storage Chassis"; break;
+            case 23: chassisType = "Rack Mount Chassis"; break;
+            case 24: chassisType = "Sealed-Case PC"; break;
+            default: chassisType = "Chassis (" + chassisStr + ")"; break;
+        }
+    }
+
+    if (manufacturer.empty() && product.empty()) {
+        Logger::Warn("BoardInfo: DMI sysfs not available (not x86?)");
+    }
+
+    Logger::Debug("BoardInfo: manufacturer=" + manufacturer +
+                  " product=" + product +
+                  " serial=" + serialNumber);
+}
+
 #else
 #error "Unsupported platform"
 #endif

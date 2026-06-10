@@ -515,6 +515,244 @@ bool CpuInfo::IsVirtualizationEnabled() const {
     return false;
 }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <sys/time.h>
+#include <unistd.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <set>
+
+static uint64_t GetTickCountMs() {
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+CpuInfo::CpuInfo()
+    : totalCores(0), smallCores(0), largeCores(0), cpuUsage(0.0),
+      largeCoreSpeed(0.0), smallCoreSpeed(0.0), lastSampleIntervalMs(0.0),
+      prevTotalTicks(0), prevIdleTicks(0), prevSampleTimeMs(0),
+      largeCoreSpeedAvg(0.0), smallCoreSpeedAvg(0.0) {
+    try {
+        DetectCores();
+        cpuName = GetNameFromRegistry();
+        InitializeCounter();
+        UpdateCoreSpeeds();
+    }
+    catch (const std::exception& e) {
+        Logger::Error("CPUInfoInitializeFailed: " + std::string(e.what()));
+    }
+}
+
+CpuInfo::~CpuInfo() { CleanupCounter(); }
+
+void CpuInfo::InitializeCounter() {
+    std::ifstream stat("/proc/stat");
+    if (!stat.is_open()) {
+        Logger::Error("Cannot open /proc/stat");
+        return;
+    }
+    std::string line;
+    std::getline(stat, line);
+    stat.close();
+    if (line.substr(0, 4) != "cpu ") return;
+
+    std::istringstream ss(line);
+    std::string cpu;
+    ss >> cpu;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+    if (!(ss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal))
+        return;
+
+    prevTotalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
+    prevIdleTicks = idle;
+    prevSampleTimeMs = GetTickCountMs();
+}
+
+void CpuInfo::CleanupCounter() {
+    // Nothing to clean up on Linux
+}
+
+void CpuInfo::DetectCores() {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) {
+        Logger::Error("Cannot open /proc/cpuinfo");
+        totalCores = 1;
+        largeCores = 1;
+        smallCores = 0;
+        return;
+    }
+
+    std::set<int> coreIds;
+    int processorCount = 0;
+    int cpuCores = 0;
+    std::string line;
+
+    while (std::getline(cpuinfo, line)) {
+        if (line.substr(0, 10) == "processor\t") {
+            processorCount++;
+        } else if (line.substr(0, 8) == "core id\t") {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                int id = std::stoi(line.substr(colon + 1));
+                coreIds.insert(id);
+            }
+        } else if (line.substr(0, 10) == "cpu cores\t") {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                cpuCores = std::stoi(line.substr(colon + 1));
+            }
+        }
+    }
+
+    totalCores = processorCount;
+    int physicalCores = static_cast<int>(coreIds.size());
+
+    if (physicalCores > 0) {
+        largeCores = physicalCores;
+        smallCores = 0;
+    } else if (cpuCores > 0) {
+        largeCores = cpuCores;
+        smallCores = 0;
+    } else {
+        largeCores = totalCores;
+        smallCores = 0;
+    }
+
+    Logger::Debug("CpuInfo: total=" + std::to_string(totalCores)
+               + " P=" + std::to_string(largeCores)
+               + " E=" + std::to_string(smallCores));
+}
+
+void CpuInfo::UpdateCoreSpeeds() {
+    std::vector<double> frequencies;
+    for (int i = 0; i < totalCores; i++) {
+        std::string path = "/sys/devices/system/cpu/cpu"
+                         + std::to_string(i)
+                         + "/cpufreq/scaling_cur_freq";
+        std::ifstream freqFile(path);
+        if (freqFile.is_open()) {
+            unsigned long freqKhz = 0;
+            freqFile >> freqKhz;
+            if (freqKhz > 0) {
+                frequencies.push_back(static_cast<double>(freqKhz) / 1000.0);
+            }
+        }
+    }
+
+    if (!frequencies.empty()) {
+        double sum = 0.0;
+        for (double f : frequencies) sum += f;
+        largeCoreSpeedAvg = sum / static_cast<double>(frequencies.size());
+    } else {
+        std::ifstream maxFreqFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
+        if (maxFreqFile.is_open()) {
+            unsigned long freqKhz = 0;
+            maxFreqFile >> freqKhz;
+            largeCoreSpeedAvg = static_cast<double>(freqKhz) / 1000.0;
+        }
+    }
+    smallCoreSpeedAvg = largeCoreSpeedAvg;
+}
+
+std::string CpuInfo::GetNameFromRegistry() {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) return "Unknown CPU";
+
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.substr(0, 11) == "model name\t") {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                std::string name = line.substr(colon + 2);
+                if (!name.empty()) return name;
+            }
+        }
+    }
+    return "Unknown CPU";
+}
+
+double CpuInfo::updateUsage() {
+    uint64_t nowMs = GetTickCountMs();
+    uint64_t elapsedMs = nowMs - prevSampleTimeMs;
+    if (elapsedMs < 100) return cpuUsage;
+
+    std::ifstream stat("/proc/stat");
+    if (!stat.is_open()) return cpuUsage;
+
+    std::string line;
+    std::getline(stat, line);
+    stat.close();
+    if (line.substr(0, 4) != "cpu ") return cpuUsage;
+
+    std::istringstream ss(line);
+    std::string cpu;
+    ss >> cpu;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+    if (!(ss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal))
+        return cpuUsage;
+
+    uint64_t totalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
+    uint64_t totalDelta = totalTicks - prevTotalTicks;
+    uint64_t idleDelta = idle - prevIdleTicks;
+
+    if (totalDelta > 0) {
+        double newUsage = 100.0 * (1.0 - static_cast<double>(idleDelta)
+                                         / static_cast<double>(totalDelta));
+        if (newUsage < 0.0) newUsage = 0.0;
+        if (newUsage > 100.0) newUsage = 100.0;
+        if (cpuUsage > 0.0) cpuUsage = (cpuUsage * 0.8) + (newUsage * 0.2);
+        else cpuUsage = newUsage;
+    }
+
+    prevTotalTicks = totalTicks;
+    prevIdleTicks = idle;
+    prevSampleTimeMs = nowMs;
+    lastSampleIntervalMs = static_cast<double>(elapsedMs);
+
+    return cpuUsage;
+}
+
+double CpuInfo::GetUsage() { return updateUsage(); }
+
+int CpuInfo::GetTotalCores() const { return totalCores; }
+int CpuInfo::GetSmallCores() const { return smallCores; }
+int CpuInfo::GetLargeCores() const { return largeCores; }
+
+double CpuInfo::GetLargeCoreSpeed() const {
+    return largeCoreSpeedAvg;
+}
+
+double CpuInfo::GetSmallCoreSpeed() const {
+    return smallCoreSpeedAvg;
+}
+
+uint32_t CpuInfo::GetCurrentSpeed() const {
+    return static_cast<uint32_t>(largeCoreSpeedAvg);
+}
+
+std::string CpuInfo::GetName() { return cpuName; }
+
+bool CpuInfo::IsHyperThreadingEnabled() const {
+    return totalCores > (largeCores + smallCores);
+}
+
+bool CpuInfo::IsVirtualizationEnabled() const {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) return false;
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.substr(0, 6) == "flags\t") {
+            return line.find("vmx") != std::string::npos ||
+                   line.find("svm") != std::string::npos;
+        }
+    }
+    return false;
+}
+
 #else
 #error "Unsupported platform"
 #endif

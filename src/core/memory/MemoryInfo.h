@@ -30,5 +30,13 @@ private:
     uint64_t totalVirtual;
     uint32_t ramSpeed = 0;
     std::string ramType;
+#elif defined(TCMT_LINUX)
+    uint64_t totalPhysical;
+    uint64_t availablePhysical;
+    uint64_t totalVirtual;
+    uint64_t swapTotal;
+    uint64_t swapFree;
+    uint32_t ramSpeed = 0;
+    std::string ramType;
 #endif
 };

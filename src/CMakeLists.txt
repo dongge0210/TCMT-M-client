@@ -107,15 +107,15 @@ if(TCMT_WINDOWS)
     list(APPEND TEMP_SOURCES ${TEMP_SOURCES_WINDOWS})
 endif()
 
-if(TCMT_MACOS)
+if(TCMT_MACOS OR TCMT_LINUX)
     list(APPEND TEMP_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/TemperatureWrapper.cpp
     )
 endif()
 
-# TUI module (Windows and macOS)
+# TUI module (Windows, macOS, and Linux)
 set(TUI_SOURCES "")
-if(TCMT_WINDOWS OR TCMT_MACOS)
+if(TCMT_WINDOWS OR TCMT_MACOS OR TCMT_LINUX)
     list(APPEND TUI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/tui/TuiApp.cpp
     )
@@ -143,6 +143,10 @@ elseif(TCMT_MACOS)
             endif()
         endif()
     endif()
+    find_package(Curses REQUIRED)
+
+elseif(TCMT_LINUX)
+    set(CURSES_NEED_WIDE TRUE)
     find_package(Curses REQUIRED)
 endif()
 
@@ -202,6 +206,11 @@ elseif(TCMT_MACOS)
     target_compile_definitions(TCMTCore PRIVATE
         TCMT_MACOS _DARWIN_C_SOURCE
     )
+
+elseif(TCMT_LINUX)
+    target_compile_definitions(TCMTCore PRIVATE
+        TCMT_LINUX _GNU_SOURCE
+    )
 endif()
 
 # Apply compile options from cmake/Options.cmake
@@ -222,12 +231,16 @@ if(TCMT_WINDOWS)
 elseif(TCMT_MACOS)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
+
+elseif(TCMT_LINUX)
+    target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
+    target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
 endif()
 
-# SQLite3 — macOS provides it via the system SDK (just -lsqlite3).
+# SQLite3 — macOS and Linux provide it via system SDK (just -lsqlite3).
 # Windows users should install it via vcpkg (vcpkg install sqlite3) and
 # add find_package(SQLite3) to cmake/Dependencies.cmake.
-if(TCMT_MACOS)
+if(TCMT_MACOS OR TCMT_LINUX)
     target_link_libraries(TCMTCore PRIVATE sqlite3)
     message(STATUS "  SQLite3: system library (-lsqlite3)")
 endif()
@@ -327,6 +340,12 @@ elseif(TCMT_MACOS)
     add_executable(TCMT-M
         ${CMAKE_CURRENT_SOURCE_DIR}/main_mac.cpp
     )
+
+elseif(TCMT_LINUX)
+    # Linux: use main_linux.cpp
+    add_executable(TCMT-M
+        ${CMAKE_CURRENT_SOURCE_DIR}/main_linux.cpp
+    )
 endif()
 
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
@@ -387,6 +406,11 @@ elseif(TCMT_MACOS)
             --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M.entitlements"
             "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
         COMMENT "Creating TCMT-M.app bundle with Apple Development signature"
+    )
+elseif(TCMT_LINUX)
+    # Linux: no .app bundle, no codesign, no SMJobBless helper
+    target_link_options(TCMT-M PRIVATE
+        -pthread
     )
 endif()
 

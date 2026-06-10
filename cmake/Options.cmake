@@ -62,6 +62,10 @@ function(tcmt_set_compile_options)
             # -stdlib=libc++ is C++-only; applying it to C files triggers
             # "unused during compilation" warning. Set via CXX flags only.
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+        elseif(TCMT_LINUX)
+            add_compile_options(
+                -pipe
+            )
         endif()
     endif()
 
@@ -93,6 +97,8 @@ function(tcmt_set_compile_options)
         message(STATUS "  GCC/Clang options: -fvisibility=hidden -fstack-protector-strong")
         if(TCMT_MACOS)
             message(STATUS "  macOS options: -mmacosx-version-min=11.0 -stdlib=libc++")
+        elseif(TCMT_LINUX)
+            message(STATUS "  Linux options: -pipe")
         endif()
     endif()
 
@@ -151,6 +157,16 @@ function(tcmt_target_set_options target)
         if(APPKIT_LIB)
             target_link_libraries(${target} PRIVATE ${APPKIT_LIB})
         endif()
+
+    elseif(TCMT_LINUX)
+        # Linux目标选项
+        target_compile_options(${target} PRIVATE
+            -pthread
+        )
+        target_link_libraries(${target} PRIVATE
+            pthread
+            rt
+        )
     endif()
 
     # 链接时优化

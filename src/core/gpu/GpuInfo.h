@@ -82,5 +82,13 @@ private:
     bool IsVirtualGpu(const std::wstring& name);
 #endif
 
+#ifdef TCMT_LINUX
+public:
+    void RefreshUsage();  // Re-read GPU utilization from sysfs
+private:
+    void DetectGpusViaSysfs();
+    bool IsVirtualGpu(const std::wstring& name);
+#endif
+
     std::vector<GpuData> gpuList;
 };

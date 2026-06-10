@@ -74,4 +74,12 @@ private:
     std::vector<double> pCoreSpeeds;
     std::vector<double> eCoreSpeeds;
 #endif
+
+#ifdef TCMT_LINUX
+    uint64_t prevTotalTicks;
+    uint64_t prevIdleTicks;
+    uint64_t prevSampleTimeMs;
+    double largeCoreSpeedAvg;
+    double smallCoreSpeedAvg;
+#endif
 };

@@ -150,6 +150,53 @@ uint64_t MemoryInfo::GetTotalVirtual() const       { return totalVirtual; }
 uint32_t MemoryInfo::GetRamSpeed() const           { return ramSpeed; }
 std::string MemoryInfo::GetRamType() const         { return ramType; }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <string>
+
+MemoryInfo::MemoryInfo()
+    : totalPhysical(0), availablePhysical(0), totalVirtual(0),
+      swapTotal(0), swapFree(0), ramSpeed(0) {
+    std::ifstream meminfo("/proc/meminfo");
+    if (meminfo.is_open()) {
+        std::string line;
+        while (std::getline(meminfo, line)) {
+            if (line.substr(0, 9) == "MemTotal:") {
+                unsigned long kb = 0;
+                std::sscanf(line.c_str(), "MemTotal: %lu kB", &kb);
+                totalPhysical = static_cast<uint64_t>(kb) * 1024;
+            } else if (line.substr(0, 13) == "MemAvailable:") {
+                unsigned long kb = 0;
+                std::sscanf(line.c_str(), "MemAvailable: %lu kB", &kb);
+                availablePhysical = static_cast<uint64_t>(kb) * 1024;
+            } else if (line.substr(0, 10) == "SwapTotal:") {
+                unsigned long kb = 0;
+                std::sscanf(line.c_str(), "SwapTotal: %lu kB", &kb);
+                swapTotal = static_cast<uint64_t>(kb) * 1024;
+            } else if (line.substr(0, 9) == "SwapFree:") {
+                unsigned long kb = 0;
+                std::sscanf(line.c_str(), "SwapFree: %lu kB", &kb);
+                swapFree = static_cast<uint64_t>(kb) * 1024;
+            }
+        }
+        meminfo.close();
+    } else {
+        Logger::Error("Cannot open /proc/meminfo");
+    }
+
+    totalVirtual = totalPhysical + swapTotal;
+    ramSpeed = 0;
+    ramType = "Unknown";
+}
+
+uint64_t MemoryInfo::GetTotalPhysical() const     { return totalPhysical; }
+uint64_t MemoryInfo::GetAvailablePhysical() const  { return availablePhysical; }
+uint64_t MemoryInfo::GetTotalVirtual() const       { return totalVirtual; }
+uint32_t MemoryInfo::GetRamSpeed() const           { return ramSpeed; }
+std::string MemoryInfo::GetRamType() const         { return ramType; }
+
 #else
 #error "Unsupported platform"
 #endif

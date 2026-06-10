@@ -335,6 +335,97 @@ const std::vector<UsbDevice>& UsbInfo::GetDevices() const {
     return devices_;
 }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <cstring>
+
+UsbInfo::UsbInfo() {}
+
+UsbInfo::~UsbInfo() {}
+
+static uint16_t ParseHex16(const std::string& str) {
+    if (str.empty()) return 0;
+    uint16_t v = 0;
+    std::stringstream ss(str);
+    ss >> std::hex >> v;
+    return v;
+}
+
+static uint32_t ParseUint32(const std::string& str) {
+    if (str.empty()) return 0;
+    try { return static_cast<uint32_t>(std::stoul(str)); }
+    catch (...) { return 0; }
+}
+
+static std::string ReadSysfsStr(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs) return {};
+    std::string val;
+    std::getline(ifs, val);
+    return val;
+}
+
+void UsbInfo::Detect() {
+    devices_.clear();
+
+    DIR* dir = opendir("/sys/bus/usb/devices/");
+    if (!dir) {
+        Logger::Error("UsbInfo: cannot open /sys/bus/usb/devices/");
+        return;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name(entry->d_name);
+        if (name == "." || name == "..") continue;
+        if (name.find(':') != std::string::npos) continue;
+        if (name.compare(0, 3, "usb") == 0) continue;
+
+        std::string devPath = "/sys/bus/usb/devices/" + name + "/";
+
+        std::string vidStr = ReadSysfsStr(devPath + "idVendor");
+        if (vidStr.empty()) continue;
+
+        UsbDevice device;
+        device.vid = ParseHex16(vidStr);
+        device.pid = ParseHex16(ReadSysfsStr(devPath + "idProduct"));
+
+        device.name = ReadSysfsStr(devPath + "product");
+        if (device.name.empty()) {
+            device.name = "Unknown USB Device";
+        }
+
+        device.manufacturer = ReadSysfsStr(devPath + "manufacturer");
+        device.serialNumber = ReadSysfsStr(devPath + "serial");
+
+        std::string speed = ReadSysfsStr(devPath + "speed");
+        if (!speed.empty()) {
+            unsigned int mbps = ParseUint32(speed);
+            if (mbps >= 5000)      device.protocolVersion = "USB 3.2";
+            else if (mbps >= 480)  device.protocolVersion = "USB 2.0";
+            else if (mbps >= 12)   device.protocolVersion = "USB 1.1";
+            else                   device.protocolVersion = "USB 1.0";
+        }
+
+        std::string maxPower = ReadSysfsStr(devPath + "bMaxPower");
+        if (!maxPower.empty()) {
+            device.maxPower = ParseUint32(maxPower);
+        }
+
+        devices_.push_back(std::move(device));
+    }
+    closedir(dir);
+
+    Logger::Debug("UsbInfo: detected " + std::to_string(devices_.size()) + " USB devices");
+}
+
+const std::vector<UsbDevice>& UsbInfo::GetDevices() const {
+    return devices_;
+}
+
 #else
 #error "Unsupported platform"
 #endif

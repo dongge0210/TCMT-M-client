@@ -1,6 +1,6 @@
 #include "Logger.h"
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 #include "../../tui/LogBuffer.h"
 #endif
 
@@ -23,7 +23,7 @@ std::thread Logger::workerThread;
 std::atomic<bool> Logger::shutdownFlag{false};
 std::atomic<bool> Logger::logFileOpen{false};
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 // Global TUI log buffer (for TUI mode)
 static tcmt::LogBuffer g_tuiLogBuffer;
 #endif
@@ -142,7 +142,7 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     std::string logEntry = ss.str();
 
     // Push to TUI buffer before moving string to async queue
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
 #endif
 
@@ -258,7 +258,9 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     std::string logEntry = ss.str();
 
     // Push to TUI log buffer before moving string to async queue
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
+#endif
 
     // Push to async queue (non-blocking for caller)
     {
@@ -407,7 +409,7 @@ void Logger::Shutdown() {
     }
 }
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 // GetTuiBuffer - returns global log buffer for TUI
 tcmt::LogBuffer& Logger::GetTuiBuffer() {
     return g_tuiLogBuffer;

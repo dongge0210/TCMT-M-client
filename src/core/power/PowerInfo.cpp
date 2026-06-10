@@ -345,6 +345,152 @@ void PowerInfo::Detect() {
                   " batteries=" + std::to_string(batteries.size()));
 }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <cstring>
+#include <algorithm>
+#include <cctype>
+
+void PowerInfo::Detect() {
+    Logger::Debug("PowerInfo: Detecting battery/power data via sysfs (Linux)");
+
+    acOnline = false;
+    batteries.clear();
+    powerPlan = "Default";
+
+    DIR* psDir = opendir("/sys/class/power_supply");
+    if (psDir) {
+        struct dirent* entry;
+        while ((entry = readdir(psDir)) != nullptr) {
+            std::string name(entry->d_name);
+            if (name == "." || name == "..") continue;
+
+            std::string onlinePath = "/sys/class/power_supply/" + name + "/online";
+            std::ifstream onlineFile(onlinePath);
+            if (onlineFile.is_open()) {
+                int online = 0;
+                onlineFile >> online;
+                if (online == 1) {
+                    acOnline = true;
+                    break;
+                }
+            }
+        }
+        closedir(psDir);
+    }
+
+    psDir = opendir("/sys/class/power_supply");
+    if (psDir) {
+        struct dirent* entry;
+        while ((entry = readdir(psDir)) != nullptr) {
+            std::string name(entry->d_name);
+            if (name == "." || name == "..") continue;
+
+            std::string typePath = "/sys/class/power_supply/" + name + "/type";
+            std::string psType;
+            {
+                std::ifstream tf(typePath);
+                if (tf.is_open()) std::getline(tf, psType);
+            }
+            psType.erase(0, psType.find_first_not_of(" \t\n\r"));
+            psType.erase(psType.find_last_not_of(" \t\n\r") + 1);
+            if (psType != "Battery") continue;
+
+            BatteryInfo bat;
+            bat.name = name;
+
+            auto readUint64 = [](const std::string& path) -> uint64_t {
+                std::ifstream f(path);
+                if (!f.is_open()) return 0;
+                uint64_t val = 0;
+                f >> val;
+                return val;
+            };
+
+            std::string base = "/sys/class/power_supply/" + name;
+
+            uint64_t energyNow = readUint64(base + "/energy_now");
+            uint64_t energyFull = readUint64(base + "/energy_full");
+            uint64_t energyFullDesign = readUint64(base + "/energy_full_design");
+            uint64_t chargeNow = readUint64(base + "/charge_now");
+            uint64_t chargeFull = readUint64(base + "/charge_full");
+            uint64_t chargeFullDesign = readUint64(base + "/charge_full_design");
+
+            if (energyNow > 0 && energyFull > 0) {
+                bat.currentCapacity = static_cast<uint32_t>(energyNow / 1000);
+                bat.fullChargeCapacity = static_cast<uint32_t>(energyFull / 1000);
+                bat.designCapacity = (energyFullDesign > 0)
+                    ? static_cast<uint32_t>(energyFullDesign / 1000)
+                    : bat.fullChargeCapacity;
+            } else if (chargeNow > 0 && chargeFull > 0) {
+                bat.currentCapacity = static_cast<uint32_t>(chargeNow / 1000);
+                bat.fullChargeCapacity = static_cast<uint32_t>(chargeFull / 1000);
+                bat.designCapacity = (chargeFullDesign > 0)
+                    ? static_cast<uint32_t>(chargeFullDesign / 1000)
+                    : bat.fullChargeCapacity;
+            }
+
+            uint64_t uv = readUint64(base + "/voltage_now");
+            if (uv > 0)
+                bat.voltage = static_cast<uint32_t>(uv / 1000);
+
+            bat.cycleCount = static_cast<uint32_t>(readUint64(base + "/cycle_count"));
+
+            if (bat.fullChargeCapacity > 0 && bat.currentCapacity <= bat.fullChargeCapacity)
+                bat.chargePercent = bat.currentCapacity * 100 / bat.fullChargeCapacity;
+            else if (bat.fullChargeCapacity > 0)
+                bat.chargePercent = 100;
+
+            if (bat.designCapacity > 0) {
+                bat.wearLevel = bat.designCapacity > bat.fullChargeCapacity
+                    ? 1.0 - static_cast<double>(bat.fullChargeCapacity) / bat.designCapacity
+                    : 0.0;
+            }
+
+            std::string status;
+            {
+                std::ifstream sf(base + "/status");
+                if (sf.is_open()) std::getline(sf, status);
+            }
+            status.erase(0, status.find_first_not_of(" \t\n\r"));
+            status.erase(status.find_last_not_of(" \t\n\r") + 1);
+
+            if (status == "Charging")
+                bat.chargingState = ChargingState::Charging;
+            else if (status == "Discharging")
+                bat.chargingState = ChargingState::Discharging;
+            else if (status == "Full")
+                bat.chargingState = ChargingState::Full;
+            else if (status == "Not charging")
+                bat.chargingState = ChargingState::NotCharging;
+            else
+                bat.chargingState = ChargingState::Unknown;
+
+            bat.acOnline = acOnline;
+            batteries.push_back(bat);
+        }
+        closedir(psDir);
+    }
+
+    {
+        std::ifstream govFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor");
+        if (govFile.is_open()) {
+            std::string gov;
+            std::getline(govFile, gov);
+            gov.erase(0, gov.find_first_not_of(" \t\n\r"));
+            gov.erase(gov.find_last_not_of(" \t\n\r") + 1);
+            if (!gov.empty()) powerPlan = gov;
+        }
+    }
+
+    Logger::Debug("PowerInfo: acOnline=" + std::string(acOnline ? "yes" : "no") +
+                  " plan=" + powerPlan +
+                  " batteries=" + std::to_string(batteries.size()));
+}
+
 #else
 #error "Unsupported platform"
 #endif

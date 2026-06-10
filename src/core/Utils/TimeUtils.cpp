@@ -10,6 +10,10 @@
 #include <sys/sysctl.h>
 #include <time.h>
 #include <mach/mach_time.h>
+#elif defined(TCMT_LINUX)
+#include <time.h>
+#include <unistd.h>
+#include <sys/sysinfo.h>
 #endif
 
 std::string TimeUtils::FormatTimePoint(const SystemTimePoint& tp) {
@@ -38,7 +42,7 @@ std::string TimeUtils::GetCurrentLocalTime() {
        << std::setw(2) << localTime.wMinute << ":"
        << std::setw(2) << localTime.wSecond;
     return ss.str();
-#elif defined(TCMT_MACOS)
+#elif defined(TCMT_MACOS) || defined(TCMT_LINUX)
     time_t now = time(nullptr);
     std::tm tm;
     localtime_r(&now, &tm);
@@ -60,7 +64,7 @@ std::string TimeUtils::GetCurrentUtcTime() {
        << std::setw(2) << utcTime.wMinute << ":"
        << std::setw(2) << utcTime.wSecond;
     return ss.str();
-#elif defined(TCMT_MACOS)
+#elif defined(TCMT_MACOS) || defined(TCMT_LINUX)
     time_t now = time(nullptr);
     std::tm tm;
     gmtime_r(&now, &tm);
@@ -104,16 +108,27 @@ std::string TimeUtils::GetBootTimeUtc() {
         return ss.str();
     }
     return "N/A";
+#elif defined(TCMT_LINUX)
+    struct sysinfo si;
+    if (sysinfo(&si) == 0) {
+        time_t bootSec = time(nullptr) - si.uptime;
+        std::tm tm;
+        localtime_r(&bootSec, &tm);
+        std::stringstream ss;
+        ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+        return ss.str();
+    }
+    return "N/A";
 #endif
 }
 
 uint64_t TimeUtils::GetUptimeMilliseconds() {
 #ifdef TCMT_WINDOWS
     return GetTickCount64();
-#elif defined(TCMT_MACOS)
-    struct timeval tv;
-    gettimeofday(&tv, nullptr);
-    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+#elif defined(TCMT_MACOS) || defined(TCMT_LINUX)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 #endif
 }
 
