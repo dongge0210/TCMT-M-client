@@ -1,44 +1,35 @@
-# Session State (2026-06-02)
+# Session State (2026-06-10)
 
 ## Branch
 `dev`
 
 ## Goal
-Add Linux build support for TCMT using OrbStack's Ubuntu VM, with TUI but without MCP.
+Clean up unused submodules, enable QUIC/HTTP3 in curl, update remaining submodules.
 
 ## Current State
-- **OrbStack**: Ubuntu noble x86_64 VM running, filesystem shared at same macOS paths
-- **Linux build**: CMake Debug mode compiles and links successfully. Release blocked by GCC 13 LTO bug.
-- **Binary works**: CPU, RAM, Disk, Network, Temperature, Power all display live data in TUI
-- **WiFi**: `WiFiInfo` Linux impl reads `iw dev wl* link` - SSID/RSSI/channel/band/txRate all working
-- **Bluetooth**: `BluetoothInfo` Linux impl reads `/sys/class/bluetooth/hci*` - adapter detection working
-- **GPU**: AMD `gpu_busy_percent` + VRAM via sysfs/drm, Intel `gt_act_freq_mhz`, temp via hwmon
+- **Submodules reduced**: removed websocketpp and USBMonitor-cpp (7 remain)
+- **curl**: updated to a6cece52, QUIC/HTTP3 enabled via `USE_NGTCP2=ON` (upstream replaced `USE_OPENSSL_QUIC`)
+- **All submodules**: pulled to latest remotes/origin/HEAD (CPP-parsers + 5 nested, PDCurses, TC, curl, tpm2-tss)
+- **OpenSSL 3.6.2 + nghttp3**: brew-installed, ready for HTTP/3 builds
 
-## Changes (2026-06-02)
-- **WiFi+BT wired into main loop**: `main_linux.cpp` now includes `WiFiInfo.h`/`BluetoothInfo.h` and runs detection every ~3 seconds (every 6th loop iteration), populating TuiData fields
-- **Compilation fixes**:
-  - WinUtils.cpp added `#include <unistd.h>`
-  - TimeUtils.cpp added Linux implementations for all functions
-  - Logger.h/cpp added `TCMT_LINUX` guards for TUI buffer
-  - DeviceChangeNotifier.h added `USB_Hub` to Linux fallback enum
-  - main_linux.cpp added `#include <sys/stat.h>`
-- **SharedMemoryManager_Linux.cpp**: Created with POSIX shm_open implementation
+## Commits
+| SHA | Message |
+|-----|---------|
+| `58a2441a` | chore: update submodules and enable HTTP/3 (QUIC) in curl |
+| `96baf265` | Remove USBMonitor-cpp submodule (src/third_party/USBMonitor-cpp) |
+| `9fe7a7d6` | Remove websocketpp submodule (src/third_party/websocketpp) |
 
-## Blocked
-- **GCC 13 LTO bug**: `lto1: internal compiler error` on Release builds with `-flto`. Workaround: build Debug or add `-fno-lto`
-
-## Build (Linux/OrbStack)
+## Build (curl with QUIC)
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j8
+cmake -B build-curl-quic -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_SHARED_LIBS=OFF -DCURL_USE_LIBPSL=OFF -DUSE_LIBIDN2=OFF \
+  -DCMAKE_PREFIX_PATH=$(brew --prefix openssl@3);$(brew --prefix nghttp3)
+cmake --build build-curl-quic -j8
 ```
-Release workaround (if LTO bug persists): add `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF` to cmake.
+curl is a standalone submodule, not integrated into the project CMake.
 
-## Known Constraints
-- WiFi scanning via `iw dev` subprocess adds ~20ms latency per call on some systems
-- Bluetooth device enumeration on Linux limited to adapter detection (full device list needs D-Bus/bluez)
-- GPU AMD/Intel only; NVIDIA not tested
-- LTO broken on GCC 13 (ICE in lto1)
+## Unstaged
+- `TCMT.sln`: unrelated rename (AvaloniaUI.csproj → TCMT.Avalonia.csproj)
 
 ## User Habits
 - Zero warnings policy
