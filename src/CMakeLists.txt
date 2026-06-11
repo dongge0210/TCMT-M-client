@@ -385,27 +385,11 @@ elseif(TCMT_MACOS)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:tcmt_sensor_helper>"
             "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices/com.tcmt.sensorhelper"
-        # Sign helper individually with explicit identifier (required for SMJobBless)
-        COMMAND codesign --force --sign
-            "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
-            --options runtime
-            --identifier "com.tcmt.sensorhelper"
-            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices/com.tcmt.sensorhelper"
-        # Sign app bundle (with real Apple Development cert).
-        # CoreLocation requestWhenInUseAuthorization silently fails on
-        # macOS 15+ with ad-hoc signing — it requires a trusted identity.
-        # NOTE: intentionally NO com.apple.developer.location-wifi
-        # entitlement — it triggers AMFI kill on macOS even with a real cert
-        # unless provisioned via Apple Developer portal. The CoreLocation
-        # dialog itself only needs the real cert + Info.plist.
-        # --entitlements provides disable-library-validation so the hardened
-        # runtime process can load Homebrew ncurses (different Team ID).
-        COMMAND codesign --force --sign
-            "6AD7D5B2E77AB209D2A6D8B038F297A22EAC8179"
-            --options runtime
-            --entitlements "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M.entitlements"
-            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
-        COMMENT "Creating TCMT-M.app bundle with Apple Development signature"
+        # Conditionally sign: skip if identity not in keychain (e.g. CI)
+        COMMAND ${CMAKE_SOURCE_DIR}/scripts/codesign.sh
+            "$<TARGET_FILE_DIR:TCMT-M>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M.entitlements"
+        COMMENT "Creating TCMT-M.app bundle (codesign if identity available)"
     )
 elseif(TCMT_LINUX)
     # Linux: no .app bundle, no codesign, no SMJobBless helper
