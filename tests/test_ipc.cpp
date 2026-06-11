@@ -99,7 +99,7 @@ TEST(IPCDataTest, FieldTypes) {
     EXPECT_EQ(static_cast<int>(FieldType::WString), 13);
 }
 
-// ── Serialization: simulate NamedPipeServer::SerializeSchema() ──
+// ── Serialization: simulate IPCServer::SerializeSchema() ──
 TEST(IPCDataTest, SerializeSingleField) {
     SchemaHeader header;
     header.fieldCount = 1;
