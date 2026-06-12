@@ -40,7 +40,7 @@ public partial class MemoryViewModel : ViewModelBase
 
     public MemoryViewModel()
     {
-        Title = "Memory";
+        Title = "内存";
         Icon = "🧠";
     }
 

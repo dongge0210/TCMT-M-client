@@ -18,7 +18,7 @@ public partial class SettingsViewModel : ViewModelBase
     public SettingsViewModel(IThemeService themeService)
     {
         _themeService = themeService;
-        Title = "Settings";
+        Title = "设置";
         Icon = "⚙️";
         CurrentTheme = _themeService.CurrentTheme;
     }

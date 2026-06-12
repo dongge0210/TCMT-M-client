@@ -16,7 +16,7 @@
     <!-- Header -->
     <StackPanel Grid.Row="0" Margin="32,28,32,0">
       <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="Application Settings" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+      <TextBlock Text="应用设置" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
     </StackPanel>
 
     <!-- Content -->
@@ -26,10 +26,10 @@
         <!-- Appearance -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="16">
-            <TextBlock Text="APPEARANCE" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="外观" Theme="{StaticResource SectionHeader}"/>
             
             <StackPanel Spacing="8">
-              <TextBlock Text="Theme" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="主题" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
               <ComboBox SelectedItem="{Binding CurrentTheme}" Width="200">
                 <ComboBox.Items>
                   <themes:AppTheme>Dark</themes:AppTheme>
@@ -43,14 +43,14 @@
         <!-- About -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">
-            <TextBlock Text="ABOUT" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="关于" Theme="{StaticResource SectionHeader}"/>
             <StackPanel Spacing="8">
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Application" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="TCMT - 系统硬件监视器" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+                <TextBlock Text="应用" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="TCMT — 系统硬件监视器" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
               </Grid>
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="Version" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Text="版本" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
                 <TextBlock Grid.Column="1" Text="{Binding AppVersion}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
               </Grid>
             </StackPanel>

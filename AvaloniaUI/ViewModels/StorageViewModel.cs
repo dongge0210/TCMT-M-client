@@ -25,7 +25,7 @@ public partial class StorageViewModel : ViewModelBase
 
     public StorageViewModel()
     {
-        Title = "Storage & SMART";
+        Title = "存储";
         Icon = "💾";
     }
 

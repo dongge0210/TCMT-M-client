@@ -47,8 +47,21 @@ public partial class CpuViewModel : ViewModelBase
 
     public CpuViewModel()
     {
-        Title = "CPU Details";
+        Title = "CPU 详情";
         Icon = "🖥️";
+    }
+
+    public string HyperThreadingText => HyperThreading ? "已启用" : "已禁用";
+    public string VirtualizationText => Virtualization ? "已启用" : "已禁用";
+
+    partial void OnHyperThreadingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HyperThreadingText));
+    }
+
+    partial void OnVirtualizationChanged(bool value)
+    {
+        OnPropertyChanged(nameof(VirtualizationText));
     }
 
     public override void Update(SystemInfo info)

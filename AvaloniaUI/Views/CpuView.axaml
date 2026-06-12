@@ -26,13 +26,13 @@
         <Grid ColumnDefinitions="*,*">
           <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
             <StackPanel Spacing="16" HorizontalAlignment="Center">
-              <TextBlock Text="CPU USAGE" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
+              <TextBlock Text="CPU 使用率" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
               <Panel Width="180" Height="180">
                 <Arc Width="160" Height="160" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="16" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <Arc Width="160" Height="160" Stroke="{StaticResource PrimaryBrush}" StrokeThickness="16" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                   <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F1}%}" FontSize="36" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                  <TextBlock Text="Current Load" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="当前负载" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
                 </StackPanel>
               </Panel>
             </StackPanel>
@@ -40,13 +40,13 @@
 
           <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
             <StackPanel Spacing="16" HorizontalAlignment="Center">
-              <TextBlock Text="TEMPERATURE" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
+              <TextBlock Text="温度" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
               <Panel Width="180" Height="180">
                 <Arc Width="160" Height="160" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="16" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <Arc Width="160" Height="160" Stroke="{Binding CpuTemperature, Converter={StaticResource PercentToWarningColorConverter}}" StrokeThickness="16" StartAngle="140" SweepAngle="{Binding CpuTemperature, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                   <TextBlock Text="{Binding CpuTemperature, StringFormat={}{0:F1}°C}" FontSize="36" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                  <TextBlock Text="Current Temp" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="当前温度" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
                 </StackPanel>
               </Panel>
             </StackPanel>
@@ -56,30 +56,30 @@
         <!-- CPU Details -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="16">
-            <TextBlock Text="CPU INFORMATION" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="CPU 信息" Theme="{StaticResource SectionHeader}"/>
             <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto">
               <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4" Margin="0,0,16,16">
-                <TextBlock Text="Physical Cores" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="物理核心" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Text="{Binding PhysicalCores}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
               </StackPanel>
               <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4" Margin="0,0,16,16">
-                <TextBlock Text="Logical Cores" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="逻辑核心" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Text="{Binding LogicalCores}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
               </StackPanel>
               <StackPanel Grid.Row="0" Grid.Column="2" Spacing="4" Margin="0,0,0,16">
-                <TextBlock Text="Base Frequency" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="基础频率" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Text="{Binding CpuBaseFreq, StringFormat={}{0:F0} MHz}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
               </StackPanel>
               <StackPanel Grid.Row="1" Grid.Column="0" Spacing="4" Margin="0,0,16,0">
-                <TextBlock Text="Performance Cores" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="性能核心" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Text="{Binding PerformanceCores}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
               </StackPanel>
               <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4" Margin="0,0,16,0">
-                <TextBlock Text="Efficiency Cores" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="效率核心" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Text="{Binding EfficiencyCores}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
               </StackPanel>
               <StackPanel Grid.Row="1" Grid.Column="2" Spacing="4">
-                <TextBlock Text="Power" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Text="功耗" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Text="{Binding CpuPowerDisplay}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource GoldBrush}"/>
               </StackPanel>
             </Grid>
@@ -89,18 +89,18 @@
         <!-- Features -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">
-            <TextBlock Text="FEATURES" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="特性" Theme="{StaticResource SectionHeader}"/>
             <StackPanel Orientation="Horizontal" Spacing="16">
               <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,8">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <TextBlock Text="Hyper-Threading" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Text="{Binding HyperThreading}" Foreground="{Binding HyperThreading, Converter={StaticResource BoolToColorConverter}}" FontSize="13" FontWeight="Bold"/>
+                  <TextBlock Text="超线程" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Text="{Binding HyperThreadingText}" Foreground="{Binding HyperThreading, Converter={StaticResource BoolToColorConverter}}" FontSize="13" FontWeight="Bold"/>
                 </StackPanel>
               </Border>
               <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,8">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <TextBlock Text="Virtualization" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Text="{Binding Virtualization}" Foreground="{Binding Virtualization, Converter={StaticResource BoolToColorConverter}}" FontSize="13" FontWeight="Bold"/>
+                  <TextBlock Text="虚拟化" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                  <TextBlock Text="{Binding VirtualizationText}" Foreground="{Binding Virtualization, Converter={StaticResource BoolToColorConverter}}" FontSize="13" FontWeight="Bold"/>
                 </StackPanel>
               </Border>
             </StackPanel>

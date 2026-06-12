@@ -16,7 +16,7 @@
     <!-- Header -->
     <StackPanel Grid.Row="0" Margin="32,28,32,0">
       <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="Storage &amp; SMART Information" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+      <TextBlock Text="存储与 SMART 信息" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
     </StackPanel>
 
     <!-- Content -->
@@ -26,7 +26,7 @@
         <!-- Logical Disks -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">
-            <TextBlock Text="LOGICAL DISKS" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="逻辑磁盘" Theme="{StaticResource SectionHeader}"/>
             <ItemsControl ItemsSource="{Binding Disks}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="models:DiskData">
@@ -39,8 +39,8 @@
                       <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="6" Foreground="{StaticResource PrimaryBrush}" Background="{StaticResource BackgroundBrush}"/>
                       <Grid ColumnDefinitions="*,*,*">
                         <TextBlock Text="{Binding TotalSizeDisplay}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding UsedSpaceDisplay} used" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center"/>
-                        <TextBlock Grid.Column="2" Text="{Binding FreeSpaceDisplay} free" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right"/>
+                        <TextBlock Grid.Column="1" Text="{Binding UsedSpaceDisplay} 已用" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding FreeSpaceDisplay} 可用" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right"/>
                       </Grid>
                     </StackPanel>
                   </Border>
@@ -54,8 +54,8 @@
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">
             <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="PHYSICAL DISKS &amp; SMART" Theme="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
-              <Button Grid.Column="1" Content="Toggle Details" Command="{Binding ToggleSmartDetailCommand}" FontSize="11" Padding="8,4"/>
+              <TextBlock Text="物理磁盘与 SMART" Theme="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Content="切换详情" Command="{Binding ToggleSmartDetailCommand}" FontSize="11" Padding="8,4"/>
             </Grid>
             
             <ItemsControl ItemsSource="{Binding PhysicalDisks}">
@@ -66,15 +66,15 @@
                       <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
                       <Grid ColumnDefinitions="*,*,*">
                         <StackPanel Spacing="2">
-                          <TextBlock Text="Temperature" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="温度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
                           <TextBlock Text="{Binding Disk.Temperature, StringFormat={}{0:F1}°C}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="2">
-                          <TextBlock Text="Health" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="健康度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
                           <TextBlock Text="{Binding Disk.HealthPercentage}%" FontSize="13" Foreground="{StaticResource PrimaryBrush}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Spacing="2">
-                          <TextBlock Text="Power On Hours" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="通电时长" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
                           <TextBlock Text="{Binding Disk.PowerOnHours}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
                         </StackPanel>
                       </Grid>

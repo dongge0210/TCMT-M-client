@@ -54,12 +54,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _themeService = themeService;
 
         // Setup navigation items
-        NavigationItems.Add(new NavigationItem("Dashboard", "📊", dashboardVm));
+        NavigationItems.Add(new NavigationItem("概览", "📊", dashboardVm));
         NavigationItems.Add(new NavigationItem("CPU", "🖥️", cpuVm));
-        NavigationItems.Add(new NavigationItem("Memory", "🧠", memoryVm));
-        NavigationItems.Add(new NavigationItem("Network", "🌐", networkVm));
-        NavigationItems.Add(new NavigationItem("Storage", "💾", storageVm));
-        NavigationItems.Add(new NavigationItem("Settings", "⚙️", settingsVm));
+        NavigationItems.Add(new NavigationItem("内存", "🧠", memoryVm));
+        NavigationItems.Add(new NavigationItem("网络", "🌐", networkVm));
+        NavigationItems.Add(new NavigationItem("存储", "💾", storageVm));
+        NavigationItems.Add(new NavigationItem("设置", "⚙️", settingsVm));
 
         // Wire up navigation
         _navigationService.Navigated += (_, vm) => CurrentPage = vm;

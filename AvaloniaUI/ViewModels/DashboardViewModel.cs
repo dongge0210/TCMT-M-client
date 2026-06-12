@@ -44,7 +44,7 @@ public partial class DashboardViewModel : ViewModelBase
 
     public DashboardViewModel()
     {
-        Title = "Dashboard";
+        Title = "概览";
         Icon = "📊";
     }
 

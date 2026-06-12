@@ -13,11 +13,13 @@ internal sealed class Program
         var logPath = Path.Combine(AppContext.BaseDirectory, "logs", "tcmt-.log");
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
         
-        Log.Logger = new LoggerConfiguration()
+        var logConfig = new LoggerConfiguration()
             .MinimumLevel.Debug()
-            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
-            .WriteTo.Debug()
-            .CreateLogger();
+            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7);
+#if DEBUG
+        logConfig.WriteTo.Debug();
+#endif
+        Log.Logger = logConfig.CreateLogger();
 
         try
         {

@@ -47,23 +47,23 @@ public partial class NetworkViewModel : ViewModelBase
     {
         get
         {
-            if (!HasWiFi) return "WiFi: No adapter";
+            if (!HasWiFi) return "WiFi：未检测到适配器";
             var extra = "";
             if (!string.IsNullOrEmpty(WifiBand)) extra += "  " + WifiBand;
             if (!string.IsNullOrEmpty(WifiGen)) extra += "  " + WifiGen;
             if (!string.IsNullOrEmpty(WifiSSID))
-                return $"WiFi: {WifiSSID}  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+                return $"WiFi：{WifiSSID}  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
             if (WifiRSSI != 0 || WifiChannel != 0)
-                return $"WiFi: On  Ch:{WifiChannel}  RSSI:{WifiRSSI} dBm  {WifiSecurity}{extra}";
-            return "WiFi: Disconnected";
+                return $"WiFi：已连接  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+            return "WiFi：已断开";
         }
     }
 
-    public string BtDisplay => HasBluetooth ? $"BT: {(BtPowerOn ? "On" : "Off")} ({BtDeviceCount} devices)" : "";
+    public string BtDisplay => HasBluetooth ? $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")} ({BtDeviceCount} 台设备)" : "蓝牙未检测到";
 
     public NetworkViewModel()
     {
-        Title = "Network";
+        Title = "网络";
         Icon = "🌐";
     }
 

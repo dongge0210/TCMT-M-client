@@ -17,7 +17,7 @@
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="32,28,32,0">
       <StackPanel>
         <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-        <TextBlock Text="System Health Overview" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+        <TextBlock Text="系统状态总览" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
       </StackPanel>
       <TextBlock Grid.Column="1" Text="TCMT v2.0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Bottom"/>
     </Grid>
@@ -31,13 +31,13 @@
           <!-- CPU Card -->
           <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
             <StackPanel Spacing="16" HorizontalAlignment="Center">
-              <TextBlock Text="PROCESSOR" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
+              <TextBlock Text="处理器" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
               <Panel Width="160" Height="160">
                 <Arc Width="140" Height="140" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <Arc Width="140" Height="140" Stroke="{StaticResource PrimaryBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding CpuUsage, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                   <TextBlock Text="{Binding CpuUsage, StringFormat={}{0:F0}%}" Theme="{StaticResource MetricValue}"/>
-                  <TextBlock Text="LOAD" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="负载" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
                 </StackPanel>
               </Panel>
               <TextBlock Text="{Binding CpuName}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
@@ -47,13 +47,13 @@
           <!-- Memory Card -->
           <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
             <StackPanel Spacing="16" HorizontalAlignment="Center">
-              <TextBlock Text="MEMORY" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
+              <TextBlock Text="内存" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
               <Panel Width="160" Height="160">
                 <Arc Width="140" Height="140" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <Arc Width="140" Height="140" Stroke="{StaticResource SecondaryBrush}" StrokeThickness="14" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                   <TextBlock Text="{Binding MemoryPercent, StringFormat={}{0:F0}%}" Theme="{StaticResource MetricValue}"/>
-                  <TextBlock Text="USED" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="已用" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
                 </StackPanel>
               </Panel>
               <TextBlock Text="{Binding RamInfo}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14" TextAlignment="Center"/>
@@ -66,7 +66,7 @@
           <!-- Storage -->
           <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
             <StackPanel Spacing="12">
-              <TextBlock Text="STORAGE" Theme="{StaticResource SectionHeader}"/>
+              <TextBlock Text="存储" Theme="{StaticResource SectionHeader}"/>
               <ItemsControl ItemsSource="{Binding Disks}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="models:DiskData">
@@ -76,7 +76,7 @@
                         <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="{StaticResource PrimaryBrush}" FontSize="12" FontWeight="Bold"/>
                       </Grid>
                       <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="4" Foreground="{StaticResource PrimaryBrush}" Background="{StaticResource SurfaceLightBrush}"/>
-                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} total'}" Foreground="{StaticResource TextMutedBrush}" FontSize="10"/>
+                      <TextBlock Text="{Binding TotalSizeDisplay, StringFormat='{}{0} 总计'}" Foreground="{StaticResource TextMutedBrush}" FontSize="10"/>
                     </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -87,7 +87,7 @@
           <!-- Network -->
           <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
             <StackPanel Spacing="12">
-              <TextBlock Text="NETWORK" Theme="{StaticResource SectionHeader}"/>
+              <TextBlock Text="网络" Theme="{StaticResource SectionHeader}"/>
               <ItemsControl ItemsSource="{Binding NetworkAdapters}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="models:NetworkAdapterData">
@@ -95,11 +95,11 @@
                       <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                       <Grid ColumnDefinitions="*,*">
                         <StackPanel Grid.Column="0">
-                          <TextBlock Text="DL" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="下载" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
                           <TextBlock Text="{Binding DownloadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1">
-                          <TextBlock Text="UL" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="上传" FontSize="9" Foreground="{StaticResource TextMutedBrush}"/>
                           <TextBlock Text="{Binding UploadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
                         </StackPanel>
                       </Grid>
@@ -116,7 +116,7 @@
           <!-- Power -->
           <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
             <StackPanel Spacing="12">
-              <TextBlock Text="POWER" Theme="{StaticResource SectionHeader}"/>
+              <TextBlock Text="功耗" Theme="{StaticResource SectionHeader}"/>
               <TextBlock Text="{Binding TotalPowerDisplay}" FontSize="32" FontWeight="Bold" Foreground="{StaticResource GoldBrush}"/>
               <Grid ColumnDefinitions="*,*,*">
                 <StackPanel Grid.Column="0">
@@ -138,7 +138,7 @@
           <!-- Temperature Sensors -->
           <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0">
             <StackPanel Spacing="12">
-              <TextBlock Text="TEMPERATURE SENSORS" Theme="{StaticResource SectionHeader}"/>
+              <TextBlock Text="温度传感器" Theme="{StaticResource SectionHeader}"/>
               <ItemsControl ItemsSource="{Binding Temperatures}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
