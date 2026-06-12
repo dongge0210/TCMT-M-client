@@ -28,3 +28,4 @@
 [submodule "src/third_party/sqlite"]
 	path = src/third_party/sqlite
 	url = https://github.com/dongge0210/sqlite.git
+	ignore = untracked
