@@ -25,3 +25,6 @@
 [submodule "src/third_party/openssl"]
 	path = src/third_party/openssl
 	url = https://github.com/dongge0210/openssl.git
+[submodule "src/third_party/sqlite"]
+	path = src/third_party/sqlite
+	url = https://github.com/dongge0210/sqlite.git

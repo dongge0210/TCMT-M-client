@@ -237,16 +237,57 @@ elseif(TCMT_LINUX)
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
 endif()
 
-# SQLite3 — macOS and Linux provide it via system SDK (just -lsqlite3).
-# Windows users should install it via vcpkg (vcpkg install sqlite3) and
-# add find_package(SQLite3) to cmake/Dependencies.cmake.
-if(TCMT_MACOS OR TCMT_LINUX)
-    target_link_libraries(TCMTCore PRIVATE sqlite3)
-    message(STATUS "  SQLite3: system library (-lsqlite3)")
+# SQLite3 — built from src/third_party/sqlite submodule.
+# Uses the amalgamation (single-file build) for hermetic, version-pinned builds.
+set(SQLITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
+set(SQLITE3_C "${SQLITE_DIR}/sqlite3.c")
+set(SQLITE3_H "${SQLITE_DIR}/sqlite3.h")
+
+# Generate amalgamation on first configure (requires jimsh/tclsh from submodule)
+if(NOT EXISTS "${SQLITE3_C}" OR NOT EXISTS "${SQLITE3_H}")
+    message(STATUS "Generating SQLite amalgamation...")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E chdir "${SQLITE_DIR}"
+                sh -c "./configure > /dev/null 2>&1 && make sqlite3.c > /dev/null 2>&1"
+        RESULT_VARIABLE _sqlite_gen_rc
+        TIMEOUT 120
+    )
+    if(NOT _sqlite_gen_rc EQUAL 0)
+        message(FATAL_ERROR "SQLite amalgamation generation failed")
+    endif()
 endif()
-if(TCMT_WINDOWS)
-    message(STATUS "  SQLite3: link manually via vcpkg (disabled for now)")
+
+# Stage sqlite3.h to a clean include dir (source dir has files like 'version' that
+# break C++ compilation when exposed via PUBLIC include paths)
+set(SQLITE_BIN_DIR "${CMAKE_BINARY_DIR}/sqlite3")
+file(MAKE_DIRECTORY "${SQLITE_BIN_DIR}")
+add_custom_target(sqlite3_header
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SQLITE3_H}" "${SQLITE_BIN_DIR}/sqlite3.h"
+    DEPENDS "${SQLITE3_H}"
+    COMMENT "Staging sqlite3.h"
+)
+
+add_library(sqlite3 STATIC "${SQLITE3_C}")
+add_dependencies(sqlite3 sqlite3_header)
+target_include_directories(sqlite3
+    PUBLIC  "${SQLITE_BIN_DIR}"       # sqlite3.h
+    PRIVATE "${SQLITE_DIR}"           # sqlite_cfg.h, sqlite3ext.h
+)
+target_compile_definitions(sqlite3 PRIVATE
+    SQLITE_ENABLE_DBSTAT_VTAB
+    SQLITE_ENABLE_FTS5
+    SQLITE_ENABLE_JSON1
+    SQLITE_ENABLE_RTREE
+    SQLITE_THREADSAFE=1
+)
+if(MSVC)
+    target_compile_options(sqlite3 PRIVATE /W0)
+else()
+    target_compile_options(sqlite3 PRIVATE -w)
 endif()
+
+target_link_libraries(TCMTCore PRIVATE sqlite3)
+message(STATUS "  SQLite3: built from submodule amalgamation")
 
 # IOBluetooth.framework — macOS Bluetooth monitoring (C API)
 if(TCMT_MACOS)
