@@ -8,7 +8,7 @@ Cross-platform hardware monitoring tool (alpha-0.2, GPL-3.0). Monitors CPU, GPU,
 
 **Two separate build systems co-exist:**
 - **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.
-- **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with LibreHardwareMonitor bridge and an AvaloniaUI .NET 10.0 frontend.
+- **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with an AvaloniaUI .NET 10.0 frontend.
 
 **CRITICAL: When adding new source files (.cpp/.h/.c/.mm), you MUST register them in ALL build systems:**
 1. **`TCMT.vcxproj`** — `<ClCompile Include="...">` for .cpp/.c/.mm, `<ClInclude Include="...">` for .h
@@ -34,16 +34,13 @@ Build order is critical (see `.github/workflows/build.yml` for CI reference):
 ```bash
 git submodule update --init --recursive
 
-# 1. LibreHardwareMonitor (.NET 4.7.2)
-dotnet build src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472
-
-# 2. CPP-parsers
+# 1. CPP-parsers
 msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
-# 3. Main C++/CLI app
+# 2. Main C++/CLI app
 msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
-# 4. AvaloniaUI
+# 3. AvaloniaUI
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release
 ```
 Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0+ SDK.

@@ -5,7 +5,7 @@
 
 static const wchar_t* LPCIO_RES = L"LPC_IO";
 
-// NCT6798D temperature source data (full LHM Group D set)
+// NCT6798D temperature source data (sourced from PawnIO via LpcIO kernel module)
 // addr: 16-bit register address (upper byte = bank, lower byte = register)
 // halfAddr: 16-bit half-register address (0 if no fractional)
 // halfBit: bit position for fractional (0 if no fractional)

@@ -82,7 +82,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>false</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(SolutionDir)src\third_party\LibreHardwareMonitor\LibreHardwareMonitorLib\obj\Debug\net472;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>$(WindowsSDK_MetadataPath);$(FrameworkPathOverride);$(DOTNET_ReferenceAssemblyPath_472);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -98,7 +98,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)src\third_party\LibreHardwareMonitor\bin\Debug\net472;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
@@ -129,7 +129,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)src\third_party\LibreHardwareMonitor\bin\Release\net472;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrt.lib;ucrt.lib;vcruntime.lib;tbs.lib;wlanapi.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -150,7 +150,6 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\power\PowerMonitor.h" />
     <ClInclude Include="src\core\os\OSInfo.h" />
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
-    <ClInclude Include="src\core\Utils\LibreHardwareMonitorBridge.h" />
     <ClInclude Include="src\core\Utils\Logger.h" />
     <ClInclude Include="src\core\Utils\stdafx.h" />
     <ClInclude Include="src\core\Utils\TimeUtils.h" />
@@ -213,18 +212,6 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</CompileAsManaged>
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</CompileAsManaged>
     </ClCompile>
-    <ClCompile Include="src\core\Utils\LibreHardwareMonitorBridge.cpp">
-      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</CompileAsManaged>
-      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</CompileAsManaged>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Default</BasicRuntimeChecks>
-      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
-      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
-      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
-      <AdditionalUsingDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(WindowsSDK_MetadataPath);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
-      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</CompileAsManaged>
-      <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</CompileAsManaged>
-    </ClCompile>
     <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp" />
     <ClCompile Include="src\core\Utils\Logger.cpp" />
     <ClCompile Include="src\core\Utils\TimeUtils.cpp" />
@@ -241,15 +228,6 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     </Reference>
     <Reference Include="System">
       <HintPath>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll</HintPath>
-    </Reference>
-    <Reference Include="HidSharp">
-      <HintPath>$(ProjectDir)src\third_party\LibreHardwareMonitor\bin\Release\net472\HidSharp.dll</HintPath>
-    </Reference>
-    <Reference Include="LibreHardwareMonitorLib">
-      <HintPath>$(ProjectDir)src\third_party\LibreHardwareMonitor\bin\Release\net472\LibreHardwareMonitorLib.dll</HintPath>
-    </Reference>
-    <Reference Include="System.CodeDom">
-      <HintPath>$(ProjectDir)src\third_party\LibreHardwareMonitor\bin\Release\net472\System.CodeDom.dll</HintPath>
     </Reference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
