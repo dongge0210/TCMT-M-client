@@ -86,10 +86,12 @@ to execute signed kernel modules for raw hardware access — SMBus, LPC/Super I/
 config space.
 
 - **Driver**: the PawnIO installer (`PawnIO_setup.exe`) creates `\\.\GLOBALROOT\Device\PawnIO`.
-- **Modules (.bin)**: signed, pre-compiled binaries from the official 0.1.6 release:
-  https://github.com/namazso/PawnIO.Modules/releases/tag/0.1.6
-  (single `release_0_1_6.zip`, extracted into `Resources/PawnIo/*.bin` in the LHM submodule).
-  Our `src/resources.rc` embeds a subset as RCDATA for the PawnIOWrapper.
+- **Modules (.bin)**: signed, pre-compiled binaries from the official 0.2.8 release:
+  https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.8
+  (single `release_0_2_8.zip`). Stored in `src/resources/pawnio/`, version tracking
+  in `src/resources/pawnio/.version`. Auto-updated weekly via
+  `.github/workflows/update-pawnio.yml`.
+  Our `src/resources.rc` embeds the subset we use as RCDATA.
 - **Wrapper**: `src/core/memory/PawnIOWrapper.h/.cpp` — `CreateFileW` + `DeviceIoControl`.
 - **Consumers**:
   - `CpuTempReader` — Intel CPU temp via MSR (IA32_THERM_STATUS)
