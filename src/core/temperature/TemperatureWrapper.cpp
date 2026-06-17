@@ -2,48 +2,49 @@
 #include "../Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
-#pragma managed
-#include "../Utils/LibreHardwareMonitorBridge.h"
 #include "../memory/MemoryTempReader.h"
 #include "../cpu/CpuTempReader.h"
+#include "../gpu/GpuInfo.h"
 #include "BoardTempReader.h"
-#pragma unmanaged
 
 bool TemperatureWrapper::initialized = false;
 
 void TemperatureWrapper::Initialize() {
-    try {
-        LibreHardwareMonitorBridge::Initialize();
-        initialized = true;
-        Logger::Debug("TemperatureWrapper: LibreHardwareMonitor initialized");
-    } catch (...) {
-        initialized = false;
-        Logger::Error("TemperatureWrapper: LibreHardwareMonitor initialization failed");
-    }
+    initialized = true;
+    Logger::Debug("TemperatureWrapper: initialized (PawnIO + NVML direct)");
     if (MemoryTempReader::IsAvailable())
-        Logger::Info("PawnIO: installed, DIMM temperature reading enabled");
+        Logger::Info("PawnIO: installed, DIMM/SMBus temperature reading enabled");
     else
         Logger::Info("PawnIO: not installed, DIMM temperature unavailable");
 }
 
 void TemperatureWrapper::Cleanup() {
-    if (initialized) {
-        LibreHardwareMonitorBridge::Cleanup();
-        initialized = false;
-    }
+    initialized = false;
 }
 
 std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
     std::vector<std::pair<std::string, double>> temps;
-    if (initialized) {
-        try {
-            temps = LibreHardwareMonitorBridge::GetTemperatures();
-        } catch (...) {
-            Logger::Warn("TemperatureWrapper::GetTemperatures: unknown exception caught");
-        }
+    if (!initialized) return temps;
+
+    // CPU temperature via PawnIO Intel MSR (IA32_THERM_STATUS)
+    try {
+        auto cpuTemps = CpuTempReader::ReadAll();
+        for (const auto& ct : cpuTemps)
+            temps.push_back({ct.name, ct.temperature});
+    } catch (...) {
+        Logger::Debug("CpuTempReader: exception");
     }
 
-    // Add DIMM temperatures via PawnIO/SMBus (no-op if PawnIO not installed)
+    // GPU temperature via NVML (NVIDIA only, returns -1 on non-NVIDIA)
+    try {
+        double gpuTemp = GpuInfo::GetGpuTemperature();
+        if (gpuTemp > 0)
+            temps.push_back({"GPU Core", gpuTemp});
+    } catch (...) {
+        Logger::Debug("GpuInfo::GetGpuTemperature: exception");
+    }
+
+    // DIMM temperature via PawnIO SMBus
     try {
         auto dimms = MemoryTempReader::ReadAll();
         for (const auto& d : dimms) {
@@ -51,27 +52,17 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
                 temps.push_back({d.name, d.temperature});
         }
     } catch (...) {
-        Logger::Debug("MemoryTempReader: exception (no PawnIO?)");
+        Logger::Debug("MemoryTempReader: exception");
     }
 
-    // Filter out LHM CPU/GPU temps (use PawnIO direct reads instead)
-    std::vector<std::pair<std::string, double>> filtered;
-    for (const auto& t : temps) {
-        if (t.first.find("CPU") == std::string::npos &&
-            t.first.find("Core") == std::string::npos)
-            filtered.push_back(t);
+    // Motherboard temperature via PawnIO LpcIO (NCT6798D Super I/O)
+    try {
+        auto boardTemps = BoardTempReader::ReadAll();
+        for (const auto& bt : boardTemps)
+            temps.push_back({bt.name, bt.temperature});
+    } catch (...) {
+        Logger::Debug("BoardTempReader: exception");
     }
-    temps = std::move(filtered);
-
-    // Replace with PawnIO direct MSR readings
-    auto cpuTemps = CpuTempReader::ReadAll();
-    for (const auto& ct : cpuTemps)
-        temps.push_back({ct.name, ct.temperature});
-
-    // Add motherboard temperatures via PawnIO/SuperIO
-    auto boardTemps = BoardTempReader::ReadAll();
-    for (const auto& bt : boardTemps)
-        temps.push_back({bt.name, bt.temperature});
 
     return temps;
 }
