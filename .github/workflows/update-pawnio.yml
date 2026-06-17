@@ -55,7 +55,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.check.outputs.skip == 'false'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@84ae59a2cdc2258d6fa0732dd66352dddae2a412 # v7.0.9
         with:
           commit-message: "deps: update PawnIO modules to ${{ steps.latest.outputs.stdout }}"
           title: "deps: update PawnIO modules to ${{ steps.latest.outputs.stdout }}"
