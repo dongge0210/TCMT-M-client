@@ -48,9 +48,23 @@ jobs:
           TAG: ${{ steps.latest.outputs.stdout }}
         run: |
           SAFE_TAG="$(echo "$TAG" | tr '.' '_')"
-          curl -sL "https://github.com/namazso/PawnIO.Modules/releases/download/${TAG}/release_${SAFE_TAG}.zip" -o /tmp/pawnio.zip
+          DOWNLOAD_URL="https://github.com/namazso/PawnIO.Modules/releases/download/${TAG}/release_${SAFE_TAG}.zip"
+          STORED_HASH="$(cat src/resources/pawnio/.sha256sum 2>/dev/null || true)"
+          echo "Downloading $DOWNLOAD_URL"
+          curl -sL "$DOWNLOAD_URL" -o /tmp/pawnio.zip
+          COMPUTED_HASH="$(sha256sum /tmp/pawnio.zip | cut -d' ' -f1)"
+          if [ -n "$STORED_HASH" ] && [ "$COMPUTED_HASH" != "$STORED_HASH" ]; then
+            echo "ERROR: SHA256 mismatch!"
+            echo "  expected: $STORED_HASH"
+            echo "  got:      $COMPUTED_HASH"
+            exit 1
+          fi
+          echo "SHA256: $COMPUTED_HASH"
+          # Validate archive contents before extracting
+          unzip -l /tmp/pawnio.zip
           unzip -o /tmp/pawnio.zip "*.bin" -d src/resources/pawnio/
           echo "$TAG" > src/resources/pawnio/.version
+          echo "$COMPUTED_HASH" > src/resources/pawnio/.sha256sum
           echo "Updated to $TAG"
 
       - name: Create Pull Request
