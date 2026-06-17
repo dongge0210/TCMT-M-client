@@ -61,6 +61,7 @@ void IPCServer::Stop() {
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
+    shm_unlink(IPC_SHM_PATH);
     unlink(IPC_SOCK_PATH);
 #endif
 }
@@ -314,6 +315,7 @@ bool IPCServer::Start() {
     // 1. Create shared memory file + mmap
     shm_unlink(IPC_SHM_PATH);
     shmFd_ = shm_open(IPC_SHM_PATH, O_CREAT | O_RDWR, 0666);
+    if (shmFd_ != -1) fchmod(shmFd_, 0666);  // world-readable so non-root clients can mmap
     if (shmFd_ == -1) {
         lastError_ = "shm_open failed: " + std::string(std::strerror(errno));
         return false;
@@ -343,10 +345,21 @@ bool IPCServer::Start() {
     std::memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     std::strncpy(addr.sun_path, IPC_SOCK_PATH, sizeof(addr.sun_path) - 1);
-    unlink(IPC_SOCK_PATH);
+    unlink(IPC_SOCK_PATH);  // best-effort cleanup; may fail if owned by another user
 
     if (bind(listenFd_, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-        lastError_ = "bind failed: " + std::string(std::strerror(errno));
+        if (errno == EADDRINUSE) {
+            struct stat st;
+            if (stat(IPC_SOCK_PATH, &st) == 0 && st.st_uid != getuid())
+                lastError_ = "bind failed: stale " + std::string(IPC_SOCK_PATH) +
+                    " owned by uid=" + std::to_string(st.st_uid) +
+                    " (run: sudo rm " + IPC_SOCK_PATH + ")";
+            else
+                lastError_ = "bind failed: " + std::string(IPC_SOCK_PATH) +
+                    " already in use (another TCMT-M running?)";
+        } else {
+            lastError_ = "bind failed: " + std::string(std::strerror(errno));
+        }
         close(listenFd_); listenFd_ = -1;
         return false;
     }
@@ -356,6 +369,10 @@ bool IPCServer::Start() {
         close(listenFd_); listenFd_ = -1;
         return false;
     }
+
+    // Allow non-root clients to connect (Unix socket needs write permission)
+    fchmod(listenFd_, 0666);
+    chmod(IPC_SOCK_PATH, 0666);
 
     // 3. Start accept thread
     running_ = true;
@@ -387,6 +404,7 @@ void IPCServer::Stop() {
     if (listenFd_ != -1) { close(listenFd_); listenFd_ = -1; }
     if (shmPtr_ && shmPtr_ != MAP_FAILED) { munmap(shmPtr_, shmSize_); shmPtr_ = nullptr; }
     if (shmFd_ != -1) { close(shmFd_); shmFd_ = -1; }
+    shm_unlink(IPC_SHM_PATH);
     unlink(IPC_SOCK_PATH);
 }
 

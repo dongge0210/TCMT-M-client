@@ -1,6 +1,6 @@
 #include "Logger.h"
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 #include "../../tui/LogBuffer.h"
 #endif
 
@@ -23,7 +23,7 @@ std::thread Logger::workerThread;
 std::atomic<bool> Logger::shutdownFlag{false};
 std::atomic<bool> Logger::logFileOpen{false};
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 // Global TUI log buffer (for TUI mode)
 static tcmt::LogBuffer g_tuiLogBuffer;
 #endif
@@ -142,7 +142,7 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     std::string logEntry = ss.str();
 
     // Push to TUI buffer before moving string to async queue
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
 #endif
 
@@ -157,20 +157,9 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     if (consoleOutputEnabled && hConsole != INVALID_HANDLE_VALUE) {
         HANDLE hCon = (HANDLE)hConsole;
         DWORD written = 0;
-#ifdef TCMT_MACOS
-        std::string timeStr = "[" + std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") + "]";
-#else
-        char timeBuf[32];
-        strftime(timeBuf, sizeof(timeBuf), "[%Y-%m-%d %H:%M:%S]", &timeinfo);
-        std::string timeStr = std::string("[") + timeBuf + "]";
-#endif
-        WriteFile(hCon, timeStr.c_str(), (DWORD)timeStr.size(), &written, nullptr);
         SetConsoleColor(color);
-        std::string levelTag = "[" + level + "] ";
-        WriteFile(hCon, levelTag.c_str(), (DWORD)levelTag.size(), &written, nullptr);
+        WriteFile(hCon, ss.str().c_str(), (DWORD)ss.str().size(), &written, nullptr);
         ResetConsoleColor();
-        WriteFile(hCon, message.c_str(), (DWORD)message.size(), &written, nullptr);
-        WriteFile(hCon, "\n", 1, &written, nullptr);
     }
 }
 
@@ -269,7 +258,9 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     std::string logEntry = ss.str();
 
     // Push to TUI log buffer before moving string to async queue
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
+#endif
 
     // Push to async queue (non-blocking for caller)
     {
@@ -418,7 +409,7 @@ void Logger::Shutdown() {
     }
 }
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 // GetTuiBuffer - returns global log buffer for TUI
 tcmt::LogBuffer& Logger::GetTuiBuffer() {
     return g_tuiLogBuffer;

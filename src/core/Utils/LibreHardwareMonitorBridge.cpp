@@ -30,12 +30,26 @@ void LibreHardwareMonitorBridge::Initialize() {
         initialized = true;
     }
     catch (System::IO::FileNotFoundException^ ex) {
-        // Use marshal_as to convert .NET string to std::string
-        std::string errorMsg = msclr::interop::marshal_as<std::string>(ex->Message);
+        System::String^ msg = ex->Message;
+        if (String::IsNullOrEmpty(msg)) msg = L"No message";
+        std::wstring wmsg(msg->Length, L'\0');
+        for (int i = 0; i < msg->Length; i++) wmsg[i] = msg[i];
+        // WideCharToMultiByte: convert wchar_t to UTF-8 safely
+        int len = WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string errorMsg(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, &errorMsg[0], len, nullptr, nullptr);
+        while (!errorMsg.empty() && errorMsg.back() == '\0') errorMsg.pop_back();
         Logger::Error("LibreHardwareMonitor initialization failed: " + errorMsg);
     }
     catch (System::Exception^ ex) {
-        std::string errorMsg = msclr::interop::marshal_as<std::string>(ex->Message);
+        System::String^ msg = ex->Message;
+        if (String::IsNullOrEmpty(msg)) msg = L"No message";
+        std::wstring wmsg(msg->Length, L'\0');
+        for (int i = 0; i < msg->Length; i++) wmsg[i] = msg[i];
+        int len = WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string errorMsg(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, (LPCWCH)wmsg.c_str(), -1, &errorMsg[0], len, nullptr, nullptr);
+        while (!errorMsg.empty() && errorMsg.back() == '\0') errorMsg.pop_back();
         Logger::Error("LibreHardwareMonitor initialization exception: " + errorMsg);
     }
 }
@@ -61,7 +75,21 @@ std::vector<std::pair<std::string, double>> LibreHardwareMonitorBridge::GetTempe
             for each (ISensor ^ sensor in hardware->Sensors) {
                 if (sensor->SensorType == SensorType::Temperature && sensor->Value.HasValue) {
                     std::string name = marshal_as<std::string>(sensor->Name);
+                    // Filter out Max/Average aggregate sensors
+                    if (name.find("Max") != std::string::npos ||
+                        name.find("Average") != std::string::npos)
+                        continue;
                     temps.push_back({ name, sensor->Value.Value });
+                }
+            }
+        }
+        else if (hardware->HardwareType == HardwareType::Memory) {
+            int dimmIndex = 0;
+            for each (ISensor ^ sensor in hardware->Sensors) {
+                if (sensor->SensorType == SensorType::Temperature && sensor->Value.HasValue) {
+                    std::string label = "DIMM " + std::to_string(dimmIndex);
+                    temps.push_back({ label, sensor->Value.Value });
+                    dimmIndex++;
                 }
             }
         }

@@ -17,6 +17,8 @@
 #include <sys/types.h>
 #include <mach/mach_time.h>
 #include <mach/mach.h>
+#include <sys/sysctl.h>
+#include <libproc.h>
 #include <mach/vm_statistics.h>
 #include <sys/stat.h>
 
@@ -31,13 +33,19 @@
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
 #include "core/bluetooth/BluetoothInfo.h"
-#include "core/DeviceChangeNotifier.h"
+#include "core/display/DisplayInfo.h"
+#include "core/battery/BatteryHealth.h"
+#include "core/notifications/DeviceChangeNotifier.h"
+#include "core/notifications/UserNotifier.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/IPC/IPCServer.h"
 #include "core/temperature/TemperatureWrapper.h"
-#include "core/ModuleCoordinator.h"
+#include "core/process/ProcessTop.h"
+#include "core/als/ALSensor.h"
+#include "core/accel/SpsManager.h"
+#include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
 
@@ -99,13 +107,21 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addU64("memory/used",         offsetof(B, usedMemory));
     addU64("memory/available",    offsetof(B, availableMemory));
     addU64("memory/compressed",   offsetof(B, compressedMemory));
+    addU64("memory/swapUsed",     offsetof(B, swapUsed));
+    addU64("memory/swapTotal",    offsetof(B, swapTotal));
+    add("memory/ramSpeed", offsetof(B, ramSpeed), 4, FT::UInt32);
+    add("memory/ramType",  offsetof(B, ramType), (uint16_t)sizeof(B::ramType), FT::String);
 
     // Battery / Power
     addI("battery/percent",       offsetof(B, batteryPercent));
     addB("battery/acOnline",      offsetof(B, acOnline));
+    addF("power/cpu",             offsetof(B, cpuPower));
+    addF("power/gpu",             offsetof(B, gpuPower));
+    addF("power/ane",             offsetof(B, anePower));
 
     // OS
     addS("os/version",            offsetof(B, osVersion), 128);
+    addS("os/model",              offsetof(B, hardwareModel), 128);
 
     // GPU
     addS("gpu/0/name",            offsetof(B, gpuName), 48);
@@ -114,6 +130,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("gpu/0/memoryPercent",   offsetof(B, gpuMemoryPercent));
     addF("gpu/0/usage",           offsetof(B, gpuUsage));
     addF("gpu/0/temperature",     offsetof(B, gpuTemp));
+    addF("gpu/freq",              offsetof(B, gpuFreq));
     addB("gpu/0/isVirtual",       offsetof(B, gpuIsVirtual));
 
     // Disks (up to 4)
@@ -159,6 +176,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
         addF((std::string(p)+"temperature").c_str(),  base + offsetof(B::PhysDiskSlot, temperature));
         addF((std::string(p)+"health").c_str(),       base + offsetof(B::PhysDiskSlot, healthPercent));
         addB((std::string(p)+"smartSupported").c_str(), base + offsetof(B::PhysDiskSlot, smartSupported));
+        addI((std::string(p)+"attrCount").c_str(),     base + offsetof(B::PhysDiskSlot, attrCount));
+        addS((std::string(p)+"attrsJson").c_str(),     base + offsetof(B::PhysDiskSlot, attrsJson), 4096);
     }
 
     // WiFi
@@ -609,6 +628,18 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
     tuiApp.Start();
 
+    // SPU Sensor Manager — reads ALL AppleSPUHIDDevice sensors via
+    // asynchronous IOHIDDevice input report callbacks (no root needed).
+    // Includes: gravity/orientation vector, gyroscope, ALS, lid angle.
+    static SpsManager s_sps;
+    if (!s_sps.Start()) {
+        Logger::Warn("SpsManager: no SPU HID sensors found — sensor features disabled");
+    } else {
+        Logger::Info("SpsManager started with " + std::to_string(s_sps.Sensors().size()) + " sensors");
+        for (auto& s : s_sps.Sensors())
+            Logger::Info("  " + s->name);
+    }
+
     // Start history logger (SQLite)
     HistoryLogger historyLogger;
     historyLogger.SetRetentionDays(30);
@@ -653,6 +684,7 @@ int main(int argc, char* argv[]) {
             // === Build TuiData snapshot ===
             tcmt::TuiData data;
             data.osVersion = os.GetVersion();
+            data.hardwareModel = os.GetModel();
             data.connectionCount = ipcServer.GetClientCount();
             auto ct = ipcServer.GetClientTypes();
             data.clientTypes.clear();
@@ -688,6 +720,10 @@ int main(int argc, char* argv[]) {
                 data.usedMemory = sysInfo.usedMemory;
                 data.availableMemory = sysInfo.availableMemory;
                 data.compressedMemory = sysInfo.compressedMemory;
+                data.swapUsed = sysInfo.swapUsed;
+                data.swapTotal = sysInfo.swapTotal;
+                data.ramSpeed = sysInfo.ramSpeed;
+                strncpy(data.ramType, sysInfo.ramType, sizeof(data.ramType) - 1);
             }
 
             // GPU (coordinator doesn't have a GPU loop — keep inline)
@@ -710,6 +746,7 @@ int main(int argc, char* argv[]) {
             static int wbCtr = 0;
             static WiFiInfo s_wifi;
             static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+            static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
             static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
             static BluetoothInfo s_bt;
             if (++wbCtr >= 6) { wbCtr = 0;
@@ -725,10 +762,182 @@ int main(int argc, char* argv[]) {
               data.wifiChannel = wd.channel;
               data.wifiSecurity = wd.security;
               data.wifiTxRate = wd.txRate;
+              data.wifiLocationDenied = wd.locationDenied;
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
               data.btPowerOn = bd.adapter.powerOn;
               data.btDeviceCount = static_cast<int>(bd.devices.size());
+            }
+
+            // Display monitors, battery health, ALS, accelerometer & thermal state (every ~3 seconds)
+            static int displayCtr = 0;
+            static DisplayInfo s_display;
+            static BatteryHealth s_battery;
+            static ALSensor s_als;
+            if (++displayCtr >= 6) { displayCtr = 0;
+                try { s_display.Detect(); } catch (...) {}
+                try { s_battery.Detect(); } catch (...) {}
+                try { s_als.Detect(); } catch (...) {}
+            }
+            // SPU sensors: SpsManager refreshes all sensors atomically (~500ms)
+            try { s_sps.Refresh(); } catch (...) {}
+
+                // Thermal state (available since macOS 10.10.3, well below our 11.0 target)
+#ifdef __OBJC__
+            NSProcessInfoThermalState ts = [[NSProcessInfo processInfo] thermalState];
+            data.thermalState = (int)ts;
+#endif
+            {
+                data.displays.clear();
+                for (const auto& d : s_display.GetDisplays()) {
+                    tcmt::TuiData::DisplayInfo di;
+                    di.name = d.name;
+                    di.width = d.width;
+                    di.height = d.height;
+                    di.refreshRate = d.refreshRate;
+                    di.isHDR = d.isHDR;
+                    di.isBuiltin = d.isBuiltin;
+                    di.backingScale = d.backingScale;
+                    data.displays.push_back(di);
+                }
+            }
+
+            // Battery health
+            {
+                const auto& bd = s_battery.GetData();
+                data.batteryCycleCount = bd.cycleCount;
+                data.batteryDesignCapacity = bd.designCapacity;
+                data.batteryMaxCapacity = bd.maxCapacity;
+                data.batteryHealthPercent = bd.healthPercent;
+                data.batteryTemp = bd.temperature;
+                data.batteryAmperage = bd.amperage;
+                data.batteryVoltage = bd.voltage;
+                data.batteryIsCharging = bd.isCharging;
+            }
+
+            // ALS (ambient light sensor) — from SPU HID callback (SpsManager)
+            // Provides real-time lux + RGBC raw channels at sensor rate (~100Hz).
+            // Falls back to IORegistry polling (s_als) if SpsManager ALS is unavailable.
+            {
+                bool alsFromSps = false;
+                for (auto& s : s_sps.Sensors()) {
+                    if (s->type == SpsType::ALS && s->sample1.valid) {
+                        data.alsValid = true;
+                        data.alsLux = s->sample1.value;
+                        data.alsChannels.r = s->alsRawR.load(std::memory_order_relaxed);
+                        data.alsChannels.g = s->alsRawG.load(std::memory_order_relaxed);
+                        data.alsChannels.b = s->alsRawB.load(std::memory_order_relaxed);
+                        data.alsChannels.valid = true;
+                        alsFromSps = true;
+                        break;
+                    }
+                }
+                // Fallback: IORegistry polling (ALSensor)
+                if (!alsFromSps) {
+                    const auto& ad = s_als.GetData();
+                    data.alsValid = ad.valid;
+                    data.alsLux = ad.lux;
+                }
+            }
+
+            // SPU sensors — read latest samples from SpsManager
+            {
+                data.accel = tcmt::TuiData::AccelInfo{};
+                data.gyro = tcmt::TuiData::GyroInfo{};
+                data.lidAngle = tcmt::TuiData::LidInfo{};
+                bool hasGravitySensor = false;
+
+                for (auto& s : s_sps.Sensors()) {
+                    switch (s->type) {
+                    case SpsType::Gravity:
+                        hasGravitySensor = true;
+                        if (s->sample3.valid) {
+                            data.accel.hasDevice = true;
+                            data.accel.valid = true;
+                            data.accel.x = s->sample3.x;
+                            data.accel.y = s->sample3.y;
+                            data.accel.z = s->sample3.z;
+                        }
+                        break;
+                    case SpsType::Gyro:
+                        if (s->sample3.valid) {
+                            data.gyro.valid = true;
+                            data.gyro.x = s->sample3.x;
+                            data.gyro.y = s->sample3.y;
+                            data.gyro.z = s->sample3.z;
+                        }
+                        break;
+                    case SpsType::LidAngle:
+                        if (s->sample1.valid) {
+                            data.lidAngle.valid = true;
+                            data.lidAngle.angle = s->sample1.value;
+                        }
+                        break;
+                    case SpsType::Temp:
+                        if (s->sample1.valid) {
+                            data.spuTemp.valid = true;
+                            data.spuTemp.celsius = s->sample1.value;
+                        }
+                        break;
+                    case SpsType::ApplePriv1:
+                        if (s->sample1.valid) {
+                            data.motionHb.valid = true;
+                            data.motionHb.counter = (uint8_t)s->sv.load(std::memory_order_relaxed);
+                            data.motionHb.eventFlag = (uint8_t)s->v1.load(std::memory_order_relaxed);
+                        }
+                        break;
+                    case SpsType::ApplePriv5:
+                        if (s->sample1.valid) {
+                            data.deviceMotion.valid = true;
+                            data.deviceMotion.raw = s->sample1.value;
+                        }
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                // If HID device exists but no callback data yet, mark available but invalid
+                if (hasGravitySensor && !data.accel.valid)
+                    data.accel.hasDevice = true;
+                // IMU die temp → unified temperature list
+                if (data.spuTemp.valid)
+                    data.temperatures.push_back({"IMU", data.spuTemp.celsius});
+            }
+
+            // System uptime / load / process count / top processes
+            static ProcessTop s_procTop;
+            static int procCtr = 0;
+            {
+                // Uptime via sysctl kern.boottime
+                struct timeval boottime;
+                size_t len = sizeof(boottime);
+                if (sysctlbyname("kern.boottime", &boottime, &len, NULL, 0) == 0) {
+                    data.uptimeSeconds = (uint64_t)(time(NULL) - boottime.tv_sec);
+                }
+                // Load average
+                double load[3];
+                if (getloadavg(load, 3) == 3) {
+                    data.loadAvg1 = load[0];
+                    data.loadAvg5 = load[1];
+                    data.loadAvg15 = load[2];
+                }
+                // Process count
+                int n = proc_listallpids(NULL, 0);
+                if (n > 0) data.processCount = n;
+
+                // Top processes — refresh every ~3s (same cadence as WiFi/Display)
+                if (++procCtr >= 6) { procCtr = 0;
+                    try { s_procTop.Refresh(); } catch (...) {}
+                }
+                data.topProcesses.clear();
+                for (const auto& e : s_procTop.GetTop()) {
+                    tcmt::TuiData::ProcessTopEntry pe;
+                    pe.pid = e.pid;
+                    pe.name = e.name;
+                    pe.memoryBytes = e.memoryBytes;
+                    pe.cpuPercent = e.cpuPercent;
+                    data.topProcesses.push_back(pe);
+                }
             }
 
             // Timestamp
@@ -740,11 +949,71 @@ int main(int argc, char* argv[]) {
             std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
             data.timestamp = buf;
 
+            // Physical disks (SMART) — refresh every 60 seconds
+            static std::vector<PhysicalDiskSmartData> cachedSmart;
+            static auto lastSmartRefresh = std::chrono::steady_clock::now() - std::chrono::seconds(61);
+            auto nowSt = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(nowSt - lastSmartRefresh).count() >= 60) {
+                try {
+                    SystemInfo tmp;
+                    DiskInfo().CollectSmartData(tmp);
+                    if (!tmp.physicalDisks.empty())
+                        cachedSmart = std::move(tmp.physicalDisks);
+                    lastSmartRefresh = nowSt;
+                } catch (...) {}
+            }
+                data.physicalDisks.clear();
+                data.physicalDisks.reserve(cachedSmart.size());
+                // WCHAR (char16_t) → UTF-8 helper
+                auto w2u = [](const WCHAR* s, int maxLen) -> std::string {
+                    std::string out;
+                    for (int i = 0; i < maxLen && s[i] != u'\0'; ++i) {
+                        uint16_t cp = static_cast<uint16_t>(s[i]);
+                        if (cp < 0x80) out += (char)cp;
+                        else if (cp < 0x800) { out += (char)(0xC0|(cp>>6)); out += (char)(0x80|(cp&0x3F)); }
+                        else { out += (char)(0xE0|(cp>>12)); out += (char)(0x80|((cp>>6)&0x3F)); out += (char)(0x80|(cp&0x3F)); }
+                    }
+                    return out;
+                };
+                for (const auto& src : cachedSmart) {
+                    tcmt::TuiData::PhysicalDiskInfo pi;
+                    pi.model = w2u(src.model, 63);
+                    pi.serial = w2u(src.serialNumber, 63);
+                    pi.capacity = src.capacity;
+                    pi.temperature = src.temperature;
+                    pi.healthPct = src.healthPercentage;
+                    pi.smartSupported = src.smartSupported;
+                    pi.powerOnHours = src.powerOnHours;
+                    pi.wearLeveling = src.wearLeveling;
+                    pi.diskType = w2u(src.diskType, 15);
+                    pi.interfaceType = w2u(src.interfaceType, 15);
+                    pi.attributes.clear();
+                    pi.attributes.reserve(src.attributeCount);
+                    for (int ai = 0; ai < src.attributeCount; ++ai) {
+                        tcmt::TuiData::SmAttributeInfo ai2;
+                        ai2.id = src.attributes[ai].id;
+                        ai2.current = src.attributes[ai].current;
+                        ai2.worst = src.attributes[ai].worst;
+                        ai2.rawValue = src.attributes[ai].rawValue;
+                        ai2.name = w2u(src.attributes[ai].name, 63);
+                        pi.attributes.push_back(std::move(ai2));
+                    }
+                    data.physicalDisks.push_back(std::move(pi));
+                }
+                // Add physical disk temps to unified temperature list
+                for (size_t di = 0; di < cachedSmart.size(); ++di) {
+                    if (cachedSmart[di].temperature > 0) {
+                        std::string label = w2u(cachedSmart[di].model, 63);
+                        if (label.empty()) label = "Disk";
+                        data.temperatures.push_back({label, cachedSmart[di].temperature});
+                    }
+                }
+
             // Update TUI
             tuiApp.UpdateData(data);
 
             // Write to IPC shared memory (schema-driven, for C# Avalonia)
-                if (ipcServer.IsRunning()) {
+            if (ipcServer.IsRunning()) {
                     auto* b = static_cast<tcmt::ipc::IPCDataBlock*>(ipcServer.GetShmPtr());
                     if (b) {
                         // seqlock: mark write in progress (odd)
@@ -769,12 +1038,22 @@ int main(int argc, char* argv[]) {
                         b->usedMemory = data.usedMemory;
                         b->availableMemory = data.availableMemory;
                         b->compressedMemory = data.compressedMemory;
+                        b->swapUsed = data.swapUsed;
+                        b->swapTotal = data.swapTotal;
+                        b->ramSpeed = data.ramSpeed;
+                        std::strncpy(b->ramType, data.ramType, 31);
+                        b->ramType[31] = '\0';
                         // Battery / power
                         b->batteryPercent = data.batteryPercent;
                         b->acOnline = data.acOnline;
+                        b->cpuPower = static_cast<float>(data.cpuPower);
+                        b->gpuPower = static_cast<float>(data.gpuPower);
+                        b->anePower = static_cast<float>(data.anePower);
                         // OS
                         std::strncpy(b->osVersion, data.osVersion.c_str(), 127);
                         b->osVersion[127] = '\0';
+                        std::strncpy(b->hardwareModel, data.hardwareModel.c_str(), 127);
+                        b->hardwareModel[127] = '\0';
                         // GPU
                         std::strncpy(b->gpuName, data.gpuName.c_str(), 47);
                         b->gpuName[47] = '\0';
@@ -782,6 +1061,7 @@ int main(int argc, char* argv[]) {
                         b->gpuMemoryPercent = static_cast<float>(data.gpuMemoryPercent);
                         b->gpuUsage = static_cast<float>(data.gpuUsage);
                         b->gpuTemp = static_cast<float>(data.gpuTemp);
+                        b->gpuFreq = static_cast<float>(data.gpuFreq);
                         b->gpuIsVirtual = false;
                         // Disks (up to 4)
                         b->diskCount = 0;
@@ -818,35 +1098,68 @@ int main(int argc, char* argv[]) {
                             b->temperatures[ti].value = static_cast<float>(data.temperatures[ti].second);
                             b->tempCount++;
                         }
-                        // Physical disks (SMART) — cached once at startup
-                        static std::vector<PhysicalDiskSmartData> cachedSmart;
-                        static bool smartDone = false;
-                        if (!smartDone) {
-                            try {
-                                SystemInfo tmp;
-                                DiskInfo().CollectSmartData(tmp);
-                                cachedSmart = std::move(tmp.physicalDisks);
-                                smartDone = true;
-                            } catch (...) {}
-                        }
-                        b->physDiskCount = 0;
-                        for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
-                            auto& pd = b->physicalDisks[pi];
-                            const auto& src = cachedSmart[pi];
-                            for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
-                                pd.model[k] = static_cast<char>(src.model[k]);
-                            pd.model[63] = '\0';
-                            for (size_t k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
-                                pd.serial[k] = static_cast<char>(src.serialNumber[k]);
-                            pd.serial[63] = '\0';
-                            pd.capacity = src.capacity;
-                            for (size_t k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
-                                pd.interfaceType[k] = static_cast<char>(src.interfaceType[k]);
-                            pd.interfaceType[15] = '\0';
-                            pd.temperature = static_cast<float>(src.temperature);
-                            pd.healthPercent = static_cast<float>(src.healthPercentage);
-                            pd.smartSupported = src.smartSupported;
-                            b->physDiskCount++;
+                        // Physical disks (SMART) — reuse TUI cache for IPC
+                        {
+                            b->physDiskCount = 0;
+                            for (size_t pi = 0; pi < std::min(cachedSmart.size(), size_t(8)); ++pi) {
+                                auto& pd = b->physicalDisks[pi];
+                                const auto& src = cachedSmart[pi];
+                                for (size_t k = 0; k < 63 && src.model[k] != u'\0'; ++k)
+                                    pd.model[k] = static_cast<char>(src.model[k]);
+                                pd.model[63] = '\0';
+                                for (size_t k = 0; k < 63 && src.serialNumber[k] != u'\0'; ++k)
+                                    pd.serial[k] = static_cast<char>(src.serialNumber[k]);
+                                pd.serial[63] = '\0';
+                                pd.capacity = src.capacity;
+                                for (size_t k = 0; k < 15 && src.interfaceType[k] != u'\0'; ++k)
+                                    pd.interfaceType[k] = static_cast<char>(src.interfaceType[k]);
+                                pd.interfaceType[15] = '\0';
+                                pd.temperature = static_cast<float>(src.temperature);
+                                pd.healthPercent = static_cast<float>(src.healthPercentage);
+                                pd.smartSupported = src.smartSupported;
+                                // Serialize SMART attributes to JSON
+                                if (src.attributeCount > 0) {
+                                    std::ostringstream js;
+                                    js << "[";
+                                    for (int ai = 0; ai < src.attributeCount; ++ai) {
+                                        if (ai > 0) js << ",";
+                                        const auto& a = src.attributes[ai];
+                                        // WCHAR (char16_t) → UTF-8 for JSON
+                                        auto toUtf8 = [](const WCHAR* s, int maxLen) -> std::string {
+                                            std::string out;
+                                            for (int i = 0; i < maxLen && s[i] != u'\0'; ++i) {
+                                                uint16_t cp = static_cast<uint16_t>(s[i]);
+                                                if (cp == '"' || cp == '\\') { out += '\\'; out += (char)cp; }
+                                                else if (cp < 0x80) out += (char)cp;
+                                                else if (cp < 0x800) {
+                                                    out += (char)(0xC0 | (cp >> 6));
+                                                    out += (char)(0x80 | (cp & 0x3F));
+                                                } else {
+                                                    out += (char)(0xE0 | (cp >> 12));
+                                                    out += (char)(0x80 | ((cp >> 6) & 0x3F));
+                                                    out += (char)(0x80 | (cp & 0x3F));
+                                                }
+                                            }
+                                            return out;
+                                        };
+                                        js << "{\"id\":" << (int)a.id
+                                           << ",\"cur\":" << (int)a.current
+                                           << ",\"worst\":" << (int)a.worst
+                                           << ",\"raw\":" << a.rawValue
+                                           << ",\"name\":\"" << toUtf8(a.name, 63) << "\""
+                                           << ",\"desc\":\"" << toUtf8(a.description, 127) << "\""
+                                           << "}";
+                                    }
+                                    js << "]";
+                                    std::string jstr = js.str();
+                                    if (jstr.size() < 4096) {
+                                        std::strncpy(pd.attrsJson, jstr.c_str(), 4095);
+                                        pd.attrsJson[4095] = '\0';
+                                        pd.attrCount = src.attributeCount;
+                                    }
+                                }
+                                b->physDiskCount++;
+                            }
                         }
                     }
                     // WiFi
@@ -901,21 +1214,23 @@ int main(int argc, char* argv[]) {
 
             // USB detection (every 10 seconds)
             static int usbCheckCounter = 0;
+            static size_t prevUsbCount = 0;
+            if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
             if (++usbCheckCounter >= 20) {
                 usbCheckCounter = 0;
-                if (s_usbNotify.Poll()) {
                 try {
                     UsbInfo usb;
                     usb.Detect();
                     const auto& devs = usb.GetDevices();
-                    if (!devs.empty()) {
-                        Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
-                        for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
-                            Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
-                                        + " PID:" + std::to_string(devs[di].pid));
+                    Logger::Debug("USB: scan — " + std::to_string(devs.size()) + " device(s)");
+                    if (devs.size() != prevUsbCount) {
+                        if (devs.empty())
+                            Logger::Info("USB: all devices removed");
+                        else
+                            Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                        prevUsbCount = devs.size();
                     }
                 } catch (...) {}
-                } // s_usbNotify.Poll()
             }
 
             loopCounter++;

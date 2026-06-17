@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.NetworkView"
+             x:DataType="vm:NetworkViewModel">
+
+  <Design.DataContext>
+    <vm:NetworkViewModel Title="Network" />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="32,28,32,0">
+      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+      <TextBlock Text="网络适配器与 WiFi" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+    </StackPanel>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="20">
+        
+        <!-- WiFi Status -->
+        <Border Theme="{StaticResource CardBorder}" IsVisible="{Binding HasWiFi}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="WiFi 状态" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="{Binding WifiDisplay}" FontSize="16" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Bluetooth Status -->
+        <Border Theme="{StaticResource CardBorder}" IsVisible="{Binding HasBluetooth}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="蓝牙" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="{Binding BtDisplay}" FontSize="16" Foreground="{StaticResource TextPrimaryBrush}"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Network Adapters -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="网络适配器" Theme="{StaticResource SectionHeader}"/>
+            <ItemsControl ItemsSource="{Binding Adapters}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:NetworkAdapterData">
+                  <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                      <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding IpAddress}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <TextBlock Text="{Binding Mac}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Spacing="4" Margin="16,0">
+                        <TextBlock Text="下载" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Text="{Binding DownloadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Text="上传" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Text="{Binding UploadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

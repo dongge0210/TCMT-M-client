@@ -311,6 +311,9 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
                 SafeCopyFromWideArray(dst.description, 128, sa.description, 128);
                 SafeCopyFromWideArray(dst.units, 16, sa.units, 16);
             }
+
+            // Copy attrsJson
+            strncpy(pBuffer->physicalDisks[i].attrsJson, src.attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson) - 1);
         }
 
         // Temperature sensor information

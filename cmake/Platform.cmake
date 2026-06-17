@@ -35,6 +35,19 @@ function(tcmt_detect_platform)
         )
         message(STATUS "  Target: macOS ${MACOS_VERSION}")
 
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(TCMT_LINUX ON CACHE BOOL "Building for Linux platform")
+        set(TCMT_PLATFORM_NAME "Linux" CACHE STRING "Platform name")
+        set(TCMT_PLATFORM "linux" CACHE STRING "Platform identifier")
+        add_definitions(-DTCMT_LINUX)
+
+        execute_process(
+            COMMAND uname -r
+            OUTPUT_VARIABLE LINUX_KERNEL
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL})")
+
     else()
         message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
     endif()
@@ -53,6 +66,7 @@ function(tcmt_detect_platform)
     # Set platform variables for parent scope
     set(TCMT_WINDOWS ${TCMT_WINDOWS} PARENT_SCOPE)
     set(TCMT_MACOS ${TCMT_MACOS} PARENT_SCOPE)
+    set(TCMT_LINUX ${TCMT_LINUX} PARENT_SCOPE)
     set(TCMT_PLATFORM_NAME ${TCMT_PLATFORM_NAME} PARENT_SCOPE)
     set(TCMT_PLATFORM ${TCMT_PLATFORM} PARENT_SCOPE)
     set(TCMT_ARCH_X64 ${TCMT_ARCH_X64} PARENT_SCOPE)
@@ -107,6 +121,10 @@ function(tcmt_set_platform_libraries target)
         find_library(FOUNDATION_LIB Foundation)
         find_library(CORESERVICES_LIB CoreServices)
         find_library(COREWLAN_LIB CoreWLAN)
+        find_library(CORELOCATION_LIB CoreLocation)
+        find_library(APPKIT_LIB AppKit)
+        find_library(SERVICEMANAGEMENT_LIB ServiceManagement)
+        find_library(SECURITY_LIB Security)
 
         # 创建要链接的库列表
         set(MACOS_LIBS)
@@ -135,6 +153,22 @@ function(tcmt_set_platform_libraries target)
             list(APPEND MACOS_LIBS ${COREWLAN_LIB})
             message(STATUS "    Found CoreWLAN framework")
         endif()
+        if(CORELOCATION_LIB)
+            list(APPEND MACOS_LIBS ${CORELOCATION_LIB})
+            message(STATUS "    Found CoreLocation framework")
+        endif()
+        if(APPKIT_LIB)
+            list(APPEND MACOS_LIBS ${APPKIT_LIB})
+            message(STATUS "    Found AppKit framework")
+        endif()
+        if(SERVICEMANAGEMENT_LIB)
+            list(APPEND MACOS_LIBS ${SERVICEMANAGEMENT_LIB})
+            message(STATUS "    Found ServiceManagement framework")
+        endif()
+        if(SECURITY_LIB)
+            list(APPEND MACOS_LIBS ${SECURITY_LIB})
+            message(STATUS "    Found Security framework")
+        endif()
         target_link_libraries(${target} PRIVATE ${MACOS_LIBS})
 
         # macOS-specific compile options
@@ -150,6 +184,28 @@ function(tcmt_set_platform_libraries target)
         target_compile_definitions(${target} PRIVATE
             _DARWIN_C_SOURCE
             _DARWIN_USE_64_BIT_INODE=1
+        )
+
+    elseif(TCMT_LINUX)
+        # Linux platform libraries
+        find_package(Curses REQUIRED)
+
+        target_link_libraries(${target} PRIVATE
+            pthread
+            rt
+        )
+
+        # Linux-specific compile options
+        target_compile_options(${target} PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wno-unused-parameter
+            -Wno-deprecated-declarations
+        )
+
+        target_compile_definitions(${target} PRIVATE
+            _GNU_SOURCE
         )
 
     endif()

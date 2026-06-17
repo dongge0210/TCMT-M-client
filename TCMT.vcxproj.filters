@@ -24,6 +24,15 @@
     <ClInclude Include="src\core\memory\MemoryInfo.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\memory\PawnIOWrapper.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\memory\MemoryTempReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\cpu\CpuTempReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\network\NetworkAdapter.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -75,13 +84,31 @@
     <ClInclude Include="src\core\wifi\WiFiInfo_wlan.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\ModuleCoordinator.h">
+    <ClInclude Include="src\core\notifications\DeviceChangeNotifier.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\notifications\UserNotifier.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\notifications\SystemEventMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\coordinator\ModuleCoordinator.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\core\Utils\JThreadCompat.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\core\bluetooth\BluetoothInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\etw\EtwMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\power\PowerInfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\power\PowerMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -107,6 +134,18 @@
     <ClCompile Include="src\core\memory\MemoryInfo.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\memory\PawnIOWrapper.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\memory\MemoryTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\cpu\CpuTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ResourceCompile Include="src\resources.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
     <ClCompile Include="src\core\gpu\GpuInfo.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -164,16 +203,34 @@
     <ClCompile Include="src\core\wifi\WiFiInfo_wlan.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\ModuleCoordinator.cpp">
+    <ClCompile Include="src\core\notifications\UserNotifier.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\ModuleCoordinator_cpu.cpp">
+    <ClCompile Include="src\core\notifications\SystemEventMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\ModuleCoordinator_io.cpp">
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator_cpu.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\coordinator\ModuleCoordinator_io.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\power\PowerInfo.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\power\PowerMonitor.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\etw\EtwMonitor.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\disk\SmartReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

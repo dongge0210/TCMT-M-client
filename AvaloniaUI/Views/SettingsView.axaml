@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:themes="clr-namespace:TCMT.Avalonia.Themes"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <Design.DataContext>
+    <vm:SettingsViewModel Title="Settings" />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="32,28,32,0">
+      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+      <TextBlock Text="应用设置" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+    </StackPanel>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+        
+        <!-- Appearance -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="16">
+            <TextBlock Text="外观" Theme="{StaticResource SectionHeader}"/>
+            
+            <StackPanel Spacing="8">
+              <TextBlock Text="主题" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <ComboBox SelectedItem="{Binding CurrentTheme}" Width="200">
+                <ComboBox.Items>
+                  <themes:AppTheme>Dark</themes:AppTheme>
+                  <themes:AppTheme>Light</themes:AppTheme>
+                </ComboBox.Items>
+              </ComboBox>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- About -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="关于" Theme="{StaticResource SectionHeader}"/>
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="应用" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="TCMT — 系统硬件监视器" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="版本" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding AppVersion}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+              </Grid>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

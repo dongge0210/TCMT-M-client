@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.StorageView"
+             x:DataType="vm:StorageViewModel">
+
+  <Design.DataContext>
+    <vm:StorageViewModel Title="Storage" />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="32,28,32,0">
+      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+      <TextBlock Text="存储与 SMART 信息" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+    </StackPanel>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="20">
+        
+        <!-- Logical Disks -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="逻辑磁盘" Theme="{StaticResource SectionHeader}"/>
+            <ItemsControl ItemsSource="{Binding Disks}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:DiskData">
+                  <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                    <StackPanel Spacing="8">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="{StaticResource PrimaryBrush}" FontSize="14" FontWeight="Bold"/>
+                      </Grid>
+                      <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="6" Foreground="{StaticResource PrimaryBrush}" Background="{StaticResource BackgroundBrush}"/>
+                      <Grid ColumnDefinitions="*,*,*">
+                        <TextBlock Text="{Binding TotalSizeDisplay}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding UsedSpaceDisplay} 已用" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding FreeSpaceDisplay} 可用" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- Physical Disks / SMART -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="物理磁盘与 SMART" Theme="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Content="切换详情" Command="{Binding ToggleSmartDetailCommand}" FontSize="11" Padding="8,4"/>
+            </Grid>
+            
+            <ItemsControl ItemsSource="{Binding PhysicalDisks}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:PhysicalDiskView">
+                  <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                      <Grid ColumnDefinitions="*,*,*">
+                        <StackPanel Spacing="2">
+                          <TextBlock Text="温度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="{Binding Disk.Temperature, StringFormat={}{0:F1}°C}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                          <TextBlock Text="健康度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="{Binding Disk.HealthPercentage}%" FontSize="13" Foreground="{StaticResource PrimaryBrush}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="2">
+                          <TextBlock Text="通电时长" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                          <TextBlock Text="{Binding Disk.PowerOnHours}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

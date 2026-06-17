@@ -2,39 +2,68 @@
 #include "../Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
-#pragma managed
-#include "../Utils/LibreHardwareMonitorBridge.h"
-#pragma unmanaged
+#include "../memory/MemoryTempReader.h"
+#include "../cpu/CpuTempReader.h"
+#include "../gpu/GpuInfo.h"
+#include "BoardTempReader.h"
 
 bool TemperatureWrapper::initialized = false;
 
 void TemperatureWrapper::Initialize() {
-    try {
-        LibreHardwareMonitorBridge::Initialize();
-        initialized = true;
-        Logger::Debug("TemperatureWrapper: LibreHardwareMonitor initialized");
-    } catch (...) {
-        initialized = false;
-        Logger::Error("TemperatureWrapper: LibreHardwareMonitor initialization failed");
-    }
+    initialized = true;
+    Logger::Debug("TemperatureWrapper: initialized (PawnIO + NVML direct)");
+    if (MemoryTempReader::IsAvailable())
+        Logger::Info("PawnIO: installed, DIMM/SMBus temperature reading enabled");
+    else
+        Logger::Info("PawnIO: not installed, DIMM temperature unavailable");
 }
 
 void TemperatureWrapper::Cleanup() {
-    if (initialized) {
-        LibreHardwareMonitorBridge::Cleanup();
-        initialized = false;
-    }
+    initialized = false;
 }
 
 std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
     std::vector<std::pair<std::string, double>> temps;
-    if (initialized) {
-        try {
-            temps = LibreHardwareMonitorBridge::GetTemperatures();
-        } catch (...) {
-            Logger::Warn("TemperatureWrapper::GetTemperatures: unknown exception caught");
-        }
+    if (!initialized) return temps;
+
+    // CPU temperature via PawnIO Intel MSR (IA32_THERM_STATUS)
+    try {
+        auto cpuTemps = CpuTempReader::ReadAll();
+        for (const auto& ct : cpuTemps)
+            temps.push_back({ct.name, ct.temperature});
+    } catch (...) {
+        Logger::Debug("CpuTempReader: exception");
     }
+
+    // GPU temperature via NVML (NVIDIA only, returns -1 on non-NVIDIA)
+    try {
+        double gpuTemp = GpuInfo::GetGpuTemperature();
+        if (gpuTemp > 0)
+            temps.push_back({"GPU Core", gpuTemp});
+    } catch (...) {
+        Logger::Debug("GpuInfo::GetGpuTemperature: exception");
+    }
+
+    // DIMM temperature via PawnIO SMBus
+    try {
+        auto dimms = MemoryTempReader::ReadAll();
+        for (const auto& d : dimms) {
+            if (d.temperature > 0)
+                temps.push_back({d.name, d.temperature});
+        }
+    } catch (...) {
+        Logger::Debug("MemoryTempReader: exception");
+    }
+
+    // Motherboard temperature via PawnIO LpcIO (NCT6798D Super I/O)
+    try {
+        auto boardTemps = BoardTempReader::ReadAll();
+        for (const auto& bt : boardTemps)
+            temps.push_back({bt.name, bt.temperature});
+    } catch (...) {
+        Logger::Debug("BoardTempReader: exception");
+    }
+
     return temps;
 }
 
@@ -43,15 +72,16 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 #elif defined(TCMT_MACOS)
 // ======================== macOS Implementation ========================
 // macOS temperature access options (no root):
-//   1. SMC direct reads via IOKit AppleSMC (no root on Intel; Apple Silicon needs root)
-//   2. powermetrics (needs root, caches via background thread)
-//   3. IOKit IOHIDEventService (few sensors, unreliable)
+//   1. Apple Silicon SMC (AppleSMCKeysEndpoint, selector 2, works on AS)
+//   2. Intel SMC (AppleSMC, selector 5, works on Intel)
+//   3. IOKit IOHIDEventService (fallback, limited sensors)
+//   4. powermetrics (needs root, caches via background thread)
 //
-// Priority: SMC > powermetrics cache > IOKit HID
-// All three are tried; GetTemperatures() returns whatever succeeded.
+// Priority: SMC (platform-appropriate) > IOKit HID > powermetrics cache
 
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <mach/mach.h>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -63,6 +93,7 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
 
 // =====================================================================
 // SMC Reader — Direct IOKit access to AppleSMC
@@ -72,6 +103,9 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 //   7  = getKeyFromIndex  → key string by index
 //   2  = readKeyInfo      → key metadata (type, size)
 //   5  = readKeyValue      → actual value data
+
+// SMC is Intel-only — hardware locked on Apple Silicon
+#ifdef __x86_64__
 
 enum {
     KSmcReadKeyInfo  = 2,
@@ -116,8 +150,10 @@ typedef struct {
     uint8_t dataAttributes;
 } SmcKeyInfoVal_t;
 
+#ifdef __x86_64__
 static io_connect_t g_smc_conn = 0;
 static std::mutex   g_smc_mutex;
+#endif
 
 // Open/close AppleSMC service
 static kern_return_t open_smc_service(io_connect_t* conn) {
@@ -146,10 +182,12 @@ static kern_return_t smc_read_key_info(io_connect_t conn, uint32_t key,
     kern_return_t kr = IOConnectCallStructMethod(conn, 5, &in, sizeof(in), &out, &sz);
     if (kr != kIOReturnSuccess) return kr;
     std::memset(info, 0, sizeof(*info));
-    // dataSize is encoded in the lower 16 bits of keyInfo (varies by SMC version)
+    // dataSize from keyInfo (varies by SMC version)
     info->dataSize = static_cast<uint32_t>(out.keyInfo & 0xFFFF);
     if (info->dataSize == 0) info->dataSize = static_cast<uint32_t>((out.keyInfo >> 16) & 0xFFFF);
     if (info->dataSize == 0) info->dataSize = static_cast<uint32_t>(out.status & 0xFFFF);
+    // Copy dataType from response (first 4 bytes of data[] contain type string)
+    std::memcpy(info->dataType, out.data, std::min(sizeof(info->dataType), sizeof(out.data)));
     return kIOReturnSuccess;
 }
 
@@ -235,7 +273,7 @@ static bool probe_smc(void) {
     // Apple Silicon byte order: already big-endian from memcpy
     double testTemp = 0;
     char val[32] = {0};
-    SmcKeyInfoVal_t info;
+    SmcKeyInfoVal_t info{};
     if (smc_read_key_info(g_smc_conn, key, &info) == kIOReturnSuccess && info.dataSize > 0) {
         if (smc_read_key_value(g_smc_conn, key, info.dataSize, val, sizeof(val)) == kIOReturnSuccess) {
             testTemp = smc_decode_temp(val, info.dataSize, "sp78");
@@ -246,9 +284,7 @@ static bool probe_smc(void) {
         Logger::Info("TemperatureWrapper: AppleSMC open, TC0P="
                      + std::to_string(testTemp) + "C");
     } else {
-        // Apple Silicon: SMC temperature keys may need root.
-        // Keep connection open anyway; reads will return 0 gracefully.
-        Logger::Info("TemperatureWrapper: AppleSMC connected (keys need root on Apple Silicon)");
+        Logger::Debug("TemperatureWrapper: AppleSMC TC0P probe returned 0 (expected on Apple Silicon)");
     }
     return true;
 }
@@ -274,17 +310,566 @@ static bool smc_read_temp(const char* keyStr, const char* type, double* tempOut)
     return (*tempOut > 0 && *tempOut < 150);
 }
 
+// Enumerate all SMC keys, filter temperature-type sensors.
+// Called once; caller may hold g_smc_mutex or not (we re-lock internally).
+static std::vector<std::string> smc_enumerate_temp_keys(void) {
+    std::vector<std::string> keys;
+    std::lock_guard<std::mutex> lock(g_smc_mutex);
+    if (!g_smc_conn) return keys;
+
+    SmcKeyData_t in = {};
+    SmcKeyData_t out = {};
+    in.data8 = KSmcGetTotalNum;
+    size_t sz = sizeof(out);
+    if (IOConnectCallStructMethod(g_smc_conn, 5, &in, sizeof(in), &out, &sz) != kIOReturnSuccess)
+        return keys;
+
+    uint32_t total = out.keyInfo;
+    if (total == 0 || total > 65535) return keys;
+
+    for (uint32_t i = 0; i < total && keys.size() < 64; i++) {
+        SmcKeyData_t kin = {}, kout = {};
+        kin.data8 = 7;  // getKeyFromIndex
+        kin.keyInfo = i;
+        size_t ksz = sizeof(kout);
+        if (IOConnectCallStructMethod(g_smc_conn, 5, &kin, sizeof(kin), &kout, &ksz) != kIOReturnSuccess)
+            continue;
+
+        char name[5] = {};
+        std::memcpy(name, &kout.key, 4);
+        SmcKeyInfoVal_t info{};
+        if (smc_read_key_info(g_smc_conn, kout.key, &info) != kIOReturnSuccess || info.dataSize == 0)
+            continue;
+        if (info.dataSize > 32) continue;
+
+        char type[5] = {};
+        std::memcpy(type, info.dataType, 4);
+        bool isTemp = (type[0] == 's' && type[1] == 'p') ||
+                       (type[0] == 'f' && type[1] == 'l') ||
+                       (type[0] == 'f' && type[1] == 'p');
+        if (isTemp)
+            keys.push_back(std::string(name, 4) + ":" + std::string(type, 4));
+    }
+    return keys;
+}
+
+#endif // __x86_64__ — end of Intel SMC block
+
 // =====================================================================
-// Background powermetrics caching thread
+// Apple Silicon SMC — selector 2 via AppleSMCKeysEndpoint (no root needed)
+// Reference: macmon (https://github.com/vladkens/macmon)
+// =====================================================================
+
+typedef struct {
+    uint32_t dataSize;
+    uint32_t dataType;
+    uint8_t  dataAttributes;
+    uint8_t  _pad[3];   // natural alignment: KeyInfo = 12 bytes
+} AsKeyInfo;
+
+typedef struct {
+    uint32_t   key;
+    uint8_t    vers[8];
+    uint8_t    pLimitData[16];
+    AsKeyInfo  keyInfo;
+    uint8_t    result;
+    uint8_t    status;
+    uint8_t    data8;
+    uint8_t    _pad;     // align data32 to 4-byte boundary
+    uint32_t   data32;
+    uint8_t    bytes[32];
+} AsKeyData;  // total: 80 bytes
+
+static io_connect_t g_as_smc_conn = 0;
+static std::mutex  g_as_smc_mutex;
+// Individual temperature key with category
+enum class SmcTempCategory {
+    PCore,   // Performance core
+    ECore,   // Efficiency core  
+    GPU,     // Graphics
+    Cache,   // Cache / memory fabric
+    RAM,     // DRAM / memory module
+    Board,   // Board / near-SoC
+    Heatsink,// Thermal head / heatsink
+    IO,      // I/O processor
+    VRM,     // Voltage regulator
+    Other    // Other miscellaneous
+};
+
+struct SmcTempEntry {
+    std::string key;         // SMC key name (4 chars)
+    SmcTempCategory cat;
+    std::string displayName; // Human-readable label
+    std::string groupLabel;  // non-empty = average with same-label keys, empty = individual
+};
+
+// Whitelist entry: category + group for averaging + display name
+struct SmcWhitelistEntry {
+    SmcTempCategory cat = SmcTempCategory::Other;
+    std::string groupLabel;   // non-empty: average all keys sharing this label
+    std::string displayName;  // shown for individual entries; used as group label fallback
+};
+
+// Whitelist lookup — exact keys + known prefixes.
+// Only keys returning true here appear in the temperature display.
+// Keys sharing a groupLabel are averaged into one sensor (Stats app pattern).
+//
+// Reference sources for known SMC temperature keys:
+//
+//   1. Stats (exelban/Stats) — per-SoC-generation sensor mapping with averaging
+//      https://github.com/exelban/Stats/blob/master/Modules/Sensors/values.swift
+//      The M4 entries (TPD*, TDeL, TRD*) and the avg-groups (P-Core, E-Core,
+//      GPU, RAM) are derived from this source.
+//
+//   2. VirtualSMC (acidanthera/VirtualSMC) — SMC key naming convention docs
+//      https://github.com/acidanthera/VirtualSMC/blob/master/Docs/SMCSensorKeys.txt
+//      Key format: T(type)(component)(instance)(function) where type=p/e/g/s/B/h,
+//      component=D(ie)/P(roximity)/H(eatsink), etc.
+static std::pair<bool, SmcWhitelistEntry> lookup_whitelist(const std::string& key) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+    static const std::unordered_map<std::string, SmcWhitelistEntry> kExact = {
+        // ── P-Cores (M1/M2/M3) ──────────────────────────────────
+        {"Tp01", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp05", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp09", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0D", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0V", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0Y", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0b", {SmcTempCategory::PCore, "P-Core"}},
+        {"Tp0e", {SmcTempCategory::PCore, "P-Core"}},
+        // ── P-Cores (M4: TPD*) ──────────────────────────────────
+        {"TPD0", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD1", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD2", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD3", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD4", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD5", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD6", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPD7", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPDX", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPMP", {SmcTempCategory::PCore, "P-Core"}},
+        {"TPSP", {SmcTempCategory::PCore, "P-Core"}},
+        // ── E-Cores (M1/M2/M3) ──────────────────────────────────
+        {"Te05", {SmcTempCategory::ECore, "E-Core"}},
+        {"Te0S", {SmcTempCategory::ECore, "E-Core"}},
+        {"Te09", {SmcTempCategory::ECore, "E-Core"}},
+        {"Te0H", {SmcTempCategory::ECore, "E-Core"}},
+        // ── E-Core (M4) ─────────────────────────────────────────
+        {"TDeL", {SmcTempCategory::ECore, "E-Core"}},
+        // ── GPU (universal on AS) ───────────────────────────────
+        // Key pattern: Tg0 + letter (Tg0G, Tg0g, Tg0j … Tg0r)
+        // Handled via prefix in the wildcard section below.
+        // ── RAM (M1/M2/M3) ──────────────────────────────────────
+        {"Tm0p", {SmcTempCategory::RAM, "RAM"}},
+        {"Tm1p", {SmcTempCategory::RAM, "RAM"}},
+        {"Tm2p", {SmcTempCategory::RAM, "RAM"}},
+        // ── RAM (M4: TRD*) ──────────────────────────────────────
+        {"TRD0", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD1", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD2", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD3", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD4", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD5", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD6", {SmcTempCategory::RAM, "RAM"}},
+        {"TRD7", {SmcTempCategory::RAM, "RAM"}},
+        {"TRDX", {SmcTempCategory::RAM, "RAM"}},
+        // ── Individual known sensors ────────────────────────────
+        {"TH0x", {SmcTempCategory::Heatsink, "",  "Heatsink"}},
+        {"TB0T", {SmcTempCategory::Board,    "",  "Board #0"}},
+        {"TB1T", {SmcTempCategory::Board,    "",  "Board #1"}},
+        {"TB2T", {SmcTempCategory::Board,    "",  "Board #2"}},
+        {"TW0P", {SmcTempCategory::Other,    "",  "WiFi/BT"}},
+        {"TaLP", {SmcTempCategory::Other,    "",  "Ambient LP"}},
+        {"TaRF", {SmcTempCategory::Other,    "",  "Ambient RF"}},
+        {"TAOL", {SmcTempCategory::Other,    "",  "Ambient Light"}},
+        {"TVM0", {SmcTempCategory::VRM,      "",  "VRM (M0)"}},
+        {"TVM1", {SmcTempCategory::VRM,      "",  "VRM (M1)"}},
+        {"TVD0", {SmcTempCategory::VRM,      "",  "VRM (D0)"}},
+        {"TVA0", {SmcTempCategory::VRM,      "",  "VRM (A0)"}},
+        {"TIOP", {SmcTempCategory::IO,       "",  "I/O Processor"}},
+        {"TMVR", {SmcTempCategory::VRM,      "",  "VRM (Mem)"}},
+        {"TCHP", {SmcTempCategory::Cache,    "",  "Cache HP"}},
+        {"TCMb", {SmcTempCategory::Cache,    "",  "Cache MB"}},
+        {"TCMz", {SmcTempCategory::Cache,    "",  "Cache MZ"}},
+        {"TSCD", {SmcTempCategory::Other,    "",  "SCD"}},
+    };
+    auto it = kExact.find(key);
+    if (it != kExact.end()) return {true, it->second};
+
+    // ── Prefix matches ─────────────────────────────────────────
+
+    // GPU: Tg0 + any fourth char (covers Tg0G … Tg0r and future)
+    if (key.size() == 4 && key[0] == 'T' && key[1] == 'g' && key[2] == '0') {
+        return {true, {SmcTempCategory::GPU, "GPU"}};
+    }
+    // TPD* numeric: TPD0-TPD9 (TPDX is exact-matched above)
+    if (key.size() == 4 && key[0] == 'T' && key[1] == 'P' && key[2] == 'D') {
+        char n = key[3];
+        if (n >= '0' && n <= '9')
+            return {true, {SmcTempCategory::PCore, "P-Core"}};
+    }
+    // TRD* numeric: TRD0-TRD9 (TRDX is exact-matched above)
+    if (key.size() == 4 && key[0] == 'T' && key[1] == 'R' && key[2] == 'D') {
+        char n = key[3];
+        if (n >= '0' && n <= '9')
+            return {true, {SmcTempCategory::RAM, "RAM"}};
+    }
+
+    // Not whitelisted — hide this sensor
+    return {false, {}};
+}
+
+static std::vector<SmcTempEntry> g_as_smc_temp_keys;
+static std::unordered_map<std::string, AsKeyInfo> g_as_smc_key_info_cache;
+static bool g_as_smc_ready = false;
+
+static bool as_smc_open(void) {
+    if (g_as_smc_conn != 0) return true;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    mach_port_t masterPort = kIOMasterPortDefault;
+#pragma clang diagnostic pop
+
+    kern_return_t kr;
+    io_service_t service = 0;
+
+    // Strategy 1: AppleSMCKeysEndpoint is a top-level service on M4 Macs
+    // (child of RTBuddyEndpointService, visible via IOServiceMatching)
+    service = IOServiceGetMatchingService(masterPort,
+                                          IOServiceMatching("AppleSMCKeysEndpoint"));
+    if (service) {
+        kr = IOServiceOpen(service, mach_task_self(), 0, &g_as_smc_conn);
+        IOObjectRelease(service);
+        if (kr == KERN_SUCCESS) {
+            Logger::Info("TemperatureWrapper: AppleSMCKeysEndpoint opened directly");
+            return true;
+        }
+    }
+
+    // Strategy 2: On M1/M2/M3, AppleSMCKeysEndpoint is a child of AppleSMC
+    io_iterator_t iter = 0;
+    CFDictionaryRef match = IOServiceMatching("AppleSMC");
+    if (match) {
+        kr = IOServiceGetMatchingServices(masterPort, match, &iter);
+        if (kr == KERN_SUCCESS) {
+            io_registry_entry_t entry;
+            while ((entry = IOIteratorNext(iter)) != 0) {
+                char nameBuf[128] = {};
+                IORegistryEntryGetName(entry, nameBuf);
+                if (strcmp(nameBuf, "AppleSMCKeysEndpoint") == 0) {
+                    kr = IOServiceOpen(entry, mach_task_self(), 0, &g_as_smc_conn);
+                    IOObjectRelease(entry);
+                    break;
+                }
+                // Check children
+                io_iterator_t childIter = 0;
+                if (IORegistryEntryGetChildIterator(entry, kIOServicePlane, &childIter) == KERN_SUCCESS) {
+                    io_registry_entry_t child;
+                    while ((child = IOIteratorNext(childIter)) != 0) {
+                        char cname[128] = {};
+                        IORegistryEntryGetName(child, cname);
+                        if (strcmp(cname, "AppleSMCKeysEndpoint") == 0) {
+                            kr = IOServiceOpen(child, mach_task_self(), 0, &g_as_smc_conn);
+                            IOObjectRelease(child);
+                            break;
+                        }
+                        IOObjectRelease(child);
+                    }
+                    IOObjectRelease(childIter);
+                    if (g_as_smc_conn != 0) { IOObjectRelease(entry); break; }
+                }
+                IOObjectRelease(entry);
+            }
+            IOObjectRelease(iter);
+        }
+    }
+
+    // SMC scan done
+    if (kr != KERN_SUCCESS || g_as_smc_conn == 0) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: failed (kr=%d conn=%u)\n", kr, g_as_smc_conn);
+        return false;
+    }
+    Logger::Info("TemperatureWrapper: AppleSMCKeysEndpoint opened for Apple Silicon");
+    return true;
+}
+
+static kern_return_t as_smc_call(AsKeyData* in, AsKeyData* out) {
+    size_t isz = sizeof(AsKeyData), osz = sizeof(AsKeyData);
+    static int dbgOnce = 0;
+    if (dbgOnce == 0) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] as_smc_call: sizeof(AsKeyData)=%zu\n", isz);
+        dbgOnce = 1;
+    }
+    return IOConnectCallStructMethod(g_as_smc_conn, 2, in, isz, out, &osz);
+}
+
+// Read key info (data8=9): fills keyInfo (dataSize, dataType, dataAttributes)
+static bool as_smc_read_key_info(uint32_t keyWord, AsKeyInfo* info) {
+    AsKeyData in = {};
+    AsKeyData out = {};
+    in.key = keyWord;
+    in.data8 = 9;
+    kern_return_t kr = as_smc_call(&in, &out);
+    static int dbgCnt = 0;
+    if (dbgCnt < 3) {
+        dbgCnt++;
+    }
+    if (kr != KERN_SUCCESS || out.result != 0)
+        return false;
+    memcpy(info, &out.keyInfo, sizeof(AsKeyInfo));
+    return (info->dataSize > 0 && info->dataSize <= 32);
+}
+
+// Read sensor value (data8=5): raw bytes in out.bytes[0..dataSize]
+static bool as_smc_read_val(uint32_t keyWord, const AsKeyInfo* info,
+                            uint8_t* outBytes, size_t outMax) {
+    AsKeyData in = {};
+    AsKeyData out = {};
+    in.key = keyWord;
+    in.data8 = 5;
+    memcpy(&in.keyInfo, info, sizeof(AsKeyInfo));
+    if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0)
+        return false;
+    size_t n = std::min(static_cast<size_t>(info->dataSize), outMax);
+    memcpy(outBytes, out.bytes, n);
+    return true;
+}
+
+// Get key name by index (data8=8, data32=index)
+static bool as_smc_key_by_index(uint32_t index, char keyOut[5]) {
+    AsKeyData in = {};
+    AsKeyData out = {};
+    in.data8 = 8;
+    in.data32 = index;
+    if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0)
+        return false;
+    uint32_t kw = out.key;  // key is in Big Endian
+    keyOut[0] = (kw >> 24) & 0xFF;
+    keyOut[1] = (kw >> 16) & 0xFF;
+    keyOut[2] = (kw >>  8) & 0xFF;
+    keyOut[3] =  kw        & 0xFF;
+    keyOut[4] = '\0';
+    return true;
+}
+
+// Decode temperature from raw bytes (assumes float32 big-endian, or sp78 fixed-point)
+static double as_smc_decode_temp(const uint8_t* bytes, const AsKeyInfo* info) {
+    if (!bytes || !info || info->dataSize < 2) return 0.0;
+    // Try float32 big-endian first (macmon approach)
+    uint32_t dt = info->dataType;
+    char typeStr[5] = {};
+    typeStr[0] = (dt >> 24) & 0xFF;
+    typeStr[1] = (dt >> 16) & 0xFF;
+    typeStr[2] = (dt >>  8) & 0xFF;
+    typeStr[3] =  dt        & 0xFF;
+    // "flt " = float32 little-endian (macmon: f32::from_le_bytes)
+    if (strcmp(typeStr, "flt ") == 0 && info->dataSize >= 4) {
+        float f;
+        memcpy(&f, bytes, sizeof(f));  // direct memcpy on little-endian (ARM64)
+        if (f > 10.0 && f < 150.0) return static_cast<double>(f);
+    }
+    // "sp78" = signed 16-bit 7.8 fixed-point big-endian (common for Intel SMC)
+    if (strcmp(typeStr, "sp78") == 0 && info->dataSize >= 2) {
+        int16_t raw = ((int16_t)bytes[0] << 8) | bytes[1];
+        double val = static_cast<double>(raw) / 256.0;
+        if (val > 0 && val < 150.0) return val;
+    }
+    // Generic fallback: try as float32 little-endian
+    if (info->dataSize >= 4) {
+        float f;
+        memcpy(&f, bytes, sizeof(f));
+        if (f > 10 && f < 150.0) return static_cast<double>(f);
+    }
+    return 0.0;
+}
+
+// Enumerate all SMC temperature keys (called once at init)
+static void as_smc_enumerate(void) {
+    std::lock_guard<std::mutex> lock(g_as_smc_mutex);
+    if (g_as_smc_ready) return;
+
+    // Read #KEY to get total key count
+    AsKeyInfo keyInfo;
+    uint32_t hashKey = 0x234b4559; // "#KEY" as FourCC
+    // reading #KEY
+    if (!as_smc_read_key_info(hashKey, &keyInfo)) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: #KEY read_key_info FAILED\n");
+        return;
+    }
+    // #KEY info read ok
+
+    uint8_t keyBytes[32] = {};
+    if (!as_smc_read_val(hashKey, &keyInfo, keyBytes, sizeof(keyBytes))) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC: #KEY read_val FAILED\n");
+        return;
+    }
+
+    uint32_t totalKeys = ((uint32_t)keyBytes[0] << 24) | ((uint32_t)keyBytes[1] << 16)
+                       | ((uint32_t)keyBytes[2] <<  8) | (uint32_t)keyBytes[3];
+    Logger::Info("TemperatureWrapper: AS SMC has " + std::to_string(totalKeys) + " keys");
+    if (totalKeys == 0 || totalKeys > 65535) return;
+
+    g_as_smc_temp_keys.clear();
+    g_as_smc_key_info_cache.clear();
+
+    int pCount = 0, eCount = 0, gCount = 0, otherCount = 0;
+    int totalTemps = 0, whitelisted = 0;
+    for (uint32_t i = 0; i < totalKeys; i++) {
+        char k[5] = {};
+        if (!as_smc_key_by_index(i, k)) continue;
+
+        AsKeyInfo ki;
+        uint32_t kw = ((uint32_t)(uint8_t)k[0] << 24) | ((uint32_t)(uint8_t)k[1] << 16)
+                    | ((uint32_t)(uint8_t)k[2] <<  8) | (uint32_t)(uint8_t)k[3];
+        if (!as_smc_read_key_info(kw, &ki)) continue;
+
+        char dt[5] = {};
+        dt[0] = (ki.dataType >> 24) & 0xFF;
+        dt[1] = (ki.dataType >> 16) & 0xFF;
+        dt[2] = (ki.dataType >>  8) & 0xFF;
+        dt[3] =  ki.dataType        & 0xFF;
+
+        // Temperature keys: 4-byte float32, key starts with 'T'
+        if (ki.dataSize != 4) continue;
+        if (dt[0] != 'f' || dt[1] != 'l') continue;
+        if (k[0] != 'T') continue;
+
+        totalTemps++;
+        std::string keyStr(k);
+
+        // Whitelist gate: skip sensors not in our known list
+        auto [found, wl] = lookup_whitelist(keyStr);
+        if (!found) continue;
+        whitelisted++;
+
+        SmcTempEntry entry;
+        entry.key         = keyStr;
+        entry.cat         = wl.cat;
+        entry.groupLabel  = wl.groupLabel;
+        entry.displayName = wl.displayName.empty() ? wl.groupLabel : wl.displayName;
+
+        g_as_smc_temp_keys.push_back(entry);
+        g_as_smc_key_info_cache[keyStr] = ki;
+
+        switch (entry.cat) {
+            case SmcTempCategory::PCore: pCount++; break;
+            case SmcTempCategory::ECore: eCount++; break;
+            case SmcTempCategory::GPU:   gCount++; break;
+            default: otherCount++; break;
+        }
+    }
+
+    g_as_smc_ready = true;
+    Logger::Info("TemperatureWrapper: AS SMC " + std::to_string(totalTemps)
+                 + " temp keys, " + std::to_string(whitelisted) + " whitelisted"
+                 + " (P-Core=" + std::to_string(pCount)
+                 + " E-Core=" + std::to_string(eCount)
+                 + " GPU=" + std::to_string(gCount)
+                 + " Other=" + std::to_string(otherCount) + ")");
+}
+
+// Read temperatures from Apple Silicon SMC (with cache for reliability)
+static std::vector<std::pair<std::string, double>> g_as_smc_cached_temps;
+static int64_t g_as_smc_refresh_count = 0;
+
+static std::vector<std::pair<std::string, double>> as_smc_read_temps(void) {
+    std::vector<std::pair<std::string, double>> temps;
+    if (!g_as_smc_ready) return g_as_smc_cached_temps; // return last known good data
+
+    std::lock_guard<std::mutex> lock(g_as_smc_mutex);
+
+    auto readKey = [&](const std::string& k) -> double {
+        uint32_t kw = ((uint32_t)(uint8_t)k[0] << 24) | ((uint32_t)(uint8_t)k[1] << 16)
+                    | ((uint32_t)(uint8_t)k[2] <<  8) | (uint32_t)(uint8_t)k[3];
+        auto it = g_as_smc_key_info_cache.find(k);
+        if (it == g_as_smc_key_info_cache.end()) return 0.0;
+        AsKeyData in = {}, out = {};
+        in.key = kw; in.data8 = 5;
+        memcpy(&in.keyInfo, &it->second, sizeof(AsKeyInfo));
+        if (as_smc_call(&in, &out) != KERN_SUCCESS || out.result != 0) return 0.0;
+        return as_smc_decode_temp(out.bytes, &it->second);
+    };
+
+    // Phase 1: read all whitelisted sensors, group by groupLabel
+    // groupLabel non-empty → average with siblings
+    // groupLabel empty     → individual sensor (use displayName directly)
+    std::unordered_map<std::string, std::vector<double>> groups;
+    int validReadings = 0;
+    for (const auto& entry : g_as_smc_temp_keys) {
+        double v = readKey(entry.key);
+        if (v <= 10.0 || v >= 150.0) continue;
+        validReadings++;
+        std::string label = entry.groupLabel.empty() ? entry.displayName : entry.groupLabel;
+        groups[label].push_back(v);
+    }
+
+    // Phase 2: flatten — average groups, pass through individuals
+    for (const auto& [label, values] : groups) {
+        double sum = 0.0;
+        for (double v : values) sum += v;
+        double avg = sum / static_cast<double>(values.size());
+        temps.push_back({label, avg});
+    }
+    // Sort by category order: P-Core → E-Core → GPU → RAM → rest
+    // (We use label alphabetical as a reasonable proxy)
+    std::sort(temps.begin(), temps.end());
+
+    // Cache: if we got at least some valid readings, update cache
+    if (validReadings >= 3) {
+        g_as_smc_cached_temps = temps;
+        g_as_smc_refresh_count++;
+    } else if (!g_as_smc_cached_temps.empty()) {
+        temps = g_as_smc_cached_temps;
+    }
+
+    return temps;
+}
+
+// =====================================================================
+// Background powermetrics caching thread (Intel only — needs root)
 // powermetrics --samplers thermal -i N -n 1 outputs CPU/GPU die temps.
-// Runs as a daemon; GetTemperatures() reads the cache. Falls back to
-// empty when cache is stale or powermetrics is unavailable (no root).
 // =====================================================================
 static std::vector<std::pair<std::string, double>> g_pm_temps;
 static std::mutex  g_pm_mutex;
 static std::atomic<bool> g_pm_running{false};
 static std::atomic<bool> g_pm_available{false};
 static std::thread g_pm_thread;
+std::atomic<double> g_pm_pCoreFreq{0.0};
+std::atomic<double> g_pm_eCoreFreq{0.0};
+std::atomic<double> g_pm_gpuFreq{0.0};
+std::atomic<double> g_pm_cpuPower{0.0};
+std::atomic<double> g_pm_gpuPower{0.0};
+std::atomic<double> g_pm_anePower{0.0};
+
+double GetPmPCoreFreq() { return g_pm_pCoreFreq.load(); }
+double GetPmECoreFreq() { return g_pm_eCoreFreq.load(); }
+double GetPmGpuFreq()   { return g_pm_gpuFreq.load(); }
+double GetPmCpuPower()  { return g_pm_cpuPower.load(); }
+double GetPmGpuPower()  { return g_pm_gpuPower.load(); }
+double GetPmAnePower()  { return g_pm_anePower.load(); }
+
+// Parse the first floating-point number from a line (works for "XXX MHz", "XXX mW", etc.)
+static double parse_number_line(const char* line) {
+    if (!line) return 0;
+    while (*line) {
+        if (*line == '-' || *line == '.' || (*line >= '0' && *line <= '9')) {
+            const char* start = line;
+            while (*line == '-' || *line == '.' || (*line >= '0' && *line <= '9')) ++line;
+            std::string s(start, static_cast<size_t>(line - start));
+            double v = std::atof(s.c_str());
+            if (v > 0) return v;
+            continue;
+        }
+        ++line;
+    }
+    return 0;
+}
 
 // Parse "XX.YY C" or "XX.YY°C" from a line
 static double parse_temp_line(const char* line) {
@@ -334,9 +919,10 @@ static void powermetrics_thread_func(void) {
     signal(SIGALRM, oldAlrm);  // restore; just want to test signal works
 
     while (g_pm_running.load()) {
-        // Run powermetrics for 10s sampling interval, output 1 sample
-        alarm(12);  // 12s hard timeout — fires if powermetrics blocks
-        FILE* fp = popen("/usr/bin/powermetrics --samplers thermal -i 10000 -n 1 2>/dev/null", "r");
+        // Run powermetrics with default samplers (includes frequency + power on AS)
+        // --samplers thermal is Intel-only; Apple Silicon uses default output
+        alarm(15);
+        FILE* fp = popen("/usr/bin/powermetrics -i 10000 -n 1 2>/dev/null", "r");
         if (!fp) {
             alarm(0);
             std::this_thread::sleep_for(std::chrono::seconds(30));
@@ -345,27 +931,46 @@ static void powermetrics_thread_func(void) {
 
         std::vector<std::pair<std::string, double>> batch;
         char line[512] = {0};
-        [[maybe_unused]] bool in_thermal = false;
 
         while (fgets(line, sizeof(line), fp)) {
-            if (std::strstr(line, "Thermal pressure")) {
-                in_thermal = true;
+            // Frequency: "E-Cluster HW active frequency: 1405 MHz"
+            if (std::strstr(line, "E-Cluster HW active frequency:")) {
+                double v = parse_number_line(line);
+                if (v > 0) g_pm_eCoreFreq.store(v);
             }
-            if (std::strstr(line, "CPU Die Temperature") ||
-                std::strstr(line, "GPU Die Temperature") ||
-                std::strstr(line, "CPU Die") ||
-                std::strstr(line, "GPU Die")) {
+            else if (std::strstr(line, "P-Cluster HW active frequency:")) {
+                double v = parse_number_line(line);
+                if (v > 0) g_pm_pCoreFreq.store(v);
+            }
+            // GPU frequency: "GPU HW active frequency: 482 MHz"
+            else if (std::strstr(line, "GPU HW active frequency:")) {
+                double v = parse_number_line(line);
+                if (v > 0) g_pm_gpuFreq.store(v);
+            }
+            // Power: "CPU Power: 941 mW" / "GPU Power: 591 mW" / "ANE Power: 0 mW"
+            else if (std::strstr(line, "CPU Power:")) {
+                double v = parse_number_line(line);
+                if (v > 0) { g_pm_cpuPower.store(v); batch.push_back({"CPU Power", v}); }
+            }
+            else if (std::strstr(line, "GPU Power:")) {
+                double v = parse_number_line(line);
+                if (v > 0) { g_pm_gpuPower.store(v); batch.push_back({"GPU Power", v}); }
+            }
+            else if (std::strstr(line, "ANE Power:")) {
+                double v = parse_number_line(line);
+                if (v >= 0) g_pm_anePower.store(v);
+            }
+            // Temperature (thermal sampler on Intel, ARM PMU on AS)
+            else if (std::strstr(line, "CPU Die Temperature") ||
+                     std::strstr(line, "GPU Die Temperature")) {
                 double t = parse_temp_line(line);
                 if (t > 10 && t < 150) {
                     std::string label = (std::strstr(line, "GPU")) ? "GPU Die" : "CPU Die";
                     batch.push_back({label, t});
                 }
             }
-            if (std::strlen(line) > 2 && std::strstr(line, "PLimitData") != nullptr) {
-                in_thermal = false;
-            }
         }
-        alarm(0);  // cancel SIGALRM
+        alarm(0);
         pclose(fp);
 
         if (!batch.empty()) {
@@ -496,8 +1101,9 @@ static std::vector<std::pair<std::string, double>> iokit_arm_temp_sensors(void) 
 }
 
 // =====================================================================
-// Temperature keys to probe on Apple Silicon (no root for most keys)
+// Temperature keys to probe (Intel SMC only)
 // =====================================================================
+#ifdef __x86_64__
 static const char* kCpuKeys[] = {
     // CPU proximity / package
     "TC0P", "TC0D", "TC0H", "TC0C",
@@ -521,10 +1127,13 @@ static const char* kGpuKeys[] = {
     "GgTp", "GgTs",
     NULL
 };
+#endif // __x86_64__
 
 // =====================================================================
 // Battery temperature via AppleSmartBattery (no root needed)
-// Temperature value is in centidegrees (×100 °C), e.g. 3018 → 30.18°C
+// Value follows SMBus Smart Battery Data Spec: tenths of Kelvin (decikelvin)
+//   e.g. 3079 → 307.9K → 34.75°C
+// Confirmed empirically: matches coconutBattery, VirtualSMC, and iStats#71
 // =====================================================================
 static double iokit_battery_temp(void) {
 #pragma clang diagnostic push
@@ -542,7 +1151,8 @@ static double iokit_battery_temp(void) {
     if (ref && CFGetTypeID(ref) == CFNumberGetTypeID()) {
         SInt64 raw = 0;
         if (CFNumberGetValue((CFNumberRef)ref, kCFNumberSInt64Type, &raw)) {
-            result = raw / 100.0;
+            // decikelvin → Celsius: raw/10 - 273.15
+            result = (raw / 10.0) - 273.15;
         }
         if (ref) CFRelease(ref);
     }
@@ -559,8 +1169,19 @@ void TemperatureWrapper::Initialize() {
     if (initialized) return;
     initialized = true;
 
-    // Step 1: Try direct SMC (works without root on Intel; may need root on AS)
+    // Step 1: SMC (Intel or Apple Silicon, platform-appropriate)
+#ifdef __x86_64__
     probe_smc();
+#else
+    if (as_smc_open()) {
+        as_smc_enumerate();
+        Logger::Info("TemperatureWrapper: AS SMC ready, "
+                     + std::to_string(g_as_smc_temp_keys.size()) + " temp keys");
+    } else {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] AS SMC open failed\n");
+    }
+#endif
 
     // Step 2: Start powermetrics background thread (needs root)
     start_powermetrics_thread();
@@ -578,10 +1199,22 @@ void TemperatureWrapper::Cleanup() {
     }
 
     // Close SMC
+#ifdef __x86_64__
     if (g_smc_conn) {
         IOServiceClose(g_smc_conn);
         g_smc_conn = 0;
     }
+#else
+    if (g_as_smc_conn) {
+        std::lock_guard<std::mutex> lock(g_as_smc_mutex);
+        g_as_smc_ready = false;
+        g_as_smc_temp_keys.clear();
+        g_as_smc_key_info_cache.clear();
+        g_as_smc_cached_temps.clear();
+        IOServiceClose(g_as_smc_conn);
+        g_as_smc_conn = 0;
+    }
+#endif
 
     initialized = false;
 }
@@ -591,50 +1224,210 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
 
     if (!initialized) return temps;
 
-    // Priority 1: Direct SMC reads (works on Intel; needs root on Apple Silicon)
+#ifdef __x86_64__
+    // Priority 1: Intel SMC hardcoded keys
     for (int i = 0; kCpuKeys[i]; i++) {
         double t = 0;
-        if (smc_read_temp(kCpuKeys[i], "sp78", &t)) {
+        if (smc_read_temp(kCpuKeys[i], "sp78", &t))
             temps.push_back({std::string(kCpuKeys[i]) + " (CPU)", t});
-        }
     }
     for (int i = 0; kGpuKeys[i]; i++) {
         double t = 0;
-        if (smc_read_temp(kGpuKeys[i], "sp78", &t)) {
+        if (smc_read_temp(kGpuKeys[i], "sp78", &t))
             temps.push_back({std::string(kGpuKeys[i]) + " (GPU)", t});
+    }
+#else
+    // Priority 1: Apple Silicon SMC (dynamically enumerated keys, no root)
+    {
+        auto as = as_smc_read_temps();
+        temps.insert(temps.end(), as.begin(), as.end());
+        // ARM PMU fallback if SMC gave nothing
+        if (as.empty()) {
+            auto arm = iokit_arm_temp_sensors();
+            temps.insert(temps.end(), arm.begin(), arm.end());
         }
     }
+#endif
 
-    // Priority 2: powermetrics cache (needs root, filled by background thread)
-    if (temps.empty()) {
+    // IOKit HID (supplement if still few sensors)
+    if (temps.size() < 2) {
+        auto hid = iokit_hid_temps();
+        temps.insert(temps.end(), hid.begin(), hid.end());
+    }
+
+    // powermetrics cache (needs root, supplements SMC)
+    {
         std::lock_guard<std::mutex> lock(g_pm_mutex);
         if (!g_pm_temps.empty()) {
-            temps = g_pm_temps;
+            temps.insert(temps.end(), g_pm_temps.begin(), g_pm_temps.end());
         }
     }
 
-    // Priority 3: Battery temperature (no root, always available on laptops)
+    // Battery temperature (always available on laptops)
     double batTemp = iokit_battery_temp();
     if (batTemp > 10 && batTemp < 80) {
         temps.push_back({"Battery", batTemp});
     }
 
-    // Priority 4: Apple Silicon ARM PMU temp sensors (no root, Apple Silicon only)
-    {
-        auto arm = iokit_arm_temp_sensors();
-        temps.insert(temps.end(), arm.begin(), arm.end());
-    }
-
-    // Priority 5: IOKit HID (last resort)
-    if (temps.empty()) {
-        auto hid = iokit_hid_temps();
-        temps.insert(temps.end(), hid.begin(), hid.end());
+    static int totalDbg = 0;
+    if (totalDbg < 3) {
+        // DEBUG REMOVED
+        // fprintf(stderr, "[temp] GetTemperatures total: %zu sensors\n", temps.size());
+        totalDbg++;
     }
 
     return temps;
 }
 
 bool TemperatureWrapper::IsInitialized() { return initialized; }
+
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <cstring>
+#include <algorithm>
+#include <set>
+#include <cmath>
+#include <map>
+
+bool TemperatureWrapper::initialized = false;
+
+void TemperatureWrapper::Initialize() {
+    initialized = true;
+    Logger::Debug("TemperatureWrapper: initialized (Linux sysfs)");
+}
+
+void TemperatureWrapper::Cleanup() {
+    initialized = false;
+}
+
+static double ReadTempMillideg(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return 0.0;
+    int64_t milli = 0;
+    ifs >> milli;
+    if (ifs.fail()) return 0.0;
+    return static_cast<double>(milli) / 1000.0;
+}
+
+static std::string ReadLine(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return "";
+    std::string val;
+    std::getline(ifs, val);
+    val.erase(0, val.find_first_not_of(" \t\n\r"));
+    val.erase(val.find_last_not_of(" \t\n\r") + 1);
+    return val;
+}
+
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+    std::vector<std::pair<std::string, double>> temps;
+    if (!initialized) return temps;
+
+    DIR* tzDir = opendir("/sys/class/thermal");
+    if (tzDir) {
+        struct dirent* entry;
+        while ((entry = readdir(tzDir)) != nullptr) {
+            std::string name(entry->d_name);
+            if (name.find("thermal_zone") != 0) continue;
+
+            std::string base = "/sys/class/thermal/" + name;
+            std::string type = ReadLine(base + "/type");
+            if (type.empty()) continue;
+
+            double temp = ReadTempMillideg(base + "/temp");
+            if (temp <= 0.0 || temp > 200.0) continue;
+
+            temps.push_back({type, temp});
+        }
+        closedir(tzDir);
+    }
+
+    DIR* hwDir = opendir("/sys/class/hwmon");
+    if (hwDir) {
+        struct dirent* entry;
+        while ((entry = readdir(hwDir)) != nullptr) {
+            std::string name(entry->d_name);
+            if (name.find("hwmon") != 0) continue;
+
+            std::string base = "/sys/class/hwmon/" + name;
+            std::string hwmonName = ReadLine(base + "/name");
+            if (hwmonName.empty()) hwmonName = name;
+
+            DIR* hwEntryDir = opendir(base.c_str());
+            if (!hwEntryDir) continue;
+
+            std::map<int, std::string> labels;
+            std::map<int, double> inputs;
+
+            struct dirent* hwentry;
+            while ((hwentry = readdir(hwEntryDir)) != nullptr) {
+                std::string fname(hwentry->d_name);
+                if (fname.find("temp") != 0) continue;
+
+                std::string rest = fname.substr(4);
+                size_t usPos = rest.find('_');
+                if (usPos == std::string::npos) continue;
+
+                int idx = 0;
+                try {
+                    idx = std::stoi(rest.substr(0, usPos));
+                } catch (...) {
+                    continue;
+                }
+
+                std::string suffix = rest.substr(usPos);
+                if (suffix == "_label")
+                    labels[idx] = ReadLine(base + "/" + fname);
+                else if (suffix == "_input")
+                    inputs[idx] = ReadTempMillideg(base + "/" + fname);
+            }
+            closedir(hwEntryDir);
+
+            for (const auto& input : inputs) {
+                int idx = input.first;
+                double val = input.second;
+                if (val <= 0.0 || val > 200.0) continue;
+
+                std::string label;
+                auto lit = labels.find(idx);
+                if (lit != labels.end() && !lit->second.empty())
+                    label = hwmonName + " " + lit->second;
+                else
+                    label = hwmonName + " Sensor #" + std::to_string(idx);
+
+                temps.push_back({label, val});
+            }
+        }
+        closedir(hwDir);
+    }
+
+    std::vector<std::pair<std::string, double>> deduped;
+    for (const auto& t : temps) {
+        bool dup = false;
+        for (const auto& d : deduped) {
+            if (std::abs(t.second - d.second) < 0.5) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup)
+            deduped.push_back(t);
+    }
+
+    return deduped;
+}
+
+bool TemperatureWrapper::IsInitialized() { return initialized; }
+
+double GetPmPCoreFreq() { return 0.0; }
+double GetPmECoreFreq() { return 0.0; }
+double GetPmGpuFreq() { return 0.0; }
+double GetPmCpuPower() { return 0.0; }
+double GetPmGpuPower() { return 0.0; }
+double GetPmAnePower() { return 0.0; }
 
 #else
 #error "Unsupported platform"

@@ -1,8 +1,18 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using TCMT.Avalonia.Models;
 
-namespace AvaloniaUI.ViewModels
+namespace TCMT.Avalonia.ViewModels;
+
+public abstract partial class ViewModelBase : ObservableObject
 {
-    public abstract class ViewModelBase : ObservableObject
-    {
-    }
+    [ObservableProperty]
+    private string _title = "";
+
+    [ObservableProperty]
+    private string _icon = "📊";
+
+    [ObservableProperty]
+    private bool _isLoading;
+
+    public virtual void Update(SystemInfo info) { }
 }

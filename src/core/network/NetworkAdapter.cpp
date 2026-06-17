@@ -515,6 +515,220 @@ void NetworkAdapter::UpdateAdapterAddresses() {
 
 const std::vector<NetworkAdapter::AdapterInfo>& NetworkAdapter::GetAdapters() const { return adapters; }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <linux/if_link.h>
+#include <sys/ioctl.h>
+#include <linux/sockios.h>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
+#include <cctype>
+#include <map>
+#include <chrono>
+#include <tuple>
+
+static std::string FormatMacAddr(const unsigned char* addr, size_t len) {
+    std::stringstream ss;
+    for (size_t i = 0; i < len; ++i) {
+        if (i > 0) ss << ":";
+        ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
+           << static_cast<int>(addr[i]);
+    }
+    return ss.str();
+}
+
+static std::string FormatSpd(uint64_t bitsPerSecond) {
+    const double GB = 1000000000.0, MB = 1000000.0, KB = 1000.0;
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(1);
+    if (bitsPerSecond >= GB) ss << (bitsPerSecond / GB) << " Gbps";
+    else if (bitsPerSecond >= MB) ss << (bitsPerSecond / MB) << " Mbps";
+    else if (bitsPerSecond >= KB) ss << (bitsPerSecond / KB) << " Kbps";
+    else ss << bitsPerSecond << " bps";
+    return ss.str();
+}
+
+NetworkAdapter::NetworkAdapter() : initialized(false) { Initialize(); }
+NetworkAdapter::~NetworkAdapter() { Cleanup(); }
+
+void NetworkAdapter::Initialize() {
+    QueryAdapterInfo();
+    initialized = true;
+}
+
+void NetworkAdapter::Cleanup() {
+    adapters.clear();
+    initialized = false;
+}
+
+void NetworkAdapter::Refresh() {
+    Cleanup();
+    Initialize();
+}
+
+bool NetworkAdapter::IsVirtualAdapter(const std::string& name) const {
+    const std::string virtualKeywords[] = {
+        "lo", "docker", "veth", "br-", "virbr", "tun", "tap",
+        "Virtual", "VPN", "Loopback"
+    };
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    for (const auto& kw : virtualKeywords)
+        if (lower.find(kw) != std::string::npos) return true;
+    return false;
+}
+
+std::string NetworkAdapter::FormatMacAddress(const unsigned char* addr, size_t len) const {
+    return FormatMacAddr(addr, len);
+}
+
+std::string NetworkAdapter::FormatSpeed(uint64_t bitsPerSecond) const {
+    return FormatSpd(bitsPerSecond);
+}
+
+static std::string ReadSysFsString(const std::string& path) {
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return "";
+    std::string val;
+    std::getline(ifs, val);
+    val.erase(0, val.find_first_not_of(" \t\n\r"));
+    val.erase(val.find_last_not_of(" \t\n\r") + 1);
+    return val;
+}
+
+void NetworkAdapter::QueryAdapterInfo() {
+    struct ifaddrs* ifaddr = nullptr;
+    if (getifaddrs(&ifaddr) != 0) {
+        Logger::Error("NetworkAdapter: getifaddrs failed");
+        return;
+    }
+
+    std::map<std::string, AdapterInfo> nameMap;
+
+    for (struct ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_name) continue;
+        std::string ifname(ifa->ifa_name);
+        if (IsVirtualAdapter(ifname)) continue;
+
+        auto it = nameMap.find(ifname);
+        if (it == nameMap.end()) {
+            AdapterInfo info;
+            info.name = ifname;
+            info.isEnabled = (ifa->ifa_flags & IFF_UP) != 0;
+            info.isConnected = (ifa->ifa_flags & IFF_RUNNING) != 0;
+            info.speed = 0;
+            info.speedString = "Unknown";
+
+            if (ifname.find("wl") == 0 || ifname.find("wlan") == 0)
+                info.adapterType = "Wireless adapter";
+            else if (ifname.find("en") == 0 || ifname.find("eth") == 0)
+                info.adapterType = "Ethernet adapter";
+            else
+                info.adapterType = "Unknown";
+
+            nameMap[ifname] = info;
+            it = nameMap.find(ifname);
+        }
+
+        if (ifa->ifa_addr) {
+            if (ifa->ifa_addr->sa_family == AF_INET) {
+                char ipStr[INET_ADDRSTRLEN];
+                struct sockaddr_in* ipv4 = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
+                inet_ntop(AF_INET, &(ipv4->sin_addr), ipStr, INET_ADDRSTRLEN);
+                it->second.ip = std::string(ipStr);
+            } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+                char ipStr[INET6_ADDRSTRLEN];
+                struct sockaddr_in6* ipv6 = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
+                inet_ntop(AF_INET6, &(ipv6->sin6_addr), ipStr, INET6_ADDRSTRLEN);
+                if (it->second.ip.empty())
+                    it->second.ip = std::string(ipStr);
+            }
+        }
+
+        it->second.isEnabled = (ifa->ifa_flags & IFF_UP) != 0;
+        it->second.isConnected = (ifa->ifa_flags & IFF_RUNNING) != 0;
+    }
+
+    freeifaddrs(ifaddr);
+
+    for (auto& kv : nameMap) {
+        const std::string& ifname = kv.first;
+
+        std::string mac = ReadSysFsString("/sys/class/net/" + ifname + "/address");
+        if (!mac.empty()) {
+            std::transform(mac.begin(), mac.end(), mac.begin(), ::toupper);
+            kv.second.mac = mac;
+        }
+
+        std::string speedStr = ReadSysFsString("/sys/class/net/" + ifname + "/speed");
+        if (!speedStr.empty() && speedStr != "-1") {
+            try {
+                uint64_t speedMbps = std::stoull(speedStr);
+                kv.second.speed = speedMbps * 1000000ULL;
+                kv.second.speedString = FormatSpd(kv.second.speed);
+            } catch (...) {
+                kv.second.speed = 0;
+                kv.second.speedString = "Unknown";
+            }
+        }
+
+        std::string operState = ReadSysFsString("/sys/class/net/" + ifname + "/operstate");
+        kv.second.isConnected = (operState == "up");
+    }
+
+    for (auto& kv : nameMap)
+        adapters.push_back(std::move(kv.second));
+
+    Logger::Debug("NetworkAdapter: found " + std::to_string(adapters.size()) + " adapters on Linux");
+
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    for (auto& adapter : adapters) {
+        const std::string& ifname = adapter.name;
+        std::string rxStr = ReadSysFsString("/sys/class/net/" + ifname + "/statistics/rx_bytes");
+        std::string txStr = ReadSysFsString("/sys/class/net/" + ifname + "/statistics/tx_bytes");
+        if (rxStr.empty() || txStr.empty()) continue;
+
+        uint64_t rxBytes = 0, txBytes = 0;
+        try {
+            rxBytes = std::stoull(rxStr);
+            txBytes = std::stoull(txStr);
+        } catch (...) {
+            continue;
+        }
+
+        auto rxIt = prevRxBytes.find(ifname);
+        auto txIt = prevTxBytes.find(ifname);
+        if (rxIt != prevRxBytes.end() && txIt != prevTxBytes.end() && prevSampleTimeMs > 0) {
+            uint64_t dt = now - prevSampleTimeMs;
+            if (dt > 0) {
+                uint64_t rxDelta = (rxBytes >= rxIt->second) ? (rxBytes - rxIt->second) : 0;
+                uint64_t txDelta = (txBytes >= txIt->second) ? (txBytes - txIt->second) : 0;
+                adapter.downloadSpeed = rxDelta * 1000 / dt;
+                adapter.uploadSpeed = txDelta * 1000 / dt;
+            }
+        }
+
+        prevRxBytes[ifname] = rxBytes;
+        prevTxBytes[ifname] = txBytes;
+    }
+    prevSampleTimeMs = now;
+}
+
+void NetworkAdapter::UpdateAdapterAddresses() {
+}
+
+const std::vector<NetworkAdapter::AdapterInfo>& NetworkAdapter::GetAdapters() const { return adapters; }
+
 #else
 #error "Unsupported platform"
 #endif

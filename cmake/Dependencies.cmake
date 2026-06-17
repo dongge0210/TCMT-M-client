@@ -16,6 +16,8 @@ function(tcmt_find_dependencies)
         tcmt_find_windows_dependencies()
     elseif(TCMT_MACOS)
         tcmt_find_macos_dependencies()
+    elseif(TCMT_LINUX)
+        tcmt_find_linux_dependencies()
     endif()
 
     # Third-party library check
@@ -135,6 +137,33 @@ function(tcmt_find_macos_dependencies)
     message(STATUS "  macOS dependencies OK")
 endfunction()
 
+# Linux platform dependencies
+function(tcmt_find_linux_dependencies)
+    message(STATUS "  Checking Linux dependencies...")
+
+    check_include_file_cxx(linux/version.h HAVE_LINUX_VERSION_H)
+    check_include_file_cxx(sys/sysinfo.h HAVE_SYSINFO_H)
+    check_include_file_cxx(pthread.h HAVE_PTHREAD_H)
+    check_include_file_cxx(curses.h HAVE_CURSES_H)
+    check_include_file_cxx(ncurses.h HAVE_NCURSES_H)
+
+    if(NOT HAVE_SYSINFO_H)
+        message(FATAL_ERROR "sys/sysinfo.h not found")
+    endif()
+    if(NOT HAVE_PTHREAD_H)
+        message(FATAL_ERROR "pthread.h not found")
+    endif()
+
+    find_package(Curses QUIET)
+    if(CURSES_FOUND)
+        message(STATUS "    ncurses found: ${CURSES_LIBRARIES}")
+    else()
+        message(FATAL_ERROR "ncurses not found - install libncurses-dev")
+    endif()
+
+    message(STATUS "  Linux dependencies OK")
+endfunction()
+
 # 第三方库检查
 function(tcmt_check_third_party_libs)
     message(STATUS "  Checking third-party libraries...")
@@ -189,6 +218,8 @@ function(tcmt_print_dependencies_summary)
         endif()
     elseif(TCMT_MACOS)
         message(STATUS "macOS frameworks: IOKit, CoreFoundation")
+    elseif(TCMT_LINUX)
+        message(STATUS "Linux libraries: pthread, rt, ncurses, sqlite3")
     endif()
 
     if(EXISTS "${CMAKE_SOURCE_DIR}/src/third_party")

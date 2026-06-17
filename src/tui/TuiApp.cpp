@@ -1,3 +1,8 @@
+// MSVC deprecation noise suppression (must come before any includes)
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <curses.h>
 #include "TuiApp.h"
 #include <ctime>
@@ -5,6 +10,51 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
+#include <chrono>
+#include <wchar.h>
+#include <clocale>
+#include <cstdlib>
+
+// ── Portable wcwidth/wcswidth (missing on Windows/PDCurses) ────────
+#ifndef wcswidth
+static int portable_wcwidth(wchar_t wc) {
+    // Zero-width characters
+    if (wc == 0x200B || wc == 0x200C || wc == 0x200D || wc == 0xFEFF) return 0;
+    // CJK / wide characters
+    if ((wc >= 0x1100 && wc <= 0x115F) ||  // Hangul Jamo
+        (wc >= 0x2E80 && wc <= 0x9FFF) ||  // CJK Radicals .. CJK Unified
+        (wc >= 0xA000 && wc <= 0xA4FF) ||  // Yi
+        (wc >= 0xAC00 && wc <= 0xD7AF) ||  // Hangul Syllables
+        (wc >= 0xF900 && wc <= 0xFAFF) ||  // CJK Compatibility
+        (wc >= 0xFE10 && wc <= 0xFE19) ||  // Vertical forms
+        (wc >= 0xFE30 && wc <= 0xFE6F) ||  // CJK Compatibility Forms
+        (wc >= 0xFF01 && wc <= 0xFF60) ||  // Fullwidth Forms
+        (wc >= 0xFFE0 && wc <= 0xFFE6) ||  // Fullwidth Signs
+        (wc >= 0x20000 && wc <= 0x2FFFF))  // CJK Extension B+
+        return 2;
+    // Control characters
+    if (wc < 0x20 || (wc >= 0x7F && wc < 0xA0)) return -1;
+    return 1;
+}
+
+static int portable_wcswidth(const wchar_t* wcs, size_t n) {
+    int w = 0;
+    for (size_t i = 0; i < n && wcs[i]; i++) {
+        int cw = portable_wcwidth(wcs[i]);
+        if (cw < 0) return -1;
+        w += cw;
+    }
+    return w;
+}
+
+#ifndef wcwidth
+#define wcwidth portable_wcwidth
+#endif
+#ifndef wcswidth
+#define wcswidth portable_wcswidth
+#endif
+#endif
+// ─────────────────────────────────────────────────────────────────────
 
 namespace tcmt {
 
@@ -111,6 +161,62 @@ std::string TuiApp::TrimRight(const std::string& s, size_t maxLen) {
     return s.substr(0, maxLen);
 }
 
+// ── UTF-8 display width helpers (CJK-aware) ──────────────────────────
+// Returns column display width of a UTF-8 string (2 for CJK chars).
+static int utf8_display_width(const std::string& s) {
+    if (s.empty()) return 0;
+    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
+    if (wlen == (size_t)-1) return (int)s.size();  // not valid UTF-8, fallback
+    std::wstring wstr(wlen, L'\0');
+    std::mbstowcs(&wstr[0], s.c_str(), wlen);
+    int w = wcswidth(wstr.c_str(), wlen);
+    return (w >= 0) ? w : (int)s.size();
+}
+
+// Truncate a UTF-8 string so its display width ≤ maxW, appending "~" if cut.
+static std::string utf8_truncate(const std::string& s, int maxW) {
+    if (maxW < 1) return std::string();
+    if (utf8_display_width(s) <= maxW) return s;
+
+    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
+    if (wlen == (size_t)-1) {
+        // Fallback: byte truncation
+        return s.substr(0, std::max(0, maxW - 1)) + "~";
+    }
+    std::wstring wstr(wlen, L'\0');
+    std::mbstowcs(&wstr[0], s.c_str(), wlen);
+
+    int targetW = maxW - 1;  // leave room for "~"
+    int curW = 0;
+    size_t i = 0;
+    for (; i < wlen; i++) {
+        int cw = wcwidth(wstr[i]);
+        if (cw < 0) cw = 1;
+        if (curW + cw > targetW) break;
+        curW += cw;
+    }
+
+    // Convert wide chars back to UTF-8
+    std::string out;
+    for (size_t j = 0; j < i; j++) {
+        wchar_t wc = wstr[j];
+        unsigned int uc = (unsigned int)wc;
+        if (uc < 0x80)      { out += (char)uc; }
+        else if (uc < 0x800) { out += (char)(0xC0 | (uc >> 6));
+                                out += (char)(0x80 | (uc & 0x3F)); }
+        else if (uc < 0x10000) { out += (char)(0xE0 | (uc >> 12));
+                                out += (char)(0x80 | ((uc >> 6) & 0x3F));
+                                out += (char)(0x80 | (uc & 0x3F)); }
+        else                { out += (char)(0xF0 | (uc >> 18));
+                                out += (char)(0x80 | ((uc >> 12) & 0x3F));
+                                out += (char)(0x80 | ((uc >> 6) & 0x3F));
+                                out += (char)(0x80 | (uc & 0x3F)); }
+    }
+    out += "~";
+    return out;
+}
+// ─────────────────────────────────────────────────────────────────────
+
 void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     int rows, cols;
     getmaxyx(win, rows, cols);
@@ -145,23 +251,26 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 
     if (data.performanceCores > 0 || data.efficiencyCores > 0) {
-        if (data.pCoreFreq > 0 || data.eCoreFreq > 0) {
-            std::ostringstream ss;
-            ss << "P:" << data.performanceCores << "(" << data.pCoreFreq << "M)"
-               << " E:" << data.efficiencyCores << "(" << data.eCoreFreq << "M)";
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
-        } else {
-            mvwprintw(win, y + lines, x0 + 2, "P:%d E:%d", data.performanceCores, data.efficiencyCores);
+        std::ostringstream ss;
+        ss << "P:" << data.performanceCores;
+        if (data.pCoreFreq > 0) {
+            ss << "(" << static_cast<int>(data.pCoreFreq);
+            if (data.pCoreMaxFreq > 0 && static_cast<int>(data.pCoreMaxFreq) != static_cast<int>(data.pCoreFreq))
+                ss << "/" << static_cast<int>(data.pCoreMaxFreq);
+            ss << "M)";
         }
-    } else {
+        ss << "  E:" << data.efficiencyCores;
+        if (data.eCoreFreq > 0) {
+            ss << "(" << static_cast<int>(data.eCoreFreq);
+            if (data.eCoreMaxFreq > 0 && static_cast<int>(data.eCoreMaxFreq) != static_cast<int>(data.eCoreFreq))
+                ss << "/" << static_cast<int>(data.eCoreMaxFreq);
+            ss << "M)";
+        }
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
+    } else if (data.physicalCores > 0) {
         mvwprintw(win, y + lines, x0 + 2, "Cores: %d", data.physicalCores);
     }
     lines++;
-
-    if (data.cpuTemp > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.cpuTemp);
-        lines++;
-    }
 
     return lines;
 }
@@ -198,6 +307,18 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
         mvwprintw(win, y + lines, x0 + 2, "Compressed: %.*s", maxW - 12, compStr.c_str());
         lines++;
     }
+    if (data.swapTotal > 0) {
+        auto usedStr = FormatSize(data.swapUsed);
+        auto totalStr = FormatSize(data.swapTotal);
+        mvwprintw(win, y + lines, x0 + 2, "Swap: %.*s / %.*s",
+            maxW - 14, usedStr.c_str(), maxW - 18, totalStr.c_str());
+        lines++;
+    }
+    if (data.ramSpeed > 0) {
+        std::string ramStr = std::string(data.ramType) + "-" + std::to_string(data.ramSpeed);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, ramStr.c_str());
+        lines++;
+    }
 
     return lines;
 }
@@ -213,9 +334,11 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     lines++;
 
+#ifndef TCMT_MACOS
     auto name = TrimRight(data.gpuName, maxW - 4);
     mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, name.c_str());
     lines++;
+#endif
 
     mvwprintw(win, y + lines, x0 + 2, "Use:");
     wattron(win, COLOR_PAIR(6));
@@ -225,11 +348,6 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 
 #ifndef TCMT_MACOS
-    if (data.gpuMemory > 0) {
-        auto memStr = FormatSize(data.gpuMemory);
-        mvwprintw(win, y + lines, x0 + 2, "VRAM: %.*s", maxW - 8, memStr.c_str());
-        lines++;
-    }
     if (data.gpuMemoryPercent > 1 && data.gpuMemory > 0) {
         uint64_t used = (uint64_t)(data.gpuMemory * data.gpuMemoryPercent / 100.0);
         auto usedStr = FormatSize(used);
@@ -240,18 +358,18 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
 #endif
 
-    if (data.gpuTemp > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Temp: %.0f C", data.gpuTemp);
+    if (data.gpuFreq > 0) {
+        if (data.gpuMaxFreq > 0 && static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq))
+            mvwprintw(win, y + lines, x0 + 2, "Freq: %d/%d MHz", static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
-
     return lines;
 }
 
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 22, 20);
-    bw = std::max(bw, 4);
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(win, y, x0, "%.*s", maxW, "Disks");
@@ -259,26 +377,22 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     for (const auto& d : data.disks) {
-        auto label = TrimRight(d.label.empty() ? "Untitled" : d.label, 14);
+        // Compact single-line format: [C:] Label  92% 210G/228G
+        char lineBuf[128];
+        int off = 0;
+        if (d.letter >= 'A' && d.letter <= 'Z')
+            off = snprintf(lineBuf, sizeof(lineBuf), "[%c:] ", d.letter);
+        auto label = d.label.empty() ? "?" : d.label;
+        if (label.size() > 10) label = label.substr(0, 8) + "..";
         double upct = (d.totalSize > 0) ? 100.0 * d.usedSpace / d.totalSize : 0;
         auto usedStr = FormatSize(d.usedSpace);
-        // Show drive letter
-        char letterBuf[16];
-        int letterPrefix = 0;
-        if (d.letter && d.letter != '\0') {
-            snprintf(letterBuf, sizeof(letterBuf), "[%c:] ", d.letter);
-            letterPrefix = static_cast<int>(strlen(letterBuf));
-            mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, letterBuf);
-        }
-        mvwprintw(win, y + lines, x0 + 2 + letterPrefix, "%.*s", maxW - 2 - letterPrefix, label.c_str());
-        int barCol = x0 + 2 + letterPrefix + static_cast<int>(label.size()) + 1;
-        if (barCol + bw + 2 < x0 + maxW) {
-            wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol, "%.*s", bw, FormatBar(upct, bw).c_str());
-            wattroff(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, barCol + bw + 1, "%d%% %.*s",
-                      static_cast<int>(upct), maxW - (barCol + bw + 1 - x0), usedStr.c_str());
-        }
+        auto totalStr = FormatSize(d.totalSize);
+        off += snprintf(lineBuf + off, sizeof(lineBuf) - off,
+                       "%s  %d%% %s/%s",
+                       label.c_str(), static_cast<int>(upct),
+                       usedStr.c_str(), totalStr.c_str());
+        lineBuf[off] = '\0';
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, lineBuf);
         lines++;
     }
     return lines;
@@ -329,18 +443,32 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     int lines = 0;
 
     if (data.hasWiFi) {
-        std::string wifiStr = "On";
-        if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
-        if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
-        if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
-        if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
-        if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
-        if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
+        bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
+        std::string wifiStr;
+        if (data.wifiLocationDenied) {
+            wifiStr = "On  SSID unavailable (Location Services)";
+        } else {
+            wifiStr = hasData ? "On" : "Disconnected";
+            if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
+            if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
+            if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
+            if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
+            if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
+            if (!data.wifiBand.empty()) wifiStr += "  " + data.wifiBand;
+            if (!data.wifiGen.empty()) wifiStr += "  " + data.wifiGen;
+            if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
+        }
         wifiStr = TrimRight(wifiStr, maxW - 8);
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
+        lines++;
+    } else {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Off");
         lines++;
     }
 
@@ -350,6 +478,34 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             : "Off";
         lines++;  // blank line between WiFi and BT
         mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
+        lines++;
+    }
+
+    return lines;
+}
+
+int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    if (data.displays.empty()) return 0;
+    int lines = 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y + lines, x0, "%.*s", maxW, "Displays");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    lines++;
+
+    for (const auto& d : data.displays) {
+        std::string line = d.name;
+        line += " " + std::to_string(d.width) + "x" + std::to_string(d.height);
+        if (d.refreshRate > 0)
+            line += " @" + std::to_string(d.refreshRate) + "Hz";
+        if (d.isHDR)
+            line += " HDR";
+        if (d.isBuiltin)
+            line += " (built-in)";
+        else
+            line += " scale=" + std::to_string(d.backingScale).substr(0, 3);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, TrimRight(line, maxW - 4).c_str());
         lines++;
     }
 
@@ -366,6 +522,21 @@ int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     return 2;
 }
 
+int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10 || data.physicalDisks.empty()) return 0;
+    int lines = 0;
+
+    for (const auto& pd : data.physicalDisks) {
+        if (y + lines >= LINES - 5) break;
+        std::string line = pd.model;
+        if (!pd.diskType.empty()) line += " " + pd.diskType;
+        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
+        line = TrimRight(line, maxW - 2);
+        mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
+    }
+    return lines;
+}
+
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -373,33 +544,47 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
-    int maxPairs = 4; // 8 sensors max, 2 per line
     int halfW = maxW / 2;
+    const int CONTENT_ROWS = 3;      // 6 sensors per page (2 per row)
 
-    // Collect sensors to display: skip per-core CPU sensors, keep everything else
+    // All sensors are pre-filtered upstream; display everything
     std::vector<std::pair<std::string, double>> displayTemps;
-    for (const auto& [name, temp] : data.temperatures) {
-        // Skip only individual CPU core sensors (e.g. "CPU Core 1", "CPU Core 2")
-        bool isPerCoreSensor = (name.find("CPU Core ") != std::string::npos ||
-                                name.find("CPU Die") != std::string::npos);
-        if (!isPerCoreSensor) {
-            displayTemps.push_back({name, temp});
+    for (const auto& [name, temp] : data.temperatures)
+        displayTemps.push_back({name, temp});
+
+    int perPage = CONTENT_ROWS * 2;
+    int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
+    bool needPaging = totalPages > 1;
+
+    static int currentPage = 0;
+    static auto lastPageFlip = std::chrono::steady_clock::now();
+    if (needPaging) {
+        auto tNow = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(tNow - lastPageFlip).count() >= 3) {
+            currentPage = (currentPage + 1) % totalPages;
+            lastPageFlip = tNow;
         }
+    } else {
+        currentPage = 0;
     }
 
-    for (int p = 0; p < maxPairs && static_cast<size_t>(p * 2) < displayTemps.size(); p++) {
-        int leftIdx = p * 2;
-        int rightIdx = p * 2 + 1;
+    int actualRows = 0;
+    int startIdx = currentPage * CONTENT_ROWS * 2;
+    int limit = needPaging ? CONTENT_ROWS : static_cast<int>(displayTemps.size());
+    for (int p = 0; p < limit; p++) {
+        int leftIdx = startIdx + p * 2;
+        if (leftIdx >= static_cast<int>(displayTemps.size())) break;
 
-        auto [nameL, tempL] = displayTemps[leftIdx];
+        auto& [nameL, tempL] = displayTemps[leftIdx];
         auto labelL = TrimRight(nameL, halfW - 9);
         int tcL = (tempL > 80) ? 4 : (tempL > 60) ? 3 : 2;
         wattron(win, COLOR_PAIR(tcL));
-        mvwprintw(win, y + lines, x0 + 2, "%.*s %.0f C", halfW - 9, labelL.c_str(), tempL);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
         wattroff(win, COLOR_PAIR(tcL));
 
+        int rightIdx = leftIdx + 1;
         if (rightIdx < static_cast<int>(displayTemps.size())) {
-            auto [nameR, tempR] = displayTemps[rightIdx];
+            auto& [nameR, tempR] = displayTemps[rightIdx];
             auto labelR = TrimRight(nameR, halfW - 9);
             int tcR = (tempR > 80) ? 4 : (tempR > 60) ? 3 : 2;
             wattron(win, COLOR_PAIR(tcR));
@@ -407,8 +592,185 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
             wattroff(win, COLOR_PAIR(tcR));
         }
         lines++;
+        actualRows = p + 1;
     }
+
+    if (needPaging) {
+        // Fill remaining content rows
+        while (lines < 1 + CONTENT_ROWS)
+            lines++;
+        // Page indicator
+        mvwprintw(win, y + lines++, x0 + 2, "%.*s", maxW - 2,
+                  ("[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]").c_str());
+        return 1 + CONTENT_ROWS + 1; // header + 3 content + 1 page row
+    } else {
+        return 1 + actualRows; // header + actual sensor rows only
+    }
+}
+
+int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    bool hasPower = (data.cpuPower > 0 || data.gpuPower > 0 || data.anePower > 0);
+    bool hasBattery = (data.batteryCycleCount > 0 || data.batteryHealthPercent > 0);
+    if (!hasPower && !hasBattery && data.thermalState == 0) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Power");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    // Thermal state
+    if (data.thermalState > 0) {
+        static const char* labels[] = {"", "Fairly Serious", "Critical"};
+        const char* label = (data.thermalState < 3) ? labels[data.thermalState] : "Unknown";
+        int pair = (data.thermalState >= 2) ? 4 : 3;
+        wattron(win, COLOR_PAIR(pair) | A_BOLD);
+        mvwprintw(win, y + lines++, x0 + 2, "Thermal: %s", label);
+        wattroff(win, COLOR_PAIR(pair) | A_BOLD);
+    }
+
+    // Power consumption
+    double totalPower = 0.0;
+    if (data.cpuPower > 0)
+        mvwprintw(win, y + lines++, x0 + 2, "CPU:   %.2f W", data.cpuPower / 1000.0);
+    if (data.gpuPower > 0)
+        mvwprintw(win, y + lines++, x0 + 2, "GPU:   %.2f W", data.gpuPower / 1000.0);
+    mvwprintw(win, y + lines++, x0 + 2, "ANE:   %.2f W", data.anePower / 1000.0);
+    totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
+    mvwprintw(win, y + lines++, x0 + 4, "Total: %.2f W", totalPower);
+
+    // Battery health
+    if (hasBattery) {
+        if (lines > 1) lines++;  // blank line separator
+        mvwprintw(win, y + lines++, x0 + 2, "Cycles: %d", data.batteryCycleCount);
+        // Health %
+        int hp = (int)(data.batteryHealthPercent + 0.5);
+        int hpColor = (hp < 60) ? 4 : (hp < 80) ? 3 : 2;
+        wattron(win, COLOR_PAIR(hpColor));
+        mvwprintw(win, y + lines++, x0 + 2, "Health: %d%%", hp);
+        wattroff(win, COLOR_PAIR(hpColor));
+        // Charge/discharge power
+        if (data.batteryAmperage != 0 && data.batteryVoltage > 0) {
+            int64_t powerMw = (int64_t)std::abs(data.batteryAmperage) * (int64_t)data.batteryVoltage / 1000;
+            if (powerMw > 0) {
+                const char* dir = (data.batteryAmperage > 0) ? "Chg" : "Dchg";
+                mvwprintw(win, y + lines++, x0 + 2, "Power: %s %.2f W",
+                          dir, powerMw / 1000.0);
+            }
+        }
+        // Charger rated wattage
+        if (data.chargerWatts > 0) {
+            mvwprintw(win, y + lines++, x0 + 2, "Charger: %.0f W", data.chargerWatts);
+        }
+        // Battery temp — shown in Temperature panel (from TemperatureWrapper/iokit_battery_temp)
+    }
+
     return lines;
+}
+
+int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    bool hasSensor = data.alsValid || data.accel.hasDevice || data.gyro.valid ||
+                     data.lidAngle.valid ||
+                     data.motionHb.valid || data.deviceMotion.valid;
+    if (!hasSensor) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Sensors");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    // ALS (ambient light sensor) — lux + raw RGBC channels
+    if (data.alsValid) {
+        if (data.alsChannels.valid) {
+            uint32_t alsMax = std::max({data.alsChannels.r, data.alsChannels.g, data.alsChannels.b});
+            if (alsMax == 0) alsMax = 1;
+            uint8_t alsR = (uint8_t)(data.alsChannels.r * 255 / alsMax);
+            uint8_t alsG = (uint8_t)(data.alsChannels.g * 255 / alsMax);
+            uint8_t alsB = (uint8_t)(data.alsChannels.b * 255 / alsMax);
+            mvwprintw(win, y + lines, x0 + 2, "ALS:     %.0f lux  R:%-3u G:%-3u B:%-3u",
+                      data.alsLux, alsR, alsG, alsB);
+            lines++;
+        } else {
+            mvwprintw(win, y + lines++, x0 + 2, "ALS:     %.0f lux", data.alsLux);
+        }
+    }
+
+    // Accelerometer — gravity/orientation vector (0xFF00/3)
+    if (data.accel.hasDevice && data.accel.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Gravity: %.2f %.2f %.2f g",
+                  data.accel.x, data.accel.y, data.accel.z);
+    } else if (data.accel.hasDevice) {
+        mvwprintw(win, y + lines++, x0 + 2, "Gravity: waiting...");
+    }
+
+    // Gyroscope — angular velocity (0xFF00/9)
+    if (data.gyro.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Gyro:    %.2f %.2f %.2f deg/s",
+                  data.gyro.x, data.gyro.y, data.gyro.z);
+    }
+
+    // Lid angle (0x0020/138)
+    if (data.lidAngle.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Lid:     %.1f\xc2\xb0", data.lidAngle.angle);
+    }
+
+    // Motion heartbeat (0xFF0C/1 — SPU fusion liveliness indicator)
+    if (data.motionHb.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Heart:   cnt=%u type=0x%02x",
+                  (unsigned)data.motionHb.counter, (unsigned)data.motionHb.eventFlag);
+    }
+
+    // DeviceMotion fusion (0xFF0C/5 — CMDeviceMotion, only when CoreMotion active)
+    if (data.deviceMotion.valid) {
+        mvwprintw(win, y + lines++, x0 + 2, "Fusion:  raw=%.0f", data.deviceMotion.raw);
+    }
+
+    return lines;
+}
+
+int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 15 || data.topProcesses.empty()) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Processes (Top by Memory)");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    int nameW = maxW - 30;  // room for pid(7) + mem(5) + cpu(7) + spaces
+    if (nameW < 6) nameW = 6;
+
+    for (const auto& p : data.topProcesses) {
+        // Pad/truncate name to exact display width (CJK-safe)
+        std::string name = p.name;
+        int dw = utf8_display_width(name);
+        if (dw > nameW) {
+            name = utf8_truncate(name, nameW);
+        } else if (dw < nameW) {
+            name.append(nameW - dw, ' ');
+        }
+
+        // Format PID
+        std::string pidStr = std::to_string(p.pid);
+
+        // Format memory
+        std::string memStr;
+        if (p.memoryBytes >= (uint64_t)1024 * 1024 * 1024)
+            memStr = std::to_string(p.memoryBytes / (1024 * 1024 * 1024)) + "G";
+        else
+            memStr = std::to_string(p.memoryBytes / (1024 * 1024)) + "M";
+
+        // Format CPU%
+        int cpuColor = (p.cpuPercent > 50) ? 4 : (p.cpuPercent > 20) ? 3 : 2;
+        wattron(win, COLOR_PAIR(cpuColor));
+        mvwprintw(win, y + lines, x0 + 2,
+                  "%s %6s %4s %5.1f%%",
+                  name.c_str(), pidStr.c_str(), memStr.c_str(), p.cpuPercent);
+        wattroff(win, COLOR_PAIR(cpuColor));
+        lines++;
+    }
+
+    return lines + 1;  // +1 bottom padding
 }
 
 void TuiApp::Run() {
@@ -416,6 +778,9 @@ void TuiApp::Run() {
 
     initscr();
     cursesActive_ = true;
+#ifndef __PDCURSES__
+    ESCDELAY = 25;   // 25ms Esc timeout (default 1000ms) — fix "half-exit" feel
+#endif
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
@@ -448,9 +813,9 @@ void TuiApp::Run() {
             break;
         }
 
-        if (rows < 10 || cols < 40) {
+        if (rows < 24 || cols < 80) {
             clear();
-            mvprintw(0, 0, "Terminal too small (min 40x10). Current: %dx%d", cols, rows);
+            mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
@@ -511,6 +876,12 @@ void TuiApp::Run() {
             if (ly < maxY) {
                 ly += DrawMemoryPanel(stdscr, data, ly, lx, leftW);
             }
+            if (ly < maxY) {
+                ly += 2;  // blank rows before processes
+            }
+            if (ly < maxY) {
+                ly += DrawProcessPanel(stdscr, data, ly, lx, leftW);
+            }
         }
         if (ly > maxY) ly = maxY;
 
@@ -519,6 +890,9 @@ void TuiApp::Run() {
         if (ry < maxY) {
             ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
             if (ry < maxY) {
+                ry += DrawPhysicalDiskPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
             }
             // WiFi & Bluetooth supplementary info after Network
@@ -526,10 +900,19 @@ void TuiApp::Run() {
                 ry += DrawWifiBluetoothPanel(stdscr, data, ry, rx, rightW);
             }
             if (ry < maxY) {
+                ry += DrawDisplayPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawAccelPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
                 ry += DrawTpmPanel(stdscr, data, ry, rx, rightW);
             }
             if (ry < maxY) {
                 ry += DrawTempPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawPowerPanel(stdscr, data, ry, rx, rightW);
             }
         }
         if (ry > maxY) ry = maxY;
@@ -614,6 +997,24 @@ void TuiApp::Run() {
             wattron(stdscr, COLOR_PAIR(color));
             mvwprintw(stdscr, sysTop, cols - static_cast<int>(batStr.size()) - 2, "%s", batStr.c_str());
             wattroff(stdscr, COLOR_PAIR(color));
+        }
+
+        // System line 2: uptime | load | processes
+        if (data.uptimeSeconds > 0) {
+            std::string uptimeStr;
+            uint64_t days = data.uptimeSeconds / 86400;
+            uint64_t hours = (data.uptimeSeconds % 86400) / 3600;
+            uint64_t mins = (data.uptimeSeconds % 3600) / 60;
+            if (days > 0) uptimeStr = std::to_string(days) + "d ";
+            uptimeStr += std::to_string(hours) + "h " + std::to_string(mins) + "m";
+            mvwprintw(stdscr, sysTop + 1, 2, "Uptime: %s", uptimeStr.c_str());
+        }
+        if (data.loadAvg1 > 0) {
+            mvwprintw(stdscr, sysTop + 1, 2 + 18, "Load: %.2f %.2f %.2f",
+                      data.loadAvg1, data.loadAvg5, data.loadAvg15);
+        }
+        if (data.processCount > 0) {
+            mvwprintw(stdscr, sysTop + 1, cols - 18, "Procs: %d", data.processCount);
         }
 
         refresh();

@@ -4,6 +4,7 @@
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
 // NOTE: winsock2.h must be included BEFORE windows.h
+#define NOMINMAX
 #include <winsock2.h>
 #include <windows.h>
 #include <intrin.h>
@@ -21,6 +22,7 @@
 CpuInfo::CpuInfo()
     : totalCores(0), largeCores(0), smallCores(0), cpuUsage(0.0),
       pCoreFreqHandle(nullptr), eCoreFreqHandle(nullptr),
+      pCoreBaseFreq(0.0), eCoreBaseFreq(0.0),
       counterInitialized(false), lastUpdateTime(0),
       lastSampleTick(0), prevSampleTick(0), lastSampleIntervalMs(0.0) {
     try {
@@ -60,23 +62,47 @@ void CpuInfo::InitializeCounter() {
         return;
     }
 
-    // P-core frequency: always instance "0,0" (core 0 is always P-core on Intel)
+    // P-core: % Processor Performance (relative to nominal)
     status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh,
-        L"\\Processor Information(0,0)\\Processor Frequency", 0,
+        L"\\Processor Information(0,0)\\% Processor Performance", 0,
         (PDH_HCOUNTER*)pch);
     if (status != ERROR_SUCCESS) {
-        Logger::Warn("Cannot add P-core frequency counter (err=" + std::to_string(status) + ")");
+        Logger::Warn("Cannot add P-core % performance counter (err=" + std::to_string(status) + ")");
     }
 
-    // E-core frequency: use first E-core logical processor index
+    // E-core: % Processor Performance
     if (smallCores > 0) {
         int htRatio = (totalCores > (largeCores + smallCores)) ? 2 : 1;
         int firstECoreIdx = largeCores * htRatio;
         wchar_t eCorePath[128];
-        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\Processor Frequency", firstECoreIdx);
+        swprintf_s(eCorePath, 128, L"\\Processor Information(0,%d)\\%% Processor Performance", firstECoreIdx);
         status = PdhAddEnglishCounter(*(PDH_HQUERY*)qh, eCorePath, 0, (PDH_HCOUNTER*)ech);
         if (status != ERROR_SUCCESS) {
-            Logger::Warn("Cannot add E-core frequency counter (err=" + std::to_string(status) + ")");
+            Logger::Warn("Cannot add E-core % performance counter (err=" + std::to_string(status) + ")");
+        }
+    }
+// Read nominal base frequencies from registry (MHz)
+    // P-core (processor 0)
+    {
+        DWORD speed = 0, size = sizeof(speed);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE,
+            L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+            L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
+            pCoreBaseFreq = static_cast<double>(speed);
+        }
+    }
+    // E-core (first E-core logical processor)
+    if (smallCores > 0) {
+        int htRatio = (totalCores > (largeCores + smallCores)) ? 2 : 1;
+        int firstECoreIdx = largeCores * htRatio;
+        wchar_t keyPath[128];
+        swprintf_s(keyPath, 128, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\%d", firstECoreIdx);
+        DWORD speed = 0, size = sizeof(speed);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, keyPath,
+            L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
+            eCoreBaseFreq = static_cast<double>(speed);
+        } else {
+            eCoreBaseFreq = pCoreBaseFreq; // fallback
         }
     }
 
@@ -91,38 +117,33 @@ void CpuInfo::InitializeCounter() {
     counterInitialized = true;
 }
 
-static double ReadPdhFreqValue(void* handle) {
+static double ReadPdhPctValue(void* handle) {
     if (!handle) return 0.0;
     PDH_FMT_COUNTERVALUE v;
     PDH_STATUS s = PdhGetFormattedCounterValue(
         (PDH_HCOUNTER)handle, PDH_FMT_DOUBLE, NULL, &v);
     if (s == ERROR_SUCCESS &&
         (v.CStatus == PDH_CSTATUS_VALID_DATA || v.CStatus == PDH_CSTATUS_NEW_DATA)) {
-        return v.doubleValue; // MHz
+        return v.doubleValue; // percentage (0-100+, >100 = turbo)
     }
     return 0.0;
 }
 
 double CpuInfo::GetLargeCoreSpeed() const {
-    // Try PDH per-core counter first (real-time frequency)
-    double freq = ReadPdhFreqValue(pCoreFreqHandle);
-    if (freq > 0.0) return freq;
+    // % Processor Performance × base frequency = real-time MHz
+    double pct = ReadPdhPctValue(pCoreFreqHandle);
+    if (pct > 0.0 && pCoreBaseFreq > 0.0)
+        return pCoreBaseFreq * (pct / 100.0);
 
     // Fallback: registry base frequency
-    DWORD speed = 0;
-    DWORD size = sizeof(speed);
-    if (RegGetValueW(HKEY_LOCAL_MACHINE,
-        L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-        L"~MHz", RRF_RT_DWORD, nullptr, &speed, &size) == ERROR_SUCCESS) {
-        return static_cast<double>(speed);
-    }
-    return 0.0;
+    return pCoreBaseFreq;
 }
 
 double CpuInfo::GetSmallCoreSpeed() const {
-    // Try PDH per-core counter first (real-time E-core frequency)
-    double freq = ReadPdhFreqValue(eCoreFreqHandle);
-    if (freq > 0.0) return freq;
+    // % Processor Performance × base frequency = real-time MHz
+    double pct = ReadPdhPctValue(eCoreFreqHandle);
+    if (pct > 0.0 && eCoreBaseFreq > 0.0)
+        return eCoreBaseFreq * (pct / 100.0);
 
     // Fallback: P-core frequency as approximation
     return GetLargeCoreSpeed();
@@ -148,7 +169,7 @@ void CpuInfo::DetectCores() {
     GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bufferSize);
     if (bufferSize == 0) {
         // Fallback: assume all performance cores
-        largeCores = std::max(1, totalCores / 2);
+        largeCores = (std::max)(1, totalCores / 2);
         return;
     }
 
@@ -156,7 +177,7 @@ void CpuInfo::DetectCores() {
     if (!GetLogicalProcessorInformationEx(RelationProcessorCore,
             reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data()),
             &bufferSize)) {
-        largeCores = std::max(1, totalCores / 2);
+        largeCores = (std::max)(1, totalCores / 2);
         return;
     }
 
@@ -490,6 +511,244 @@ bool CpuInfo::IsVirtualizationEnabled() const {
     size_t len = sizeof(isHypervisor);
     if (sysctlbyname("hw.hypervisor", &isHypervisor, &len, nullptr, 0) == 0) {
         return isHypervisor != 0;
+    }
+    return false;
+}
+
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <sys/time.h>
+#include <unistd.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <set>
+
+static uint64_t GetTickCountMs() {
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+CpuInfo::CpuInfo()
+    : totalCores(0), smallCores(0), largeCores(0), cpuUsage(0.0),
+      largeCoreSpeed(0.0), smallCoreSpeed(0.0), lastSampleIntervalMs(0.0),
+      prevTotalTicks(0), prevIdleTicks(0), prevSampleTimeMs(0),
+      largeCoreSpeedAvg(0.0), smallCoreSpeedAvg(0.0) {
+    try {
+        DetectCores();
+        cpuName = GetNameFromRegistry();
+        InitializeCounter();
+        UpdateCoreSpeeds();
+    }
+    catch (const std::exception& e) {
+        Logger::Error("CPUInfoInitializeFailed: " + std::string(e.what()));
+    }
+}
+
+CpuInfo::~CpuInfo() { CleanupCounter(); }
+
+void CpuInfo::InitializeCounter() {
+    std::ifstream stat("/proc/stat");
+    if (!stat.is_open()) {
+        Logger::Error("Cannot open /proc/stat");
+        return;
+    }
+    std::string line;
+    std::getline(stat, line);
+    stat.close();
+    if (line.substr(0, 4) != "cpu ") return;
+
+    std::istringstream ss(line);
+    std::string cpu;
+    ss >> cpu;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+    if (!(ss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal))
+        return;
+
+    prevTotalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
+    prevIdleTicks = idle;
+    prevSampleTimeMs = GetTickCountMs();
+}
+
+void CpuInfo::CleanupCounter() {
+    // Nothing to clean up on Linux
+}
+
+void CpuInfo::DetectCores() {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) {
+        Logger::Error("Cannot open /proc/cpuinfo");
+        totalCores = 1;
+        largeCores = 1;
+        smallCores = 0;
+        return;
+    }
+
+    std::set<int> coreIds;
+    int processorCount = 0;
+    int cpuCores = 0;
+    std::string line;
+
+    while (std::getline(cpuinfo, line)) {
+        if (line.substr(0, 10) == "processor\t") {
+            processorCount++;
+        } else if (line.substr(0, 8) == "core id\t") {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                int id = std::stoi(line.substr(colon + 1));
+                coreIds.insert(id);
+            }
+        } else if (line.substr(0, 10) == "cpu cores\t") {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                cpuCores = std::stoi(line.substr(colon + 1));
+            }
+        }
+    }
+
+    totalCores = processorCount;
+    int physicalCores = static_cast<int>(coreIds.size());
+
+    if (physicalCores > 0) {
+        largeCores = physicalCores;
+        smallCores = 0;
+    } else if (cpuCores > 0) {
+        largeCores = cpuCores;
+        smallCores = 0;
+    } else {
+        largeCores = totalCores;
+        smallCores = 0;
+    }
+
+    Logger::Debug("CpuInfo: total=" + std::to_string(totalCores)
+               + " P=" + std::to_string(largeCores)
+               + " E=" + std::to_string(smallCores));
+}
+
+void CpuInfo::UpdateCoreSpeeds() {
+    std::vector<double> frequencies;
+    for (int i = 0; i < totalCores; i++) {
+        std::string path = "/sys/devices/system/cpu/cpu"
+                         + std::to_string(i)
+                         + "/cpufreq/scaling_cur_freq";
+        std::ifstream freqFile(path);
+        if (freqFile.is_open()) {
+            unsigned long freqKhz = 0;
+            freqFile >> freqKhz;
+            if (freqKhz > 0) {
+                frequencies.push_back(static_cast<double>(freqKhz) / 1000.0);
+            }
+        }
+    }
+
+    if (!frequencies.empty()) {
+        double sum = 0.0;
+        for (double f : frequencies) sum += f;
+        largeCoreSpeedAvg = sum / static_cast<double>(frequencies.size());
+    } else {
+        std::ifstream maxFreqFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
+        if (maxFreqFile.is_open()) {
+            unsigned long freqKhz = 0;
+            maxFreqFile >> freqKhz;
+            largeCoreSpeedAvg = static_cast<double>(freqKhz) / 1000.0;
+        }
+    }
+    smallCoreSpeedAvg = largeCoreSpeedAvg;
+}
+
+std::string CpuInfo::GetNameFromRegistry() {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) return "Unknown CPU";
+
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.substr(0, 11) == "model name\t") {
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                std::string name = line.substr(colon + 2);
+                if (!name.empty()) return name;
+            }
+        }
+    }
+    return "Unknown CPU";
+}
+
+double CpuInfo::updateUsage() {
+    uint64_t nowMs = GetTickCountMs();
+    uint64_t elapsedMs = nowMs - prevSampleTimeMs;
+    if (elapsedMs < 100) return cpuUsage;
+
+    std::ifstream stat("/proc/stat");
+    if (!stat.is_open()) return cpuUsage;
+
+    std::string line;
+    std::getline(stat, line);
+    stat.close();
+    if (line.substr(0, 4) != "cpu ") return cpuUsage;
+
+    std::istringstream ss(line);
+    std::string cpu;
+    ss >> cpu;
+    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
+    if (!(ss >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal))
+        return cpuUsage;
+
+    uint64_t totalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
+    uint64_t totalDelta = totalTicks - prevTotalTicks;
+    uint64_t idleDelta = idle - prevIdleTicks;
+
+    if (totalDelta > 0) {
+        double newUsage = 100.0 * (1.0 - static_cast<double>(idleDelta)
+                                         / static_cast<double>(totalDelta));
+        if (newUsage < 0.0) newUsage = 0.0;
+        if (newUsage > 100.0) newUsage = 100.0;
+        if (cpuUsage > 0.0) cpuUsage = (cpuUsage * 0.8) + (newUsage * 0.2);
+        else cpuUsage = newUsage;
+    }
+
+    prevTotalTicks = totalTicks;
+    prevIdleTicks = idle;
+    prevSampleTimeMs = nowMs;
+    lastSampleIntervalMs = static_cast<double>(elapsedMs);
+
+    return cpuUsage;
+}
+
+double CpuInfo::GetUsage() { return updateUsage(); }
+
+int CpuInfo::GetTotalCores() const { return totalCores; }
+int CpuInfo::GetSmallCores() const { return smallCores; }
+int CpuInfo::GetLargeCores() const { return largeCores; }
+
+double CpuInfo::GetLargeCoreSpeed() const {
+    return largeCoreSpeedAvg;
+}
+
+double CpuInfo::GetSmallCoreSpeed() const {
+    return smallCoreSpeedAvg;
+}
+
+uint32_t CpuInfo::GetCurrentSpeed() const {
+    return static_cast<uint32_t>(largeCoreSpeedAvg);
+}
+
+std::string CpuInfo::GetName() { return cpuName; }
+
+bool CpuInfo::IsHyperThreadingEnabled() const {
+    return totalCores > (largeCores + smallCores);
+}
+
+bool CpuInfo::IsVirtualizationEnabled() const {
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (!cpuinfo.is_open()) return false;
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.substr(0, 6) == "flags\t") {
+            return line.find("vmx") != std::string::npos ||
+                   line.find("svm") != std::string::npos;
+        }
     }
     return false;
 }

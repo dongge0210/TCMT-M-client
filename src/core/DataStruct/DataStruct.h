@@ -66,6 +66,8 @@ struct PhysicalDiskSmartData {
 
     // Partition volume labels
     WCHAR partitionLabels[8][32]; // Volume label for each partition
+    // SMART attributes serialized as JSON array (pipe-delimited for C# parse)
+    char attrsJson[4096];
 
     PlatformSystemTime lastScanTime;       // Last scan time
 };
@@ -135,12 +137,17 @@ struct SystemInfo {
     int efficiencyCores;
     double performanceCoreFreq;
     double efficiencyCoreFreq;
+    double cpuBaseFreq = 0;       // Nominal base frequency (MHz) from WMI
     bool hyperThreading;
     bool virtualization;
     uint64_t totalMemory;
     uint64_t usedMemory;
     uint64_t availableMemory;
     uint64_t compressedMemory;
+    uint64_t swapUsed = 0;
+    uint64_t swapTotal = 0;
+    uint32_t ramSpeed = 0;          // RAM frequency in MHz (e.g., 6400)
+    char ramType[32] = {};         // DDR generation (e.g., "DDR5", "LPDDR5")
     std::vector<GPUData> gpus;
     std::vector<NetworkAdapterData> adapters;
     std::vector<DiskData> disks;
@@ -150,6 +157,11 @@ struct SystemInfo {
     std::string osVersion;
     int batteryPercent = -1;        // -1 = no battery
     bool acOnline = false;
+    double cpuPower = 0.0;          // CPU power in mW
+    double gpuPower = 0.0;          // GPU power in mW
+    double anePower = 0.0;          // ANE power in mW
+    double gpuFreq = 0.0;           // GPU frequency in MHz
+    std::string hardwareModel;      // Hardware model (e.g. "Mac14,2")
     std::string gpuName;            // Added
     std::string gpuBrand;           // Added
     uint64_t gpuMemory;             // Added
@@ -164,6 +176,36 @@ struct SystemInfo {
     double cpuTemperature; // CPU temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs = 0.0; // CPU usage sample interval (ms)
+    // WiFi
+    bool wifiPowerOn = false;
+    bool wifiIsConnected = false;
+    std::string wifiSSID;
+    int wifiRSSI = 0;
+    int wifiChannel = 0;
+    std::string wifiSecurity;
+    std::string wifiBand;
+    std::string wifiGen;
+
+    // Bluetooth
+    bool btPowerOn = false;
+    int btDeviceCount = 0;
+
+    // Display monitors
+    struct DisplayData {
+        std::string name;
+        int width = 0;          // pixels
+        int height = 0;         // pixels
+        int refreshRate = 0;    // Hz
+        bool isHDR = false;
+        bool isBuiltin = false;
+        double backingScale = 1.0;
+    };
+    std::vector<DisplayData> displays;
+    bool displayDirty = false;   // set when display config changes
+
+    // Thermal state (macOS NSProcessInfoThermalState)
+    int thermalState = 0;        // 0=nominal, 1=fairlySerious, 2=critical
+
     PlatformSystemTime lastUpdate;
 };
 
@@ -179,12 +221,17 @@ struct SharedMemoryBlock {
     int efficiencyCores;      // Efficiency cores
     double pCoreFreq;         // Performance core frequency (MHz)
     double eCoreFreq;         // Efficiency core frequency (MHz)
+    double cpuBaseFreq;       // Nominal base frequency (MHz) from WMI
     bool hyperThreading;      // Hyperthreading enabled
     bool virtualization;      // Virtualization enabled
     uint64_t totalMemory;     // Total memory (bytes)
     uint64_t usedMemory;      // Used memory (bytes)
     uint64_t availableMemory; // Available memory (bytes)
     uint64_t compressedMemory; // Compressed memory (bytes)
+    uint64_t swapUsed;         // Swap used (bytes)
+    uint64_t swapTotal;        // Swap total (bytes)
+    uint32_t ramSpeed;       // RAM frequency in MHz (e.g., 6400)
+    WCHAR ramType[32];       // DDR generation (e.g., "DDR5", "LPDDR5")
     double cpuTemperature; // CPU temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs; // CPU usage sample interval (ms)
@@ -224,9 +271,14 @@ struct SharedMemoryBlock {
     // Battery / power info
     int batteryPercent;             // 0-100, -1 = no battery
     bool acOnline;                  // AC power connected
+    double cpuPower;                // CPU power in mW
+    double gpuPower;                // GPU power in mW
+    double anePower;                // ANE power in mW
+    double gpuFreq = 0.0;           // GPU frequency in MHz
 
     // OS version info
     WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
+    WCHAR hardwareModel[128] = {};  // Hardware model (e.g. "Mac14,2" or "HP ZBook Fury G10")
 
     // WiFi info for Avalonia
     struct {
@@ -234,6 +286,8 @@ struct SharedMemoryBlock {
         int32_t rssi;
         int32_t channel;
         WCHAR security[16];
+        WCHAR band[8];
+        WCHAR wifiGen[12];
         bool powerOn;
         bool isConnected;
     } wifi;

@@ -97,6 +97,7 @@ std::string WinUtils::GetExecutableDirectory() {
 
 #else
 // ======================== Linux / Fallback ========================
+#include <unistd.h>
 bool WinUtils::EnablePrivilege(const std::wstring&, bool) { return false; }
 bool WinUtils::CheckPrivilege(const std::wstring&) { return false; }
 bool WinUtils::IsRunAsAdmin() { return geteuid() == 0; }

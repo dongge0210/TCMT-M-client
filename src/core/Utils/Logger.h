@@ -13,8 +13,8 @@
 #include <windows.h>
 #endif
 
-// Include LogBuffer for TUI support (macOS and Windows)
-#if defined(TCMT_MACOS) || defined(TCMT_WINDOWS)
+// Include LogBuffer for TUI support (macOS, Linux, and Windows)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(TCMT_WINDOWS)
 #include "../tui/LogBuffer.h"
 #endif
 
@@ -78,7 +78,7 @@ public:
     static void Flush();
     static void Shutdown();
 
-#if defined(TCMT_MACOS) || defined(_WIN32)
+#if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
     // Get the TUI log buffer (for TUI mode)
     static tcmt::LogBuffer& GetTuiBuffer();
 #endif

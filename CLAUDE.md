@@ -21,7 +21,7 @@ Missing a build system causes linker errors on one platform while the other buil
 ### macOS (Apple Silicon)
 ```bash
 # C++ core + ncurses TUI
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(sysctl -n hw.ncpu)
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
 # AvaloniaUI desktop frontend
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 # Run
@@ -70,7 +70,10 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
   - Hardware: `cpu/`, `gpu/`, `memory/`, `disk/`, `network/`, `os/`, `power/`, `wifi/`, `bluetooth/`, `temperature/`, `board/`
   - IPC: `IPC/IPCServer.cpp` (unified UDS+Windows), `IPC/IPCClient.cpp`, `IPC/IPCData.h` (schema/protocol)
   - MCP: `MCP/MCPServer.cpp` (JSON-RPC 2.0 over stdio, 8 tools)
-  - Coordinator: `ModuleCoordinator` — 6 background jthread loops (CPU/Memory/Disk/Network/Temp/Power), `Snapshot()` feeds main loop
+  - Coordinator: `coordinator/ModuleCoordinator` — 6 background jthread loops (CPU/Memory/Disk/Network/Temp/Power), `Snapshot()` feeds main loop
+  - IOReport: `ioreport/IOReportSampler.mm` (macOS-only, private framework, no sudo)
+  - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
+  - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
   - Config: `Config/ConfigManager.cpp` (wraps CPP-parsers IConfigParser + nlohmann/json)
   - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
@@ -86,6 +89,7 @@ Some `.cpp` / `.mm` files are compiled on ONE platform only:
 - `BluetoothInfo.mm` — macOS only (IOBluetooth ObjC++). Windows: `BluetoothInfo.cpp`.
 - `TemperatureWrapper.cpp` — Windows only (LibreHardwareMonitor bridge, C++/CLI).
 - `Platform_Windows.cpp` — Windows only.
+- `IOReportSampler.mm` — macOS only (private IOReport.framework + IOKit pmgr, no sudo).
 
 ## IPC / Shared Memory Gotchas
 
@@ -144,3 +148,20 @@ git submodule update --init --recursive
 
 ## User addition notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
+- **sessions**: change `docs/session.md` when current status changed also you see current status from that file.
+- **read-scope**: **Always use `Read` with `offset` and `limit` parameters.** Never read entire files — read only the relevant range.
+
+## Scope & Boundaries
+- **Stay focused**: When debugging, focus narrowly on the specific error or crash. Do NOT deep-dive into unrelated internals, propose tangential refactors, or expand the scope without asking.
+- **No external actions**: Do NOT create GitHub issues, PRs, or external tickets unless explicitly asked. Never push to `main` without confirmation.
+- **Plan before large changes**: For features touching >3 files or adding new modules, present a brief plan before coding.
+
+## Repository Safety Rules
+- Before any file edit, verify working directory with `pwd` and `git status`.
+- When creating a PR, always ask the user whether it should be **draft** or **ready** first. Never assume one or the other.
+- All PRs target `dev` unless told otherwise.
+
+## Edit Verification
+- After every code change on macOS, run `cmake --build build -j8` and confirm 0 errors. Use fixed `-j8`, NOT `$(nproc)` or `$(sysctl -n hw.ncpu)` — command substitution breaks auto-approval.
+- After every code change on Windows, the build command is `msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /m`.
+- **Zero warnings tolerance** — fix any warning immediately, do not suppress or ignore.

@@ -1,5 +1,6 @@
 #include "DiskInfo.h"
 #include "../Utils/Logger.h"
+#include "SmartReader.h"
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
@@ -204,10 +205,12 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 }
                 data.smartSupported = false;
                 data.smartEnabled = false;
-                data.healthPercentage = 100; // assume healthy when SMART not available
-                data.temperature = -1;       // unknown (not 0°C, which is misleading)
+                data.healthPercentage = 100;
+                data.temperature = -1;
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
+                // Try DeviceIoControl SMART
+                SmartReader::Read(idx, tempDisks[idx]);
             }
             VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
             VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
@@ -412,9 +415,202 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
                 else if (sv.is_string()) try { pd.capacity = std::stoull(sv.get<std::string>()); } catch(...) {}
             }
             sysInfo.physicalDisks.push_back(pd);
+
+            // Extract disk index from bsd_name (e.g., "disk0" → 0)
+            std::string bsd = item.value("bsd_name", "");
+            int diskIdx = 0;
+            if (bsd.rfind("disk", 0) == 0) {
+                try { diskIdx = std::stoi(bsd.substr(4)); } catch(...) {}
+            }
+            SmartReader::Read(diskIdx, sysInfo.physicalDisks.back());
         }
     }
+
     Logger::Debug("DiskInfo: SMART collected " + std::to_string(sysInfo.physicalDisks.size()) + " disks");
+}
+
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+#include <fstream>
+#include <sstream>
+#include <dirent.h>
+#include <sys/statvfs.h>
+#include <cstring>
+#include <algorithm>
+#include <set>
+#include <cctype>
+
+DiskInfo::DiskInfo() { QueryDrives(); }
+
+void DiskInfo::QueryDrives() {
+    drives.clear();
+
+    std::ifstream mountsFile("/proc/mounts");
+    if (!mountsFile.is_open()) {
+        Logger::Error("DiskInfo: failed to open /proc/mounts");
+        return;
+    }
+
+    std::set<std::string> realFs = {
+        "ext2", "ext3", "ext4", "xfs", "btrfs",
+        "ntfs", "vfat", "fat32", "exfat", "hfsplus",
+        "zfs", "f2fs", "jfs", "reiserfs"
+    };
+
+    std::set<std::string> skipFs = {
+        "proc", "sysfs", "tmpfs", "devpts", "cgroup", "cgroup2",
+        "devtmpfs", "debugfs", "tracefs", "securityfs", "pstore",
+        "efivarfs", "configfs", "hugetlbfs", "mqueue", "autofs",
+        "overlay", "squashfs", "fuse.gvfsd-fuse", "fusectl",
+        "rpc_pipefs", "binfmt_misc", "nfsd", "sunrpc", "bpf"
+    };
+
+    std::string line;
+    while (std::getline(mountsFile, line)) {
+        std::stringstream ss(line);
+        std::string device, mountpoint, fstype, options;
+        int dump = 0, pass = 0;
+        ss >> device >> mountpoint >> fstype >> options >> dump >> pass;
+
+        if (skipFs.find(fstype) != skipFs.end()) continue;
+        if (realFs.find(fstype) == realFs.end()) continue;
+
+        if (mountpoint.find("/sys/") == 0 || mountpoint.find("/proc/") == 0 ||
+            mountpoint.find("/dev/") == 0 || mountpoint.find("/run/") == 0) continue;
+
+        struct statvfs vfs;
+        if (statvfs(mountpoint.c_str(), &vfs) != 0) continue;
+
+        uint64_t total = static_cast<uint64_t>(vfs.f_blocks) * static_cast<uint64_t>(vfs.f_frsize);
+        uint64_t freeSpace = static_cast<uint64_t>(vfs.f_bfree) * static_cast<uint64_t>(vfs.f_frsize);
+        if (total == 0) continue;
+
+        DriveInfo info{};
+        info.totalSize = total;
+        info.freeSpace = freeSpace;
+        info.usedSpace = (total >= freeSpace) ? (total - freeSpace) : 0ULL;
+
+        size_t lastSlash = mountpoint.find_last_of('/');
+        info.label = (lastSlash != std::string::npos && lastSlash + 1 < mountpoint.size())
+                     ? mountpoint.substr(lastSlash + 1) : mountpoint;
+        if (info.label.empty()) info.label = "Unnamed";
+        info.fileSystem = fstype;
+        info.letter = 0;
+
+        drives.push_back(std::move(info));
+    }
+}
+
+void DiskInfo::Refresh() { QueryDrives(); }
+const std::vector<DriveInfo>& DiskInfo::GetDrives() const { return drives; }
+
+std::vector<DiskData> DiskInfo::GetDisks() {
+    std::vector<DiskData> disks;
+    disks.reserve(drives.size());
+    for (const auto& drive : drives) {
+        DiskData d;
+        d.letter = drive.letter;
+        d.label = drive.label;
+        d.fileSystem = drive.fileSystem;
+        d.totalSize = drive.totalSize;
+        d.usedSpace = drive.usedSpace;
+        d.freeSpace = drive.freeSpace;
+        disks.push_back(std::move(d));
+    }
+    return disks;
+}
+
+static void CopyStringToWchar(WCHAR* dst, size_t dstLen, const std::string& src) {
+    size_t n = std::min(dstLen - 1, src.size());
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = static_cast<WCHAR>(static_cast<unsigned char>(src[i]));
+    dst[n] = 0;
+}
+
+void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
+    Logger::Debug("DiskInfo::CollectSmartData - Linux: enumerating physical disks via sysfs");
+
+    DIR* blockDir = opendir("/sys/block");
+    if (!blockDir) {
+        Logger::Error("DiskInfo: failed to open /sys/block");
+        return;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(blockDir)) != nullptr) {
+        std::string name(entry->d_name);
+        if (name == "." || name == "..") continue;
+
+        bool isPhysical = false;
+        if (name.find("nvme") == 0) {
+            isPhysical = true;
+        } else if (name.find("sd") == 0 && name.length() > 2
+                   && std::isdigit(static_cast<unsigned char>(name[2]))) {
+            isPhysical = true;
+        } else if (name.find("mmcblk") == 0) {
+            isPhysical = true;
+        } else if (name.find("vd") == 0 && name.length() > 2
+                   && std::isdigit(static_cast<unsigned char>(name[2]))) {
+            isPhysical = true;
+        }
+        if (!isPhysical) continue;
+
+        PhysicalDiskSmartData pd{};
+        pd.smartSupported = false;
+        pd.smartEnabled = false;
+        pd.healthPercentage = 100;
+        pd.temperature = -1;
+        pd.logicalDriveCount = 0;
+
+        std::string modelPath = "/sys/block/" + name + "/device/model";
+        std::ifstream modelFile(modelPath);
+        if (modelFile.is_open()) {
+            std::string model;
+            std::getline(modelFile, model);
+            model.erase(0, model.find_first_not_of(" \t"));
+            model.erase(model.find_last_not_of(" \t") + 1);
+            CopyStringToWchar(pd.model, sizeof(pd.model) / sizeof(WCHAR), model);
+        }
+
+        std::string serialPath = "/sys/block/" + name + "/device/serial";
+        std::ifstream serialFile(serialPath);
+        if (serialFile.is_open()) {
+            std::string serial;
+            std::getline(serialFile, serial);
+            serial.erase(0, serial.find_first_not_of(" \t"));
+            serial.erase(serial.find_last_not_of(" \t") + 1);
+            CopyStringToWchar(pd.serialNumber, sizeof(pd.serialNumber) / sizeof(WCHAR), serial);
+        }
+
+        std::string sizePath = "/sys/block/" + name + "/size";
+        std::ifstream sizeFile(sizePath);
+        if (sizeFile.is_open()) {
+            std::string sizeStr;
+            std::getline(sizeFile, sizeStr);
+            try {
+                uint64_t sectors = std::stoull(sizeStr);
+                pd.capacity = sectors * 512;
+            } catch (...) {}
+        }
+
+        std::string rotPath = "/sys/block/" + name + "/queue/rotational";
+        std::ifstream rotFile(rotPath);
+        if (rotFile.is_open()) {
+            int rot = 0;
+            rotFile >> rot;
+            std::string typeStr = (rot == 1) ? "HDD" : "SSD";
+            CopyStringToWchar(pd.diskType, sizeof(pd.diskType) / sizeof(WCHAR), typeStr);
+        } else {
+            CopyStringToWchar(pd.diskType, sizeof(pd.diskType) / sizeof(WCHAR), "Unknown");
+        }
+
+        sysInfo.physicalDisks.push_back(pd);
+    }
+
+    closedir(blockDir);
+
+    Logger::Debug("DiskInfo: found " + std::to_string(sysInfo.physicalDisks.size())
+                  + " physical disks on Linux");
 }
 
 #else

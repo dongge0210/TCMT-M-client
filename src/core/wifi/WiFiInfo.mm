@@ -1,4 +1,4 @@
-// WiFiInfo.mm — macOS Wi-Fi monitoring via CoreWLAN.framework
+// WiFiInfo.mm — macOS Wi-Fi monitoring via CoreWLAN.framework + IOKit fallback
 // Objective-C++ (.mm) — compiled only when TCMT_MACOS is defined
 
 #include "WiFiInfo.h"
@@ -7,6 +7,8 @@
 #ifdef TCMT_MACOS
 
 #import <CoreWLAN/CoreWLAN.h>
+#import <CoreLocation/CoreLocation.h>
+#import <AppKit/NSApplication.h>
 #include <nlohmann/json.hpp>
 #include <atomic>
 #include <mutex>
@@ -52,18 +54,39 @@ static void RunSystemProfiler() {
     int rssi = 0, channel = 0;
     double txRate = 0;
 
+    // Fallback: CoreWLAN direct access
+    if (ssid.empty()) {
+        @autoreleasepool {
+            CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
+            if (iface) {
+                NSString* nssid = iface.ssid;
+                if (nssid && nssid.length > 0) ssid = nssid.UTF8String;
+                NSString* nbssid = iface.bssid;
+                if (nbssid && nbssid.length > 0) bssid = nbssid.UTF8String;
+                rssi = (int)iface.rssiValue;
+                if (iface.wlanChannel) {
+                    channel = iface.wlanChannel.channelNumber;
+                }
+            }
+        }
+    }
+
     try {
         auto j = nlohmann::json::parse(json.empty() ? "{}" : json);
         if (j.contains("SPAirPortDataType") && j["SPAirPortDataType"].is_array()) {
             for (auto& item : j["SPAirPortDataType"]) {
                 if (item.contains("spairport_airport_interfaces")) {
                     for (auto& iface : item["spairport_airport_interfaces"]) {
-                        if (bssid.empty() && iface.contains("spairport_wireless_mac_address"))
-                            bssid = iface["spairport_wireless_mac_address"].get<std::string>();
+                        if (bssid.empty() && iface.contains("spairport_wireless_mac_address")) {
+                            std::string raw = iface["spairport_wireless_mac_address"].get<std::string>();
+                            if (raw != "<redacted>") bssid = raw;
+                        }
                         if (iface.contains("spairport_current_network_information")) {
                             auto& net = iface["spairport_current_network_information"];
-                            if (ssid.empty() && net.contains("_name"))
-                                ssid = net["_name"].get<std::string>();
+                            if (ssid.empty() && net.contains("_name")) {
+                                std::string raw = net["_name"].get<std::string>();
+                                if (raw != "<redacted>") ssid = raw;
+                            }
                             if (net.contains("spairport_network_channel")) {
                                 std::string ch = net["spairport_network_channel"].get<std::string>();
                                 size_t sp = ch.find(' ');
@@ -103,77 +126,82 @@ static void RunSystemProfiler() {
     s_profilerState.store(2, std::memory_order_release);
 }
 
+// Shared CLLocationManager retained across Detect() calls for auth polling.
+static CLLocationManager* s_locMgr = nil;
+
 void WiFiInfo::Detect() {
     Clear();
 
     @autoreleasepool {
-        CWWiFiClient* wifiClient = [CWWiFiClient sharedWiFiClient];
-        if (!wifiClient) {
-            Logger::Warn("WiFiInfo: CWWiFiClient returned nil");
-            return;
+        data_.ssid.clear();
+        data_.bssid.clear();
+
+        // --- CoreLocation authorization (needed for SSID on macOS 15+) ---
+        // Must run inside an NSApplication context (even minimal, via NSApplicationLoad())
+        // for requestWhenInUseAuthorization to actually present the dialog.
+        static dispatch_once_t s_onceToken;
+        dispatch_once(&s_onceToken, ^{
+            [NSApplication sharedApplication];
+            s_locMgr = [[CLLocationManager alloc] init];
+            [s_locMgr requestWhenInUseAuthorization];
+        });
+
+        CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
+        bool locationOK = (auth == kCLAuthorizationStatusAuthorized);
+
+        // --- Primary: CoreWLAN (fast, non-blocking) ---
+        // SSID/BSSID require Location Services on macOS 15+.
+        CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
+        if (iface) {
+            data_.powerOn = [iface powerOn];
+            if (data_.powerOn && locationOK) {
+                NSString* ssidStr = [iface ssid];
+                if (ssidStr) data_.ssid = [ssidStr UTF8String];
+                NSString* bssidStr = [iface bssid];
+                if (bssidStr) data_.bssid = [bssidStr UTF8String];
+            }
+            if (data_.powerOn) {
+                int cwRssi = static_cast<int>([iface rssiValue]);
+                if (cwRssi != 0) data_.rssi = cwRssi;
+                data_.noise = static_cast<int>([iface noiseMeasurement]);
+                CWChannel* wlanChannel = [iface wlanChannel];
+                if (wlanChannel) data_.channel = static_cast<int>([wlanChannel channelNumber]);
+                CWSecurity secType = [iface security];
+                std::string secStr = SecurityToString(secType);
+                if (secStr != "Unknown") data_.security = secStr;
+                double cwRate = [iface transmitRate];
+                if (cwRate > 0) data_.txRate = cwRate;
+            }
         }
 
-        CWInterface* interface = [wifiClient interface];
-        if (!interface) {
-            Logger::Warn("WiFiInfo: No default Wi-Fi interface found");
-            return;
-        }
-
-        // --- Power state ---
-        data_.powerOn = [interface powerOn];
-        if (!data_.powerOn) {
-            Logger::Debug("WiFiInfo: Wi-Fi adapter is powered off");
-            return;
-        }
-
-        // --- BSSID / SSID (may be nil on macOS 15+ without Location Services) ---
-        NSString* bssidStr = [interface bssid];
-        if (bssidStr) data_.bssid = [bssidStr UTF8String];
-
-        NSString* ssidStr = [interface ssid];
-        if (ssidStr) data_.ssid = [ssidStr UTF8String];
-
-        // --- system_profiler fallback (async, non-blocking) ---
-        // CoreWLAN may block SSID/BSSID on macOS 15+ without Location Services.
-        // system_profiler SPAirPortDataType bypasses the restriction but is slow (~1s).
-        // We run it once on a background thread so the main loop never stalls.
-        if (data_.ssid.empty() || data_.bssid.empty()) {
+        // --- Fallback: system_profiler (async, non-blocking) ---
+        // system_profiler SPAirPortDataType bypasses the LS gate for RSSI/etc.
+        // SSID is optional and is filtered for "<redacted>".
+        if (!locationOK && (data_.ssid.empty() || data_.bssid.empty())) {
             int state = s_profilerState.load(std::memory_order_acquire);
             if (state == 2) {
                 std::lock_guard<std::mutex> lk(s_cacheMutex);
-                if (!s_cachedSSID.empty()) data_.ssid = s_cachedSSID;
-                if (!s_cachedBSSID.empty()) data_.bssid = s_cachedBSSID;
+                if (data_.ssid.empty() && !s_cachedSSID.empty() && s_cachedSSID != "<redacted>")
+                    data_.ssid = s_cachedSSID;
+                if (data_.bssid.empty() && !s_cachedBSSID.empty() && s_cachedBSSID != "<redacted>")
+                    data_.bssid = s_cachedBSSID;
                 if (!s_cachedSecurity.empty()) data_.security = s_cachedSecurity;
                 if (s_cachedRSSI != 0) data_.rssi = s_cachedRSSI;
                 if (s_cachedChannel != 0) data_.channel = s_cachedChannel;
                 if (s_cachedTxRate > 0) data_.txRate = s_cachedTxRate;
+                // macOS 15+ privacy sentinel
+                if (s_cachedSSID == "<redacted>") data_.locationDenied = true;
             } else if (state == 0) {
                 s_profilerState.store(1, std::memory_order_release);
                 std::thread(RunSystemProfiler).detach();
             }
-            // state == 1: still running, no cached data yet — use CoreWLAN-only this cycle
+            // state == 1: still running, no cached data yet
         }
 
+        if (!data_.powerOn && !iface) {
+            data_.powerOn = false;
+        }
         data_.isConnected = !data_.bssid.empty();
-
-        // --- RSSI / Noise / Channel / Security / TxRate (CoreWLAN) ---
-        // CoreWLAN RSSI/channel are available even without Location Services.
-        // Only override cached system_profiler values when CoreWLAN gives valid data.
-        int cwRssi = static_cast<int>([interface rssiValue]);
-        if (cwRssi != 0 || data_.rssi == 0) data_.rssi = cwRssi;
-        int cwNoise = static_cast<int>([interface noiseMeasurement]);
-        if (cwNoise != 0 || data_.noise == 0) data_.noise = cwNoise;
-        CWChannel* wlanChannel = [interface wlanChannel];
-        if (wlanChannel) {
-            int ch = static_cast<int>([wlanChannel channelNumber]);
-            if (ch != 0 || data_.channel == 0) data_.channel = ch;
-        }
-        CWSecurity secType = [interface security];
-        std::string secStr = SecurityToString(secType);
-        if (!secStr.empty() && secStr != "Unknown") data_.security = secStr;
-        else if (data_.security.empty()) data_.security = secStr;
-        double cwRate = [interface transmitRate];
-        if (cwRate > 0 || data_.txRate == 0) data_.txRate = cwRate;
 
         Logger::Debug("WiFiInfo: ssid=" + data_.ssid +
                       " bssid=" + data_.bssid +

@@ -24,19 +24,33 @@ set(CORE_MODULES_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/DiskInfo.cpp
+    # PawnIO DIMM temperature (Windows-only)
+    $<$<BOOL:${TCMT_WINDOWS}>:${CMAKE_CURRENT_SOURCE_DIR}/core/memory/PawnIOWrapper.cpp>
+    $<$<BOOL:${TCMT_WINDOWS}>:${CMAKE_CURRENT_SOURCE_DIR}/core/memory/MemoryTempReader.cpp>
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/network/NetworkAdapter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/os/OSInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerInfo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerMonitor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb/UsbInfo.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_cpu.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/core/ModuleCoordinator_io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/UserNotifier.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/notifications/SystemEventMonitor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator_cpu.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/coordinator/ModuleCoordinator_io.cpp
 )
 # macOS-only modules (.mm Objective-C++, not valid for MSVC)
 if(TCMT_MACOS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/display/DisplayInfo.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/SpsManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
 endif()
 
@@ -44,6 +58,7 @@ endif()
 if(TCMT_WINDOWS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/etw/EtwMonitor.cpp
     )
 endif()
 
@@ -92,15 +107,15 @@ if(TCMT_WINDOWS)
     list(APPEND TEMP_SOURCES ${TEMP_SOURCES_WINDOWS})
 endif()
 
-if(TCMT_MACOS)
+if(TCMT_MACOS OR TCMT_LINUX)
     list(APPEND TEMP_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/TemperatureWrapper.cpp
     )
 endif()
 
-# TUI module (Windows and macOS)
+# TUI module (Windows, macOS, and Linux)
 set(TUI_SOURCES "")
-if(TCMT_WINDOWS OR TCMT_MACOS)
+if(TCMT_WINDOWS OR TCMT_MACOS OR TCMT_LINUX)
     list(APPEND TUI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/tui/TuiApp.cpp
     )
@@ -128,6 +143,10 @@ elseif(TCMT_MACOS)
             endif()
         endif()
     endif()
+    find_package(Curses REQUIRED)
+
+elseif(TCMT_LINUX)
+    set(CURSES_NEED_WIDE TRUE)
     find_package(Curses REQUIRED)
 endif()
 
@@ -161,6 +180,10 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/usb
     ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
     ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/battery
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/process
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/als
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/accel
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
 
@@ -183,11 +206,19 @@ elseif(TCMT_MACOS)
     target_compile_definitions(TCMTCore PRIVATE
         TCMT_MACOS _DARWIN_C_SOURCE
     )
+
+elseif(TCMT_LINUX)
+    target_compile_definitions(TCMTCore PRIVATE
+        TCMT_LINUX _GNU_SOURCE
+    )
 endif()
 
 # Apply compile options from cmake/Options.cmake
 tcmt_target_set_options(TCMTCore)
 tcmt_set_platform_libraries(TCMTCore)
+if(TCMT_WINDOWS)
+    target_link_libraries(TCMTCore PRIVATE tdh wtsapi32)
+endif()
 tcmt_set_output_directories(TCMTCore)
 
 # Link curses on Windows and macOS
@@ -200,18 +231,63 @@ if(TCMT_WINDOWS)
 elseif(TCMT_MACOS)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
+
+elseif(TCMT_LINUX)
+    target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
+    target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
 endif()
 
-# SQLite3 — macOS provides it via the system SDK (just -lsqlite3).
-# Windows users should install it via vcpkg (vcpkg install sqlite3) and
-# add find_package(SQLite3) to cmake/Dependencies.cmake.
-if(TCMT_MACOS)
-    target_link_libraries(TCMTCore PRIVATE sqlite3)
-    message(STATUS "  SQLite3: system library (-lsqlite3)")
+# SQLite3 — built from src/third_party/sqlite submodule.
+# Uses the amalgamation (single-file build) for hermetic, version-pinned builds.
+set(SQLITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
+set(SQLITE3_C "${SQLITE_DIR}/sqlite3.c")
+set(SQLITE3_H "${SQLITE_DIR}/sqlite3.h")
+
+# Generate amalgamation on first configure (requires jimsh/tclsh from submodule)
+if(NOT EXISTS "${SQLITE3_C}" OR NOT EXISTS "${SQLITE3_H}")
+    message(STATUS "Generating SQLite amalgamation...")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E chdir "${SQLITE_DIR}"
+                sh -c "./configure > /dev/null 2>&1 && make sqlite3.c > /dev/null 2>&1"
+        RESULT_VARIABLE _sqlite_gen_rc
+        TIMEOUT 120
+    )
+    if(NOT _sqlite_gen_rc EQUAL 0)
+        message(FATAL_ERROR "SQLite amalgamation generation failed")
+    endif()
 endif()
-if(TCMT_WINDOWS)
-    message(STATUS "  SQLite3: link manually via vcpkg (disabled for now)")
+
+# Stage sqlite3.h to a clean include dir (source dir has files like 'version' that
+# break C++ compilation when exposed via PUBLIC include paths)
+set(SQLITE_BIN_DIR "${CMAKE_BINARY_DIR}/sqlite3")
+file(MAKE_DIRECTORY "${SQLITE_BIN_DIR}")
+add_custom_target(sqlite3_header
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SQLITE3_H}" "${SQLITE_BIN_DIR}/sqlite3.h"
+    DEPENDS "${SQLITE3_H}"
+    COMMENT "Staging sqlite3.h"
+)
+
+add_library(sqlite3 STATIC "${SQLITE3_C}")
+add_dependencies(sqlite3 sqlite3_header)
+target_include_directories(sqlite3
+    PUBLIC  "${SQLITE_BIN_DIR}"       # sqlite3.h
+    PRIVATE "${SQLITE_DIR}"           # sqlite_cfg.h, sqlite3ext.h
+)
+target_compile_definitions(sqlite3 PRIVATE
+    SQLITE_ENABLE_DBSTAT_VTAB
+    SQLITE_ENABLE_FTS5
+    SQLITE_ENABLE_JSON1
+    SQLITE_ENABLE_RTREE
+    SQLITE_THREADSAFE=1
+)
+if(MSVC)
+    target_compile_options(sqlite3 PRIVATE /W0)
+else()
+    target_compile_options(sqlite3 PRIVATE -w)
 endif()
+
+target_link_libraries(TCMTCore PRIVATE sqlite3)
+message(STATUS "  SQLite3: built from submodule amalgamation")
 
 # IOBluetooth.framework — macOS Bluetooth monitoring (C API)
 if(TCMT_MACOS)
@@ -222,6 +298,61 @@ if(TCMT_MACOS)
     else()
         message(WARNING "  IOBluetooth.framework not found — Bluetooth monitoring disabled")
     endif()
+endif()
+
+# DiskArbitration, SystemConfiguration, IOKit — macOS system event monitoring
+if(TCMT_MACOS)
+    find_library(DISKARBITRATION_LIB DiskArbitration)
+    find_library(SYSTEMCONFIGURATION_LIB SystemConfiguration)
+    find_library(IOKIT_LIB IOKit)
+    if(DISKARBITRATION_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${DISKARBITRATION_LIB})
+        message(STATUS "  DiskArbitration.framework: ${DISKARBITRATION_LIB}")
+    endif()
+    if(SYSTEMCONFIGURATION_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${SYSTEMCONFIGURATION_LIB})
+        message(STATUS "  SystemConfiguration.framework: ${SYSTEMCONFIGURATION_LIB}")
+    endif()
+    if(IOKIT_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${IOKIT_LIB})
+        message(STATUS "  IOKit.framework: ${IOKIT_LIB}")
+    endif()
+    find_library(SERVICEMANAGEMENT_LIB ServiceManagement)
+    find_library(SECURITY_LIB Security)
+    if(SERVICEMANAGEMENT_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${SERVICEMANAGEMENT_LIB})
+        message(STATUS "  ServiceManagement.framework: ${SERVICEMANAGEMENT_LIB}")
+    endif()
+    if(SECURITY_LIB)
+        target_link_libraries(TCMTCore PRIVATE ${SECURITY_LIB})
+        message(STATUS "  Security.framework: ${SECURITY_LIB}")
+    endif()
+endif()
+
+# ============================================================
+# SMJobBless privileged helper (BMI284 accelerometer)
+# ============================================================
+if(TCMT_MACOS)
+    # Build the helper executable
+    add_executable(tcmt_sensor_helper
+        ${CMAKE_CURRENT_SOURCE_DIR}/helper/tcmt_sensor_helper.c
+    )
+    target_link_libraries(tcmt_sensor_helper PRIVATE
+        "-framework IOKit"
+        "-framework CoreFoundation"
+    )
+    # Embed CFBundle Info.plist into __TEXT,__info_plist (CFBundleIdentifier, SMAuthorizedClients)
+    target_link_options(tcmt_sensor_helper PRIVATE
+        "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/helper/com.tcmt.sensorhelper.info.plist"
+    )
+    # Embed launchd plist into __TEXT,__launchd_plist (Label, KeepAlive — required by SMJobBless)
+    target_link_options(tcmt_sensor_helper PRIVATE
+        "-Wl,-sectcreate,__TEXT,__launchd_plist,${CMAKE_CURRENT_SOURCE_DIR}/helper/com.tcmt.sensorhelper.launchd.plist"
+    )
+    set_target_properties(tcmt_sensor_helper PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+    )
 endif()
 
 # ============================================================
@@ -250,6 +381,12 @@ elseif(TCMT_MACOS)
     add_executable(TCMT-M
         ${CMAKE_CURRENT_SOURCE_DIR}/main_mac.cpp
     )
+
+elseif(TCMT_LINUX)
+    # Linux: use main_linux.cpp
+    add_executable(TCMT-M
+        ${CMAKE_CURRENT_SOURCE_DIR}/main_linux.cpp
+    )
 endif()
 
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
@@ -268,7 +405,38 @@ if(TCMT_WINDOWS)
         )
     endif()
 elseif(TCMT_MACOS)
-    # macOS executable settings
+    # macOS: build .app bundle so CoreLocation/SSID permission dialog works.
+    # Use generator expressions so the bundle lands alongside the binary
+    # regardless of CMAKE_RUNTIME_OUTPUT_DIRECTORY.
+    add_custom_command(TARGET TCMT-M POST_BUILD
+        # Always start fresh to avoid stale signature hash mismatch
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/MacOS"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:TCMT-M>"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/MacOS/TCMT-M"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M-Info.plist"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Info.plist"
+        # Copy SMJobBless helper to Contents/Library/LaunchServices/
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:tcmt_sensor_helper>"
+            "$<TARGET_FILE_DIR:TCMT-M>/TCMT-M.app/Contents/Library/LaunchServices/com.tcmt.sensorhelper"
+        # Conditionally sign: skip if identity not in keychain (e.g. CI)
+        COMMAND ${CMAKE_SOURCE_DIR}/scripts/codesign.sh
+            "$<TARGET_FILE_DIR:TCMT-M>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/TCMT-M.entitlements"
+        COMMENT "Creating TCMT-M.app bundle (codesign if identity available)"
+    )
+elseif(TCMT_LINUX)
+    # Linux: no .app bundle, no codesign, no SMJobBless helper
+    target_link_options(TCMT-M PRIVATE
+        -pthread
+    )
 endif()
 
 message(STATUS "TCMT-M build configured successfully")

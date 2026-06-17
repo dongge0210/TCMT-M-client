@@ -1,15 +1,9 @@
-[submodule "src/third_party/FFmpeg"]
-	path = src/third_party/FFmpeg
-	url = https://github.com/dongge0210/FFmpeg
 [submodule "src/third_party/LibreHardwareMonitor"]
 	path = src/third_party/LibreHardwareMonitor
 	url = https://github.com/dongge0210/LibreHardwareMonitor
 [submodule "src/CPP-parsers"]
 	path = src/CPP-parsers
 	url = https://github.com/dongge0210/CPP-parsers.git
-[submodule "src/third_party/USBMonitor-cpp"]
-	path = src/third_party/USBMonitor-cpp
-	url = https://github.com/dongge0210/USBMonitor-cpp
 [submodule "src/third_party/TC"]
 	path = src/third_party/TC
 	url = https://github.com/dongge0210/TC
@@ -19,12 +13,19 @@
 [submodule "src/third_party/curl"]
 	path = src/third_party/curl
 	url = https://github.com/dongge0210/curl.git
-[submodule "src/third_party/websocketpp"]
-	path = src/third_party/websocketpp
-	url = https://github.com/dongge0210/websocketpp.git
 [submodule "src/third_party/tpm2-tss"]
 	path = src/third_party/tpm2-tss
 	url = https://github.com/dongge0210/tpm2-tss.git
 [submodule "src/third_party/zlib"]
 	path = src/third_party/zlib
 	url = https://github.com/dongge0210/zlib.git
+[submodule "src/third_party/h2o"]
+	path = src/third_party/h2o
+	url = https://github.com/dongge0210/h2o.git
+[submodule "src/third_party/openssl"]
+	path = src/third_party/openssl
+	url = https://github.com/dongge0210/openssl.git
+[submodule "src/third_party/sqlite"]
+	path = src/third_party/sqlite
+	url = https://github.com/dongge0210/sqlite.git
+	ignore = untracked
