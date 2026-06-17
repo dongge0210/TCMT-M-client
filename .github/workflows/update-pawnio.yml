@@ -1,0 +1,86 @@
+name: Update PawnIO Modules
+
+on:
+  schedule:
+    # Every Sunday at 03:17 UTC (off-peak, avoids :00/:30 stampede)
+    - cron: '17 3 * * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get current version
+        id: current
+        run: cat src/resources/pawnio/.version 2>/dev/null || echo "0.0.0"
+
+      - name: Fetch latest PawnIO.Modules release
+        id: latest
+        run: |
+          curl -sL https://api.github.com/repos/namazso/PawnIO.Modules/releases/latest | jq -r .tag_name
+
+      - name: Compare versions
+        id: check
+        env:
+          CURRENT: ${{ steps.current.outputs.stdout }}
+          LATEST: ${{ steps.latest.outputs.stdout }}
+        run: |
+          echo "current=$CURRENT"
+          echo "latest=$LATEST"
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Already up to date."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Update needed: $CURRENT → $LATEST"
+          fi
+
+      - name: Download and extract new .bin files
+        if: steps.check.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.latest.outputs.stdout }}
+        run: |
+          SAFE_TAG="$(echo "$TAG" | tr '.' '_')"
+          DOWNLOAD_URL="https://github.com/namazso/PawnIO.Modules/releases/download/${TAG}/release_${SAFE_TAG}.zip"
+          STORED_HASH="$(cat src/resources/pawnio/.sha256sum 2>/dev/null || true)"
+          echo "Downloading $DOWNLOAD_URL"
+          curl -sL "$DOWNLOAD_URL" -o /tmp/pawnio.zip
+          COMPUTED_HASH="$(sha256sum /tmp/pawnio.zip | cut -d' ' -f1)"
+          if [ -n "$STORED_HASH" ] && [ "$COMPUTED_HASH" != "$STORED_HASH" ]; then
+            echo "ERROR: SHA256 mismatch!"
+            echo "  expected: $STORED_HASH"
+            echo "  got:      $COMPUTED_HASH"
+            exit 1
+          fi
+          echo "SHA256: $COMPUTED_HASH"
+          # Validate archive contents before extracting
+          unzip -l /tmp/pawnio.zip
+          unzip -o /tmp/pawnio.zip "*.bin" -d src/resources/pawnio/
+          echo "$TAG" > src/resources/pawnio/.version
+          echo "$COMPUTED_HASH" > src/resources/pawnio/.sha256sum
+          echo "Updated to $TAG"
+
+      - name: Create Pull Request
+        if: steps.check.outputs.skip == 'false'
+        uses: peter-evans/create-pull-request@84ae59a2cdc2258d6fa0732dd66352dddae2a412 # v7.0.9
+        with:
+          commit-message: "deps: update PawnIO modules to ${{ steps.latest.outputs.stdout }}"
+          title: "deps: update PawnIO modules to ${{ steps.latest.outputs.stdout }}"
+          body: |
+            Automated update of PawnIO kernel modules from
+            [namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules).
+
+            **${{ steps.current.outputs.stdout }} → ${{ steps.latest.outputs.stdout }}**
+
+            Source: https://github.com/namazso/PawnIO.Modules/releases/tag/${{ steps.latest.outputs.stdout }}
+          branch: deps/pawnio-${{ steps.latest.outputs.stdout }}
+          base: dev
+          labels: dependencies
+          delete-branch: true

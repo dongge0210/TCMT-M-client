@@ -1077,10 +1077,10 @@ int main(int argc, char* argv[]) {
             SafeExit(1);
         }
 
-        // Initialize hardware monitoring bridge (LHM for temperature sensors)
+        // Initialize temperature monitoring (PawnIO + NVML on Windows, SMC on macOS, sysfs on Linux)
         try {
             TemperatureWrapper::Initialize();
-            Logger::Info("Hardware monitoring bridge (LHM) initialized");
+            Logger::Info("Temperature monitoring initialized");
         }
         catch (const std::exception& e) {
             Logger::Error("Hardware monitoring bridge initialization failed: " + std::string(e.what()));

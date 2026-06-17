@@ -239,7 +239,7 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
 }
 
 void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
-    Logger::Debug("DiskInfo::CollectSmartData - using LibreHardwareMonitor");
+    // SMART data is collected via SmartReader::Read() in the main enumeration path
 }
 
 #elif defined(TCMT_MACOS)

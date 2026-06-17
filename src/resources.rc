@@ -1,7 +1,10 @@
-// Embedded SMBus .bin modules for PawnIO DIMM temperature reading
-SMBUS_I801      RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/SmbusI801.bin"
-SMBUS_PIIX4     RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/SmbusPIIX4.bin"
-SMBUS_NCT6793   RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/SmbusNCT6793.bin"
-SMBUS_SKYLAKE   RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/SmbusIntelSkylakeIMC.bin"
-INTEL_MSR       RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/IntelMSR.bin"
-LPC_IO          RCDATA "src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/Resources/PawnIo/LpcIO.bin"
+// Embedded SMBus .bin modules for PawnIO — sourced from namazso/PawnIO.Modules
+// Version: see src/resources/pawnio/.version
+// Auto-update workflow: .github/workflows/update-pawnio.yml
+
+SMBUS_I801      RCDATA "src/resources/pawnio/SmbusI801.bin"
+SMBUS_PIIX4     RCDATA "src/resources/pawnio/SmbusPIIX4.bin"
+SMBUS_NCT6793   RCDATA "src/resources/pawnio/SmbusNCT6793.bin"
+SMBUS_SKYLAKE   RCDATA "src/resources/pawnio/SmbusIntelSkylakeIMC.bin"
+INTEL_MSR       RCDATA "src/resources/pawnio/IntelMSR.bin"
+LPC_IO          RCDATA "src/resources/pawnio/LpcIO.bin"
