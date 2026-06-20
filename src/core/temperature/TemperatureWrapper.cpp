@@ -4,8 +4,11 @@
 #ifdef TCMT_WINDOWS
 #include "../memory/MemoryTempReader.h"
 #include "../cpu/CpuTempReader.h"
+#include "../cpu/RyzenSmuReader.h"
 #include "../gpu/GpuInfo.h"
 #include "BoardTempReader.h"
+#include "IntelOobmsmReader.h"
+#include "IntelMchbarReader.h"
 
 bool TemperatureWrapper::initialized = false;
 
@@ -62,6 +65,33 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
             temps.push_back({bt.name, bt.temperature});
     } catch (...) {
         Logger::Debug("BoardTempReader: exception");
+    }
+
+    // PCH / SoC temperature via IntelOOBMSM (Core Ultra+ only)
+    try {
+        auto oobTemps = IntelOobmsmReader::ReadAll();
+        for (const auto& ot : oobTemps)
+            temps.push_back({ot.name, ot.temperature});
+    } catch (...) {
+        Logger::Debug("IntelOobmsmReader: exception");
+    }
+
+    // Memory controller telemetry via IntelMCHBAR (Intel only)
+    try {
+        auto mchSensors = IntelMchbarReader::ReadAll();
+        for (const auto& ms : mchSensors)
+            temps.push_back({ms.name, ms.value});
+    } catch (...) {
+        Logger::Debug("IntelMchbarReader: exception");
+    }
+
+    // AMD SMU power/temperature table (AMD Ryzen only)
+    try {
+        auto smuSensors = RyzenSmuReader::ReadAll();
+        for (const auto& rs : smuSensors)
+            temps.push_back({rs.name, rs.value});
+    } catch (...) {
+        Logger::Debug("RyzenSmuReader: exception");
     }
 
     return temps;

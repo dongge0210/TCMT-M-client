@@ -33,7 +33,7 @@ public:
     static void CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo);
 #endif
 
-    // Collect SMART data (placeholder on macOS, uses LibreHardwareMonitor on Windows)
+    // Collect SMART data (DeviceIoControl on Windows, IOKit on macOS)
     static void CollectSmartData(SystemInfo& sysInfo);
 
 private:

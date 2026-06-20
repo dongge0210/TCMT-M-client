@@ -33,6 +33,9 @@
     <ClInclude Include="src\core\cpu\CpuTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\cpu\RyzenSmuReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\network\NetworkAdapter.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -66,7 +69,10 @@
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\Utils\LibreHardwareMonitorBridge.h">
+    <ClInclude Include="src\core\temperature\IntelOobmsmReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\temperature\IntelMchbarReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\core\Config\ConfigManager.h">
@@ -143,6 +149,9 @@
     <ClCompile Include="src\core\cpu\CpuTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\cpu\RyzenSmuReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ResourceCompile Include="src\resources.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
@@ -164,7 +173,10 @@
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\Utils\LibreHardwareMonitorBridge.cpp">
+    <ClCompile Include="src\core\temperature\IntelOobmsmReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\temperature\IntelMchbarReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\main.cpp">

@@ -8,7 +8,7 @@ Cross-platform hardware monitoring tool (alpha-0.2, GPL-3.0). Monitors CPU, GPU,
 
 **Two separate build systems co-exist:**
 - **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.
-- **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with LibreHardwareMonitor bridge and an AvaloniaUI .NET 10.0 frontend.
+- **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with an AvaloniaUI .NET 10.0 frontend.
 
 **CRITICAL: When adding new source files (.cpp/.h/.c/.mm), you MUST register them in ALL build systems:**
 1. **`TCMT.vcxproj`** — `<ClCompile Include="...">` for .cpp/.c/.mm, `<ClInclude Include="...">` for .h
@@ -34,16 +34,13 @@ Build order is critical (see `.github/workflows/build.yml` for CI reference):
 ```bash
 git submodule update --init --recursive
 
-# 1. LibreHardwareMonitor (.NET 4.7.2)
-dotnet build src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472
-
-# 2. CPP-parsers
+# 1. CPP-parsers
 msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
-# 3. Main C++/CLI app
+# 2. Main C++/CLI app
 msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
-# 4. AvaloniaUI
+# 3. AvaloniaUI
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release
 ```
 Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0+ SDK.
@@ -54,7 +51,7 @@ Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0
 ```
 C++ Core (TCMT-M / TCMT.exe)
   │  Collects: CPU, GPU, Memory, Disk, Network, WiFi, Bluetooth, OS, Temperature
-  │  Sources: WMI (Windows), IOKit/sysctl (macOS), LibreHardwareMonitor (Windows .NET),
+  │  Sources: WMI (Windows), IOKit/sysctl (macOS), PawnIO (Windows kernel),
   │           NVML/CUDA (Windows), CoreWLAN/IOBluetooth (macOS), WLAN API (Windows)
   ▼
 IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
@@ -82,12 +79,34 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
 - `src/DataStruct.h` — Packed `SharedMemoryBlock`. **`WCHAR`** = `char16_t` on macOS, `wchar_t` on Windows. Do NOT change.
 - `AvaloniaUI/Services/IPCServices/` — C# IPC pipeline (IPCPipeClient, IPCMemoryReader, IPCSchema, IPCSystemInfoMapper)
 
+### PawnIO Kernel Driver (Windows-only)
+
+PawnIO is a Windows kernel driver (`namazso/PawnIO.Modules`) that allows user-mode programs
+to execute signed kernel modules for raw hardware access — SMBus, LPC/Super I/O, MSR, and PCI
+config space.
+
+- **Driver**: the PawnIO installer (`PawnIO_setup.exe`) creates `\\.\GLOBALROOT\Device\PawnIO`.
+- **Modules (.bin)**: signed, pre-compiled binaries from the official 0.2.8 release:
+  https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.8
+  (single `release_0_2_8.zip`). Stored in `src/resources/pawnio/`, version tracking
+  in `src/resources/pawnio/.version`. Auto-updated weekly via
+  `.github/workflows/update-pawnio.yml`.
+  Our `src/resources.rc` embeds the subset we use as RCDATA.
+- **Wrapper**: `src/core/memory/PawnIOWrapper.h/.cpp` — `CreateFileW` + `DeviceIoControl`.
+- **Consumers**:
+  - `CpuTempReader` — Intel CPU temp via MSR (IA32_THERM_STATUS)
+  - `MemoryTempReader` — DDR5 SPD Hub + LM75 temp via SMBus (I801, PIIX4, NCT6793, Skylake IMC)
+  - `BoardTempReader` — NCT6798D motherboard sensors via LpcIO (Super I/O port I/O)
+- **Detection**: `PawnIOWrapper::IsInstalled()` checks
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO` and the device path.
+  All consumers are **opt-in** — if the driver is not installed, they silently return empty results.
+
 ## Platform-Specific Files
 
 Some `.cpp` / `.mm` files are compiled on ONE platform only:
 - `WiFiInfo.mm` — macOS only (CoreWLAN ObjC++). Windows: `WiFiInfo.cpp` + `WiFiInfo_wlan.c`.
 - `BluetoothInfo.mm` — macOS only (IOBluetooth ObjC++). Windows: `BluetoothInfo.cpp`.
-- `TemperatureWrapper.cpp` — Windows only (LibreHardwareMonitor bridge, C++/CLI).
+- `TemperatureWrapper.cpp` — Cross-platform (PawnIO + NVML on Windows, SMC on macOS, sysfs on Linux).
 - `Platform_Windows.cpp` — Windows only.
 - `IOReportSampler.mm` — macOS only (private IOReport.framework + IOKit pmgr, no sudo).
 
