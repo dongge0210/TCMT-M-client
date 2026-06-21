@@ -49,7 +49,6 @@ const ALU_D = new THREE.MeshStandardMaterial({ color: 0x9999a2, roughness: 0.22,
 const ALU_L = new THREE.MeshStandardMaterial({ color: 0xd0d0d8, roughness: 0.15, metalness: 0.97 });
 const BLACK = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.02 });
 const RUBBER = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0 });
-const SCREEN = new THREE.MeshStandardMaterial({ color: 0x0a0a14, roughness: 0.03, metalness: 0, emissive: 0x223366, emissiveIntensity: 0.8 });
 const HINGE = new THREE.MeshStandardMaterial({ color: 0x888890, roughness: 0.12, metalness: 0.96 });
 
 /* ── Geometry helpers ───────────────────────────────────────── */
@@ -140,12 +139,6 @@ lidBody.rotation.x = -Math.PI / 2;
 lidBody.position.set(0, 0, LD / 2);
 lidBody.castShadow = true; lidBody.receiveShadow = true;
 hingePivot.add(lidBody);
-
-// Screen panel (inner face, facing front)
-const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(LW - 0.46, LD - 0.46), SCREEN);
-screenMesh.position.set(0, 0, LD / 2 - 0.002);
-hingePivot.add(screenMesh);
-
 
 hingePivot.rotation.x = -110 * (Math.PI / 180); // ~110° = normal open position
 
