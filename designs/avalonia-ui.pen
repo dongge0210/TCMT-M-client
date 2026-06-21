@@ -1,2738 +1,2097 @@
 {
-  "version": "2.11",
+  "version": "2.13",
   "children": [
     {
       "type": "frame",
-      "id": "p8AVk0",
+      "id": "BOkpH",
       "x": 0,
       "y": 0,
-      "name": "MainWindow",
+      "name": "Dashboard",
       "width": 1200,
-      "height": 1400,
-      "fill": "#353635",
+      "height": 860,
+      "fill": "#0D1117",
       "children": [
         {
           "type": "frame",
-          "id": "z0qk8",
-          "name": "sidebar",
+          "id": "V697IF",
+          "name": "Sidebar",
           "width": 240,
           "height": "fill_container",
-          "fill": "#1E1E1E",
-          "stroke": {
-            "thickness": {
-              "right": 1
-            },
-            "fill": "#333333"
+          "fill": "#161B22",
+          "stroke": "#30363D",
+          "strokeWidth": {
+            "right": 1
           },
+          "strokeAlignment": "inner",
           "layout": "vertical",
-          "gap": 10,
-          "padding": [
-            20,
-            15
-          ],
           "children": [
             {
               "type": "frame",
-              "id": "ri5W6",
+              "id": "Nuzku",
+              "name": "LogoBox",
               "width": "fill_container",
               "padding": [
-                0,
-                0,
                 20,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "D6t4Ne",
+                  "name": "Logo",
+                  "fill": "#E6EDF3",
+                  "content": "TCMT",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 18,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "un9dw",
+              "name": "Div1",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "#30363D"
+            },
+            {
+              "type": "frame",
+              "id": "OUgxL",
+              "name": "Nav",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 2,
+              "padding": 8,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "iSAIW",
+                  "name": "N_Dashboard",
+                  "width": "fill_container",
+                  "fill": "#3B82F626",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ZEW1i",
+                      "name": "NL_Dashboard",
+                      "fill": "#3B82F6",
+                      "content": "  Dashboard",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "b0OvnG",
+                  "name": "N_CPU",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "TesaP",
+                      "name": "NL_CPU",
+                      "fill": "#8B949E",
+                      "content": "CPU",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "JMWI1",
+                  "name": "N_GPU",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JlZN7",
+                      "name": "NL_GPU",
+                      "fill": "#8B949E",
+                      "content": "GPU",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "fkKZD",
+                  "name": "N_Memory",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "T7rTOC",
+                      "name": "NL_Memory",
+                      "fill": "#8B949E",
+                      "content": "Memory",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "RP3D7",
+                  "name": "N_Disk",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "X8C0q",
+                      "name": "NL_Disk",
+                      "fill": "#8B949E",
+                      "content": "Disk",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "yyHtR",
+                  "name": "N_Network",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "aKoBY",
+                      "name": "NL_Network",
+                      "fill": "#8B949E",
+                      "content": "Network",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "MLiPq",
+                  "name": "N_Settings",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 8,
+                  "gap": 12,
+                  "padding": [
+                    10,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JCPKC",
+                      "name": "NL_Settings",
+                      "fill": "#8B949E",
+                      "content": "Settings",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 14
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "MBJQ3",
+              "name": "Spacer",
+              "width": "fill_container",
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "fOf8b",
+              "name": "VerBox",
+              "width": "fill_container",
+              "padding": [
+                16,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "eu9vh",
+                  "name": "Version",
+                  "fill": "#8B949E",
+                  "content": "v0.2.0",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "ZwUvp",
+          "name": "MainArea",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#0D1117",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "oOGqJ",
+              "name": "TopBar",
+              "width": "fill_container",
+              "fill": "#161B22",
+              "stroke": "#30363D",
+              "strokeWidth": {
+                "bottom": 1
+              },
+              "strokeAlignment": "inner",
+              "padding": [
+                16,
+                24
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "DBQJM",
+                  "fill": "#E6EDF3",
+                  "content": "Hardware Monitor",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 16,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "U4dXWL",
+                  "fill": "#23863626",
+                  "cornerRadius": 12,
+                  "gap": 6,
+                  "padding": [
+                    4,
+                    10
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 4,
+                      "id": "hbR5m",
+                      "fill": "#238636",
+                      "width": 8,
+                      "height": 8
+                    },
+                    {
+                      "type": "text",
+                      "id": "zbErv",
+                      "fill": "#238636",
+                      "content": "Connected",
+                      "fontFamily": "Fira Sans",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ku2uA",
+              "name": "DashContent",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 20,
+              "padding": 24,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "dpoUi",
+                  "name": "MetricsRow",
+                  "width": "fill_container",
+                  "gap": 16,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "mq6zJ",
+                      "name": "Card_CPU Temp",
+                      "width": "fill_container",
+                      "fill": "#161B22",
+                      "cornerRadius": 8,
+                      "stroke": "#30363D",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "zBnuk",
+                          "fill": "#8B949E",
+                          "content": "CPU Temp",
+                          "fontFamily": "Fira Sans",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "OgchG",
+                          "fill": "#238636",
+                          "content": "42 C",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 20,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "XCvfw",
+                      "name": "Card_GPU Temp",
+                      "width": "fill_container",
+                      "fill": "#161B22",
+                      "cornerRadius": 8,
+                      "stroke": "#30363D",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "dMX17",
+                          "fill": "#8B949E",
+                          "content": "GPU Temp",
+                          "fontFamily": "Fira Sans",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "c6LAv2",
+                          "fill": "#D97706",
+                          "content": "65 C",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 20,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xcYFs",
+                      "name": "Card_RAM Usage",
+                      "width": "fill_container",
+                      "fill": "#161B22",
+                      "cornerRadius": 8,
+                      "stroke": "#30363D",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "zeBjX",
+                          "fill": "#8B949E",
+                          "content": "RAM Usage",
+                          "fontFamily": "Fira Sans",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "gLv9S",
+                          "fill": "#3B82F6",
+                          "content": "8.2/16 GB",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 20,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "dr98C",
+                      "name": "Card_Disk Free",
+                      "width": "fill_container",
+                      "fill": "#161B22",
+                      "cornerRadius": 8,
+                      "stroke": "#30363D",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "gap": 4,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "yIRxR",
+                          "fill": "#8B949E",
+                          "content": "Disk Free",
+                          "fontFamily": "Fira Sans",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "H71ea",
+                          "fill": "#3B82F6",
+                          "content": "256 GB",
+                          "fontFamily": "Fira Code",
+                          "fontSize": 20,
+                          "fontWeight": "700"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "mWT1z",
+                  "fill": "#E6EDF3",
+                  "content": "Sensor Details",
+                  "fontFamily": "Fira Sans",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "frame",
+                  "id": "Vd1kU",
+                  "name": "SensorGrid",
+                  "width": "fill_container",
+                  "gap": 16,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "eCsxJ",
+                      "name": "CPUCol",
+                      "width": "fill_container",
+                      "fill": "#161B22",
+                      "cornerRadius": 8,
+                      "stroke": "#30363D",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "layout": "vertical",
+                      "gap": 6,
+                      "padding": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "uzt1C",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "C8WEq3",
+                              "fill": "#3B82F6",
+                              "content": "CPU",
+                              "fontFamily": "Fira Sans",
+                              "fontSize": 13,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "DvUu6",
+                              "fill": "#238636",
+                              "content": "42 C",
+                              "fontFamily": "Fira Code",
+                              "fontSize": 13,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "zVIj6",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#30363D"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "bIZVn",
+                          "name": "C_Package",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "s9CM7M",
+                              "fill": "#8B949E",
+                              "content": "Package",
+                              "fontFamily": "Fira Sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "GkidR",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "oLOJT",
+                                  "fill": "#E6EDF3",
+                                  "content": "42 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "Lq5Xr",
+                                  "fill": "#8B949E",
+                                  "content": "95 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Ui1yz",
+                          "name": "C_Core 0",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "SB2kQ",
+                              "fill": "#8B949E",
+                              "content": "Core 0",
+                              "fontFamily": "Fira Sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "N2oyh",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "eVPoH",
+                                  "fill": "#E6EDF3",
+                                  "content": "40 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "V4QHpS",
+                                  "fill": "#8B949E",
+                                  "content": "95 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "l787y",
+                          "name": "C_Core 1",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "k9TBfh",
+                              "fill": "#8B949E",
+                              "content": "Core 1",
+                              "fontFamily": "Fira Sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Eb9Ni",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "cjPVB",
+                                  "fill": "#E6EDF3",
+                                  "content": "38 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "gyqwe",
+                                  "fill": "#8B949E",
+                                  "content": "95 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "V2wmG",
+                          "name": "C_Core 2",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ZxmTO",
+                              "fill": "#8B949E",
+                              "content": "Core 2",
+                              "fontFamily": "Fira Sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "do0Sm",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "q5C7Nw",
+                                  "fill": "#E6EDF3",
+                                  "content": "41 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "VLCvT",
+                                  "fill": "#8B949E",
+                                  "content": "95 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "c4yD0",
+                          "name": "C_Core 3",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "xmZXU",
+                              "fill": "#8B949E",
+                              "content": "Core 3",
+                              "fontFamily": "Fira Sans",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "WpKo6",
+                              "gap": 8,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Q5yLg",
+                                  "fill": "#E6EDF3",
+                                  "content": "39 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "j43i7y",
+                                  "fill": "#8B949E",
+                                  "content": "95 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "faP2A",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "JWiWM",
+                          "name": "GPUCard",
+                          "width": "fill_container",
+                          "fill": "#161B22",
+                          "cornerRadius": 8,
+                          "stroke": "#30363D",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "padding": 16,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "e5SOHg",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "CCJtR",
+                                  "fill": "#D97706",
+                                  "content": "GPU",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "WRHks",
+                                  "fill": "#D97706",
+                                  "content": "65 C",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "k6Fh7j",
+                              "width": "fill_container",
+                              "height": 1,
+                              "fill": "#30363D"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "n5bcni",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "T2gHb",
+                                  "fill": "#8B949E",
+                                  "content": "Core Clock",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "v7W5p",
+                                  "fill": "#E6EDF3",
+                                  "content": "2520 MHz",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Omw5s",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "r4dYE",
+                                  "fill": "#8B949E",
+                                  "content": "Memory Clock",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "t53bKT",
+                                  "fill": "#E6EDF3",
+                                  "content": "8001 MHz",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "vSOhT",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "O59B1",
+                                  "fill": "#8B949E",
+                                  "content": "VRAM Used",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "HmWSI",
+                                  "fill": "#E6EDF3",
+                                  "content": "4.2 / 8 GB",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "cFmh3",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "NVjOw",
+                                  "fill": "#8B949E",
+                                  "content": "Utilization",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "qEgNS",
+                                  "fill": "#E6EDF3",
+                                  "content": "78 %",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "xwccN",
+                          "name": "MemoryCard",
+                          "width": "fill_container",
+                          "fill": "#161B22",
+                          "cornerRadius": 8,
+                          "stroke": "#30363D",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "layout": "vertical",
+                          "gap": 6,
+                          "padding": 16,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "M7pRqq",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "wT7n3",
+                                  "fill": "#3B82F6",
+                                  "content": "Memory",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "ujCvU",
+                                  "fill": "#3B82F6",
+                                  "content": "51 %",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "SHeV1",
+                              "width": "fill_container",
+                              "height": 1,
+                              "fill": "#30363D"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "RtYJH",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "FD8ZJ",
+                                  "fill": "#8B949E",
+                                  "content": "Used",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "tWizM",
+                                  "fill": "#E6EDF3",
+                                  "content": "8.2 GB",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "mqSRJ",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "t8VfXh",
+                                  "fill": "#8B949E",
+                                  "content": "Available",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "U8ops",
+                                  "fill": "#E6EDF3",
+                                  "content": "7.8 GB",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "VM6wM",
+                              "width": "fill_container",
+                              "justifyContent": "space_between",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "X8sxk",
+                                  "fill": "#8B949E",
+                                  "content": "Total",
+                                  "fontFamily": "Fira Sans",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "skG2X",
+                                  "fill": "#E6EDF3",
+                                  "content": "16 GB DDR5",
+                                  "fontFamily": "Fira Code",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "I2Brqo",
+      "x": 1300,
+      "y": 0,
+      "name": "Terminal",
+      "width": 1050,
+      "height": 860,
+      "fill": "#0C0C0C",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "W9EuRy",
+          "name": "TermTitleBar",
+          "width": "fill_container",
+          "fill": "#000000",
+          "stroke": "#1A1A1A",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "strokeAlignment": "inner",
+          "padding": [
+            8,
+            16
+          ],
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "s50mss",
+              "gap": 6,
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 5,
+                  "id": "Q46l9P",
+                  "fill": "#FF5555",
+                  "width": 10,
+                  "height": 10
+                },
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 5,
+                  "id": "bWmHF",
+                  "fill": "#FFB000",
+                  "width": 10,
+                  "height": 10
+                },
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 5,
+                  "id": "AOx4M",
+                  "fill": "#00FF41",
+                  "width": 10,
+                  "height": 10
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "wCT8U",
+              "fill": "#666666",
+              "content": "tcmt@hardware-monitor ~ bash",
+              "fontFamily": "Fira Code",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "wY0pF",
+          "name": "TabBar",
+          "width": "fill_container",
+          "fill": "#000000",
+          "stroke": "#1A1A1A",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "strokeAlignment": "inner",
+          "children": [
+            {
+              "type": "frame",
+              "id": "zndA2",
+              "fill": "#0C0C0C",
+              "stroke": "#30363D",
+              "strokeWidth": {
+                "top": 1,
+                "right": 1,
+                "left": 1
+              },
+              "strokeAlignment": "inner",
+              "padding": [
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "sSn00",
+                  "fill": "#00FF41",
+                  "content": "[all]",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ENtQy",
+              "fill": "#000000",
+              "stroke": "#00000000",
+              "strokeAlignment": "inner",
+              "padding": [
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "xZGaR",
+                  "fill": "#666666",
+                  "content": "[cpu]",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "w3BLcw",
+              "fill": "#000000",
+              "stroke": "#00000000",
+              "strokeAlignment": "inner",
+              "padding": [
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "l2GXDG",
+                  "fill": "#666666",
+                  "content": "[gpu]",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Y4Zb8R",
+              "fill": "#000000",
+              "stroke": "#00000000",
+              "strokeAlignment": "inner",
+              "padding": [
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "yovSI",
+                  "fill": "#666666",
+                  "content": "[mem]",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "JgkwL",
+              "fill": "#000000",
+              "stroke": "#00000000",
+              "strokeAlignment": "inner",
+              "padding": [
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "n3RJL",
+                  "fill": "#666666",
+                  "content": "[disk]",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "fp8k0",
+              "fill": "#000000",
+              "stroke": "#00000000",
+              "strokeAlignment": "inner",
+              "padding": [
+                8,
+                16
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "l6WtE",
+                  "fill": "#666666",
+                  "content": "[net]",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "kYYIj",
+          "name": "TermContent",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "#0C0C0C",
+          "layout": "vertical",
+          "padding": 20,
+          "children": [
+            {
+              "type": "text",
+              "id": "nn87G",
+              "fill": "#00FF41",
+              "content": "$ system_info",
+              "fontFamily": "Fira Code",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "KOuEL",
+              "fill": "#00E5FF",
+              "content": "CPU: Intel Core i7-13700K (16C/24T) @ 3.40 GHz",
+              "fontFamily": "Fira Code",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "Kxpxu",
+              "fill": "#00E5FF",
+              "content": "GPU: NVIDIA GeForce RTX 4060 (8 GB)",
+              "fontFamily": "Fira Code",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "text",
+              "id": "dGOdh",
+              "fill": "#00E5FF",
+              "content": "Memory: 16 GB DDR5 @ 5600 MHz | OS: Windows 11 Pro",
+              "fontFamily": "Fira Code",
+              "fontSize": 11,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "yyHOy",
+              "width": "fill_container",
+              "height": 14
+            },
+            {
+              "type": "text",
+              "id": "OVWJ3",
+              "fill": "#00FF41",
+              "content": "$ sensor_readings --live",
+              "fontFamily": "Fira Code",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "xQ3Cy",
+              "width": "fill_container",
+              "padding": [
+                4,
                 0
               ],
               "children": [
                 {
                   "type": "text",
-                  "id": "WRb4G",
-                  "fill": "#FFFFFF",
-                  "content": "TCMT",
-                  "fontFamily": "Inter",
-                  "fontSize": 20,
-                  "fontWeight": "bold"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "mU1I7",
-              "width": "fill_container",
-              "fill": "#4CAF50",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "lTIMr",
-                  "fill": "#888888",
-                  "content": "Dashboard",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "PTc2L",
-              "width": "fill_container",
-              "fill": "#00000000",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "soejH",
-                  "fill": "#888888",
-                  "content": "CPU",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "r5ozgW",
-              "width": "fill_container",
-              "fill": "#00000000",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "Q9ZbM2",
-                  "fill": "#888888",
-                  "content": "GPU",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "SmgfY",
-              "width": "fill_container",
-              "fill": "#00000000",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "XHYBQ",
-                  "fill": "#888888",
-                  "content": "Storage",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "EA2On",
-              "width": "fill_container",
-              "fill": "#00000000",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "Hznvt",
-                  "fill": "#888888",
-                  "content": "Network",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "lePhr",
-              "width": "fill_container",
-              "fill": "#00000000",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "gceTD",
-                  "fill": "#888888",
-                  "content": "Sensors",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "WYTHJ",
-              "width": "fill_container",
-              "fill": "#00000000",
-              "cornerRadius": 8,
-              "gap": 12,
-              "padding": [
-                10,
-                12
-              ],
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "text",
-                  "id": "v6AZd",
-                  "fill": "#888888",
-                  "content": "Settings",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "medium"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "Cmcha",
-          "name": "mainArea",
-          "width": "fill_container",
-          "height": "fill_container",
-          "layout": "vertical",
-          "children": [
-            {
-              "type": "frame",
-              "id": "h1fFW",
-              "name": "titleBar",
-              "width": "fill_container",
-              "fill": "#191919",
-              "cornerRadius": 4,
-              "padding": 15,
-              "justifyContent": "space_between",
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "OTCom",
-                  "name": "titleLeft",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "i5cXN",
-                      "name": "titleText",
-                      "fill": "#FFFFFF",
-                      "content": "{Binding WindowTitle}",
-                      "fontFamily": "Inter",
-                      "fontSize": 18,
-                      "fontWeight": "bold"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "tCDzg",
-                  "name": "titleRight",
-                  "gap": 10,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "tICVF",
-                      "name": "connBadge",
-                      "fill": "#4CAF50",
-                      "cornerRadius": 6,
-                      "padding": [
-                        8,
-                        4
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "R9RnW",
-                          "name": "connText",
-                          "fill": "#FFFFFF",
-                          "content": "{Binding ConnectionStatus}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "hrRSh",
-                      "name": "reconnectBtn",
-                      "fill": "#3A3A3A",
-                      "cornerRadius": 4,
-                      "padding": [
-                        8,
-                        4
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "J9OG03",
-                          "name": "reconnectLabel",
-                          "fill": "#FFFFFF",
-                          "content": "重连",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "U5taQ",
-                      "name": "exitBtn",
-                      "fill": "#3A3A3A",
-                      "cornerRadius": 4,
-                      "padding": [
-                        8,
-                        4
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "qo7dX",
-                          "name": "exitLabel",
-                          "fill": "#FFFFFF",
-                          "content": "退出",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "F9yFdZ",
-              "name": "dashboardView",
-              "width": "fill_container",
-              "height": "fill_container",
-              "fill": "#121212",
-              "layout": "vertical",
-              "gap": 24,
-              "padding": 24,
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "LIcM7",
-                  "width": "fill_container",
-                  "justifyContent": "space_between",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "VZk6e",
-                      "fill": "#FFFFFF",
-                      "content": "System Overview",
-                      "fontFamily": "Inter",
-                      "fontSize": 24,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "text",
-                      "id": "A85RR",
-                      "fill": "#666666",
-                      "content": "Active Session: 2h 45m",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "normal"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "E0bf3",
-                  "width": "fill_container",
-                  "gap": 16,
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "GfK3b",
-                      "name": "cpuCard",
-                      "width": "fill_container",
-                      "fill": "#1E1E1E",
-                      "cornerRadius": 16,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#2A2A2A"
-                      },
-                      "layout": "vertical",
-                      "gap": 12,
-                      "padding": 20,
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "IuTFG",
-                          "fill": "#666666",
-                          "content": "PROCESSOR",
-                          "fontFamily": "Inter",
-                          "fontSize": 10,
-                          "fontWeight": "bold",
-                          "letterSpacing": -0.2
-                        },
-                        {
-                          "type": "frame",
-                          "id": "VlZRu",
-                          "width": 120,
-                          "height": 120,
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "ellipse",
-                              "id": "t6hAx",
-                              "innerRadius": 0.8,
-                              "fill": "#333333",
-                              "width": 100,
-                              "height": 100
-                            },
-                            {
-                              "type": "ellipse",
-                              "id": "PGpna",
-                              "rotation": -90,
-                              "innerRadius": 0.8,
-                              "sweepAngle": 240,
-                              "fill": "#4CAF50",
-                              "width": 100,
-                              "height": 100
-                            },
-                            {
-                              "type": "text",
-                              "id": "YlT9l",
-                              "fill": "#FFFFFF",
-                              "content": "42%",
-                              "fontFamily": "Inter",
-                              "fontSize": 24,
-                              "fontWeight": "bold"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "q4xLVm",
-                          "fill": "#888888",
-                          "content": "AMD Ryzen 9 5950X",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "LqID0",
-                      "name": "memCard",
-                      "width": "fill_container",
-                      "fill": "#1E1E1E",
-                      "cornerRadius": 16,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#2A2A2A"
-                      },
-                      "layout": "vertical",
-                      "gap": 12,
-                      "padding": 20,
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "mXkMx",
-                          "fill": "#666666",
-                          "content": "MEMORY",
-                          "fontFamily": "Inter",
-                          "fontSize": 10,
-                          "fontWeight": "bold",
-                          "letterSpacing": -0.2
-                        },
-                        {
-                          "type": "frame",
-                          "id": "WaSY7",
-                          "width": 120,
-                          "height": 120,
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "ellipse",
-                              "id": "TMfqT",
-                              "innerRadius": 0.8,
-                              "fill": "#333333",
-                              "width": 100,
-                              "height": 100
-                            },
-                            {
-                              "type": "ellipse",
-                              "id": "oFlsB",
-                              "rotation": -90,
-                              "innerRadius": 0.8,
-                              "sweepAngle": 180,
-                              "fill": "#2196F3",
-                              "width": 100,
-                              "height": 100
-                            },
-                            {
-                              "type": "text",
-                              "id": "To1Td",
-                              "fill": "#FFFFFF",
-                              "content": "50%",
-                              "fontFamily": "Inter",
-                              "fontSize": 24,
-                              "fontWeight": "bold"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "pEicH",
-                          "fill": "#888888",
-                          "content": "32GB DDR4 @ 3600MHz",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "W9F8p",
-                  "width": "fill_container",
-                  "gap": 16,
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "L5iTs",
-                      "name": "storageBento",
-                      "width": "fill_container",
-                      "fill": "#1E1E1E",
-                      "cornerRadius": 16,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#2A2A2A"
-                      },
-                      "layout": "vertical",
-                      "gap": 16,
-                      "padding": 20,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "Zhm65",
-                          "fill": "#666666",
-                          "content": "STORAGE",
-                          "fontFamily": "Inter",
-                          "fontSize": 10,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "vj8rf",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 6,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "FD8VQ",
-                              "width": "fill_container",
-                              "justifyContent": "space_between",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "BSgHd",
-                                  "fill": "#FFFFFF",
-                                  "content": "C: System (SSD)",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 13,
-                                  "fontWeight": "bold"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "hF9K2",
-                                  "fill": "#4CAF50",
-                                  "content": "85%",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 12,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "GKjGp",
-                              "width": "fill_container",
-                              "height": 4,
-                              "fill": "#333333",
-                              "cornerRadius": 2,
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "OFI1I",
-                                  "width": 340,
-                                  "height": 4,
-                                  "fill": "#4CAF50",
-                                  "cornerRadius": 2
-                                }
-                              ]
-                            },
-                            {
-                              "type": "text",
-                              "id": "M23Fw",
-                              "fill": "#666666",
-                              "content": "425 GB / 500 GB",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "n2Zjr0",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 6,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "iFIs1",
-                              "width": "fill_container",
-                              "justifyContent": "space_between",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "w8UMq0",
-                                  "fill": "#FFFFFF",
-                                  "content": "D: Games (NVMe)",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 13,
-                                  "fontWeight": "bold"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "qnOHq",
-                                  "fill": "#2196F3",
-                                  "content": "40%",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 12,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "FKW4O",
-                              "width": "fill_container",
-                              "height": 4,
-                              "fill": "#333333",
-                              "cornerRadius": 2,
-                              "children": [
-                                {
-                                  "type": "frame",
-                                  "id": "wdYUZ",
-                                  "width": 160,
-                                  "height": 4,
-                                  "fill": "#2196F3",
-                                  "cornerRadius": 2
-                                }
-                              ]
-                            },
-                            {
-                              "type": "text",
-                              "id": "jmlfx",
-                              "fill": "#666666",
-                              "content": "800 GB / 2.0 TB",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "U0M2m",
-                      "name": "netBento",
-                      "width": 280,
-                      "fill": "#1E1E1E",
-                      "cornerRadius": 16,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#2A2A2A"
-                      },
-                      "layout": "vertical",
-                      "gap": 12,
-                      "padding": 20,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "w4ksD",
-                          "fill": "#666666",
-                          "content": "NETWORK",
-                          "fontFamily": "Inter",
-                          "fontSize": 10,
-                          "fontWeight": "bold",
-                          "letterSpacing": -0.2
-                        },
-                        {
-                          "type": "text",
-                          "id": "D4KR3S",
-                          "fill": "#4CAF50",
-                          "content": "↓ 12.4 Mbps",
-                          "fontFamily": "Inter",
-                          "fontSize": 18,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "text",
-                          "id": "ud1qU",
-                          "fill": "#2196F3",
-                          "content": "↑ 2.1 Mbps",
-                          "fontFamily": "Inter",
-                          "fontSize": 18,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "text",
-                          "id": "Ukt45",
-                          "fill": "#666666",
-                          "content": "WiFi 6 - TP-Link_5G",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "FOaZc",
-                  "width": "fill_container",
-                  "gap": 16,
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "g0ZpFQ",
-                      "name": "powerBento",
-                      "width": 280,
-                      "fill": "#1E1E1E",
-                      "cornerRadius": 16,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#2A2A2A"
-                      },
-                      "layout": "vertical",
-                      "gap": 8,
-                      "padding": 20,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "xBWEd",
-                          "fill": "#666666",
-                          "content": "POWER",
-                          "fontFamily": "Inter",
-                          "fontSize": 10,
-                          "fontWeight": "bold",
-                          "letterSpacing": -0.2
-                        },
-                        {
-                          "type": "text",
-                          "id": "nLGmk",
-                          "fill": "#FFD700",
-                          "content": "98.5 W",
-                          "fontFamily": "Inter",
-                          "fontSize": 24,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "text",
-                          "id": "O91H39",
-                          "fill": "#4CAF50",
-                          "content": "Battery: 100% (AC)",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "ZbTax",
-                      "name": "sensorsBento",
-                      "width": "fill_container",
-                      "fill": "#1E1E1E",
-                      "cornerRadius": 16,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#2A2A2A"
-                      },
-                      "layout": "vertical",
-                      "gap": 12,
-                      "padding": 20,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "Lf5Zu",
-                          "fill": "#666666",
-                          "content": "TEMPERATURE SENSORS",
-                          "fontFamily": "Inter",
-                          "fontSize": 10,
-                          "fontWeight": "bold",
-                          "letterSpacing": -0.2
-                        },
-                        {
-                          "type": "frame",
-                          "id": "ll0hX",
-                          "width": "fill_container",
-                          "gap": 12,
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "GPr2P",
-                              "fill": "#FFFFFF",
-                              "content": "VRM: 45°C",
-                              "fontFamily": "Inter",
-                              "fontSize": 13,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "ecWa2",
-                              "fill": "#FFFFFF",
-                              "content": "Chipset: 52°C",
-                              "fontFamily": "Inter",
-                              "fontSize": 13,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "n977o",
-                              "fill": "#FFFFFF",
-                              "content": "Ambient: 28°C",
-                              "fontFamily": "Inter",
-                              "fontSize": 13,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "KV4rh",
-              "x": 0,
-              "y": 63,
-              "name": "scrollContent",
-              "enabled": false,
-              "width": "fill_container(960)",
-              "layout": "vertical",
-              "gap": 10,
-              "padding": [
-                0,
-                5
-              ],
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "XgYJt",
-                  "name": "cpuMemRow",
-                  "width": "fill_container",
-                  "gap": 10,
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "nfw2X",
-                      "name": "cpuCard",
-                      "width": "fill_container",
-                      "fill": "#191919",
-                      "cornerRadius": 4,
-                      "layout": "vertical",
-                      "gap": 5,
-                      "padding": 15,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "FH88F",
-                          "name": "cpuTitle",
-                          "fill": "#FFFFFF",
-                          "content": "处理器信息",
-                          "fontFamily": "Inter",
-                          "fontSize": 16,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "text",
-                          "id": "T0pdOb",
-                          "name": "cpuName",
-                          "fill": "#FFFFFF",
-                          "content": "{Binding CpuName}",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "t546P",
-                          "name": "cpuCoreRow",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "aUVUU",
-                              "name": "cpuCoresLeft",
-                              "layout": "vertical",
-                              "gap": 2,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "Cz3aK",
-                                  "fill": "#B3B3B3",
-                                  "content": "物理核心: {Binding PhysicalCores}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 12,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "ZY3hA",
-                                  "fill": "#B3B3B3",
-                                  "content": "逻辑核心: {Binding LogicalCores}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 12,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "v9SYY",
-                                  "fill": "#B3B3B3",
-                                  "content": "性能核心: {Binding PerformanceCores}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 12,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "Nm5rf",
-                                  "fill": "#B3B3B3",
-                                  "content": "效率核心: {Binding EfficiencyCores}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 12,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "text",
-                              "id": "augD7",
-                              "fill": "#B3B3B3",
-                              "content": "温度: {Binding CpuTemperature}°C",
-                              "fontFamily": "Inter",
-                              "fontSize": 13,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "CO96W",
-                          "name": "cpuFreqRow",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "mdits",
-                              "name": "cpuFreqLeft",
-                              "gap": 4,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "mpWtx",
-                                  "fill": "#666666",
-                                  "content": "P-core:",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "t8dt3G",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding CpuFrequency}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "lF6UH",
-                                  "fill": "#666666",
-                                  "content": "E-core:",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "vpXOM",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding CpuEfficiencyFrequency}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "kTAEU",
-                                  "fill": "#888888",
-                                  "content": "Base: {Binding CpuBaseFreq} MHz",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "WwkZi",
-                              "name": "cpuHtRight",
-                              "gap": 4,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "iH13s",
-                                  "fill": "#666666",
-                                  "content": "超线程:",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                },
-                                {
-                                  "type": "text",
-                                  "id": "O3fsm",
-                                  "fill": "#4CAF50",
-                                  "content": "{Binding HyperThreading}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 11,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "zEKnW",
-                          "name": "cpuProgBg",
-                          "width": "fill_container",
-                          "height": 8,
-                          "fill": "#3A3A3A",
-                          "cornerRadius": 4,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "o44Hn",
-                              "name": "cpuProgFill",
-                              "width": 240,
-                              "height": 8,
-                              "fill": "#4CAF50",
-                              "cornerRadius": 4,
-                              "layout": "none"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "hL3nW",
-                          "name": "cpuUsageRow",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "NWhQ4",
-                              "fill": "#B3B3B3",
-                              "content": "使用率: {Binding CpuUsage}%",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "eDgFf",
-                              "fill": "#4CAF50",
-                              "content": "峰值: {Binding CpuUsage}%",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "AZGWM",
-                      "name": "memCard",
-                      "width": "fill_container",
-                      "fill": "#191919",
-                      "cornerRadius": 4,
-                      "layout": "vertical",
-                      "gap": 5,
-                      "padding": 15,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "Qa4Pi",
-                          "name": "memTitle",
-                          "fill": "#FFFFFF",
-                          "content": "内存",
-                          "fontFamily": "Inter",
-                          "fontSize": 16,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "text",
-                          "id": "yGOqM",
-                          "fill": "#FFFFFF",
-                          "content": "已用: {Binding UsedMemory}",
-                          "fontFamily": "Inter",
-                          "fontSize": 13,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "PvmiW",
-                          "fill": "#B3B3B3",
-                          "content": "总计: {Binding TotalMemory}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "RSWOG",
-                          "fill": "#666666",
-                          "content": "可用: {Binding AvailableMemory}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "eo330",
-                          "fill": "#666666",
-                          "content": "已压缩: {Binding CompressedMemory}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "fWFY6",
-                          "fill": "#666666",
-                          "content": "Swap: {Binding SwapUsedDisplay} / {Binding SwapTotalDisplay}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "YwpHd",
-                          "gap": 8,
-                          "padding": [
-                            3,
-                            0,
-                            0,
-                            0
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "MPLQA",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding RamType}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "fG9oL",
-                              "fill": "#888888",
-                              "content": "{Binding RamSpeed} MHz",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "Op3Wc",
-                          "name": "memProgBg",
-                          "width": "fill_container",
-                          "height": 8,
-                          "fill": "#3A3A3A",
-                          "cornerRadius": 4,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "VapSj",
-                              "name": "memProgFill",
-                              "width": 200,
-                              "height": 8,
-                              "fill": "#4CAF50",
-                              "cornerRadius": 4,
-                              "layout": "none"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "pYSVg",
-                          "name": "memUsageRow",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "wgFuA",
-                              "fill": "#B3B3B3",
-                              "content": "使用率: {Binding MemoryPercent}%",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "aAvoj",
-                              "fill": "#4CAF50",
-                              "content": "峰值: {Binding MemoryPercent}%",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "Y57do",
-                  "name": "gpuCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "pim7a",
-                      "fill": "#FFFFFF",
-                      "content": "显卡信息",
-                      "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "tu4cm",
-                      "name": "gpuCombo",
-                      "width": "fill_container",
-                      "height": 28,
-                      "fill": "#2A2A2A",
-                      "cornerRadius": 4,
-                      "padding": [
-                        8,
-                        5
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "mWctF",
-                          "fill": "#FFFFFF",
-                          "content": "{Binding SelectedGpu.DisplayName}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "l6O8E",
-                      "fill": "#FFFFFF",
-                      "content": "{Binding SelectedGpu.Name}",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "sms3m",
-                      "name": "gpuDetailRow",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "TIhKJ",
-                          "name": "gpuDetailLeft",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "SO4ml",
-                              "fill": "#B3B3B3",
-                              "content": "显存: {Binding SelectedGpu.MemoryDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "N1h8BK",
-                              "fill": "#666666",
-                              "content": "已用: {Binding SelectedGpu.MemoryUsedDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "cdpEH",
-                              "fill": "#666666",
-                              "content": "品牌: {Binding SelectedGpu.Brand}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "text",
-                          "id": "lMxQV",
-                          "fill": "#B3B3B3",
-                          "content": "温度: {Binding GpuTemperature}°C",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "Lj9Gu",
-                      "name": "gpuUseBg",
-                      "width": "fill_container",
-                      "height": 6,
-                      "fill": "#3A3A3A",
-                      "cornerRadius": 3,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "Zc4fP",
-                          "name": "gpuUseFill",
-                          "width": 180,
-                          "height": 6,
-                          "fill": "#4CAF50",
-                          "cornerRadius": 3,
-                          "layout": "none"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "huI4l",
-                      "fill": "#B3B3B3",
-                      "content": "GPU使用率: {Binding SelectedGpu.Usage}%",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "r1zYI",
-                      "fill": "#B3B3B3",
-                      "content": "{Binding GpuFreqDisplay}",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "t00hyH",
-                      "name": "gpuVramBg",
-                      "width": "fill_container",
-                      "height": 6,
-                      "fill": "#3A3A3A",
-                      "cornerRadius": 3,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "bzizl",
-                          "name": "gpuVramFill",
-                          "width": 120,
-                          "height": 6,
-                          "fill": "#FF9800",
-                          "cornerRadius": 3,
-                          "layout": "none"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "N5PgPF",
-                      "fill": "#B3B3B3",
-                      "content": "显存占用: {Binding SelectedGpu.CoreClock}%",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "Uo79u",
-                  "name": "powerCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "eA8EU",
-                      "fill": "#FFFFFF",
-                      "content": "功耗",
-                      "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "Wob8H",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "p7Y8A",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "qmUwC",
-                              "fill": "#666666",
-                              "content": "CPU",
-                              "fontFamily": "Inter",
-                              "fontSize": 10,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "N3sNWW",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding CpuPowerDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "agab9",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "cIDal",
-                              "fill": "#666666",
-                              "content": "GPU",
-                              "fontFamily": "Inter",
-                              "fontSize": 10,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "fACog",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding GpuPowerDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "VZtFE",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "yujEk",
-                              "fill": "#666666",
-                              "content": "ANE",
-                              "fontFamily": "Inter",
-                              "fontSize": 10,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "S09LUL",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding AnePowerDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "XjZcD",
-                      "width": "fill_container",
-                      "padding": [
-                        3,
-                        0,
-                        0,
-                        0
-                      ],
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "W27OV",
-                          "fill": "#B3B3B3",
-                          "content": "Total: {Binding TotalPowerDisplay}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "cF2AX",
-                  "name": "tempCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "A9plu",
-                      "fill": "#FFFFFF",
-                      "content": "温度传感器",
-                      "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "J8G8dn",
-                      "width": "fill_container",
-                      "layout": "vertical",
-                      "gap": 4,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "tY2Fs",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "mN6mM",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding SensorName}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "zsCCD",
-                              "fill": "#FFFFFF",
-                              "content": "{Binding TemperatureDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "mI5Ca",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "E4h0u",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding SensorName}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "YUEKQ",
-                              "fill": "#FFFFFF",
-                              "content": "{Binding TemperatureDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "pEPnd",
-                          "width": "fill_container",
-                          "justifyContent": "space_between",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "E4er1p",
-                              "fill": "#B3B3B3",
-                              "content": "{Binding SensorName}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "WRyFs",
-                              "fill": "#FFFFFF",
-                              "content": "{Binding TemperatureDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "n3ja1H",
-                  "name": "netCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "Qk3kE",
-                      "fill": "#FFFFFF",
-                      "content": "网络适配器",
-                      "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "YAsWl",
-                      "name": "netCombo",
-                      "width": "fill_container",
-                      "height": 28,
-                      "fill": "#2A2A2A",
-                      "cornerRadius": 4,
-                      "padding": [
-                        8,
-                        5
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "NMRfC",
-                          "fill": "#FFFFFF",
-                          "content": "{Binding SelectedNetwork.DisplayName}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "a5ONPX",
-                      "fill": "#FFFFFF",
-                      "content": "{Binding SelectedNetwork.Name}",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "tWTlu",
-                      "fill": "#B3B3B3",
-                      "content": "IP: {Binding SelectedNetwork.IpAddress}",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "j3oym",
-                      "name": "netMacRow",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "t8loMm",
-                          "name": "netMacLeft",
-                          "width": "fill_container",
-                          "gap": 4,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "aM8Tl",
-                              "fill": "#666666",
-                              "content": "MAC:",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "qi2vY",
-                              "fill": "#666666",
-                              "content": "{Binding SelectedNetwork.Mac}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "i3n7L",
-                          "name": "netTypeRight",
-                          "width": "fill_container",
-                          "gap": 4,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "qZLtE",
-                              "fill": "#666666",
-                              "content": "类型:",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "qJiFk",
-                              "fill": "#666666",
-                              "content": "{Binding SelectedNetwork.AdapterType}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "D8tuGt",
-                      "name": "netSpeedRow",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "MdKAz",
-                          "name": "netDl",
-                          "width": "fill_container",
-                          "gap": 4,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "Z16aiI",
-                              "fill": "#4CAF50",
-                              "content": "↓",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "yLLlq",
-                              "fill": "#4CAF50",
-                              "content": "{Binding SelectedNetwork.DownloadDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "Z5W2PF",
-                          "name": "netUl",
-                          "width": "fill_container",
-                          "gap": 4,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "TTd0k",
-                              "fill": "#2196F3",
-                              "content": "↑",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "KqJOs",
-                              "fill": "#2196F3",
-                              "content": "{Binding SelectedNetwork.UploadDisplay}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "AERz6",
-                      "name": "netLinkRow",
-                      "gap": 4,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "s2fQm7",
-                          "fill": "#666666",
-                          "content": "标称速率:",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "Jb8Nh",
-                          "fill": "#B3B3B3",
-                          "content": "{Binding SelectedNetwork.SpeedDisplay}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "jPaQ7",
-                      "fill": "#B3B3B3",
-                      "content": "{Binding WifiDisplay}",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "Z6GEo",
-                      "fill": "#B3B3B3",
-                      "content": "{Binding BtDisplay}",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "c092o",
-                  "name": "diskCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "EG0bZ",
-                      "fill": "#FFFFFF",
-                      "content": "存储设备",
-                      "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "c956R",
-                      "name": "diskCombo",
-                      "width": "fill_container",
-                      "height": 28,
-                      "fill": "#2A2A2A",
-                      "cornerRadius": 4,
-                      "padding": [
-                        8,
-                        5
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "x02ud",
-                          "fill": "#FFFFFF",
-                          "content": "{Binding SelectedDisk.DisplayName}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "WrNW5",
-                      "fill": "#FFFFFF",
-                      "content": "驱动器 {Binding SelectedDisk.Letter}:",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "banzV",
-                      "fill": "#B3B3B3",
-                      "content": "卷标: {Binding SelectedDisk.Label}",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "gah6f",
-                      "fill": "#666666",
-                      "content": "文件系统: {Binding SelectedDisk.FileSystem}",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "XeGMw",
-                      "name": "diskProgBg",
-                      "width": "fill_container",
-                      "height": 8,
-                      "fill": "#3A3A3A",
-                      "cornerRadius": 4,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "oyGfD",
-                          "name": "diskProgFill",
-                          "width": 300,
-                          "height": 8,
-                          "fill": "#4CAF50",
-                          "cornerRadius": 4,
-                          "layout": "none"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "wb7C5",
-                      "name": "diskBottom",
-                      "width": "fill_container",
-                      "justifyContent": "space_between",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "VL8NO",
-                          "fill": "#B3B3B3",
-                          "content": "使用率: {Binding SelectedDisk.UsageDisplay}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "S5o6Av",
-                          "fill": "#666666",
-                          "content": "可用: {Binding SelectedDisk.FreeSpaceDisplay}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "c7JACs",
-                          "fill": "#666666",
-                          "content": "总计: {Binding SelectedDisk.TotalSizeDisplay}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "Qxbd5",
-                  "name": "smartCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "jxmQu",
-                      "name": "smartTitleRow",
-                      "width": "fill_container",
-                      "justifyContent": "space_between",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "MPV2j",
-                          "fill": "#FFFFFF",
-                          "content": "物理磁盘 (SMART)",
-                          "fontFamily": "Inter",
-                          "fontSize": 16,
-                          "fontWeight": "bold"
-                        },
-                        {
-                          "type": "frame",
-                          "id": "yqyCR",
-                          "name": "smartDetailBtn",
-                          "fill": "#3A3A3A",
-                          "cornerRadius": 4,
-                          "padding": [
-                            8,
-                            2
-                          ],
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "QxzfX",
-                              "fill": "#FFFFFF",
-                              "content": "SMART详情",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "PNbIx",
-                      "name": "smartCombo",
-                      "width": "fill_container",
-                      "height": 28,
-                      "fill": "#2A2A2A",
-                      "cornerRadius": 4,
-                      "padding": [
-                        8,
-                        5
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "r2N07",
-                          "fill": "#FFFFFF",
-                          "content": "{Binding SelectedPhysicalDisk.DisplayName}",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "r6XgT",
-                      "fill": "#FFFFFF",
-                      "content": "{Binding SelectedPhysicalDisk.DisplayName}",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "b3LocI",
-                      "fill": "#666666",
-                      "content": "{Binding SelectedPhysicalDisk.LettersDisplay}",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "nCAok",
-                      "name": "smartDetailRow",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "Pgknx",
-                          "name": "smartDetailLeft",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "AdpFF",
-                              "fill": "#B3B3B3",
-                              "content": "容量: {Binding SelectedPhysicalDisk.Disk.Capacity}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "VVV7f",
-                              "fill": "#666666",
-                              "content": "序列号: {Binding SelectedPhysicalDisk.Disk.SerialNumber}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "gWCkg",
-                          "name": "smartDetailRight",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "DDzas",
-                              "fill": "#B3B3B3",
-                              "content": "温度: {Binding SelectedPhysicalDisk.Disk.Temperature}°C",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "zeTyD",
-                              "fill": "#4CAF50",
-                              "content": "健康度: {Binding SelectedPhysicalDisk.Disk.HealthPercentage}%",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
-                      "id": "V3yri",
-                      "name": "smartTableContainer",
-                      "width": "fill_container",
-                      "fill": "#2A2A2A",
-                      "cornerRadius": 4,
-                      "layout": "vertical",
-                      "padding": 8,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "hn1lx",
-                          "name": "smartTableHeader",
-                          "width": "fill_container",
-                          "gap": 10,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "kzeiM",
-                              "name": "smartHdrId",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "T4sji",
-                                  "fill": "#888888",
-                                  "content": "ID",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "eLjTF",
-                              "name": "smartHdrName",
-                              "width": "fill_container",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "o0jGML",
-                                  "fill": "#888888",
-                                  "content": "名称",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "lAvGC",
-                              "name": "smartHdrCur",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "BCEk2",
-                                  "fill": "#888888",
-                                  "content": "当前",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "Y8A9u",
-                              "name": "smartHdrWorst",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "sD142",
-                                  "fill": "#888888",
-                                  "content": "最差",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "Zl8h9",
-                              "name": "smartHdrRaw",
-                              "width": 80,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "X6lKca",
-                                  "fill": "#888888",
-                                  "content": "原始值",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "bold"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "tNw6a",
-                          "name": "smartRow1",
-                          "width": "fill_container",
-                          "gap": 10,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "ltg9m",
-                              "name": "r1id",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "mHTx3",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding Id}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "LflEx",
-                              "name": "r1name",
-                              "width": "fill_container",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "V8PmE",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding Name}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "V5qTuf",
-                              "name": "r1cur",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "dtvW1",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding Current}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "X7J6do",
-                              "name": "r1worst",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "z73jT4",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding Worst}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "APMza",
-                              "name": "r1raw",
-                              "width": 80,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "X47Xx",
-                                  "fill": "#B3B3B3",
-                                  "content": "{Binding RawValue}",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "bBgdI",
-                          "name": "smartRow2",
-                          "width": "fill_container",
-                          "gap": 10,
-                          "children": [
-                            {
-                              "type": "frame",
-                              "id": "RhPXZ",
-                              "name": "r2id",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "X4sImv",
-                                  "fill": "#B3B3B3",
-                                  "content": "...",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "ZW8DA",
-                              "name": "r2name",
-                              "width": "fill_container",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "o7skFb",
-                                  "fill": "#B3B3B3",
-                                  "content": "...",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "an10r",
-                              "name": "r2cur",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "b8iJb7",
-                                  "fill": "#B3B3B3",
-                                  "content": "...",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "xhfBg",
-                              "name": "r2worst",
-                              "width": 40,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "yUWIC",
-                                  "fill": "#B3B3B3",
-                                  "content": "...",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "f6ACpk",
-                              "name": "r2raw",
-                              "width": 80,
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "qq6TI",
-                                  "fill": "#B3B3B3",
-                                  "content": "...",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 10,
-                                  "fontWeight": "normal"
-                                }
-                              ]
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "lEiWr",
-                  "name": "tpmCard",
-                  "width": "fill_container",
-                  "fill": "#191919",
-                  "cornerRadius": 4,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "padding": 15,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "V8wxS",
-                      "fill": "#FFFFFF",
-                      "content": "TPM 安全芯片",
-                      "fontFamily": "Inter",
-                      "fontSize": 16,
-                      "fontWeight": "bold"
-                    },
-                    {
-                      "type": "text",
-                      "id": "nEtOs",
-                      "fill": "#FFFFFF",
-                      "content": "{Binding TpmInfo.DisplayName}",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "cj4DG",
-                      "name": "tpmDetailRow",
-                      "width": "fill_container",
-                      "gap": 10,
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "HQSo9",
-                          "name": "tpmLeft",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "nFLAI",
-                              "fill": "#B3B3B3",
-                              "content": "固件版本: {Binding TpmInfo.FirmwareVersion}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "Fwwrf",
-                              "fill": "#666666",
-                              "content": "状态: {Binding TpmInfo.Status}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        },
-                        {
-                          "type": "frame",
-                          "id": "b2h7o",
-                          "name": "tpmRight",
-                          "width": "fill_container",
-                          "layout": "vertical",
-                          "gap": 2,
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "y68rs",
-                              "fill": "#B3B3B3",
-                              "content": "自检: {Binding TpmInfo.SelfTestStatus}",
-                              "fontFamily": "Inter",
-                              "fontSize": 12,
-                              "fontWeight": "normal"
-                            },
-                            {
-                              "type": "text",
-                              "id": "F4urtN",
-                              "fill": "#666666",
-                              "content": "已启用: {Binding TpmInfo.IsEnabled}",
-                              "fontFamily": "Inter",
-                              "fontSize": 11,
-                              "fontWeight": "normal"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "m51iVL",
-              "x": 0,
-              "y": 1572,
-              "name": "statusBar",
-              "enabled": false,
-              "width": "fill_container(960)",
-              "fill": "#191919",
-              "cornerRadius": 4,
-              "padding": [
-                15,
-                8
-              ],
-              "justifyContent": "space_between",
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "i8iqb",
-                  "name": "statusLeft",
-                  "gap": 5,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "fLm7y",
-                      "fill": "#4CAF50",
-                      "content": "●",
-                      "fontFamily": "Inter",
-                      "fontSize": 10,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "text",
-                      "id": "K5n4ge",
-                      "fill": "#B3B3B3",
-                      "content": "{Binding ConnectionStatus}",
-                      "fontFamily": "Inter",
-                      "fontSize": 12,
-                      "fontWeight": "normal"
-                    }
-                  ]
-                },
-                {
-                  "type": "text",
-                  "id": "WnSOi",
+                  "id": "AWRo2",
                   "fill": "#666666",
-                  "content": "{Binding OsVersion}",
-                  "fontFamily": "Inter",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  SENSOR",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "gTzPO",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "VALUE",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "T09Ua",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "MAX",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "bold7",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "STATUS",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "b7GxsB",
+              "width": "fill_container",
+              "height": 1,
+              "fill": "#1A1A1A"
+            },
+            {
+              "type": "frame",
+              "id": "O2JAAO",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Dz1ck",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  CPU Package",
+                  "fontFamily": "Fira Code",
                   "fontSize": 11,
                   "fontWeight": "normal"
                 },
                 {
-                  "type": "frame",
-                  "id": "i5ZzVl",
-                  "name": "statusRight",
-                  "gap": 10,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "yOPeJ",
-                      "name": "batteryGroup",
-                      "gap": 4,
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "rIFUy",
-                          "fill": "#4CAF50",
-                          "content": "{Binding BatteryPercent}%",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        },
-                        {
-                          "type": "text",
-                          "id": "t10DJ5",
-                          "fill": "#666666",
-                          "content": "{Binding BatteryLabel}",
-                          "fontFamily": "Inter",
-                          "fontSize": 11,
-                          "fontWeight": "normal"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "bXBVY",
-                      "fill": "#666666",
-                      "content": "{Binding LastUpdate}",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    }
-                  ]
+                  "type": "text",
+                  "id": "c1BhQ",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "42 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "BajaH",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "95 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Bw9z5",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
                 }
               ]
-            }
-          ]
-        },
-        {
-          "type": "frame",
-          "id": "ItuRq",
-          "x": 0,
-          "y": 0,
-          "name": "waitingView",
-          "enabled": false,
-          "width": "fill_container(0)",
-          "height": "fill_container(0)",
-          "layout": "vertical",
-          "justifyContent": "center",
-          "alignItems": "center",
-          "children": [
+            },
+            {
+              "type": "frame",
+              "id": "bxbfO",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "DP0nC",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  CPU Core 0",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "xym2i",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "40 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "v94emb",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "95 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "swkUS",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ZJywl",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tSs0S",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  CPU Core 1",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "V9hvD",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "38 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ce6tk",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "95 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "e3DKSE",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ARJJj",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "fTO4c",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  GPU Core",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "BDPnm",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "65 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "DJQ4z",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "87 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "fxy8l",
+                  "fill": "#FFB000",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  WARN",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "V0u7Bu",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "p3D2B",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  GPU Hotspot",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "QW5Nn",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "72 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "a0eKs8",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "95 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "TpJK2",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qcThy",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "m99SB",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  GPU VRAM",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "xzA8O",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "58 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "VRCYu",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "85 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "VrJgC",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "XEo18",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "h3OYA",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  DIMM 1",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "levGM",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "35 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "L98MU",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "85 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "V0LvT9",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "iMyNf",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Zs5bI",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  DIMM 2",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "M0ESpP",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "38 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "LyFL3",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "85 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ZyevN",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "AATZn",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "JvCjs",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  PCH",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "ghfOc",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "48 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "pUxPn",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "75 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "iyZzS",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "N3NCc",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "Uw5w6",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  VRM 1",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "whcrH",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "52 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "fk42d",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "105 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "DT13a",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "KDU9d",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tIDpx",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  SSD NVMe",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "OzKk6",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "40 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "iMh0t",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "70 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "Ba5Ks",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "meGYD",
+              "width": "fill_container",
+              "padding": [
+                2,
+                0
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "zrOxN",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 280,
+                  "content": "  Board Temp",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "EE4qG",
+                  "fill": "#CCCCCC",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "38 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "HNPes",
+                  "fill": "#666666",
+                  "textGrowth": "fixed-width",
+                  "width": 160,
+                  "content": "60 C",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "j1vsQ",
+                  "fill": "#00FF41",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "  OK",
+                  "fontFamily": "Fira Code",
+                  "fontSize": 11,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "i6HkNH",
+              "width": "fill_container",
+              "height": "fill_container"
+            },
             {
               "type": "text",
-              "id": "H6uya",
+              "id": "YnM2b",
               "fill": "#666666",
-              "content": "等待连接...",
-              "fontFamily": "Inter",
-              "fontSize": 18,
+              "content": "Press q to quit | r to refresh | t to change tab | Last update: 0.5s",
+              "fontFamily": "Fira Code",
+              "fontSize": 11,
               "fontWeight": "normal"
             }
           ]

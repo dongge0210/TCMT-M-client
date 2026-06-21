@@ -9,6 +9,9 @@ import { createInterface } from 'readline';
 
 const PORT = parseInt(process.env.PORT || '9876');
 const TCMT = process.env.TCMT || './build/src/TCMT-M';
+const TOKEN = process.env.BRIDGE_TOKEN || 'tcmt-dev';
+// Allowed origins for CORS (dev tools only)
+const ALLOWED = ['http://localhost:8888', 'http://127.0.0.1:8888', 'http://localhost:9876'];
 
 // ── Spawn TCMT-M ──────────────────────────────────────
 const tcmt = spawn(TCMT, ['--mcp'], { stdio: ['pipe', 'pipe', 'inherit'] });
@@ -44,10 +47,20 @@ function call(method, params = {}) {
 
 // ── HTTP server ───────────────────────────────────────
 const server = createServer(async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // Auth: Bearer token (dev-mode, localhost only)
+  const auth = req.headers['authorization'];
+  const origin = req.headers['origin'] || '';
+  const corsOrigin = ALLOWED.includes(origin) ? origin : ALLOWED[0];
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   if (req.method !== 'POST') { res.writeHead(405); res.end('POST only'); return; }
+  if (auth !== `Bearer ${TOKEN}`) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'unauthorized — use Authorization: Bearer <token>' }));
+    return;
+  }
 
   let body = '';
   req.on('data', c => body += c);

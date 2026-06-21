@@ -8,7 +8,7 @@ const BASE = 'http://localhost:9876'; // TCMT-M MCP HTTP bridge
 async function rpc(method, params = {}) {
   const res = await fetch(BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer tcmt-dev' },
     body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
   });
   if (!res.ok) throw new Error(`RPC ${method} failed: ${res.status}`);
