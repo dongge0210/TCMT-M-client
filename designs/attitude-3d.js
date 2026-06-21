@@ -209,7 +209,7 @@ buildPanel();
 
 /* ── Update from sensor data ────────────────────────────────── */
 let _yaw = 0, _lastT = 0;
-let _sax = 0, _say = 0, _saz = -1, _sgx = 0, _sgy = 0, _sgz = 0;
+let _sax = 0, _say = 0, _saz = -1, _sgx = 0, _sgy = 0, _sgz = 0, _slid = 110;
 const ALPHA = 0.15; // smoothing factor (0=no new data, 1=raw)
 export function update(data) {
   const { ax = 0, ay = 0, az = -1, gx = 0, gy = 0, gz = 0, lidAngle, hb, imut } = data;
@@ -238,9 +238,9 @@ export function update(data) {
 
   // Keep orbit centered on model (y=0.06 is base center)
   controls.target.set(0, 0.06, 0);
-  // Lid: +X rotation lifts front edge up & back. 0°=flat, 110°=open.
-  const la = (lidAngle != null && lidAngle > 0) ? lidAngle : 110;
-  hingePivot.rotation.x = la * (Math.PI / 180);
+  // Lid: smoothed angle for 30Hz sync
+  if (lidAngle != null && lidAngle > 0) _slid += ALPHA * (lidAngle - _slid);
+  hingePivot.rotation.x = _slid * (Math.PI / 180);
 
   // HUD
   const el = id => document.getElementById(id);
