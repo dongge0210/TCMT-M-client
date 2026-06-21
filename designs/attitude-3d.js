@@ -23,7 +23,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
 controls.target.set(0, 0.06, 0);
-controls.zoomSpeed = 4.0;
+controls.zoomSpeed = 8.0;
 controls.rotateSpeed = 1.0;
 controls.panSpeed = 1.2;
 controls.minDistance = 1.5;
@@ -221,6 +221,9 @@ export function update(data) {
   macbook.rotation.order = 'XZY';
   macbook.rotation.x = roll * (Math.PI / 180);
   macbook.rotation.z = -pitch * (Math.PI / 180);
+
+  // Keep orbit centered on model (y=0.06 is base center)
+  controls.target.set(0, 0.06, 0);
   // Lid: +X rotation lifts front edge up & back. 0°=flat, 110°=open.
   const la = (lidAngle != null && lidAngle > 0) ? lidAngle : 110;
   hingePivot.rotation.x = la * (Math.PI / 180);
