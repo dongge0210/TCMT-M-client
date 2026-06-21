@@ -209,21 +209,25 @@ buildPanel();
 
 /* ── Update from sensor data ────────────────────────────────── */
 let _yaw = 0, _lastT = 0;
+let _sax = 0, _say = 0, _saz = -1, _sgx = 0, _sgy = 0, _sgz = 0;
+const ALPHA = 0.15; // smoothing factor (0=no new data, 1=raw)
 export function update(data) {
   const { ax = 0, ay = 0, az = -1, gx = 0, gy = 0, gz = 0, lidAngle, hb, imut } = data;
   const now = performance.now() / 1000;
   const dt = _lastT ? Math.min(now - _lastT, 0.5) : 0;
   _lastT = now;
 
-  // Gyro Z integration → horizontal yaw
-  if (dt > 0) _yaw += gz * (Math.PI / 180) * dt;
-  // Clamp yaw to avoid unlimited drift
+  // Low-pass filter sensor values
+  _sax += ALPHA * (ax - _sax); _say += ALPHA * (ay - _say); _saz += ALPHA * (az - _saz);
+  _sgx += ALPHA * (gx - _sgx); _sgy += ALPHA * (gy - _sgy); _sgz += ALPHA * (gz - _sgz);
+
+  // Gyro Z integration → yaw (dead zone ±2 deg/s to kill noise)
+  if (dt > 0 && Math.abs(_sgz) > 2) _yaw += _sgz * (Math.PI / 180) * dt;
   _yaw = _yaw % (2 * Math.PI);
 
-  // gravity → tilt angles
-  // Device frame: +X=right, +Y=forward, +Z=up. 3D world: X=right, Y=up, Z=toward.
-  const pitch = Math.atan2(-ax, -az) * (180 / Math.PI);  // tilt forward/back
-  const roll  = Math.atan2(ay, -az) * (180 / Math.PI);   // tilt left/right
+  // gravity → tilt angles (using smoothed values)
+  const pitch = Math.atan2(-_sax, -_saz) * (180 / Math.PI);
+  const roll  = Math.atan2(_say, -_saz) * (180 / Math.PI);
 
   // Model lies in XZ plane (long edge=X, short edge=Z, thickness=Y)
   // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
@@ -242,12 +246,12 @@ export function update(data) {
   const el = id => document.getElementById(id);
   if (el('pitchVal')) el('pitchVal').textContent = pitch.toFixed(1) + '°';
   if (el('rollVal')) el('rollVal').textContent = roll.toFixed(1) + '°';
-  if (el('ax')) el('ax').textContent = ax.toFixed(3);
-  if (el('ay')) el('ay').textContent = ay.toFixed(3);
-  if (el('az')) el('az').textContent = az.toFixed(3);
-  if (el('gx')) el('gx').textContent = gx.toFixed(1);
-  if (el('gy')) el('gy').textContent = gy.toFixed(1);
-  if (el('gz')) el('gz').textContent = gz.toFixed(1);
+  if (el('ax')) el('ax').textContent = _sax.toFixed(3);
+  if (el('ay')) el('ay').textContent = _say.toFixed(3);
+  if (el('az')) el('az').textContent = _saz.toFixed(3);
+  if (el('gx')) el('gx').textContent = _sgx.toFixed(1);
+  if (el('gy')) el('gy').textContent = _sgy.toFixed(1);
+  if (el('gz')) el('gz').textContent = _sgz.toFixed(1);
   if (el('lid')) el('lid').textContent = lidAngle != null ? lidAngle.toFixed(0) + '°' : '—';
   if (el('hb')) el('hb').textContent = hb ?? '—';
   if (el('imut')) el('imut').textContent = imut != null ? imut.toFixed(1) + '°C' : '—';
