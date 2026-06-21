@@ -22,6 +22,8 @@ document.body.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
+// Right-click = orbit, Left-click = pan
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.target.set(0, 0.06, 0);
 controls.zoomSpeed = 8.0;
 controls.rotateSpeed = 1.0;
