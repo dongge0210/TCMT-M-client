@@ -191,7 +191,7 @@ export function update(data) {
   macbook.rotation.z = pitch * (Math.PI / 180);
   // Lid angle: 0=closed, 113=normal open. Hinge at 0° = vertical.
   if (lidAngle != null)
-    hingePivot.rotation.x = -(lidAngle - 90) * (Math.PI / 180);
+    hingePivot.rotation.x = (lidAngle - 90) * (Math.PI / 180);
 
   // HUD
   const el = id => document.getElementById(id);
