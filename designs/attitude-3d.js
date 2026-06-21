@@ -20,7 +20,13 @@ document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.dampingFactor = 0.15;
 controls.target.set(0, 0.3, 0);
+controls.zoomSpeed = 2.0;
+controls.rotateSpeed = 1.0;
+controls.panSpeed = 1.2;
+controls.minDistance = 1.5;
+controls.maxDistance = 15;
 controls.update();
 
 /* ── Lighting ───────────────────────────────────────────────── */
@@ -150,11 +156,14 @@ hingePivot.rotation.x = -110 * (Math.PI / 180); // ~110° = normal open position
 
 /* ── Gravity arrow ──────────────────────────────────────────── */
 const arrowMat = new THREE.MeshStandardMaterial({ color: 0x00ff41, roughness: 0.05, emissive: 0x00ff41, emissiveIntensity: 0.7 });
+// Gravity arrow — attached ABOVE the model, moves with it
+const gAnchor = new THREE.Group();
+gAnchor.position.set(0, 1.2, 0);
+macbook.add(gAnchor);
 const gArrow = new THREE.Group();
-gArrow.position.set(0, 3.2, 0);
-scene.add(gArrow);
-gArrow.add(new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.24, 8, 1), arrowMat)).position.y = 1.1;
-gArrow.add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.024, 1.0, 8), arrowMat)).position.y = 0.5;
+gAnchor.add(gArrow);
+gArrow.add(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.2, 8, 1), arrowMat)).position.y = 0.8;
+gArrow.add(new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.02, 0.75, 8), arrowMat)).position.y = 0.35;
 
 /* ── Floor ──────────────────────────────────────────────────── */
 const floor = new THREE.Mesh(
@@ -165,7 +174,6 @@ floor.rotation.x = -Math.PI / 2;
 floor.position.y = -1.5;
 floor.receiveShadow = true;
 scene.add(floor);
-scene.add(new THREE.GridHelper(8, 16, 0x444466, 0x2a2a3a));
 
 /* ── HUD & Panel builders ───────────────────────────────────── */
 function buildPanel() {
@@ -200,10 +208,10 @@ export function update(data) {
   macbook.rotation.z = roll * (Math.PI / 180);
   if (lidAngle != null) hingePivot.rotation.x = -(Math.max(0, Math.min(180, lidAngle))) * (Math.PI / 180);
 
-  // arrow
+  // arrow: rotated by gravity direction, relative to model
+  const gVec = new THREE.Vector3(-ax, -ay, -az).normalize();
   gArrow.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(-ax, -ay, -az).normalize(),
+    new THREE.Vector3(0, 1, 0), gVec,
   ));
 
   // HUD
@@ -236,7 +244,6 @@ const clock = new THREE.Clock();
 (function loop() {
   requestAnimationFrame(loop);
   controls.update();
-  gArrow.children[0].rotation.y += Math.min(clock.getDelta(), 0.1) * 1.5;
   renderer.render(scene, camera);
 })();
 
