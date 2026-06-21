@@ -145,6 +145,24 @@ hingePivot.add(lidBody);
 // Lid angle set by sensor data on first update() call
 
 
+/* ── Axis gizmo (3D RGB arrows on model corner) ────────────── */
+const axisGizmo = new THREE.Group();
+axisGizmo.position.set(BW/2 - 0.2, BH + 0.6, BD/2 - 0.2);
+macbook.add(axisGizmo);
+function addAxis(color, rot, len) {
+  const g = new THREE.Group();
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 6, 1), new THREE.MeshStandardMaterial({color, roughness:0.1, emissive:color, emissiveIntensity:0.5}));
+  cone.position.y = len;
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, len, 6), new THREE.MeshStandardMaterial({color, roughness:0.1, emissive:color, emissiveIntensity:0.3}));
+  rod.position.y = len/2;
+  g.add(cone, rod);
+  if (rot) g.rotation.set(rot[0], rot[1], rot[2]);
+  return g;
+}
+axisGizmo.add(addAxis(0xff3333, null, 0.35));        // +Y = Red (Up)
+axisGizmo.add(addAxis(0x33ff33, [Math.PI/2,0,0], 0.35)); // +X = Green (Right)
+axisGizmo.add(addAxis(0x3388ff, [0,0,-Math.PI/2], 0.35)); // +Z = Blue (Forward)
+
 /* ── Floor ──────────────────────────────────────────────────── */
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(20, 20),
