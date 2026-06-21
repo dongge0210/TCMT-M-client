@@ -1,7 +1,8 @@
 // TCMT Device Attitude 3D — MacBook Air M2 model
-// Data source: TCMT-M SPS HID sensors (accelerometer + gyro)
+// Data source: TCMT-M via IPC MotionClient
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MotionClient, connectionState } from './ipc-client.js';
 
 /* ── Scene ──────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
@@ -142,16 +143,6 @@ hingePivot.add(lidBody);
 
 hingePivot.rotation.x = -110 * (Math.PI / 180); // ~110° = normal open position
 
-/* ── Gravity arrow ──────────────────────────────────────────── */
-const arrowMat = new THREE.MeshStandardMaterial({ color: 0x00ff41, roughness: 0.05, emissive: 0x00ff41, emissiveIntensity: 0.7 });
-// Gravity arrow — attached ABOVE the model, moves with it
-const gAnchor = new THREE.Group();
-gAnchor.position.set(0, 1.2, 0);
-macbook.add(gAnchor);
-const gArrow = new THREE.Group();
-gAnchor.add(gArrow);
-gArrow.add(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.2, 8, 1), arrowMat)).position.y = 0.8;
-gArrow.add(new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.02, 0.75, 8), arrowMat)).position.y = 0.35;
 
 /* ── Floor ──────────────────────────────────────────────────── */
 const floor = new THREE.Mesh(
@@ -196,12 +187,6 @@ export function update(data) {
   macbook.rotation.z = roll * (Math.PI / 180);
   if (lidAngle != null) hingePivot.rotation.x = -(Math.max(0, Math.min(180, lidAngle))) * (Math.PI / 180);
 
-  // arrow: rotated by gravity direction, relative to model
-  const gVec = new THREE.Vector3(-ax, -ay, -az).normalize();
-  gArrow.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0), gVec,
-  ));
-
   // HUD
   const el = id => document.getElementById(id);
   if (el('pitchVal')) el('pitchVal').textContent = pitch.toFixed(1) + '°';
@@ -219,13 +204,17 @@ export function update(data) {
     document.getElementById('status').textContent = 'TCMT · Live';
 }
 
-/* ── IPC poll ───────────────────────────────────────────────── */
+/* ── IPC: MotionClient ─────────────────────────────────────── */
+const motion = new MotionClient();
+motion.onData(data => update(data));
+motion.start(250);
+
+// Connection status heartbeat
 setInterval(async () => {
-  try {
-    const r = await fetch('http://localhost:8765/sensors/motion');
-    if (r.ok) update(await r.json());
-  } catch (_) { /* no server yet */ }
-}, 250);
+  const st = await connectionState();
+  const el = document.getElementById('status');
+  if (el) el.textContent = 'TCMT · ' + st;
+}, 2000);
 
 /* ── Render ─────────────────────────────────────────────────── */
 const clock = new THREE.Clock();
