@@ -637,6 +637,8 @@ int main(int argc, char* argv[]) {
     static std::mutex s_motionMutex;
     static double s_ax = 0, s_ay = 0, s_az = -1;
     static double s_gx = 0, s_gy = 0, s_gz = 0;
+    static double s_lidAngle = 0, s_imut = 0;
+    static int s_heartbeat = 0, s_heartFlag = 0;
     static bool s_hasAccel = false, s_hasGyro = false;
 
     static SpsManager s_sps;
@@ -655,8 +657,8 @@ int main(int argc, char* argv[]) {
             std::lock_guard<std::mutex> lk(s_motionMutex);
             char buf[512];
             snprintf(buf, sizeof(buf),
-                "{\"ax\":%.6f,\"ay\":%.6f,\"az\":%.6f,\"gx\":%.3f,\"gy\":%.3f,\"gz\":%.3f}",
-                s_ax, s_ay, s_az, s_gx, s_gy, s_gz);
+                "{\"ax\":%.6f,\"ay\":%.6f,\"az\":%.6f,\"gx\":%.3f,\"gy\":%.3f,\"gz\":%.3f,\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f}",
+                s_ax, s_ay, s_az, s_gx, s_gy, s_gz, s_lidAngle, s_heartbeat, s_imut);
             return buf;
         }
         if (path == "/system/ping" && method == "GET") return "{\"status\":\"ok\"}";
@@ -934,6 +936,12 @@ int main(int argc, char* argv[]) {
                 s_gx = data.gyro.x; s_gy = data.gyro.y; s_gz = data.gyro.z;
                 s_hasAccel = data.accel.valid;
                 s_hasGyro = data.gyro.valid;
+                if (data.lidAngle.valid) s_lidAngle = data.lidAngle.angle;
+                if (data.spuTemp.valid) s_imut = data.spuTemp.celsius;
+                if (data.motionHb.valid) {
+                    s_heartbeat = data.motionHb.counter;
+                    s_heartFlag = data.motionHb.eventFlag;
+                }
             }
 
             // System uptime / load / process count / top processes
