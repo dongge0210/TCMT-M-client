@@ -261,7 +261,7 @@ motion.onData(data => {
   console.log('motion:', data);
   update(data);
 });
-motion.start(250);
+motion.start(33);
 console.log('MotionClient started, polling', 'http://127.0.0.1:9876/sensors/motion');
 
 // Connection status heartbeat

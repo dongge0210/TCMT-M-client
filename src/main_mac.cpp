@@ -1228,10 +1228,10 @@ int main(int argc, char* argv[]) {
             auto loopEnd = std::chrono::high_resolution_clock::now();
             int loopMs = (int)std::chrono::duration_cast<std::chrono::milliseconds>(
                 loopEnd - loopStart).count();
-            int sleepMs = std::max(100 - loopMs, 10);  // 10 Hz update
-            // Sleep with responsive exit (check every 10ms)
-            for (int s = 0; s < 10 && !g_shouldExit.load(); ++s) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            int sleepMs = std::max(33 - loopMs, 5);  // 30 Hz update
+            // Sleep with responsive exit (check every 5ms)
+            for (int s = 0; s < 7 && !g_shouldExit.load(); ++s) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             // Push sensor snapshots to history logger
             if (historyLogger.IsRunning()) {
