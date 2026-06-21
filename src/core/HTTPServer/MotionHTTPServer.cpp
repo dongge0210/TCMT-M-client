@@ -58,6 +58,20 @@ void MotionHTTPServer::AcceptLoop() {
         if (*p == ' ') p++;
         while (*p && *p != ' ') path += *p++;
 
+        // Handle CORS preflight (OPTIONS)
+        if (method == "OPTIONS") {
+            std::string r = "HTTP/1.1 204 No Content\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: Content-Type\r\n"
+                "Access-Control-Max-Age: 86400\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: close\r\n\r\n";
+            send(clientFd, r.c_str(), r.size(), 0);
+            close(clientFd);
+            continue;
+        }
+
         // Call handler
         std::string body = _handler(method, path);
 
