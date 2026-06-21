@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MotionClient, connectionState } from './ipc-client.js';
 
+// Keyboard state (must be before render loop)
+let keys = {};
+
 /* ── Scene ──────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2a2a3a);
@@ -290,8 +293,6 @@ const clock = new THREE.Clock();
 update({ ax: 0, ay: 0, az: -1 });
 console.log('TCMT Attitude 3D ready — MacBook Air M2');
 
-// Keyboard pan (arrow keys) — must be before render loop
-var keys = {};
 addEventListener('keydown', e => { keys[e.key] = true; });
 addEventListener('keyup', e => { keys[e.key] = false; });
 function updateKeys() {
