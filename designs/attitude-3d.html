@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TCMT · Attitude 3D</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0d; overflow:hidden; font-family:'SF Mono','Fira Code',monospace; }
+  canvas { display:block; }
+  #hud { position:absolute; top:20px; left:24px; pointer-events:none; }
+  #hud h2 { font-size:11px; color:#444; letter-spacing:2px; text-transform:uppercase; margin-bottom:4px; }
+  #hud .angle { font-size:30px; font-weight:700; color:#ccc; line-height:1; }
+  #hud .lbl { font-size:10px; color:#555; margin-right:16px; }
+  #panel { position:absolute; right:20px; top:50%; transform:translateY(-50%);
+    background:rgba(12,12,18,0.9); border:1px solid #1c1c24; border-radius:10px;
+    padding:18px 20px; min-width:200px; font-size:11px; backdrop-filter:blur(10px); }
+  #panel .row { display:flex; justify-content:space-between; padding:2px 0;
+    border-bottom:1px solid rgba(255,255,255,0.03); }
+  #panel .l { color:#555; } #panel .v { color:#8af; font-weight:500; }
+  #panel .sec { color:#333; font-size:9px; margin-top:4px; }
+  #status { position:absolute; bottom:16px; left:24px; font-size:10px; color:#2a2a2a; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <h2>Attitude</h2>
+  <span class="lbl">PITCH</span><span class="lbl">ROLL</span><br>
+  <span class="angle" id="pitchVal">--</span><span class="angle" id="rollVal">--</span>
+</div>
+<div id="panel"></div>
+<div id="status">TCMT · No data</div>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module" src="./attitude-3d.js"></script>
+<div id="loadErr" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#f44;font-size:14px;text-align:center">
+Three.js CDN failed to load.<br><small>Check internet connection or open via <code>http://</code> not <code>file://</code></small>
+</div>
+<script>window.onerror=()=>{document.getElementById('loadErr').style.display='block'}</script>
+</body>
+</html>
