@@ -179,12 +179,16 @@ buildPanel();
 export function update(data) {
   const { ax = 0, ay = 0, az = -1, gx = 0, gy = 0, gz = 0, lidAngle, hb, imut } = data;
 
-  // gravity → tilt angles (device frame: +Z = up from screen)
-  const pitch = Math.atan2(-ax, Math.sqrt(ay * ay + az * az)) * (180 / Math.PI);
-  const roll  = Math.atan2(ay, -az) * (180 / Math.PI);
+  // gravity → tilt angles
+  // Device frame: +X=right, +Y=forward, +Z=up. 3D world: X=right, Y=up, Z=toward.
+  const pitch = Math.atan2(-ax, -az) * (180 / Math.PI);  // tilt forward/back
+  const roll  = Math.atan2(ay, -az) * (180 / Math.PI);   // tilt left/right
 
-  macbook.rotation.x = -pitch * (Math.PI / 180);
-  macbook.rotation.z = roll * (Math.PI / 180);
+  // Model lies in XZ plane (long edge=X, short edge=Z, thickness=Y)
+  // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
+  macbook.rotation.order = 'XZY';
+  macbook.rotation.x = -roll * (Math.PI / 180);
+  macbook.rotation.z = -pitch * (Math.PI / 180);
   if (lidAngle != null) hingePivot.rotation.x = -(Math.max(0, Math.min(180, lidAngle))) * (Math.PI / 180);
 
   // HUD
