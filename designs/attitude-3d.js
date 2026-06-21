@@ -122,9 +122,10 @@ for (const [fx, fz] of [[-1.25, -0.8], [1.25, -0.8], [-1.25, 0.8], [1.25, 0.8]])
   macbook.add(foot);
 }
 
-// ── Hinge pivot (back edge of base) ──
+// ── Hinge (disabled — debugging base tilt) ──
 const hingePivot = new THREE.Group();
 hingePivot.position.set(0, BH, BD / 2 - 0.03);
+hingePivot.visible = false;
 macbook.add(hingePivot);
 
 const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, BW - 0.5, 20), HINGE);
@@ -189,9 +190,7 @@ export function update(data) {
   macbook.rotation.order = 'XZY';
   macbook.rotation.x = roll * (Math.PI / 180);
   macbook.rotation.z = -pitch * (Math.PI / 180);
-  // Lid angle: 0=closed, ~113=normal open. Default 110° if no data.
-  const la = (lidAngle != null && lidAngle > 0) ? lidAngle : 110;
-  hingePivot.rotation.x = -(la - 90) * (Math.PI / 180);
+  // Lid disabled — testing base tilt only
 
   // HUD
   const el = id => document.getElementById(id);
