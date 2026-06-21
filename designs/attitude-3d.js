@@ -290,8 +290,8 @@ const clock = new THREE.Clock();
 update({ ax: 0, ay: 0, az: -1 });
 console.log('TCMT Attitude 3D ready — MacBook Air M2');
 
-// Keyboard pan (arrow keys)
-const keys = {};
+// Keyboard pan (arrow keys) — must be before render loop
+var keys = {};
 addEventListener('keydown', e => { keys[e.key] = true; });
 addEventListener('keyup', e => { keys[e.key] = false; });
 function updateKeys() {
