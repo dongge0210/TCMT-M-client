@@ -22,7 +22,7 @@ document.body.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
-controls.target.set(0, 0.3, 0);
+controls.target.set(0, 0.06, 0);
 controls.zoomSpeed = 4.0;
 controls.rotateSpeed = 1.0;
 controls.panSpeed = 1.2;
