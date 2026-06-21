@@ -2,7 +2,7 @@
 // Connects to TCMT-M MCP JSON-RPC server or HTTP bridge.
 // Each client type receives only its data category.
 
-const BASE = 'http://localhost:9876'; // TCMT-M MCP HTTP bridge
+const BASE = 'http://127.0.0.1:9876'; // TCMT-M MotionHTTPServer
 
 /** Generic JSON-RPC call */
 async function rpc(method, params = {}) {
@@ -24,8 +24,8 @@ export class MotionClient {
   start(intervalMs = 200) {
     this._timer = setInterval(async () => {
       try {
-        const d = await rpc('sensors.motion');
-        if (this._cb) this._cb(d);
+        const res = await fetch(BASE + '/sensors/motion');
+        if (res.ok) { const d = await res.json(); if (this._cb) this._cb(d); }
       } catch (_) { /* not connected */ }
     }, intervalMs);
   }

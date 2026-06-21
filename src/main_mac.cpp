@@ -10,6 +10,7 @@
 #include <sstream>
 #include <iomanip>
 #include <thread>
+#include <mutex>
 #include <atomic>
 #include <cstring>
 #include <csignal>
@@ -51,6 +52,7 @@
 
 // Config management (wraps CPP-parsers / nlohmann/json internally)
 #include "core/Config/ConfigManager.h"
+#include "core/HTTPServer/MotionHTTPServer.h"
 #include <fstream>
 #include <cstdio>
 
@@ -631,6 +633,12 @@ int main(int argc, char* argv[]) {
     // SPU Sensor Manager — reads ALL AppleSPUHIDDevice sensors via
     // asynchronous IOHIDDevice input report callbacks (no root needed).
     // Includes: gravity/orientation vector, gyroscope, ALS, lid angle.
+    // Global motion cache for HTTP server access (atomic swap)
+    static std::mutex s_motionMutex;
+    static double s_ax = 0, s_ay = 0, s_az = -1;
+    static double s_gx = 0, s_gy = 0, s_gz = 0;
+    static bool s_hasAccel = false, s_hasGyro = false;
+
     static SpsManager s_sps;
     if (!s_sps.Start()) {
         Logger::Warn("SpsManager: no SPU HID sensors found — sensor features disabled");
@@ -639,6 +647,21 @@ int main(int argc, char* argv[]) {
         for (auto& s : s_sps.Sensors())
             Logger::Info("  " + s->name);
     }
+
+    // Motion HTTP server for 3D attitude visualization
+    static MotionHTTPServer s_http;
+    s_http.Start(9876, [](const std::string& method, const std::string& path) -> std::string {
+        if (path == "/sensors/motion" && method == "GET") {
+            std::lock_guard<std::mutex> lk(s_motionMutex);
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "{\"ax\":%.6f,\"ay\":%.6f,\"az\":%.6f,\"gx\":%.3f,\"gy\":%.3f,\"gz\":%.3f}",
+                s_ax, s_ay, s_az, s_gx, s_gy, s_gz);
+            return buf;
+        }
+        if (path == "/system/ping" && method == "GET") return "{\"status\":\"ok\"}";
+        return "{}";
+    });
 
     // Start history logger (SQLite)
     HistoryLogger historyLogger;
@@ -902,6 +925,15 @@ int main(int argc, char* argv[]) {
                 // IMU die temp → unified temperature list
                 if (data.spuTemp.valid)
                     data.temperatures.push_back({"IMU", data.spuTemp.celsius});
+            }
+
+            // Update global motion cache for HTTP server
+            {
+                std::lock_guard<std::mutex> lk(s_motionMutex);
+                s_ax = data.accel.x; s_ay = data.accel.y; s_az = data.accel.z;
+                s_gx = data.gyro.x; s_gy = data.gyro.y; s_gz = data.gyro.z;
+                s_hasAccel = data.accel.valid;
+                s_hasGyro = data.gyro.valid;
             }
 
             // System uptime / load / process count / top processes
