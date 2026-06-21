@@ -221,9 +221,9 @@ export function update(data) {
   macbook.rotation.order = 'XZY';
   macbook.rotation.x = roll * (Math.PI / 180);
   macbook.rotation.z = -pitch * (Math.PI / 180);
-  // Lid: BoxGeometry on XZ plane. 0°=flat on base, 90°=vertical.
+  // Lid: +X rotation lifts front edge up & back. 0°=flat, 110°=open.
   const la = (lidAngle != null && lidAngle > 0) ? lidAngle : 110;
-  hingePivot.rotation.x = -la * (Math.PI / 180);
+  hingePivot.rotation.x = la * (Math.PI / 180);
 
   // HUD
   const el = id => document.getElementById(id);
