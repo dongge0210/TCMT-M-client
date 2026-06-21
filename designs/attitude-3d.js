@@ -22,8 +22,8 @@ document.body.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
-// Right-click = orbit, Left-click = pan
-controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+// Left-click orbit (default), trackpad pinch-zoom + two-finger pan
 controls.target.set(0, 0.06, 0);
 controls.zoomSpeed = 8.0;
 controls.rotateSpeed = 1.0;
@@ -282,12 +282,26 @@ const clock = new THREE.Clock();
 (function loop() {
   requestAnimationFrame(loop);
   controls.update();
+  updateKeys();
   renderer.render(scene, camera);
 })();
 
 // Default render — model visible even without sensor data
 update({ ax: 0, ay: 0, az: -1 });
 console.log('TCMT Attitude 3D ready — MacBook Air M2');
+
+// Keyboard pan (arrow keys)
+const keys = {};
+addEventListener('keydown', e => { keys[e.key] = true; });
+addEventListener('keyup', e => { keys[e.key] = false; });
+function updateKeys() {
+  const spd = 0.08;
+  if (keys['ArrowUp'])    controls.target.z -= spd;
+  if (keys['ArrowDown'])  controls.target.z += spd;
+  if (keys['ArrowLeft'])  controls.target.x -= spd;
+  if (keys['ArrowRight']) controls.target.x += spd;
+}
+// Inject key update into render loop (added below lines)
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
