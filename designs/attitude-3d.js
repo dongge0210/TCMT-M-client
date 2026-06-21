@@ -146,11 +146,6 @@ const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(LW - 0.46, LD - 0.46),
 screenMesh.position.set(0, 0, LD / 2 - 0.002);
 hingePivot.add(screenMesh);
 
-// Apple logo (back face)
-const apple = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.01, 8, 24),
-  new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.08, metalness: 0.9, emissive: 0x111111, emissiveIntensity: 0.3 }));
-apple.position.set(0, 0, -LD / 2);
-hingePivot.add(apple);
 
 hingePivot.rotation.x = -110 * (Math.PI / 180); // ~110° = normal open position
 
