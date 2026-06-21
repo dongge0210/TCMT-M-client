@@ -188,7 +188,7 @@ export function update(data) {
   // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
   macbook.rotation.order = 'XZY';
   macbook.rotation.x = -roll * (Math.PI / 180);
-  macbook.rotation.z = -pitch * (Math.PI / 180);
+  macbook.rotation.z = pitch * (Math.PI / 180);
   // Lid angle: 0=closed, 113=normal open. Hinge at 0° = vertical.
   if (lidAngle != null)
     hingePivot.rotation.x = -(lidAngle - 90) * (Math.PI / 180);
