@@ -122,11 +122,24 @@ for (const [fx, fz] of [[-1.25, -0.8], [1.25, -0.8], [-1.25, 0.8], [1.25, 0.8]])
   macbook.add(foot);
 }
 
-// ── Hinge (disabled — debugging base tilt) ──
+// ── Hinge + Lid ──
 const hingePivot = new THREE.Group();
 hingePivot.position.set(0, BH, BD / 2 - 0.03);
-hingePivot.visible = false;
 macbook.add(hingePivot);
+
+const hinge2 = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, BW - 0.5, 20), HINGE);
+hinge2.rotation.z = Math.PI / 2;
+hingePivot.add(hinge2);
+
+// Simple lid: thin box extending forward (-Z) from hinge
+const LID_W = BW, LID_H = BD, LID_T = 0.03;
+const lidBox = new THREE.Mesh(
+  new THREE.BoxGeometry(LID_W, LID_T, LID_H),
+  new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.15, metalness: 0.7 })
+);
+lidBox.position.set(0, 0, -LID_H / 2);
+lidBox.castShadow = true;
+hingePivot.add(lidBox);
 
 const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, BW - 0.5, 20), HINGE);
 hinge.rotation.z = Math.PI / 2;
@@ -208,7 +221,9 @@ export function update(data) {
   macbook.rotation.order = 'XZY';
   macbook.rotation.x = roll * (Math.PI / 180);
   macbook.rotation.z = -pitch * (Math.PI / 180);
-  // Lid disabled — testing base tilt only
+  // Lid: BoxGeometry on XZ plane. 0°=flat on base, 90°=vertical.
+  const la = (lidAngle != null && lidAngle > 0) ? lidAngle : 110;
+  hingePivot.rotation.x = -la * (Math.PI / 180);
 
   // HUD
   const el = id => document.getElementById(id);
