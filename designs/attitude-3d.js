@@ -257,8 +257,12 @@ export function update(data) {
 
 /* ── IPC: MotionClient ─────────────────────────────────────── */
 const motion = new MotionClient();
-motion.onData(data => update(data));
+motion.onData(data => {
+  console.log('motion:', data);
+  update(data);
+});
 motion.start(250);
+console.log('MotionClient started, polling', 'http://127.0.0.1:9876/sensors/motion');
 
 // Connection status heartbeat
 setInterval(async () => {
