@@ -23,7 +23,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.15;
 controls.target.set(0, 0.3, 0);
-controls.zoomSpeed = 2.0;
+controls.zoomSpeed = 4.0;
 controls.rotateSpeed = 1.0;
 controls.panSpeed = 1.2;
 controls.minDistance = 1.5;
