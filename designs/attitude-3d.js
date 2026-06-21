@@ -137,7 +137,7 @@ const lidShape = roundedRectShape(LW, LD, R + 0.01);
 const lidGeo = new THREE.ExtrudeGeometry(lidShape, { depth: LT, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 3 });
 const lidBody = new THREE.Mesh(lidGeo, ALU_L);
 lidBody.rotation.x = -Math.PI / 2;
-lidBody.position.set(0, 0, LD / 2);
+lidBody.position.set(0, 0, -LD / 2);
 lidBody.castShadow = true; lidBody.receiveShadow = true;
 hingePivot.add(lidBody);
 
@@ -187,8 +187,8 @@ export function update(data) {
   // Model lies in XZ plane (long edge=X, short edge=Z, thickness=Y)
   // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
   macbook.rotation.order = 'XZY';
-  macbook.rotation.x = -roll * (Math.PI / 180);
-  macbook.rotation.z = pitch * (Math.PI / 180);
+  macbook.rotation.x = roll * (Math.PI / 180);
+  macbook.rotation.z = -pitch * (Math.PI / 180);
   // Lid angle: 0=closed, ~113=normal open. Default 110° if no data.
   const la = (lidAngle != null && lidAngle > 0) ? lidAngle : 110;
   hingePivot.rotation.x = -(la - 90) * (Math.PI / 180);
