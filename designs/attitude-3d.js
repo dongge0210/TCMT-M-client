@@ -208,8 +208,17 @@ function buildPanel() {
 buildPanel();
 
 /* ── Update from sensor data ────────────────────────────────── */
+let _yaw = 0, _lastT = 0;
 export function update(data) {
   const { ax = 0, ay = 0, az = -1, gx = 0, gy = 0, gz = 0, lidAngle, hb, imut } = data;
+  const now = performance.now() / 1000;
+  const dt = _lastT ? Math.min(now - _lastT, 0.5) : 0;
+  _lastT = now;
+
+  // Gyro Z integration → horizontal yaw
+  if (dt > 0) _yaw += gz * (Math.PI / 180) * dt;
+  // Clamp yaw to avoid unlimited drift
+  _yaw = _yaw % (2 * Math.PI);
 
   // gravity → tilt angles
   // Device frame: +X=right, +Y=forward, +Z=up. 3D world: X=right, Y=up, Z=toward.
@@ -218,7 +227,8 @@ export function update(data) {
 
   // Model lies in XZ plane (long edge=X, short edge=Z, thickness=Y)
   // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
-  macbook.rotation.order = 'XZY';
+  macbook.rotation.order = 'YXZ';
+  macbook.rotation.y = _yaw;
   macbook.rotation.x = roll * (Math.PI / 180);
   macbook.rotation.z = -pitch * (Math.PI / 180);
 
