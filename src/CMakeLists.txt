@@ -50,6 +50,7 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/SpsManager.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/HTTPServer/MotionHTTPServer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/ServerProbe.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )

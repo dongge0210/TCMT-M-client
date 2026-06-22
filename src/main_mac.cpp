@@ -53,6 +53,7 @@
 // Config management (wraps CPP-parsers / nlohmann/json internally)
 #include "core/Config/ConfigManager.h"
 #include "core/HTTPServer/MotionHTTPServer.h"
+#include "core/ServerProbe.h"
 #include <fstream>
 #include <cstdio>
 
@@ -669,6 +670,13 @@ int main(int argc, char* argv[]) {
     });
     } // if (httpMode)
 
+    // ServerProbe: push data to tcmt-server (if available)
+    static ServerProbe s_probe;
+    if (httpMode) {
+        if (s_probe.Start("http://127.0.0.1:8080"))
+            Logger::Info("ServerProbe: connected to tcmt-server");
+    }
+
     // Start history logger (SQLite)
     HistoryLogger historyLogger;
     historyLogger.SetRetentionDays(30);
@@ -1235,6 +1243,24 @@ int main(int argc, char* argv[]) {
                 }
 
             } // isHeavyFrame
+
+            // Push snapshot to tcmt-server
+            if (httpMode && s_probe.Token().size() > 0) {
+                char snap[1024];
+                snprintf(snap, sizeof(snap),
+                    "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"
+                    "\"memory_used\":%llu,\"memory_total\":%llu,"
+                    "\"gpu_usage\":%.1f,\"gpu_temp\":%.1f,"
+                    "\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
+                    "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f,"
+                    "\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f",
+                    data.cpuUsage, data.cpuTemp,
+                    (unsigned long long)data.usedMemory, (unsigned long long)data.totalMemory,
+                    data.gpuUsage, data.gpuTemp,
+                    s_ax, s_ay, s_az, s_gx, s_gy, s_gz,
+                    s_lidAngle, s_heartbeat, s_imut);
+                s_probe.PostSnapshot(std::string("{") + snap + "}");
+            }
 
             // Sleep
             auto loopEnd = std::chrono::high_resolution_clock::now();
