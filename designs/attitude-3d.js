@@ -253,8 +253,6 @@ export function update(data) {
   if (el('lid')) el('lid').textContent = lidAngle != null ? lidAngle.toFixed(0) + '°' : '—';
   if (el('hb')) el('hb').textContent = hb ?? '—';
   if (el('imut')) el('imut').textContent = imut != null ? imut.toFixed(1) + '°C' : '—';
-  if (document.getElementById('status'))
-    document.getElementById('status').textContent = 'TCMT · Live';
 }
 
 /* ── IPC: MotionClient ─────────────────────────────────────── */
@@ -270,7 +268,11 @@ console.log('MotionClient started, polling', 'http://127.0.0.1:9876/sensors/moti
 setInterval(async () => {
   const st = await connectionState();
   const el = document.getElementById('status');
-  if (el) el.textContent = 'TCMT · ' + st;
+  if (el) {
+    const live = st.startsWith('connected');
+    el.textContent = 'IPC ' + (live ? '● LIVE' : '○ OFFLINE');
+    el.style.color = live ? '#0f0' : '#f44';
+  }
 }, 2000);
 
 /* ── Render ─────────────────────────────────────────────────── */
