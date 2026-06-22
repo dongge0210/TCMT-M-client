@@ -661,7 +661,10 @@ int main(int argc, char* argv[]) {
                 s_ax, s_ay, s_az, s_gx, s_gy, s_gz, s_lidAngle, s_heartbeat, s_imut);
             return buf;
         }
-        if (path == "/system/ping" && method == "GET") return "{\"status\":\"ok\"}";
+        extern int s_connCount;
+        if (path == "/system/ping" && method == "GET") {
+            char buf[128]; snprintf(buf, sizeof(buf), "{\"status\":\"ok\",\"conns\":%d}", s_connCount); return buf;
+        }
         return "{}";
     });
 
@@ -701,7 +704,7 @@ int main(int argc, char* argv[]) {
     coordinator.Start();
 
     int loopCounter = 1;
-    const int HEAVY_SENSOR_SKIP = 15; // 30Hz ÷ 15 = 2Hz for CPU/GPU/disk/network/temp
+    const int HEAVY_SENSOR_SKIP = 30; // 30Hz ÷ 30 = 1Hz for CPU/GPU/disk/network/temp
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {

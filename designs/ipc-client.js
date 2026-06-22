@@ -51,6 +51,10 @@ export class TemperatureClient {
 }
 
 /* ── Connection monitor ────────────────────────── */
-export function connectionState() {
-  return rpc('system.ping').then(() => 'connected').catch(() => 'disconnected');
+export async function connectionState() {
+  try {
+    const res = await fetch(BASE + '/system/ping');
+    if (res.ok) { const d = await res.json(); return `connected · ${d.conns || 0} reqs`; }
+    return 'disconnected';
+  } catch (_) { return 'disconnected'; }
 }

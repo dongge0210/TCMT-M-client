@@ -38,12 +38,15 @@ void MotionHTTPServer::Stop() {
     if (_thread.joinable()) _thread.join();
 }
 
+int s_connCount = 0;
+
 void MotionHTTPServer::AcceptLoop() {
     while (_running) {
         sockaddr_in client{};
         socklen_t len = sizeof(client);
         int clientFd = accept(_fd, (sockaddr*)&client, &len);
         if (clientFd < 0) continue;
+        s_connCount++;
 
         // Read request
         char buf[4096] = {};
