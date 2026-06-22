@@ -245,13 +245,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ======================== --json Mode ========================
-    bool jsonMode = false;
+    // ======================== Flags ========================
+    bool jsonMode = false, httpMode = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--json") {
-            jsonMode = true;
-            break;
-        }
+        std::string a(argv[i]);
+        if (a == "--json") jsonMode = true;
+        if (a == "--http") httpMode = true;
     }
 
     if (jsonMode) {
@@ -650,9 +649,10 @@ int main(int argc, char* argv[]) {
             Logger::Info("  " + s->name);
     }
 
-    // Motion HTTP server for 3D attitude visualization
+    // Motion HTTP server (--http flag only)
     static MotionHTTPServer s_http;
-    s_http.Start(9876, [](const std::string& method, const std::string& path) -> std::string {
+    if (httpMode) {
+        s_http.Start(9876, [](const std::string& method, const std::string& path) -> std::string {
         if (path == "/sensors/motion" && method == "GET") {
             std::lock_guard<std::mutex> lk(s_motionMutex);
             char buf[512];
@@ -667,6 +667,7 @@ int main(int argc, char* argv[]) {
         }
         return "{}";
     });
+    } // if (httpMode)
 
     // Start history logger (SQLite)
     HistoryLogger historyLogger;
