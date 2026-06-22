@@ -86,7 +86,7 @@ bool ServerProbe::Start(const std::string& serverUrl) {
         deviceId_ = response.substr(idPos, end - idPos);
     }
 
-    Logger::Info("ServerProbe: registered as " + deviceId_ + " token=" + token_);
+    Logger::Info("ServerProbe: registered as " + deviceId_ + " token=" + token_.substr(0,4) + "****");
 
     thread_ = std::thread(&ServerProbe::ProbeThread, this);
     return true;
