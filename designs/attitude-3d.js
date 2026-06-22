@@ -228,9 +228,11 @@ export function update(data) {
 
   // Model lies in XZ plane (long edge=X, short edge=Z, thickness=Y)
   // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
-  macbook.rotation.order = 'XZY';
-  macbook.rotation.x = roll * (Math.PI / 180);
-  macbook.rotation.z = -pitch * (Math.PI / 180);
+  // Quaternion from gravity — avoids Euler gimbal cross-coupling
+  const gWorld = new THREE.Vector3(-_sax, -_saz, -_say).normalize(); // device→world remap
+  macbook.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0), gWorld
+  ));
 
   // Keep orbit centered on model (y=0.06 is base center)
   controls.target.set(0, 0.06, 0);
