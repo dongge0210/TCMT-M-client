@@ -701,6 +701,7 @@ int main(int argc, char* argv[]) {
     coordinator.Start();
 
     int loopCounter = 1;
+    const int HEAVY_SENSOR_SKIP = 15; // 30Hz ÷ 15 = 2Hz for CPU/GPU/disk/network/temp
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {
@@ -733,7 +734,8 @@ int main(int argc, char* argv[]) {
             data.efficiencyCores = cachedECores;
 
             // Coordinator snapshot fills CPU, Memory, Disk, Network, Temperature, Power
-            {
+            // Runs at 2Hz (30Hz ÷ HEAVY_SENSOR_SKIP) — motion sensors unaffected
+            if (loopCounter % HEAVY_SENSOR_SKIP == 1) {
                 SystemInfo sysInfo;
                 coordinator.Snapshot(sysInfo, data);
 
@@ -803,7 +805,7 @@ int main(int argc, char* argv[]) {
                 try { s_display.Detect(); } catch (...) {}
                 try { s_battery.Detect(); } catch (...) {}
                 try { s_als.Detect(); } catch (...) {}
-            }
+            } // end if loopCounter % HEAVY_SENSOR_SKIP
             // SPU sensors: SpsManager refreshes all sensors atomically (~500ms)
             try { s_sps.Refresh(); } catch (...) {}
 
