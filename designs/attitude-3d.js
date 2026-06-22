@@ -214,7 +214,7 @@ buildPanel();
 
 /* ── Update from sensor data ────────────────────────────────── */
 let _sax = 0, _say = 0, _saz = -1, _sgx = 0, _sgy = 0, _sgz = 0, _slid = 110;
-const ALPHA = 0.15; // smoothing factor (0=no new data, 1=raw)
+const ALPHA = 0.05; // heavy LP filter — rejects linear acceleration noise
 export function update(data) {
   const { ax = 0, ay = 0, az = -1, gx = 0, gy = 0, gz = 0, lidAngle, hb, imut } = data;
 
