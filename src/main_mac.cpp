@@ -733,9 +733,10 @@ int main(int argc, char* argv[]) {
             data.performanceCores = cachedPCores;
             data.efficiencyCores = cachedECores;
 
-            // Coordinator snapshot fills CPU, Memory, Disk, Network, Temperature, Power
-            // Runs at 2Hz (30Hz ÷ HEAVY_SENSOR_SKIP) — motion sensors unaffected
-            if (loopCounter % HEAVY_SENSOR_SKIP == 1) {
+            bool isHeavyFrame = (loopCounter % HEAVY_SENSOR_SKIP == 1);
+
+            // Coordinator snapshot — 2Hz only
+            if (isHeavyFrame) {
                 SystemInfo sysInfo;
                 coordinator.Snapshot(sysInfo, data);
 
@@ -944,7 +945,10 @@ int main(int argc, char* argv[]) {
                     s_heartbeat = data.motionHb.counter;
                     s_heartFlag = data.motionHb.eventFlag;
                 }
-            }
+            } // motion cache
+
+            // ── Heavy sensors / IPC write: 2Hz only ──
+            if (isHeavyFrame) {
 
             // System uptime / load / process count / top processes
             static ProcessTop s_procTop;
@@ -1225,6 +1229,8 @@ int main(int argc, char* argv[]) {
                     std::atomic_thread_fence(std::memory_order_release);
                     b->writeSequence++;
                 }
+
+            } // isHeavyFrame
 
             // Sleep
             auto loopEnd = std::chrono::high_resolution_clock::now();
