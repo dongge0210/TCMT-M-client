@@ -659,11 +659,11 @@ int main(int argc, char* argv[]) {
             snprintf(buf, sizeof(buf),
                 "{\"ax\":%.6f,\"ay\":%.6f,\"az\":%.6f,\"gx\":%.3f,\"gy\":%.3f,\"gz\":%.3f,\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f}",
                 s_ax, s_ay, s_az, s_gx, s_gy, s_gz, s_lidAngle, s_heartbeat, s_imut);
-            return buf;
+            return std::string(buf);
         }
         extern int s_connCount;
         if (path == "/system/ping" && method == "GET") {
-            char buf[128]; snprintf(buf, sizeof(buf), "{\"status\":\"ok\",\"conns\":%d}", s_connCount); return buf;
+            char buf[128]; snprintf(buf, sizeof(buf), "{\"status\":\"ok\",\"conns\":%d}", s_connCount); return std::string(buf);
         }
         return "{}";
     });
