@@ -1,8 +1,8 @@
 // TCMT Device Attitude 3D — MacBook Air M2 model
-// Data source: TCMT-M via IPC MotionClient
+// Data source: tcmt-server via IPC MotionClient
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { MotionClient, connectionState } from './ipc-client.js';
+import { MotionClient, connectionState, registerDevice } from './ipc-client.js';
 
 // Keyboard state (must be before render loop)
 let keys = {};
@@ -256,13 +256,18 @@ export function update(data) {
 }
 
 /* ── IPC: MotionClient ─────────────────────────────────────── */
-const motion = new MotionClient();
-motion.onData(data => {
-  console.log('motion:', data);
-  update(data);
+// Register with tcmt-server before starting data polling
+registerDevice('3D Viz').then(() => {
+  const motion = new MotionClient();
+  motion.onData(data => {
+    console.log('motion:', data);
+    update(data);
+  });
+  motion.start(33);
+  console.log('MotionClient started, polling', 'http://127.0.0.1:8080');
+}).catch(err => {
+  console.error('Failed to register device:', err);
 });
-motion.start(33);
-console.log('MotionClient started, polling', 'http://127.0.0.1:9876/sensors/motion');
 
 // Connection status heartbeat
 setInterval(async () => {

@@ -1,20 +1,26 @@
-// TCMT IPC Client — typed data-stream bridge
-// Connects to TCMT-M MCP JSON-RPC server or HTTP bridge.
-// Each client type receives only its data category.
+// TCMT IPC Client — connects to tcmt-server REST API
+// Uses device registration and per-device polling for motion/system/temperature data.
 
-const BASE = 'http://127.0.0.1:9876'; // TCMT-M MotionHTTPServer
+const BASE = 'http://127.0.0.1:8080';
+let deviceId = null;
+let deviceToken = null;
 
-/** Generic JSON-RPC call */
-async function rpc(method, params = {}) {
-  const res = await fetch(BASE, {
+/**
+ * Register this client as a device on tcmt-server.
+ * Must be called before any polling client can fetch data.
+ * @param {string} name - Friendly device name
+ * @returns {Promise<{id: string, token: string}>}
+ */
+export async function registerDevice(name) {
+  const res = await fetch(BASE + '/api/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer tcmt-dev' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name || 'Browser Client', os: navigator.platform, model: 'Web' })
   });
-  if (!res.ok) throw new Error(`RPC ${method} failed: ${res.status}`);
-  const j = await res.json();
-  if (j.error) throw new Error(j.error.message);
-  return j.result;
+  const d = await res.json();
+  deviceId = d.id;
+  deviceToken = d.token;
+  return d;
 }
 
 /* ── Motion Client ─────────────────────────────── */
@@ -22,9 +28,10 @@ export class MotionClient {
   constructor() { this._cb = null; this._timer = null; }
   onData(fn) { this._cb = fn; }
   start(intervalMs = 200) {
+    if (!deviceId) { console.warn('[MotionClient] No device registered yet'); return; }
     this._timer = setInterval(async () => {
       try {
-        const res = await fetch(BASE + '/sensors/motion');
+        const res = await fetch(BASE + '/api/devices/' + deviceId + '/latest');
         if (res.ok) { const d = await res.json(); if (this._cb) this._cb(d); }
       } catch (_) { /* not connected */ }
     }, intervalMs);
@@ -37,7 +44,11 @@ export class SystemClient {
   constructor() { this._cb = null; }
   onData(fn) { this._cb = fn; }
   async poll() {
-    try { const d = await rpc('sensors.system_info'); if (this._cb) this._cb(d); } catch (_) {}
+    if (!deviceId) return;
+    try {
+      const res = await fetch(BASE + '/api/devices/' + deviceId + '/latest');
+      if (res.ok && this._cb) this._cb(await res.json());
+    } catch (_) {}
   }
 }
 
@@ -46,15 +57,31 @@ export class TemperatureClient {
   constructor() { this._cb = null; }
   onData(fn) { this._cb = fn; }
   async poll() {
-    try { const d = await rpc('sensors.temperature'); if (this._cb) this._cb(d); } catch (_) {}
+    if (!deviceId) return;
+    try {
+      const res = await fetch(BASE + '/api/devices/' + deviceId + '/temperatures');
+      if (res.ok && this._cb) this._cb(await res.json());
+    } catch (_) {}
   }
 }
 
 /* ── Connection monitor ────────────────────────── */
 export async function connectionState() {
   try {
-    const res = await fetch(BASE + '/system/ping');
-    if (res.ok) { const d = await res.json(); return `connected · ${d.conns || 0} reqs`; }
+    const res = await fetch(BASE + '/ping');
+    if (res.ok) { const d = await res.json(); return 'connected · ' + (d.time ? 'ok' : '?'); }
     return 'disconnected';
   } catch (_) { return 'disconnected'; }
+}
+
+/* ── Data ingest (for TCMT-M agents) ──────────── */
+export async function ingestData(data) {
+  if (!deviceToken) return false;
+  const payload = { ...data, token: deviceToken };
+  const res = await fetch(BASE + '/api/ingest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return res.ok;
 }
