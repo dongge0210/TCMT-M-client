@@ -90,6 +90,9 @@ public class SystemInfo
     public bool HasBluetooth { get; set; }
     public bool BtPowerOn { get; set; }
     public int BtDeviceCount { get; set; }
+
+    // App version
+    public string Version { get; set; } = "0.14.0";
 }
 
 public class GpuData : ModelBase

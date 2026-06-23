@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TCMT.Avalonia.Core;
 using TCMT.Avalonia.Models;
@@ -20,6 +21,12 @@ public partial class DashboardViewModel : ViewModelBase
     private string _ramInfo = "";
 
     [ObservableProperty]
+    private double _cpuTemperature;
+
+    [ObservableProperty]
+    private double _gpuTemperature;
+
+    [ObservableProperty]
     private string _cpuPowerDisplay = "";
 
     [ObservableProperty]
@@ -30,6 +37,9 @@ public partial class DashboardViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _totalPowerDisplay = "";
+
+    [ObservableProperty]
+    private string _diskFreeDisplay = "";
 
     [ObservableProperty]
     private string _connectionStatus = "连接中...";
@@ -56,6 +66,13 @@ public partial class DashboardViewModel : ViewModelBase
             : 0;
         CpuName = string.IsNullOrWhiteSpace(info.CpuName) ? "未知CPU" : info.CpuName;
         RamInfo = $"{FormatUtils.FormatBytes(info.TotalMemory)} {info.RamType}".Trim();
+
+        CpuTemperature = info.CpuTemperature;
+        GpuTemperature = info.GpuTemperature;
+
+        // Disk free display
+        var totalFree = info.Disks.Sum(d => (long)d.FreeSpace);
+        DiskFreeDisplay = FormatUtils.FormatBytes((ulong)Math.Max(0, totalFree));
 
         // Power
         CpuPowerDisplay = FormatUtils.FormatPower(info.CpuPower);

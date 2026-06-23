@@ -74,6 +74,8 @@ public partial class App : Application
         services.AddTransient<MemoryViewModel>();
         services.AddTransient<NetworkViewModel>();
         services.AddTransient<StorageViewModel>();
+        services.AddTransient<GpuViewModel>();
+        services.AddTransient<TemperaturesViewModel>();
         services.AddTransient<SettingsViewModel>();
 
         // Views - Transient
@@ -83,6 +85,8 @@ public partial class App : Application
         services.AddTransient<MemoryView>();
         services.AddTransient<NetworkView>();
         services.AddTransient<StorageView>();
+        services.AddTransient<GpuView>();
+        services.AddTransient<TemperaturesView>();
         services.AddTransient<SettingsView>();
 
         return services.BuildServiceProvider();

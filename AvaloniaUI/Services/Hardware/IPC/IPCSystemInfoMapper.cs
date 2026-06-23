@@ -295,6 +295,11 @@ public static class IPCSystemInfoMapper
                 }
             }
 
+            // App version (from IPC, fallback to default)
+            var appVersion = reader.ReadString("app/version") ?? ipc.ReadWString("app/version");
+            if (!string.IsNullOrEmpty(appVersion))
+                info.Version = appVersion;
+
             return info;
         }
         catch (Exception ex)
