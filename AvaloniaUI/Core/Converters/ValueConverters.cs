@@ -155,3 +155,88 @@ public class PowerConverter : IValueConverter
         throw new NotImplementedException();
     }
 }
+
+public class PercentToWidthConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is double percent)
+        {
+            return Math.Clamp(percent, 0, 100) * 2.4; // 240px max width
+        }
+        return 0.0;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+public class NavSelectedToBgConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is bool isSelected && isSelected)
+            return new SolidColorBrush(Color.Parse("#3B82F626"));
+        return new SolidColorBrush(Colors.Transparent);
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
+public class NavSelectedToFgConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is bool isSelected && isSelected)
+            return new SolidColorBrush(Color.Parse("#3B82F6"));
+        return new SolidColorBrush(Color.Parse("#8B949E"));
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
+public class NavSelectedToFontWeightConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is bool isSelected && isSelected)
+            return FontWeight.SemiBold;
+        return FontWeight.Normal;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
+public class GreaterThanZeroToBoolConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is int intValue)
+        {
+            return intValue > 0;
+        }
+        if (value is long longValue)
+        {
+            return longValue > 0;
+        }
+        if (value is double doubleValue)
+        {
+            return doubleValue > 0;
+        }
+        if (value is null)
+        {
+            return false;
+        }
+        return false;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
