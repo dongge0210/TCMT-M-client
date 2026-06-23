@@ -33,29 +33,10 @@ public class FontService : IFontService
     // ═══════════════════════════════════════════════════════
 
     [SupportedOSPlatform("macos")]
-    private static unsafe FontSelection? MacPickFont(FontSelection? current)
-    {
-        try
-        {
-            // Run an embedded swift/appkit snippet via /usr/bin/swift
-            // to open NSFontPanel and return the chosen font descriptor.
-            var args = current != null
-                ? $"\"{current.Family}\" {current.Size} {(current.IsBold ? "1" : "0")} {(current.IsItalic ? "1" : "0")}"
-                : "\"\" 0 0 0";
-            return RunFontPanelHelper(args);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[FontService] macOS font panel failed: {ex.Message}");
-            return null;
-        }
-    }
-
-    [SupportedOSPlatform("macos")]
     private static FontSelection? MacPickFont(FontSelection? current)
     {
-        // NSFontPanel can't be invoked from a non-NSApp process.
-        // macOS users pick from the built-in list via GetSystemFonts().
+        // NSFontPanel is not available from this process context.
+        // Fall back to using the system font list instead.
         return null;
     }
 
@@ -145,22 +126,6 @@ public class FontService : IFontService
         public IntPtr lpszStyle;
         public ushort nFontType;
         private ushort ___pad;
-        public int nSizeMin, nSizeMax;
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct CHOOSEFONTW
-    {
-        public uint lStructSize;
-        public IntPtr hwndOwner, hDC;
-        public IntPtr lpLogFont;
-        public int iPointSize;
-        public uint Flags, rgbColors;
-        public IntPtr lCustData, lpfnHook;
-        public string? lpTemplateName;
-        public IntPtr hInstance;
-        public string? lpszStyle;
-        public ushort nFontType, ___MISSING_ALIGNMENT__;
         public int nSizeMin, nSizeMax;
     }
 
