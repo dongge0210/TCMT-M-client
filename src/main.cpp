@@ -645,6 +645,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("power/ane", offsetof(SharedMemoryBlock, anePower), 8);
     addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
     addField("os/model", offsetof(SharedMemoryBlock, hardwareModel), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("app/version", offsetof(SharedMemoryBlock, appVersion), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
 
     // Network adapters (up to 4)
     for (int i = 0; i < 4; i++) {

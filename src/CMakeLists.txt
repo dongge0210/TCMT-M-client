@@ -391,6 +391,8 @@ elseif(TCMT_LINUX)
     )
 endif()
 
+target_compile_definitions(TCMTCore PUBLIC TCMT_VERSION_STR="${PROJECT_VERSION}")
+target_compile_definitions(TCMT-M PRIVATE APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
 
 set_target_properties(TCMT-M PROPERTIES

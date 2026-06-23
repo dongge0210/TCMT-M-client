@@ -3,6 +3,11 @@
 #include <string>
 #include <vector>
 
+// App version string (override via -DTCMT_VERSION_STR="x.y.z" in CMake/MSBuild)
+#ifndef TCMT_VERSION_STR
+#define TCMT_VERSION_STR "0.14.0"
+#endif
+
 // Platform abstraction
 #include "../Platform/Platform.h"
 
@@ -190,6 +195,9 @@ struct SystemInfo {
     bool btPowerOn = false;
     int btDeviceCount = 0;
 
+    // App version (e.g. "0.14.0")
+    std::string appVersion = TCMT_VERSION_STR;
+
     // Display monitors
     struct DisplayData {
         std::string name;
@@ -298,6 +306,9 @@ struct SharedMemoryBlock {
         int32_t deviceCount;
         WCHAR name[64];
     } bluetooth;
+
+    // App version string (e.g. "0.14.0")
+    WCHAR appVersion[16] = {};
 
     PlatformSystemTime lastUpdate;
     PlatformCriticalSection lock;

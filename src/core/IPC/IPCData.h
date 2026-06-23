@@ -204,6 +204,9 @@ struct IPCDataBlock {
         char     name[64]            = {};
     };
     BtSlot bluetooth                  = {};
+
+    // App version string (e.g. "0.14.0")
+    char     appVersion[16]          = {};
 };
 
 #pragma pack(pop)

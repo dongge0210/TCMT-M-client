@@ -267,6 +267,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
 
         // OS version
         SafeCopyWideString(pBuffer->osVersion, 128, WinUtils::StringToWstring(systemInfo.osVersion));
+        // App version
+        SafeCopyWideString(pBuffer->appVersion, 16, WinUtils::StringToWstring(systemInfo.appVersion));
 
         // CPU
         SafeCopyWideString(pBuffer->cpuName, 128, WinUtils::StringToWstring(systemInfo.cpuName));

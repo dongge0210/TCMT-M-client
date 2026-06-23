@@ -125,6 +125,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     // OS
     addS("os/version",            offsetof(B, osVersion), 128);
     addS("os/model",              offsetof(B, hardwareModel), 128);
+    addS("app/version",           offsetof(B, appVersion), 16);
 
     // GPU
     addS("gpu/0/name",            offsetof(B, gpuName), 48);
@@ -1112,6 +1113,9 @@ int main(int argc, char* argv[]) {
                         b->osVersion[127] = '\0';
                         std::strncpy(b->hardwareModel, data.hardwareModel.c_str(), 127);
                         b->hardwareModel[127] = '\0';
+                        // App version
+                        std::strncpy(b->appVersion, APP_VERSION, 15);
+                        b->appVersion[15] = '\0';
                         // GPU
                         std::strncpy(b->gpuName, data.gpuName.c_str(), 47);
                         b->gpuName[47] = '\0';
