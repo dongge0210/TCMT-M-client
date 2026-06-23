@@ -3,95 +3,103 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
              mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
              x:Class="TCMT.Avalonia.Views.MemoryView"
              x:DataType="vm:MemoryViewModel">
 
   <Design.DataContext>
-    <vm:MemoryViewModel Title="Memory" TotalMemory="32 GB" UsedMemory="16 GB" MemoryPercent="50"/>
+    <vm:MemoryViewModel Title="内存" TotalMemory="16 GB" UsedMemory="8.2 GB" MemoryPercent="51" RamType="DDR5" RamSpeed="6400" HasSwap="True" SwapUsedDisplay="514 MB" SwapTotalDisplay="2 GB" CompressedMemory="5.8 GB"/>
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*">
-    <!-- Header -->
-    <StackPanel Grid.Row="0" Margin="32,28,32,0">
-      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="内存使用详情" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-    </StackPanel>
+    <!-- TopBar matching pen design -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center">
+          <Run Text="内存 · "/><Run Text="{Binding TotalMemory}"/><Run Text=" "/><Run Text="{Binding RamType}"/>
+        </TextBlock>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="{Binding MemoryPercent, StringFormat='{}{0:F0}%'}" FontSize="13" Foreground="{StaticResource SecondaryBrush}"/>
+          <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+    </Border>
 
-    <!-- Content -->
-    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
-      <StackPanel Spacing="20">
-        
-        <!-- Memory Gauge -->
-        <Border Theme="{StaticResource CardBorder}">
-          <Grid ColumnDefinitions="Auto,*">
-            <StackPanel Grid.Column="0" Spacing="16" HorizontalAlignment="Center" Margin="0,0,32,0">
-              <TextBlock Text="内存使用" Theme="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
-              <Panel Width="200" Height="200">
-                <Arc Width="180" Height="180" Stroke="{StaticResource SurfaceLightBrush}" StrokeThickness="18" StartAngle="140" SweepAngle="260" StrokeJoin="Round" StrokeLineCap="Round"/>
-                <Arc Width="180" Height="180" Stroke="{StaticResource SecondaryBrush}" StrokeThickness="18" StartAngle="140" SweepAngle="{Binding MemoryPercent, Converter={StaticResource PercentToAngleConverter}}" StrokeJoin="Round" StrokeLineCap="Round"/>
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                  <TextBlock Text="{Binding MemoryPercent, StringFormat={}{0:F1}%}" FontSize="40" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                  <TextBlock Text="已用" Theme="{StaticResource MetricLabel}" HorizontalAlignment="Center"/>
-                </StackPanel>
-              </Panel>
+    <!-- Content matching pen design -->
+    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
+      <StackPanel Spacing="16">
+
+        <!-- UsageBar matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="内存使用" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <!-- BarTrack -->
+            <Border Background="#30363D" CornerRadius="4" Height="24">
+              <Grid>
+                <Border Background="#3B82F6" CornerRadius="4" HorizontalAlignment="Left" Width="{Binding MemoryPercent, Converter={StaticResource PercentToWidthConverter}}"/>
+                <TextBlock Text="{Binding MemoryPercent, StringFormat='{}{0:F0}%'}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
+            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}">
+              <Run Text="{Binding UsedMemory}"/><Run Text=" 已用于 "/><Run Text="{Binding TotalMemory}"/>
+            </TextBlock>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="{Binding CompressedMemory, StringFormat='压缩: {0}'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" IsVisible="{Binding HasRamInfo}" Margin="0,0,16,0"/>
+              <TextBlock Text="{Binding SwapUsedDisplay, StringFormat='交换: {0}'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" IsVisible="{Binding HasSwap}"/>
             </StackPanel>
-
-            <Grid Grid.Column="1" RowDefinitions="*,*,*" VerticalAlignment="Center">
-              <StackPanel Grid.Row="0" Spacing="4">
-                <TextBlock Text="总内存" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
-                <TextBlock Text="{Binding TotalMemory}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </StackPanel>
-              <StackPanel Grid.Row="1" Spacing="4" Margin="0,16,0,0">
-                <TextBlock Text="已用内存" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
-                <TextBlock Text="{Binding UsedMemory}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
-              </StackPanel>
-              <StackPanel Grid.Row="2" Spacing="4" Margin="0,16,0,0">
-                <TextBlock Text="可用" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
-                <TextBlock Text="{Binding AvailableMemory}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
-              </StackPanel>
-            </Grid>
-          </Grid>
+          </StackPanel>
         </Border>
 
-        <!-- Memory Details -->
-        <Grid ColumnDefinitions="*,*">
-          <Border Theme="{StaticResource CardBorder}" Margin="0,0,10,0">
-            <StackPanel Spacing="12">
-              <TextBlock Text="内存信息" Theme="{StaticResource SectionHeader}"/>
-              <StackPanel Spacing="8">
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="内存类型" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Grid.Column="1" Text="{Binding RamType}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
-                </Grid>
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="内存频率" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Grid.Column="1" Text="{Binding RamSpeed, StringFormat={}{0} MHz}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
-                </Grid>
-                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRamInfo}">
-                  <TextBlock Text="压缩内存" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Grid.Column="1" Text="{Binding CompressedMemory}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
-                </Grid>
-              </StackPanel>
+        <!-- BreakdownGrid: 4 stat cards matching pen design -->
+        <Grid ColumnDefinitions="*,*,*,*" Grid.ColumnSpan="2">
+          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,6,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="已用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding UsedMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
             </StackPanel>
           </Border>
-
-          <Border Theme="{StaticResource CardBorder}" Margin="10,0,0,0" IsVisible="{Binding HasSwap}">
-            <StackPanel Spacing="12">
-              <TextBlock Text="交换区" Theme="{StaticResource SectionHeader}"/>
-              <StackPanel Spacing="8">
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="已用交换" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Grid.Column="1" Text="{Binding SwapUsedDisplay}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
-                </Grid>
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="交换总量" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
-                  <TextBlock Grid.Column="1" Text="{Binding SwapTotalDisplay}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold"/>
-                </Grid>
-              </StackPanel>
+          <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="6,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="可用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding AvailableMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="6,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="压缩" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CompressedMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6" IsVisible="{Binding HasRamInfo}"/>
+              <TextBlock Text="-" FontSize="18" FontWeight="Bold" Foreground="#3B82F6" IsVisible="{Binding HasRamInfo, Converter={StaticResource BoolInvertConverter}}"/>
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="3" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="6,0,0,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="缓存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding AvailableMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
             </StackPanel>
           </Border>
         </Grid>
+
+        <!-- DIMM Section matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="DIMM 温度" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+              <TextBlock Text="DIMM #1" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="-" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="DIMM #2" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="-" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- SpecsRow matching pen design -->
+        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,24">
+          <Run Text="{Binding RamType}"/><Run Text="-"/><Run Text="{Binding RamSpeed, StringFormat='{}{0}'}"/><Run Text=" · 双通道"/>
+        </TextBlock>
 
       </StackPanel>
     </ScrollViewer>
