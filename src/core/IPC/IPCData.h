@@ -103,9 +103,12 @@ struct IPCDataBlock {
     float    pCoreFreq               = 0;
     float    eCoreFreq               = 0;
     float    cpuTemp                 = 0;
+    float    cpuPcoreTemp            = 0;
+    float    cpuEcoreTemp            = 0;
     bool     hyperThreading          = false;
     bool     virtualization          = false;
     float    cpuSampleIntervalMs     = 500;
+    float    cpuBaseFreq             = 0;     // nominal base clock in MHz
     char     timestamp[20]           = {};
 
     // Memory

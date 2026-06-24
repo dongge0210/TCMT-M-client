@@ -101,9 +101,12 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("cpu/freq/pCore",        offsetof(B, pCoreFreq));
     addF("cpu/freq/eCore",        offsetof(B, eCoreFreq));
     addF("cpu/temperature",       offsetof(B, cpuTemp));
+    addF("cpu/pcore/temperature", offsetof(B, cpuPcoreTemp));
+    addF("cpu/ecore/temperature", offsetof(B, cpuEcoreTemp));
     addB("cpu/hyperThreading",    offsetof(B, hyperThreading));
     addB("cpu/virtualization",    offsetof(B, virtualization));
     addF("cpu/sampleIntervalMs",  offsetof(B, cpuSampleIntervalMs));
+    addF("cpu/freq/base",         offsetof(B, cpuBaseFreq));
 
     // Memory
     addU64("memory/total",        offsetof(B, totalMemory));
@@ -1089,9 +1092,12 @@ int main(int argc, char* argv[]) {
                         b->pCoreFreq = static_cast<float>(data.pCoreFreq);
                         b->eCoreFreq = static_cast<float>(data.eCoreFreq);
                         b->cpuTemp = static_cast<float>(data.cpuTemp);
+                        b->cpuPcoreTemp = static_cast<float>(data.cpuPcoreTemp);
+                        b->cpuEcoreTemp = static_cast<float>(data.cpuEcoreTemp);
                         b->hyperThreading = false;
                         b->virtualization = false;
                         b->cpuSampleIntervalMs = 500.0f;
+                        b->cpuBaseFreq = static_cast<float>(cpuInfo->GetLargeCoreSpeed());
                         // Memory
                         b->totalMemory = data.totalMemory;
                         b->usedMemory = data.usedMemory;

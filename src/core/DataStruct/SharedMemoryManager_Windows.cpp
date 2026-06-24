@@ -419,6 +419,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
 
         // Independent CPU / GPU temperatures
         pBuffer->cpuTemperature = systemInfo.cpuTemperature;
+        pBuffer->cpuPcoreTemperature = systemInfo.cpuPcoreTemperature;
+        pBuffer->cpuEcoreTemperature = systemInfo.cpuEcoreTemperature;
         pBuffer->gpuTemperature = systemInfo.gpuTemperature;
         pBuffer->cpuUsageSampleIntervalMs = systemInfo.cpuUsageSampleIntervalMs;
 

@@ -179,6 +179,8 @@ struct SystemInfo {
     std::string networkAdapterType; // Network adapter type (wireless/wired)
     uint64_t networkAdapterSpeed;   // Added
     double cpuTemperature; // CPU temperature
+    double cpuPcoreTemperature = 0.0; // P-core cluster temperature
+    double cpuEcoreTemperature = 0.0; // E-core cluster temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs = 0.0; // CPU usage sample interval (ms)
     // WiFi
@@ -241,6 +243,8 @@ struct SharedMemoryBlock {
     uint32_t ramSpeed;       // RAM frequency in MHz (e.g., 6400)
     WCHAR ramType[32];       // DDR generation (e.g., "DDR5", "LPDDR5")
     double cpuTemperature; // CPU temperature
+    double cpuPcoreTemperature = 0.0; // P-core cluster temperature
+    double cpuEcoreTemperature = 0.0; // E-core cluster temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs; // CPU usage sample interval (ms)
 

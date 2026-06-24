@@ -619,6 +619,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
     addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
     addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
+    addField("cpu/pcore/temperature", offsetof(SharedMemoryBlock, cpuPcoreTemperature), 8);
+    addField("cpu/ecore/temperature", offsetof(SharedMemoryBlock, cpuEcoreTemperature), 8);
     addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
     addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
     addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
@@ -1599,6 +1601,8 @@ int main(int argc, char* argv[]) {
                     tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
                     tuiData.cpuBaseFreq = sysInfo.cpuBaseFreq;
                     tuiData.cpuTemp = sysInfo.cpuTemperature;
+                    tuiData.cpuPcoreTemp = sysInfo.cpuPcoreTemperature;
+                    tuiData.cpuEcoreTemp = sysInfo.cpuEcoreTemperature;
                     tuiData.totalMemory = sysInfo.totalMemory;
                     tuiData.usedMemory = sysInfo.usedMemory;
                     tuiData.availableMemory = sysInfo.availableMemory;

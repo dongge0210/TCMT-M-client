@@ -53,6 +53,8 @@ struct TuiData {
     double gpuFreq = 0.0;
     double gpuMaxFreq = 0.0;
     double cpuTemp = 0.0;
+    double cpuPcoreTemp = 0.0;
+    double cpuEcoreTemp = 0.0;
 
     // Memory
     uint64_t totalMemory = 0;

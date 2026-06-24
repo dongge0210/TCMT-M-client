@@ -205,10 +205,14 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
         std::lock_guard<std::mutex> lock(data_.tempMutex);
         sysInfo.temperatures = data_.temperatures;
         sysInfo.cpuTemperature = data_.cpuTemperature;
+        sysInfo.cpuPcoreTemperature = data_.cpuPcoreTemperature;
+        sysInfo.cpuEcoreTemperature = data_.cpuEcoreTemperature;
         sysInfo.gpuTemperature = data_.gpuTemperature;
         tuiData.temperatures = data_.temperatures;
     }
     tuiData.cpuTemp = sysInfo.cpuTemperature;
+    tuiData.cpuPcoreTemp = sysInfo.cpuPcoreTemperature;
+    tuiData.cpuEcoreTemp = sysInfo.cpuEcoreTemperature;
     tuiData.gpuTemp = sysInfo.gpuTemperature;
 
     // Disk
@@ -300,6 +304,8 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 tempLogged = true;
             }
             data_.cpuTemperature = 0.0;
+            data_.cpuPcoreTemperature = 0.0;
+            data_.cpuEcoreTemperature = 0.0;
             data_.gpuTemperature = 0.0;
 
             for (const auto& [name, temp] : temps) {
@@ -318,9 +324,30 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 if (isGpu) {
                     if (data_.gpuTemperature == 0.0)
                         data_.gpuTemperature = temp;
-                } else {
-                    if (data_.cpuTemperature == 0.0)
-                        data_.cpuTemperature = temp;
+                    continue;
+                }
+
+                // P-core / E-core cluster temperature detection
+                // Apple Silicon SMC reports separate sensors for each cluster:
+                //   "P-core", "pACC", "P cluster", "performance core", etc.
+                //   "E-core", "eACC", "E cluster", "efficiency core", etc.
+                bool isPcore = (lower.find("pcore") != std::string::npos ||
+                                lower.find("p_core") != std::string::npos ||
+                                lower.find("p-core") != std::string::npos ||
+                                lower.find("performance") != std::string::npos ||
+                                (lower.find("p") != std::string::npos && lower.find("acc") != std::string::npos));
+                bool isEcore = (lower.find("ecore") != std::string::npos ||
+                                lower.find("e_core") != std::string::npos ||
+                                lower.find("e-core") != std::string::npos ||
+                                lower.find("efficiency") != std::string::npos ||
+                                (lower.find("e") != std::string::npos && lower.find("acc") != std::string::npos));
+
+                if (isPcore && data_.cpuPcoreTemperature == 0.0) {
+                    data_.cpuPcoreTemperature = temp;
+                } else if (isEcore && data_.cpuEcoreTemperature == 0.0) {
+                    data_.cpuEcoreTemperature = temp;
+                } else if (data_.cpuTemperature == 0.0) {
+                    data_.cpuTemperature = temp;
                 }
             }
 
