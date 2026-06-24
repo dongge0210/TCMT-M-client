@@ -51,6 +51,7 @@ public class SystemInfo
     public string GpuBrand { get; set; } = string.Empty;
     public ulong GpuMemory { get; set; }
     public double GpuCoreFreq { get; set; }
+    public double GpuMemoryPercent { get; set; }
     public bool GpuIsVirtual { get; set; }
     
     public List<NetworkAdapterData> Adapters { get; set; } = new();
@@ -69,11 +70,12 @@ public class SystemInfo
     public int BatteryPercent { get; set; } = -1;
     public bool AcOnline { get; set; }
     public double CpuTemperature { get; set; }
+    public double CpuPcoreTemperature { get; set; }
+    public double CpuEcoreTemperature { get; set; }
     public double GpuTemperature { get; set; }
     public double CpuPower { get; set; }
     public double GpuPower { get; set; }
     public double AnePower { get; set; }
-    public double GpuFreq { get; set; }
     public double CpuUsageSampleIntervalMs { get; set; }
     public DateTime LastUpdate { get; set; }
 
@@ -104,6 +106,7 @@ public class GpuData : ModelBase
     private bool _isVirtual;
     private double _temperature;
     private double _usage;
+    private double _memoryPercent;
 
     public string Name { get => _name; set => SetProperty(ref _name, value); }
     public string Brand { get => _brand; set => SetProperty(ref _brand, value); }
@@ -112,9 +115,11 @@ public class GpuData : ModelBase
     public bool IsVirtual { get => _isVirtual; set => SetProperty(ref _isVirtual, value); }
     public double Temperature { get => _temperature; set => SetProperty(ref _temperature, value); }
     public double Usage { get => _usage; set => SetProperty(ref _usage, value); }
+    public double MemoryPercent { get => _memoryPercent; set => SetProperty(ref _memoryPercent, value); }
     
     public string DisplayName => string.IsNullOrEmpty(Name) ? "未知显卡" : (IsVirtual ? $"{Name} (虚拟)" : Name);
     public string MemoryDisplay => FormatUtils.FormatBytes(Memory);
+    public string MemoryPercentDisplay => MemoryPercent > 0 ? $"{MemoryPercent:F0}%" : "—";
 }
 
 public class NetworkAdapterData : ModelBase

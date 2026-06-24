@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Avalonia;
 using Avalonia.Media;
 using TCMT.Avalonia.Services.Contracts;
 
@@ -10,6 +11,17 @@ public class FontService : IFontService
 {
     public bool IsNativeDialogSupported => OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
 
+    public string? CurrentFontFamily { get; private set; }
+
+    public event Action<string, double>? FontChanged;
+
+    public string GetCjkFallbackFont()
+    {
+        if (OperatingSystem.IsMacOS()) return "PingFang SC";
+        if (OperatingSystem.IsWindows()) return "Microsoft YaHei";
+        return "Noto Sans CJK SC";
+    }
+
     public IReadOnlyList<string> GetSystemFonts()
     {
         return FontManager.Current.SystemFonts
@@ -17,6 +29,19 @@ public class FontService : IFontService
             .Distinct()
             .OrderBy(n => n)
             .ToList();
+    }
+
+    public void ApplyAppFont(string family, double size = 13)
+    {
+        try
+        {
+            CurrentFontFamily = family;
+            FontChanged?.Invoke(family, size);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"FontService.ApplyAppFont: {ex.Message}");
+        }
     }
 
     public Task<FontSelection?> PickFontAsync(FontSelection? current = null)
@@ -35,8 +60,10 @@ public class FontService : IFontService
     [SupportedOSPlatform("macos")]
     private static FontSelection? MacPickFont(FontSelection? current)
     {
-        // NSFontPanel is not available from this process context.
-        // Fall back to using the system font list instead.
+        // macOS NSFontPanel requires a full AppKit event loop integration
+        // that conflicts with Avalonia's render loop. Use the system font
+        // list (CoreText via FontManager) as the primary macOS UX — it
+        // queries the same OS font registry that NSFontPanel would show.
         return null;
     }
 

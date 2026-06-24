@@ -80,25 +80,9 @@
           </Border>
         </Grid>
 
-        <!-- DIMM Section matching pen design -->
-        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16">
-          <StackPanel Spacing="8">
-            <TextBlock Text="DIMM 温度" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
-            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-              <TextBlock Text="DIMM #1" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Grid.Column="1" Text="-" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="DIMM #2" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Grid.Column="1" Text="-" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-            </Grid>
-          </StackPanel>
-        </Border>
-
         <!-- SpecsRow matching pen design -->
         <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,24">
-          <Run Text="{Binding RamType}"/><Run Text="-"/><Run Text="{Binding RamSpeed, StringFormat='{}{0}'}"/><Run Text=" · 双通道"/>
+          <Run Text="{Binding RamType}"/><Run Text="-"/><Run Text="{Binding RamSpeed, StringFormat='{}{0}'}"/>
         </TextBlock>
 
       </StackPanel>

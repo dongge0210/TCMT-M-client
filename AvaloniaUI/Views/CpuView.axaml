@@ -40,7 +40,7 @@
               <TextBlock Text="P-Core 平均" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Text="{Binding CpuFrequency}" FontSize="18" FontWeight="Bold" Foreground="#238636"/>
               <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
-                <Run Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C · '}"/><Run Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}"/>
+                <Run Text="{Binding CpuPcoreTemperature, StringFormat='{}{0:F0}°C · '}"/><Run Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}"/>
               </TextBlock>
             </StackPanel>
           </Border>
@@ -49,7 +49,7 @@
             <StackPanel Spacing="4">
               <TextBlock Text="E-Core 平均" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Text="{Binding CpuEfficiencyFrequency}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
-              <TextBlock Text="-" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuEcoreTemperature, StringFormat='{}{0:F0}°C'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
             </StackPanel>
           </Border>
           <!-- Usage summary -->
@@ -57,7 +57,7 @@
             <StackPanel Spacing="4">
               <TextBlock Text="总使用率" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-              <TextBlock Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuPcoreTemperature, StringFormat='{}{0:F0}°C'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
             </StackPanel>
           </Border>
           <!-- Base freq -->

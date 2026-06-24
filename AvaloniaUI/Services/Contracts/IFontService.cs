@@ -20,4 +20,25 @@ public interface IFontService
     /// (Linux typically returns false — fontconfig doesn't have a standard UI.)
     /// </summary>
     bool IsNativeDialogSupported { get; }
+
+    /// <summary>
+    /// Apply a font family globally to the running application.
+    /// </summary>
+    void ApplyAppFont(string family, double size = 13);
+
+    /// <summary>
+    /// Current application font family, or null if default.
+    /// </summary>
+    string? CurrentFontFamily { get; }
+
+    /// <summary>
+    /// Raised when the app font is changed.
+    /// </summary>
+    event Action<string, double>? FontChanged;
+
+    /// <summary>
+    /// Get a platform-appropriate CJK fallback font name.
+    /// macOS: PingFang SC / Windows: Microsoft YaHei / Linux: Noto Sans CJK SC
+    /// </summary>
+    string GetCjkFallbackFont();
 }

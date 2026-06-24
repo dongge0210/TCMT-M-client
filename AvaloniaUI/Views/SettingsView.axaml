@@ -40,6 +40,46 @@
           </StackPanel>
         </Border>
 
+        <!-- Font -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="16">
+            <TextBlock Text="字体" Theme="{StaticResource SectionHeader}"/>
+
+            <StackPanel Spacing="8">
+              <TextBlock Text="系统字体" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <ComboBox ItemsSource="{Binding SystemFonts}"
+                        SelectedItem="{Binding SelectedFontFamily}"
+                        Width="280">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}" FontSize="13"/>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+              <TextBlock Text="字号" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <NumericUpDown Value="{Binding FontSize}" Minimum="8" Maximum="32" Width="100"/>
+            </StackPanel>
+
+            <!-- Native font dialog (Windows only) -->
+            <Button Content="系统字体面板…"
+                    Command="{Binding PickSystemFontCommand}"
+                    IsVisible="{Binding ShowNativeDialogButton}"
+                    Width="160"
+                    HorizontalAlignment="Left"/>
+
+            <!-- Preview -->
+            <Border Background="#0D1117" CornerRadius="6" Padding="12">
+              <TextBlock Text="{Binding FontPreviewText}"
+                         FontFamily="{Binding SelectedFontFamily}"
+                         FontSize="{Binding FontSize}"
+                         Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Border>
+          </StackPanel>
+        </Border>
+
         <!-- About -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">

@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System;
@@ -38,10 +39,23 @@ public partial class App : Application
                 
                 mainWindow.DataContext = mainVm;
                 desktop.MainWindow = mainWindow;
+
+                // Listen for font changes from Settings
+                var fontService = Services.GetRequiredService<IFontService>();
+                var cjkFallback = fontService.GetCjkFallbackFont();
+                Action<string, double> onFontChanged = (family, _) =>
+                {
+                    mainWindow.FontFamily = new FontFamily($"{family}, {cjkFallback}");
+                };
+                fontService.FontChanged += onFontChanged;
                 
                 // Handle startup
                 desktop.Startup += async (_, _) => await mainVm.InitializeAsync();
-                desktop.Exit += (_, _) => OnExit();
+                desktop.Exit += (_, _) =>
+                {
+                    fontService.FontChanged -= onFontChanged;
+                    OnExit();
+                };
                 
                 // Tray icon support
                 SetupTrayIcon(mainVm);
@@ -66,6 +80,7 @@ public partial class App : Application
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton<IHardwareService, HardwareMonitorService>();
         services.AddSingleton<IPCService>();
+        services.AddSingleton<IFontService, FontService>();
 
         // ViewModels - Transient
         services.AddTransient<MainWindowViewModel>();

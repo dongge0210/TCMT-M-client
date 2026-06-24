@@ -89,19 +89,11 @@
                                     Padding="12,10" 
                                     Margin="0,2"
                                     Background="{Binding IsSelected, Converter={StaticResource NavSelectedToBgConverter}}">
-                                <Grid ColumnDefinitions="28,*">
-                                    <TextBlock Text="{Binding Icon}" 
-                                               FontSize="16" 
-                                               HorizontalAlignment="Center" 
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" 
-                                               Text="{Binding Title}" 
-                                               FontSize="13" 
-                                               FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeight}}" 
-                                               Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"
-                                               VerticalAlignment="Center"
-                                               Margin="8,0,0,0"/>
-                                </Grid>
+                                <TextBlock Text="{Binding Title}" 
+                                           FontSize="13" 
+                                           FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeightConverter}}" 
+                                           Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"
+                                           VerticalAlignment="Center"/>
                             </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>

@@ -24,7 +24,7 @@ public partial class TemperaturesViewModel : ViewModelBase
     public TemperaturesViewModel()
     {
         Title = "温度";
-        Icon = "🌡️";
+        Icon = "temperature";
     }
 
     public override void Update(SystemInfo info)

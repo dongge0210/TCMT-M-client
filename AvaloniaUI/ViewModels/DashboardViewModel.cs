@@ -55,7 +55,7 @@ public partial class DashboardViewModel : ViewModelBase
     public DashboardViewModel()
     {
         Title = "概览";
-        Icon = "📊";
+        Icon = "dashboard";
     }
 
     public override void Update(SystemInfo info)

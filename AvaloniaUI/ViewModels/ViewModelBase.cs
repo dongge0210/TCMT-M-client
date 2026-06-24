@@ -9,7 +9,7 @@ public abstract partial class ViewModelBase : ObservableObject
     private string _title = "";
 
     [ObservableProperty]
-    private string _icon = "📊";
+    private string _icon = "dashboard";
 
     [ObservableProperty]
     private bool _isLoading;

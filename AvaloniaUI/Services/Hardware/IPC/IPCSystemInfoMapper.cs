@@ -31,6 +31,8 @@ public static class IPCSystemInfoMapper
             info.HyperThreading = reader.ReadBool("cpu/hyperThreading") ?? false;
             info.Virtualization = reader.ReadBool("cpu/virtualization") ?? false;
             info.CpuTemperature = reader.ReadFloat64("cpu/temperature") ?? (double?)reader.ReadFloat32("cpu/temperature") ?? 0;
+            info.CpuPcoreTemperature = reader.ReadFloat64("cpu/pcore/temperature") ?? (double?)reader.ReadFloat32("cpu/pcore/temperature") ?? 0;
+            info.CpuEcoreTemperature = reader.ReadFloat64("cpu/ecore/temperature") ?? (double?)reader.ReadFloat32("cpu/ecore/temperature") ?? 0;
             info.CpuUsageSampleIntervalMs = reader.ReadFloat64("cpu/sampleIntervalMs") ?? 500;
 
             // Memory
@@ -59,11 +61,11 @@ public static class IPCSystemInfoMapper
             info.GpuName = ipc.ReadWString("gpu/0/name") ?? reader.ReadString("gpu/0/name") ?? "";
             info.GpuBrand = ipc.ReadWString("gpu/0/brand") ?? reader.ReadString("gpu/0/brand") ?? "";
             info.GpuMemory = reader.ReadUInt64("gpu/0/memory") ?? 0;
-            info.GpuCoreFreq = reader.ReadFloat64("gpu/0/memoryPercent") ?? (double?)reader.ReadFloat32("gpu/0/memoryPercent") ?? 0;
+            info.GpuCoreFreq = reader.ReadFloat64("gpu/freq") ?? (double?)reader.ReadFloat32("gpu/freq") ?? 0;
+            info.GpuMemoryPercent = reader.ReadFloat64("gpu/0/memoryPercent") ?? (double?)reader.ReadFloat32("gpu/0/memoryPercent") ?? 0;
             var gpuUsage = reader.ReadFloat64("gpu/0/usage") ?? (double?)reader.ReadFloat32("gpu/0/usage") ?? 0;
             info.GpuTemperature = reader.ReadFloat64("gpu/0/temperature") ?? (double?)reader.ReadFloat32("gpu/0/temperature") ?? 0;
             info.GpuIsVirtual = reader.ReadBool("gpu/0/isVirtual") ?? false;
-            info.GpuFreq = reader.ReadFloat64("gpu/freq") ?? (double?)reader.ReadFloat32("gpu/freq") ?? 0;
 
             if (!string.IsNullOrEmpty(info.GpuName))
             {
@@ -76,6 +78,7 @@ public static class IPCSystemInfoMapper
                         Memory = info.GpuMemory,
                         Usage = gpuUsage,
                         CoreClock = info.GpuCoreFreq,
+                        MemoryPercent = info.GpuMemoryPercent,
                         IsVirtual = info.GpuIsVirtual,
                         Temperature = info.GpuTemperature
                     }

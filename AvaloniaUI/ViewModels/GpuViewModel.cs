@@ -39,7 +39,7 @@ public partial class GpuViewModel : ViewModelBase
     public GpuViewModel()
     {
         Title = "GPU";
-        Icon = "🎮";
+        Icon = "gpu";
     }
 
     public override void Update(SystemInfo info)
@@ -68,7 +68,7 @@ public partial class GpuViewModel : ViewModelBase
         GpuUsage = selectedGpu.Usage;
         GpuTemperature = selectedGpu.Temperature;
         CoreClock = FormatUtils.FormatFrequency(selectedGpu.CoreClock);
-        MemoryClock = FormatUtils.FormatFrequency(info.GpuFreq);
+        MemoryClock = "—";
         GpuPowerDisplay = FormatUtils.FormatPower(info.GpuPower);
         DriverInfo = string.IsNullOrEmpty(selectedGpu.Brand) ? "" : selectedGpu.Brand;
     }
