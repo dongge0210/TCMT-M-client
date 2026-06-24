@@ -1,5 +1,5 @@
 {
-  "version": "2.13",
+  "version": "2.14",
   "children": [
     {
       "type": "frame",
@@ -4844,7 +4844,8 @@
                       "fill": "#8B949E",
                       "content": "SSD 2",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -4872,7 +4873,8 @@
                       "fill": "#8B949E",
                       "content": "HDD 1",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -4900,7 +4902,8 @@
                       "fill": "#8B949E",
                       "content": "HDD 2",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -4928,7 +4931,8 @@
                       "fill": "#8B949E",
                       "content": "NVMe 1",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -4956,7 +4960,8 @@
                       "fill": "#8B949E",
                       "content": "NVMe 2",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -4984,7 +4989,8 @@
                       "fill": "#8B949E",
                       "content": "RAID",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -5565,7 +5571,8 @@
                       "fill": "#8B949E",
                       "content": "en1 Eth",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -5593,7 +5600,8 @@
                       "fill": "#8B949E",
                       "content": "en2 TB",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -5621,7 +5629,8 @@
                       "fill": "#8B949E",
                       "content": "bridge0",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -5649,7 +5658,8 @@
                       "fill": "#8B949E",
                       "content": "utun0",
                       "fontFamily": "Fira Code",
-                      "fontSize": 11
+                      "fontSize": 11,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -7432,5 +7442,6 @@
         }
       ]
     }
-  ]
+  ],
+  "fileToken": "9e98a651-bf58-45a5-96ca-8eef11dea2d5"
 }
