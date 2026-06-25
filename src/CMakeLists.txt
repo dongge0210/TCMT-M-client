@@ -245,15 +245,47 @@ set(SQLITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
 set(SQLITE3_C "${SQLITE_DIR}/sqlite3.c")
 set(SQLITE3_H "${SQLITE_DIR}/sqlite3.h")
 
-# Generate amalgamation on first configure (requires jimsh/tclsh from submodule)
+# Generate amalgamation on first configure.
+# Unix: uses sh/configure/make from the SQLite submodule.
+# Windows: downloads pre-built amalgamation from sqlite.org (no sh/make needed).
 if(NOT EXISTS "${SQLITE3_C}" OR NOT EXISTS "${SQLITE3_H}")
     message(STATUS "Generating SQLite amalgamation...")
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E chdir "${SQLITE_DIR}"
-                sh -c "./configure > /dev/null 2>&1 && make sqlite3.c > /dev/null 2>&1"
-        RESULT_VARIABLE _sqlite_gen_rc
-        TIMEOUT 120
-    )
+    if(WIN32)
+        set(SQLITE_AMALG_URL "https://sqlite.org/2026/sqlite-amalgamation-3540000.zip")
+        set(SQLITE_AMALG_ZIP "${CMAKE_BINARY_DIR}/sqlite-amalgamation.zip")
+        file(DOWNLOAD "${SQLITE_AMALG_URL}" "${SQLITE_AMALG_ZIP}"
+             STATUS _dl_status TIMEOUT 60 SHOW_PROGRESS)
+        list(GET _dl_status 0 _dl_rc)
+        if(NOT _dl_rc EQUAL 0)
+            list(GET _dl_status 1 _dl_msg)
+            message(FATAL_ERROR "Failed to download SQLite amalgamation: ${_dl_msg}")
+        endif()
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E tar xf "${SQLITE_AMALG_ZIP}"
+            WORKING_DIRECTORY "${SQLITE_DIR}"
+            RESULT_VARIABLE _sqlite_gen_rc
+        )
+        if(_sqlite_gen_rc EQUAL 0)
+            file(GLOB _amalg_dir LIST_DIRECTORIES true "${SQLITE_DIR}/sqlite-amalgamation-*")
+            list(LENGTH _amalg_dir _amalg_len)
+            if(_amalg_len GREATER 0)
+                list(GET _amalg_dir 0 _amalg_dir_first)
+                file(COPY "${_amalg_dir_first}/sqlite3.c"
+                          "${_amalg_dir_first}/sqlite3.h"
+                          "${_amalg_dir_first}/sqlite3ext.h"
+                     DESTINATION "${SQLITE_DIR}")
+                file(REMOVE_RECURSE "${_amalg_dir_first}")
+            endif()
+        endif()
+        file(REMOVE "${SQLITE_AMALG_ZIP}")
+    else()
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E chdir "${SQLITE_DIR}"
+                    sh -c "./configure > /dev/null 2>&1 && make sqlite3.c > /dev/null 2>&1"
+            RESULT_VARIABLE _sqlite_gen_rc
+            TIMEOUT 120
+        )
+    endif()
     if(NOT _sqlite_gen_rc EQUAL 0)
         message(FATAL_ERROR "SQLite amalgamation generation failed")
     endif()
