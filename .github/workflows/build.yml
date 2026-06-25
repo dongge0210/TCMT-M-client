@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -152,3 +152,54 @@ jobs:
       with:
         name: TCMT-macOS-arm64-Release
         path: build/src/TCMT-M
+
+  release-alpha:
+    name: Alpha Release
+    if: github.event_name == 'workflow_dispatch'
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: TCMT-Windows-x64-Release
+        path: artifacts/windows
+
+    - name: Download macOS artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: TCMT-macOS-arm64-Release
+        path: artifacts/macos
+
+    - name: Package artifacts
+      run: |
+        cd artifacts
+        chmod +x macos/TCMT-M
+        zip -r TCMT-Windows-x64-alpha.zip windows/
+        zip -r TCMT-macOS-arm64-alpha.zip macos/
+
+    - name: Generate alpha tag
+      id: tag
+      run: |
+        TAG="alpha-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_RUN_ID}"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Create Alpha Release
+      uses: softprops/action-gh-release@46306abe601df0f59c9fea99b2f95e701f65b3d3  # v2.2.2
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        name: Alpha ${{ steps.tag.outputs.tag }}
+        body: |
+          ## 🚧 Alpha Build
+
+          **Commit**: ${{ github.sha }}
+          **Branch**: ${{ github.ref_name }}
+          **Run**: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          自动构建产物，仅供测试。
+        draft: false
+        prerelease: true
+        files: |
+          artifacts/TCMT-Windows-x64-alpha.zip
+          artifacts/TCMT-macOS-arm64-alpha.zip
