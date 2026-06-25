@@ -241,13 +241,12 @@ jobs:
         tag_name: ${{ steps.tag.outputs.tag }}
         name: Alpha ${{ steps.tag.outputs.tag }}
         body: |
-          ## 🚧 Alpha Build
+          Commit: ${{ github.sha }}
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          **Commit**: ${{ github.sha }}
-          **Branch**: ${{ github.ref_name }}
-          **Run**: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-          自动构建产物，仅供测试。
+          Artifacts:
+          - TCMT-Windows-x64-alpha.zip
+          - TCMT-macOS-arm64-alpha.zip
         draft: false
         prerelease: true
         files: |
