@@ -61,6 +61,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
+#include <USBMonitor.h>
 #include "core/bluetooth/BluetoothInfo.h"
 #include "core/notifications/DeviceChangeNotifier.h"
 #include "core/MCP/MCPServer.h"
@@ -1088,6 +1089,24 @@ int main(int argc, char* argv[]) {
                             + " PID:" + std::to_string(devs[di].pid));
         } catch (...) { Logger::Debug("USB: initial scan failed"); }
 
+        // USB flash drive hotplug monitor (USBMonitor-cpp)
+        USBMonitor usbFlashMonitor(
+            [](UsbState state, std::string path) {
+                switch (state) {
+                    case UsbState::Inserted:
+                        Logger::Info("USB flash drive inserted: " + path);
+                        break;
+                    case UsbState::Removed:
+                        Logger::Info("USB flash drive removed: " + path);
+                        break;
+                    case UsbState::UpdateReady:
+                        Logger::Info("USB update drive detected: " + path);
+                        break;
+                }
+            }
+        );
+        usbFlashMonitor.startMonitoring();
+
         // History logger (SQLite)
         HistoryLogger historyLogger;
         historyLogger.SetRetentionDays(30);
@@ -1580,6 +1599,16 @@ int main(int argc, char* argv[]) {
                     tuiData.gpuPower = sysInfo.gpuPower;
                     tuiData.anePower = sysInfo.anePower;
                     tuiData.gpuFreq = sysInfo.gpuFreq;
+                    // GPU fan (NVML)
+                    tuiData.gpuFanSpeed = GpuInfo::GetGpuFanSpeed();
+                    // GPU processes (NVML)
+                    tuiData.gpuProcesses.clear();
+                    for (const auto& gp : GpuInfo::GetGpuProcesses()) {
+                        tcmt::TuiData::GpuProcInfo pi;
+                        pi.pid = gp.pid;
+                        pi.vramBytes = gp.usedGpuMemory;
+                        tuiData.gpuProcesses.push_back(pi);
+                    }
 
                     // Disks
                     for (const auto& disk : sysInfo.disks) {

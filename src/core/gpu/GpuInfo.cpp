@@ -45,6 +45,15 @@ using NvmlDeviceGetUtilizationRatesFn = nvmlReturn_t (*)(nvmlDevice_t, nvmlUtili
 using NvmlDeviceGetTemperatureFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
 using NvmlDeviceGetClockInfoFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
 using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
+using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+// NVML process info (locally defined struct to avoid header dependency)
+struct nvmlProcessInfo_t {
+    unsigned int pid;
+    unsigned long long usedGpuMemory;
+};
+constexpr unsigned int NVML_MAX_PROCESSES = 32;
+using NvmlDeviceGetComputeRunningProcessesFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -58,6 +67,9 @@ struct NvmlApi {
     NvmlDeviceGetTemperatureFn getTemperature = nullptr;
     NvmlDeviceGetClockInfoFn getClockInfo = nullptr;
     NvmlDeviceGetCudaComputeCapabilityFn getCudaComputeCapability = nullptr;
+    NvmlDeviceGetNumFansFn getNumFans = nullptr;
+    NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
+    NvmlDeviceGetComputeRunningProcessesFn getComputeRunningProcesses = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -98,6 +110,20 @@ static NvmlApi& GetNvmlApi() {
 
         api.getCudaComputeCapability = reinterpret_cast<NvmlDeviceGetCudaComputeCapabilityFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCudaComputeCapability"));
+
+        // Optional NVML functions (may not exist on older drivers)
+        api.getNumFans = reinterpret_cast<NvmlDeviceGetNumFansFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetNumFans"));
+        api.getFanSpeed = reinterpret_cast<NvmlDeviceGetFanSpeedFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
+        api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses_v3"));
+        if (!api.getComputeRunningProcesses)
+            api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
+                GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses_v2"));
+        if (!api.getComputeRunningProcesses)
+            api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
+                GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses"));
 
         // Validate mandatory functions -- if any are missing, treat as unavailable
         if (!api.init || !api.shutdown || !api.getHandleByIndex) {
@@ -304,6 +330,34 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
+
+int GpuInfo::GetGpuFanSpeed() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getNumFans || !s.api->getFanSpeed) return -1;
+    unsigned int numFans = 0;
+    if (NVML_SUCCESS != s.api->getNumFans(s.device, &numFans) || numFans == 0) return -1;
+    unsigned int speed = 0;
+    if (NVML_SUCCESS != s.api->getFanSpeed(s.device, &speed)) return -1;
+    return static_cast<int>(speed);
+}
+
+std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() {
+    std::vector<GpuProcess> result;
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getComputeRunningProcesses) return result;
+    nvmlProcessInfo_t infos[NVML_MAX_PROCESSES];
+    unsigned int count = NVML_MAX_PROCESSES;
+    if (NVML_SUCCESS != s.api->getComputeRunningProcesses(s.device, &count, infos)) return result;
+    for (unsigned int i = 0; i < count && i < NVML_MAX_PROCESSES; ++i) {
+        if (infos[i].usedGpuMemory > 0) {
+            GpuProcess p;
+            p.pid = infos[i].pid;
+            p.usedGpuMemory = infos[i].usedGpuMemory;
+            result.push_back(p);
+        }
+    }
+    return result;
+}
 
 #elif defined(TCMT_MACOS)
 // ======================== macOS Implementation ========================
@@ -536,6 +590,9 @@ void GpuInfo::RefreshUsage() {
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
 
+int GpuInfo::GetGpuFanSpeed() { return -1; }
+std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() { return {}; }
+
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
 #include <fstream>
@@ -732,6 +789,9 @@ void GpuInfo::RefreshUsage() {
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
+
+int GpuInfo::GetGpuFanSpeed() { return -1; }
+std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() { return {}; }
 
 #else
 #error "Unsupported platform"

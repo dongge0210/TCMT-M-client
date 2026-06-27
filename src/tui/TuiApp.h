@@ -72,6 +72,12 @@ struct TuiData {
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
+    int gpuFanSpeed = -1;            // NVML fan speed % (0-100), -1 = N/A
+    struct GpuProcInfo {
+        unsigned int pid = 0;
+        unsigned long long vramBytes = 0;
+    };
+    std::vector<GpuProcInfo> gpuProcesses;
 
     // Disk
     struct DiskInfo {

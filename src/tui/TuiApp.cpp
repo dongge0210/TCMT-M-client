@@ -365,6 +365,17 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
             mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
+    if (data.gpuFanSpeed >= 0) {
+        mvwprintw(win, y + lines, x0 + 2, "Fan: %d%%", data.gpuFanSpeed);
+        lines++;
+    }
+    for (const auto& gp : data.gpuProcesses) {
+        char buf[96];
+        snprintf(buf, sizeof(buf), "PID %-6u VRAM %s", gp.pid, FormatSize(gp.vramBytes).c_str());
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, buf);
+        lines++;
+        if (lines > 10) break; // limit display
+    }
     return lines;
 }
 
