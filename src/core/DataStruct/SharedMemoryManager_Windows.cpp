@@ -349,7 +349,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             int attrCount = src.attributeCount;
             if (attrCount < 0) attrCount = 0; if (attrCount > 32) attrCount = 32;
             pBuffer->physicalDisks[i].attrCount = attrCount;
-            strncpy(pBuffer->physicalDisks[i].attrsJson, src.attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson) - 1);
+            strncpy_s(pBuffer->physicalDisks[i].attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson), src.attrsJson, _TRUNCATE);
         }
 
         // Temperature sensors
