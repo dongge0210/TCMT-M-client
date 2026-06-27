@@ -116,14 +116,11 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetNumFans"));
         api.getFanSpeed = reinterpret_cast<NvmlDeviceGetFanSpeedFn>(
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
+        // Only use v1 of ComputeRunningProcesses — matches our nvmlProcessInfo_t layout.
+        // v2/v3 structs are larger (extra instanceId fields + ccProtectedMemory), causing
+        // buffer overrun and garbage VRAM values when interpreted as v1.
         api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
-            GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses_v3"));
-        if (!api.getComputeRunningProcesses)
-            api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
-                GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses_v2"));
-        if (!api.getComputeRunningProcesses)
-            api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
-                GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses"));
+            GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses"));
 
         // Validate mandatory functions -- if any are missing, treat as unavailable
         if (!api.init || !api.shutdown || !api.getHandleByIndex) {
