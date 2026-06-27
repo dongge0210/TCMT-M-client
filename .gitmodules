@@ -29,3 +29,9 @@
 	path = src/third_party/sqlite
 	url = https://github.com/dongge0210/sqlite.git
 	ignore = untracked
+[submodule "src/third_party/USBMonitor-cpp"]
+	path = src/third_party/USBMonitor-cpp
+	url = https://github.com/dongge0210/USBMonitor-cpp
+[submodule "src/third_party/websocketpp"]
+	path = src/third_party/websocketpp
+	url = https://github.com/dongge0210/websocketpp.git
