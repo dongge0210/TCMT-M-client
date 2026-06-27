@@ -396,7 +396,6 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         // App version
         SafeCopyStr(pBuffer->appVersion, sizeof(pBuffer->appVersion), systemInfo.appVersion);
 
-        pBuffer->lastUpdate = Platform::SystemTime::Now();
         Logger::Trace("Successfully wrote system info to IPC shared memory");
     } catch (const std::exception& e) {
         // seqlock: mark write complete (even) despite failure

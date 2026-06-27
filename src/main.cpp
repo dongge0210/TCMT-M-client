@@ -1739,6 +1739,7 @@ int main(int argc, char* argv[]) {
                       // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)
                       sysInfo.wifiPowerOn = wd.powerOn;
                       sysInfo.wifiIsConnected = wd.isConnected;
+                    }
 
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
 
