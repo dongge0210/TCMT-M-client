@@ -103,7 +103,6 @@ if(TCMT_WINDOWS)
     list(APPEND TEMP_SOURCES_WINDOWS
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/TemperatureWrapper.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/WMIManager.cpp
     )
     list(APPEND TEMP_SOURCES ${TEMP_SOURCES_WINDOWS})
@@ -353,14 +352,11 @@ if(TCMT_WINDOWS)
     # Windows: use main.cpp (with TUI support via #ifdef)
     add_executable(TCMT-M
         ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-        # Windows-specific GPU bridge (C++/CLI)
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
     )
 
     # C++/CLI support for Windows
     if(MSVC)
         set_source_files_properties(
-            ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
             PROPERTIES
             COMPILE_FLAGS "/clr"
