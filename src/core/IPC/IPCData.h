@@ -144,6 +144,7 @@ struct IPCDataBlock {
 
     // Disks (up to 4)
     struct DiskSlot {
+        char     letter              = '\0';
         char     label[32]           = {};
         uint64_t totalSize           = 0;
         uint64_t usedSpace           = 0;
@@ -185,6 +186,8 @@ struct IPCDataBlock {
         bool     smartSupported      = false;
         int32_t  attrCount           = 0;
         char     attrsJson[4096]     = {}; // SMART attributes as JSON array
+        char     logicalDriveLetters[8] = {}; // e.g., "CD"
+        int32_t  logicalDriveCount   = 0;
     };
     PhysDiskSlot physicalDisks[8]    = {};
     uint8_t  physDiskCount           = 0;

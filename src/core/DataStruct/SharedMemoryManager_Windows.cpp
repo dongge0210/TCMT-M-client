@@ -325,6 +325,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->diskCount = static_cast<uint8_t>((std::min)(systemInfo.disks.size(), static_cast<size_t>(4)));
         for (int i = 0; i < static_cast<int>(pBuffer->diskCount); ++i) {
             const auto& disk = systemInfo.disks[i];
+            pBuffer->disks[i].letter = disk.letter;
             SafeCopyStr(pBuffer->disks[i].label, sizeof(pBuffer->disks[i].label), disk.label);
             SafeCopyStr(pBuffer->disks[i].fs, sizeof(pBuffer->disks[i].fs), disk.fileSystem);
             pBuffer->disks[i].totalSize = disk.totalSize;
@@ -332,7 +333,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->disks[i].freeSpace = disk.freeSpace;
         }
 
-        // Physical disks + SMART (simplified: model/serial/capacity/interface/temp/health/attrsJson)
+        // Physical disks + SMART
         pBuffer->physDiskCount = static_cast<uint8_t>((std::min)(systemInfo.physicalDisks.size(), static_cast<size_t>(8)));
         for (int i = 0; i < static_cast<int>(pBuffer->physDiskCount); ++i) {
             const auto& src = systemInfo.physicalDisks[i];
@@ -350,6 +351,15 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             if (attrCount < 0) attrCount = 0; if (attrCount > 32) attrCount = 32;
             pBuffer->physicalDisks[i].attrCount = attrCount;
             strncpy_s(pBuffer->physicalDisks[i].attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson), src.attrsJson, _TRUNCATE);
+            // Logical drive letters
+            int ldCount = 0;
+            memset(pBuffer->physicalDisks[i].logicalDriveLetters, 0, sizeof(pBuffer->physicalDisks[i].logicalDriveLetters));
+            for (char l : src.logicalDriveLetters) {
+                if (ldCount >= 8 || l == 0) break;
+                if (std::isalpha(static_cast<unsigned char>(l)))
+                    pBuffer->physicalDisks[i].logicalDriveLetters[ldCount++] = l;
+            }
+            pBuffer->physicalDisks[i].logicalDriveCount = ldCount;
         }
 
         // Temperature sensors

@@ -674,6 +674,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     for (int i = 0; i < 4; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
         uint32_t base = offsetof(B, disks) + i * sizeof(B::DiskSlot);
+        addField((std::string(pfx)+"letter").c_str(), base + offsetof(B::DiskSlot, letter), 1, (uint8_t)FT::UInt8);
         addField((std::string(pfx)+"label").c_str(), base + offsetof(B::DiskSlot, label), sizeof(B::DiskSlot::label), (uint8_t)FT::String);
         addField((std::string(pfx)+"total").c_str(), base + offsetof(B::DiskSlot, totalSize), 8, (uint8_t)FT::UInt64);
         addField((std::string(pfx)+"used").c_str(),  base + offsetof(B::DiskSlot, usedSpace), 8, (uint8_t)FT::UInt64);
@@ -702,6 +703,11 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(B::PhysDiskSlot, smartSupported), 1, (uint8_t)FT::Bool);
         addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(B::PhysDiskSlot, attrCount), 4, (uint8_t)FT::Int32);
         addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(B::PhysDiskSlot, attrsJson), sizeof(B::PhysDiskSlot::attrsJson), (uint8_t)FT::String);
+        for (int j = 0; j < 8; j++) {
+            char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);
+            addField(fn, base + offsetof(B::PhysDiskSlot, logicalDriveLetters) + j, 1, (uint8_t)FT::UInt8);
+        }
+        addField((std::string(pfx)+"letterCount").c_str(), base + offsetof(B::PhysDiskSlot, logicalDriveCount), 4, (uint8_t)FT::Int32);
     }
 
     // WiFi
