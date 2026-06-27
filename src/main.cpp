@@ -733,6 +733,182 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("app/version", offsetof(B, appVersion), sizeof(B::appVersion), (uint8_t)FT::String);
 }
 
+// ======================== Mode Handlers ========================
+
+// --json: one-shot JSON snapshot to stdout (for scripting / CI)
+static int RunJsonMode() {
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr)) {
+        Logger::Error("COM init failed for --json mode");
+        return 1;
+    }
+
+    auto wmiManager = std::make_unique<WmiManager>();
+    if (!wmiManager || !wmiManager->IsInitialized()) {
+        Logger::Error("WMI init failed for --json mode");
+        CoUninitialize();
+        return 1;
+    }
+
+    char tmpBuf[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmpBuf);
+    std::string tmpPath = std::string(tmpBuf) + "tcmt_export.json";
+    std::remove(tmpPath.c_str());
+    ConfigManager cfg(tmpPath);
+    cfg.Load();
+
+    try { OSInfo os; cfg.SetString("os.version", os.GetVersion()); } catch (...) {}
+    try {
+        auto cpu = std::make_unique<CpuInfo>();
+        cfg.SetString("cpu.name", cpu->GetName());
+        cfg.SetInt("cpu.cores.physical", cpu->GetLargeCores() + cpu->GetSmallCores());
+        cfg.SetInt("cpu.cores.logical", cpu->GetTotalCores());
+        cfg.SetDouble("cpu.usage", cpu->GetUsage());
+    } catch (...) {}
+    try {
+        MemoryInfo mem;
+        cfg.SetUint64("memory.total", mem.GetTotalPhysical());
+        cfg.SetUint64("memory.available", mem.GetAvailablePhysical());
+        cfg.SetUint64("memory.used", mem.GetTotalPhysical() - mem.GetAvailablePhysical());
+    } catch (...) {}
+    try {
+        GpuInfo gpuInfo(*wmiManager);
+        const auto& gpus = gpuInfo.GetGpuData();
+        if (!gpus.empty()) {
+            cfg.SetString("gpu.name", WinUtils::WstringToString(gpus[0].name));
+            cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
+            cfg.SetDouble("gpu.usage", gpus[0].usage);
+        }
+    } catch (...) {}
+    try {
+        NetworkAdapter netAdapter(*wmiManager);
+        const auto& adapters = netAdapter.GetAdapters();
+        for (const auto& a : adapters) {
+            nlohmann::json na;
+            na["name"] = a.name;
+            na["ip"] = a.ip;
+            na["mac"] = a.mac;
+            na["type"] = a.adapterType;
+            na["speed"] = a.speed;
+            cfg.AppendToArray("network.adapters", std::move(na));
+        }
+    } catch (...) {}
+    try {
+        DiskInfo disk;
+        auto volumes = disk.GetDisks();
+        for (const auto& v : volumes) {
+            nlohmann::json dj;
+            dj["label"] = v.label;
+            dj["fileSystem"] = v.fileSystem;
+            dj["total"] = v.totalSize;
+            dj["used"] = v.usedSpace;
+            cfg.AppendToArray("disks", std::move(dj));
+        }
+    } catch (...) {}
+    try {
+        auto temps = TemperatureWrapper::GetTemperatures();
+        nlohmann::json tempObj = nlohmann::json::object();
+        for (const auto& t : temps) tempObj[t.first] = t.second;
+        cfg.SetJson("temperatures", std::move(tempObj));
+    } catch (...) {}
+
+    if (cfg.Save()) {
+        std::ifstream in(tmpPath);
+        if (in) std::cout << in.rdbuf();
+    }
+    std::cout << std::endl;
+    std::remove(tmpPath.c_str());
+    TemperatureWrapper::Cleanup();
+    CoUninitialize();
+    return 0;
+}
+
+// --mcp: JSON-RPC 2.0 MCP server over stdio (for AI agent integration)
+static int RunMcpMode() {
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+    tcmt::mcp::MCPServer server;
+
+    tcmt::ipc::IPCClient ipc;
+    bool useIpc = ipc.Connect();
+    if (useIpc) {
+        Logger::Info("MCP: connected to running TCMT via IPC");
+        ipc.ClosePipe();
+    } else {
+        Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+    }
+
+    server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["name"]    = ipc.ReadString("cpu/name").value_or("");
+            j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+            j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+            j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+            j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+            j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+            j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+            j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+        } else {
+            CpuInfo cpu;
+            j["name"] = cpu.GetName();
+            j["usage"] = cpu.GetUsage();
+            j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+            j["temperature"] = 0.0;
+        }
+        return j;
+    });
+    server.RegisterTool("get_memory", "System memory statistics",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+            j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+            j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+        } else {
+            MemoryInfo mem;
+            j["total"] = mem.GetTotalPhysical();
+            j["available"] = mem.GetAvailablePhysical();
+            j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+        }
+        return j;
+    });
+    server.RegisterTool("get_gpu_status", "GPU usage and memory",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+            j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+            j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+        }
+        return j;
+    });
+    server.RegisterTool("get_system_info", "OS version and hardware summary",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["os"] = ipc.ReadString("os/version").value_or("");
+            j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+            j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+            j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+        } else {
+            OSInfo os; CpuInfo cpu; MemoryInfo mem;
+            j["os"] = os.GetVersion();
+            j["cpu"] = cpu.GetName();
+            j["cores"] = cpu.GetTotalCores();
+            j["memoryTotal"] = mem.GetTotalPhysical();
+        }
+        return j;
+    });
+
+    server.Run();
+    TemperatureWrapper::Cleanup();
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
@@ -761,221 +937,12 @@ int main(int argc, char* argv[]) {
         }
 
         // ======================== --json Mode ========================
-        bool jsonMode = false;
-        for (int i = 1; i < argc; ++i) {
-            if (std::string(argv[i]) == "--json") {
-                jsonMode = true;
-                break;
-            }
-        }
-
-        if (jsonMode) {
-            // One-shot JSON output for scripting
-            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-            if (FAILED(hr)) {
-                Logger::Error("COM init failed for --json mode");
-                return 1;
-            }
-
-            auto wmiManager = std::make_unique<WmiManager>();
-            if (!wmiManager || !wmiManager->IsInitialized()) {
-                Logger::Error("WMI init failed for --json mode");
-                CoUninitialize();
-                return 1;
-            }
-
-
-            // Build JSON via ConfigManager, then dump to stdout via temp file
-            char tmpBuf[MAX_PATH];
-            GetTempPathA(MAX_PATH, tmpBuf);
-            std::string tmpPath = std::string(tmpBuf) + "tcmt_export.json";
-            std::remove(tmpPath.c_str());  // ensure clean start
-            ConfigManager cfg(tmpPath);
-            cfg.Load();  // starts with empty json::object
-
-            // OS
-            try {
-                OSInfo os;
-                cfg.SetString("os.version", os.GetVersion());
-            } catch (...) {}
-
-            // CPU
-            try {
-                auto cpu = std::make_unique<CpuInfo>();
-                cfg.SetString("cpu.name", cpu->GetName());
-                cfg.SetInt("cpu.cores.physical", cpu->GetLargeCores() + cpu->GetSmallCores());
-                cfg.SetInt("cpu.cores.logical", cpu->GetTotalCores());
-                cfg.SetDouble("cpu.usage", cpu->GetUsage());
-            } catch (...) {}
-
-            // Memory
-            try {
-                MemoryInfo mem;
-                cfg.SetUint64("memory.total", mem.GetTotalPhysical());
-                cfg.SetUint64("memory.available", mem.GetAvailablePhysical());
-                cfg.SetUint64("memory.used", mem.GetTotalPhysical() - mem.GetAvailablePhysical());
-            } catch (...) {}
-
-            // GPU
-            try {
-                GpuInfo gpuInfo(*wmiManager);
-                const auto& gpus = gpuInfo.GetGpuData();
-                if (!gpus.empty()) {
-                    cfg.SetString("gpu.name", WinUtils::WstringToString(gpus[0].name));
-                    cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
-                    cfg.SetDouble("gpu.usage", gpus[0].usage);
-                }
-            } catch (...) {}
-
-            // Network
-            try {
-                NetworkAdapter netAdapter(*wmiManager);
-                const auto& adapters = netAdapter.GetAdapters();
-                for (const auto& a : adapters) {
-                    nlohmann::json na;
-                    na["name"] = a.name;
-                    na["ip"] = a.ip;
-                    na["mac"] = a.mac;
-                    na["type"] = a.adapterType;
-                    na["speed"] = a.speed;
-                    cfg.AppendToArray("network.adapters", std::move(na));
-                }
-            } catch (...) {}
-
-            // Disks
-            try {
-                DiskInfo disk;
-                auto volumes = disk.GetDisks();
-                for (const auto& v : volumes) {
-                    nlohmann::json dj;
-                    dj["label"] = v.label;
-                    dj["fileSystem"] = v.fileSystem;
-                    dj["total"] = v.totalSize;
-                    dj["used"] = v.usedSpace;
-                    cfg.AppendToArray("disks", std::move(dj));
-                }
-            } catch (...) {}
-
-            // Temperatures
-            try {
-                auto temps = TemperatureWrapper::GetTemperatures();
-                nlohmann::json tempObj = nlohmann::json::object();
-                for (const auto& t : temps) {
-                    tempObj[t.first] = t.second;
-                }
-                cfg.SetJson("temperatures", std::move(tempObj));
-            } catch (...) {}
-
-            // Save to temp file, read back, print to stdout
-            if (cfg.Save()) {
-                std::ifstream in(tmpPath);
-                if (in) {
-                    std::cout << in.rdbuf();
-                }
-            }
-            std::cout << std::endl;
-            std::remove(tmpPath.c_str());
-
-            TemperatureWrapper::Cleanup();
-            CoUninitialize();
-            return 0;
-        }
+        bool jsonMode = (argc > 1 && std::string(argv[1]) == "--json");
+        if (jsonMode) return RunJsonMode();
 
         // ======================== --mcp Mode ========================
-        bool mcpMode = false;
-        for (int i = 1; i < argc; ++i) {
-            if (std::string(argv[i]) == "--mcp") {
-                mcpMode = true;
-                break;
-            }
-        }
-        if (mcpMode) {
-#ifdef _WIN32
-            _setmode(_fileno(stdout), _O_BINARY);
-            _setmode(_fileno(stdin), _O_BINARY);
-#endif
-            tcmt::mcp::MCPServer server;
-
-            // Try IPC client first — like Avalonia, reuse running TCMT instance
-            tcmt::ipc::IPCClient ipc;
-            bool useIpc = ipc.Connect();
-            if (useIpc) {
-                Logger::Info("MCP: connected to running TCMT via IPC");
-                ipc.ClosePipe(); // free server slot for other clients (Avalonia)
-            } else {
-                Logger::Info("MCP: IPC unavailable, using direct hardware reads");
-            }
-
-            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
-                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
-                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
-                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
-                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
-                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
-                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
-                } else {
-                    CpuInfo cpu;
-                    j["name"] = cpu.GetName();
-                    j["usage"] = cpu.GetUsage();
-                    j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
-                    j["temperature"] = 0.0;
-                }
-                return j;
-            });
-            server.RegisterTool("get_memory", "System memory statistics",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
-                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
-                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
-                } else {
-                    MemoryInfo mem;
-                    j["total"] = mem.GetTotalPhysical();
-                    j["available"] = mem.GetAvailablePhysical();
-                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                }
-                return j;
-            });
-            server.RegisterTool("get_gpu_status", "GPU usage and memory",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
-                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
-                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
-                } else {
-                    // GPU fallback requires WmiManager — skip on Windows
-                }
-                return j;
-            });
-            server.RegisterTool("get_system_info", "OS version and hardware summary",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["os"] = ipc.ReadString("os/version").value_or("");
-                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
-                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
-                } else {
-                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
-                    j["os"] = os.GetVersion();
-                    j["cpu"] = cpu.GetName();
-                    j["cores"] = cpu.GetTotalCores();
-                    j["memoryTotal"] = mem.GetTotalPhysical();
-                }
-                return j;
-            });
-
-            server.Run();
-            TemperatureWrapper::Cleanup();
-            return 0;
-        }
+        bool mcpMode = (argc > 1 && std::string(argv[1]) == "--mcp");
+        if (mcpMode) return RunMcpMode();
 
         if (!IsRunAsAdmin()) {
             wchar_t szPath[MAX_PATH];
@@ -1561,29 +1528,9 @@ int main(int argc, char* argv[]) {
                     Logger::Error("Unknown exception during data validation");
                 }
 
-                // Write to shared memory - enhanced exception handling
+                // Write to shared memory (moved to TUI block after WiFi/BT populated)
                 try {
-                    // Shared memory write moved after TUI block (WiFi/BT data)
-                    if (false && SharedMemoryManager::GetBuffer()) {
-                        SharedMemoryManager::WriteToSharedMemory(sysInfo);
-                        if (isDetailedLogging) {
-                            Logger::Debug("Successfully updated shared memory");
-                        }
-                    } else if (false) {
-                        Logger::Error("Shared memory buffer unavailable");
-                        if (SharedMemoryManager::InitSharedMemory()) {
-                            SharedMemoryManager::WriteToSharedMemory(sysInfo);
-                            if (isDetailedLogging) {
-                                Logger::Info("Reinitialized and updated shared memory");
-                            }
-                        } else {
-                            Logger::Error("Failed to reinitialize shared memory: " + SharedMemoryManager::GetLastError());
-                        }
-                    }
-                    
-                    if (isDetailedLogging) {
-                        Logger::Debug("System info updated to shared memory");
-                    }
+                    // SharedMemory write now handled in TUI update section below
                 }
                 catch (const std::bad_alloc& e) {
                     Logger::Error("Out of memory while processing system info: " + std::string(e.what()));
