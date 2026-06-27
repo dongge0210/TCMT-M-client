@@ -30,7 +30,7 @@ inline std::string FallbackFormatWindowsErrorMessage(DWORD errorCode) {
 
 // Initialize static members
 HANDLE SharedMemoryManager::hMapFile = NULL;
-SharedMemoryBlock* SharedMemoryManager::pBuffer = nullptr;
+tcmt::ipc::IPCDataBlock* SharedMemoryManager::pBuffer = nullptr;
 std::string SharedMemoryManager::lastError = "";
 // Cross-process mutex for synchronizing shared memory
 static HANDLE g_hMutex = NULL;
@@ -108,7 +108,7 @@ bool SharedMemoryManager::InitSharedMemory() {
         &securityAttributes,
         PAGE_READWRITE,
         0,
-        sizeof(SharedMemoryBlock),
+        sizeof(tcmt::ipc::IPCDataBlock),
         L"Global\\SystemMonitorSharedMemory"
     );
     if (hMapFile == NULL) {
@@ -121,7 +121,7 @@ bool SharedMemoryManager::InitSharedMemory() {
             &securityAttributes,
             PAGE_READWRITE,
             0,
-            sizeof(SharedMemoryBlock),
+            sizeof(tcmt::ipc::IPCDataBlock),
             L"Local\\SystemMonitorSharedMemory"
         );
         if (hMapFile == NULL) {
@@ -130,7 +130,7 @@ bool SharedMemoryManager::InitSharedMemory() {
                 &securityAttributes,
                 PAGE_READWRITE,
                 0,
-                sizeof(SharedMemoryBlock),
+                sizeof(tcmt::ipc::IPCDataBlock),
                 L"SystemMonitorSharedMemory"
             );
         }
@@ -166,8 +166,8 @@ bool SharedMemoryManager::InitSharedMemory() {
     }
 
     // Map to process address space
-    pBuffer = static_cast<SharedMemoryBlock*>(
-        MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedMemoryBlock))
+    pBuffer = static_cast<tcmt::ipc::IPCDataBlock*>(
+        MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(tcmt::ipc::IPCDataBlock))
     );
     if (pBuffer == nullptr) {
         DWORD errorCode = ::GetLastError();
@@ -192,10 +192,10 @@ bool SharedMemoryManager::InitSharedMemory() {
 
     // Zero out the shared memory to avoid dirty data (only on first creation)
     if (errorCode != ERROR_ALREADY_EXISTS) {
-        memset(pBuffer, 0, sizeof(SharedMemoryBlock));
+        memset(pBuffer, 0, sizeof(tcmt::ipc::IPCDataBlock));
     }
 
-    Logger::Info("Shared memory successfully initialized, sizeof(SharedMemoryBlock)=" + std::to_string(sizeof(SharedMemoryBlock)));
+    Logger::Info("Shared memory successfully initialized, sizeof(IPCDataBlock)=" + std::to_string(sizeof(tcmt::ipc::IPCDataBlock)));
     return true;
 }
 
@@ -234,203 +234,140 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
     pBuffer->writeSequence++;
     std::atomic_thread_fence(std::memory_order_release);
 
-    auto SafeCopyWideString = [](wchar_t* dest, size_t destSize, const std::wstring& src) {
+    auto SafeCopyStr = [](char* dest, size_t destSize, const std::string& src) {
         try {
             if (dest == nullptr || destSize == 0) return;
-            memset(dest, 0, destSize * sizeof(wchar_t));
-            if (src.empty()) { dest[0] = L'\0'; return; }
-            size_t copyLen = std::min<size_t>(src.length(), destSize - 1);
+            memset(dest, 0, destSize);
+            if (src.empty()) { dest[0] = '\0'; return; }
+            size_t copyLen = (std::min)(src.length(), destSize - 1);
             for (size_t i = 0; i < copyLen; ++i) dest[i] = src[i];
-            dest[copyLen] = L'\0';
-        } catch (...) { if (dest && destSize > 0) dest[0] = L'\0'; }
+            dest[copyLen] = '\0';
+        } catch (...) { if (dest && destSize > 0) dest[0] = '\0'; }
     };
-    auto SafeCopyFromWideArray = [](wchar_t* dest, size_t destSize, const wchar_t* src, size_t srcCapacity) {
-        if (!dest || destSize == 0) return;
-        memset(dest, 0, destSize * sizeof(wchar_t));
-        if (!src) return;
-        size_t len = 0;
-        while (len < srcCapacity && src[len] != L'\0') ++len;
-        if (len >= destSize) len = destSize - 1;
-        for (size_t i = 0; i < len; ++i) dest[i] = src[i];
-        dest[len] = L'\0';
-    };
+
     try {
-        // Clear main string/array areas
-        memset(pBuffer->cpuName, 0, sizeof(pBuffer->cpuName));
-        for (int i = 0; i < 2; ++i) { memset(pBuffer->gpus[i].name, 0, sizeof(pBuffer->gpus[i].name)); memset(pBuffer->gpus[i].brand, 0, sizeof(pBuffer->gpus[i].brand)); }
-        for (int i = 0; i < 8; ++i) { memset(&pBuffer->disks[i], 0, sizeof(pBuffer->disks[i])); memset(&pBuffer->physicalDisks[i], 0, sizeof(pBuffer->physicalDisks[i])); }
-        for (int i = 0; i < 10; ++i) { memset(pBuffer->temperatures[i].sensorName, 0, sizeof(pBuffer->temperatures[i].sensorName)); }
-
-        // Battery / power
-        pBuffer->batteryPercent = systemInfo.batteryPercent;
-        pBuffer->acOnline = systemInfo.acOnline;
-
-        // OS version
-        SafeCopyWideString(pBuffer->osVersion, 128, WinUtils::StringToWstring(systemInfo.osVersion));
-        // App version
-        SafeCopyWideString(pBuffer->appVersion, 16, WinUtils::StringToWstring(systemInfo.appVersion));
-
-        // CPU
-        SafeCopyWideString(pBuffer->cpuName, 128, WinUtils::StringToWstring(systemInfo.cpuName));
-        pBuffer->physicalCores = systemInfo.physicalCores;
-        pBuffer->logicalCores = systemInfo.logicalCores;
-        pBuffer->cpuUsage = systemInfo.cpuUsage;
-        pBuffer->performanceCores = systemInfo.performanceCores;
-        pBuffer->efficiencyCores = systemInfo.efficiencyCores;
-        pBuffer->pCoreFreq = systemInfo.performanceCoreFreq;
-        pBuffer->eCoreFreq = systemInfo.efficiencyCoreFreq;
-        pBuffer->cpuBaseFreq = systemInfo.cpuBaseFreq;
+        // CPU (narrow int→uint8_t, double→float)
+        SafeCopyStr(pBuffer->cpuName, sizeof(pBuffer->cpuName), systemInfo.cpuName);
+        pBuffer->physicalCores = static_cast<uint8_t>((std::min)(systemInfo.physicalCores, 255));
+        pBuffer->logicalCores = static_cast<uint8_t>((std::min)(systemInfo.logicalCores, 255));
+        pBuffer->cpuUsage = static_cast<float>(systemInfo.cpuUsage);
+        pBuffer->performanceCores = static_cast<uint8_t>((std::min)(systemInfo.performanceCores, 255));
+        pBuffer->efficiencyCores = static_cast<uint8_t>((std::min)(systemInfo.efficiencyCores, 255));
+        pBuffer->pCoreFreq = static_cast<float>(systemInfo.performanceCoreFreq);
+        pBuffer->eCoreFreq = static_cast<float>(systemInfo.efficiencyCoreFreq);
+        pBuffer->cpuBaseFreq = static_cast<float>(systemInfo.cpuBaseFreq);
         pBuffer->hyperThreading = systemInfo.hyperThreading;
         pBuffer->virtualization = systemInfo.virtualization;
+        pBuffer->cpuTemp = static_cast<float>(systemInfo.cpuTemperature);
+        pBuffer->cpuPcoreTemp = static_cast<float>(systemInfo.cpuPcoreTemperature);
+        pBuffer->cpuEcoreTemp = static_cast<float>(systemInfo.cpuEcoreTemperature);
+        pBuffer->cpuSampleIntervalMs = static_cast<float>(systemInfo.cpuUsageSampleIntervalMs);
 
         // Memory
         pBuffer->totalMemory = systemInfo.totalMemory;
         pBuffer->usedMemory = systemInfo.usedMemory;
         pBuffer->availableMemory = systemInfo.availableMemory;
         pBuffer->compressedMemory = systemInfo.compressedMemory;
+        pBuffer->swapUsed = systemInfo.swapUsed;
+        pBuffer->swapTotal = systemInfo.swapTotal;
         pBuffer->ramSpeed = systemInfo.ramSpeed;
-        SafeCopyWideString(pBuffer->ramType, 32, WinUtils::StringToWstring(std::string(systemInfo.ramType)));
+        SafeCopyStr(pBuffer->ramType, sizeof(pBuffer->ramType), systemInfo.ramType);
 
-        // GPU (compatible with old fields)
-        pBuffer->gpuCount = 0;
-        if (!systemInfo.gpuName.empty()) {
-            SafeCopyWideString(pBuffer->gpus[0].name, 128, WinUtils::StringToWstring(systemInfo.gpuName));
-            SafeCopyWideString(pBuffer->gpus[0].brand, 64, WinUtils::StringToWstring(systemInfo.gpuBrand));
-            pBuffer->gpus[0].memory = systemInfo.gpuMemory;
-            pBuffer->gpus[0].coreClock = systemInfo.gpuCoreFreq;
-            pBuffer->gpus[0].isVirtual = systemInfo.gpuIsVirtual;
-            pBuffer->gpus[0].usage = systemInfo.gpuUsage;
-            pBuffer->gpuCount = 1;
-        }
-        // If later want to support vector<GPUData>, can extend here
+        // Battery / power
+        pBuffer->batteryPercent = systemInfo.batteryPercent;
+        pBuffer->acOnline = systemInfo.acOnline;
+        pBuffer->cpuPower = static_cast<float>(systemInfo.cpuPower);
+        pBuffer->gpuPower = static_cast<float>(systemInfo.gpuPower);
+        pBuffer->anePower = static_cast<float>(systemInfo.anePower);
 
-        // Power
-        pBuffer->cpuPower = systemInfo.cpuPower;
-        pBuffer->gpuPower = systemInfo.gpuPower;
-        pBuffer->anePower = systemInfo.anePower;
-        pBuffer->gpuFreq = systemInfo.gpuFreq;
+        // OS
+        SafeCopyStr(pBuffer->osVersion, sizeof(pBuffer->osVersion), systemInfo.osVersion);
+        SafeCopyStr(pBuffer->hardwareModel, sizeof(pBuffer->hardwareModel), systemInfo.hardwareModel);
 
-        // Hardware model
-        SafeCopyWideString(pBuffer->hardwareModel, 128, WinUtils::StringToWstring(systemInfo.hardwareModel));
+        // GPU
+        SafeCopyStr(pBuffer->gpuName, sizeof(pBuffer->gpuName), systemInfo.gpuName);
+        SafeCopyStr(pBuffer->gpuBrand, sizeof(pBuffer->gpuBrand), systemInfo.gpuBrand);
+        pBuffer->gpuMemory = systemInfo.gpuMemory;
+        pBuffer->gpuMemoryPercent = static_cast<float>(systemInfo.gpuCoreFreq); // NVML VRAM%
+        pBuffer->gpuUsage = static_cast<float>(systemInfo.gpuUsage);
+        pBuffer->gpuTemp = static_cast<float>(systemInfo.gpuTemperature);
+        pBuffer->gpuFreq = static_cast<float>(systemInfo.gpuFreq);
+        pBuffer->gpuIsVirtual = systemInfo.gpuIsVirtual;
 
-        // Network adapters (NetworkAdapterData in SystemInfo.adapters has wchar_t array fields)
+        // Network adapters
         pBuffer->adapterCount = 0;
-        int adapterWriteCount = static_cast<int>(std::min<size_t>(systemInfo.adapters.size(), size_t(4)));
+        int adapterWriteCount = static_cast<int>((std::min)(systemInfo.adapters.size(), static_cast<size_t>(4)));
         for (int i = 0; i < adapterWriteCount; ++i) {
             const auto& src = systemInfo.adapters[i];
-            SafeCopyFromWideArray(pBuffer->adapters[i].name, 128, src.name, 128);
-            SafeCopyFromWideArray(pBuffer->adapters[i].mac, 32, src.mac, 32);
-            SafeCopyFromWideArray(pBuffer->adapters[i].ipAddress, 64, src.ipAddress, 64);
-            SafeCopyFromWideArray(pBuffer->adapters[i].adapterType, 32, src.adapterType, 32);
+            SafeCopyStr(pBuffer->adapters[i].name, sizeof(pBuffer->adapters[i].name),
+                        WinUtils::WstringToString(src.name));
+            SafeCopyStr(pBuffer->adapters[i].ip, sizeof(pBuffer->adapters[i].ip),
+                        WinUtils::WstringToString(src.ipAddress));
+            SafeCopyStr(pBuffer->adapters[i].mac, sizeof(pBuffer->adapters[i].mac),
+                        WinUtils::WstringToString(src.mac));
+            SafeCopyStr(pBuffer->adapters[i].type, sizeof(pBuffer->adapters[i].type),
+                        WinUtils::WstringToString(src.adapterType));
             pBuffer->adapters[i].speed = src.speed;
             pBuffer->adapters[i].downloadSpeed = src.downloadSpeed;
             pBuffer->adapters[i].uploadSpeed = src.uploadSpeed;
         }
-        pBuffer->adapterCount = adapterWriteCount;
+        pBuffer->adapterCount = static_cast<uint8_t>(adapterWriteCount);
         if (adapterWriteCount == 0 && !systemInfo.networkAdapterName.empty()) {
-            SafeCopyWideString(pBuffer->adapters[0].name, 128, WinUtils::StringToWstring(systemInfo.networkAdapterName));
-            SafeCopyWideString(pBuffer->adapters[0].mac, 32, WinUtils::StringToWstring(systemInfo.networkAdapterMac));
-            SafeCopyWideString(pBuffer->adapters[0].ipAddress, 64, WinUtils::StringToWstring(systemInfo.networkAdapterIp));
-            SafeCopyWideString(pBuffer->adapters[0].adapterType, 32, WinUtils::StringToWstring(systemInfo.networkAdapterType));
+            SafeCopyStr(pBuffer->adapters[0].name, sizeof(pBuffer->adapters[0].name), systemInfo.networkAdapterName);
+            SafeCopyStr(pBuffer->adapters[0].mac, sizeof(pBuffer->adapters[0].mac), systemInfo.networkAdapterMac);
+            SafeCopyStr(pBuffer->adapters[0].ip, sizeof(pBuffer->adapters[0].ip), systemInfo.networkAdapterIp);
+            SafeCopyStr(pBuffer->adapters[0].type, sizeof(pBuffer->adapters[0].type), systemInfo.networkAdapterType);
             pBuffer->adapters[0].speed = systemInfo.networkAdapterSpeed;
             pBuffer->adapterCount = 1;
         }
 
-        // Logical disks (label / fileSystem in SystemInfo.disks are std::string)
-        pBuffer->diskCount = static_cast<int>(std::min<size_t>(systemInfo.disks.size(), static_cast<size_t>(8)));
-        for (int i = 0; i < pBuffer->diskCount; ++i) {
+        // Logical disks
+        pBuffer->diskCount = static_cast<uint8_t>((std::min)(systemInfo.disks.size(), static_cast<size_t>(4)));
+        for (int i = 0; i < static_cast<int>(pBuffer->diskCount); ++i) {
             const auto& disk = systemInfo.disks[i];
-            pBuffer->disks[i].letter = disk.letter;
-            std::string safeLabel = disk.label;
-            if (safeLabel.empty()) safeLabel = ""; // Allow unnamed, replace in UI
-            else if (!WinUtils::IsLikelyUtf8(safeLabel)) {
-                // Degraded handling: convert via current ACP to wide then back to UTF-8, try to salvage
-                std::wstring w = WinUtils::Utf8ToWstring(safeLabel); // If not utf8 will get empty
-                if (w.empty()) {
-                    int len = MultiByteToWideChar(CP_ACP, 0, safeLabel.c_str(), (int)safeLabel.size(), nullptr, 0);
-                    if (len > 0) { w.resize(len); MultiByteToWideChar(CP_ACP, 0, safeLabel.c_str(), (int)safeLabel.size(), &w[0], len); }
-                }
-                safeLabel = WinUtils::WstringToUtf8(w);
-            }
-            SafeCopyWideString(pBuffer->disks[i].label, 128, WinUtils::StringToWstring(safeLabel));
-            SafeCopyWideString(pBuffer->disks[i].fileSystem, 32, WinUtils::StringToWstring(disk.fileSystem));
+            SafeCopyStr(pBuffer->disks[i].label, sizeof(pBuffer->disks[i].label), disk.label);
+            SafeCopyStr(pBuffer->disks[i].fs, sizeof(pBuffer->disks[i].fs), disk.fileSystem);
             pBuffer->disks[i].totalSize = disk.totalSize;
             pBuffer->disks[i].usedSpace = disk.usedSpace;
             pBuffer->disks[i].freeSpace = disk.freeSpace;
         }
 
-        // Physical disks + SMART (fields in SystemInfo.physicalDisks are already wchar_t arrays)
-        pBuffer->physicalDiskCount = static_cast<int>(std::min<size_t>(systemInfo.physicalDisks.size(), static_cast<size_t>(8)));
-        for (int i = 0; i < pBuffer->physicalDiskCount; ++i) {
+        // Physical disks + SMART (simplified: model/serial/capacity/interface/temp/health/attrsJson)
+        pBuffer->physDiskCount = static_cast<uint8_t>((std::min)(systemInfo.physicalDisks.size(), static_cast<size_t>(8)));
+        for (int i = 0; i < static_cast<int>(pBuffer->physDiskCount); ++i) {
             const auto& src = systemInfo.physicalDisks[i];
-            SafeCopyFromWideArray(pBuffer->physicalDisks[i].model, 128, src.model, 128);
-            SafeCopyFromWideArray(pBuffer->physicalDisks[i].serialNumber, 64, src.serialNumber, 64);
-            SafeCopyFromWideArray(pBuffer->physicalDisks[i].firmwareVersion, 32, src.firmwareVersion, 32);
-            SafeCopyFromWideArray(pBuffer->physicalDisks[i].interfaceType, 32, src.interfaceType, 32);
-            SafeCopyFromWideArray(pBuffer->physicalDisks[i].diskType, 16, src.diskType, 16);
+            SafeCopyStr(pBuffer->physicalDisks[i].model, sizeof(pBuffer->physicalDisks[i].model),
+                        WinUtils::WstringToString(src.model));
+            SafeCopyStr(pBuffer->physicalDisks[i].serial, sizeof(pBuffer->physicalDisks[i].serial),
+                        WinUtils::WstringToString(src.serialNumber));
+            SafeCopyStr(pBuffer->physicalDisks[i].interfaceType, sizeof(pBuffer->physicalDisks[i].interfaceType),
+                        WinUtils::WstringToString(src.interfaceType));
             pBuffer->physicalDisks[i].capacity = src.capacity;
-            pBuffer->physicalDisks[i].temperature = src.temperature;
-            pBuffer->physicalDisks[i].healthPercentage = src.healthPercentage;
-            pBuffer->physicalDisks[i].isSystemDisk = src.isSystemDisk;
-            pBuffer->physicalDisks[i].smartEnabled = src.smartEnabled;
+            pBuffer->physicalDisks[i].temperature = static_cast<float>(src.temperature);
+            pBuffer->physicalDisks[i].healthPercent = static_cast<float>(src.healthPercentage);
             pBuffer->physicalDisks[i].smartSupported = src.smartSupported;
-            pBuffer->physicalDisks[i].powerOnHours = src.powerOnHours;
-            pBuffer->physicalDisks[i].powerCycleCount = src.powerCycleCount;
-            pBuffer->physicalDisks[i].reallocatedSectorCount = src.reallocatedSectorCount;
-            pBuffer->physicalDisks[i].currentPendingSector = src.currentPendingSector;
-            pBuffer->physicalDisks[i].uncorrectableErrors = src.uncorrectableErrors;
-            pBuffer->physicalDisks[i].wearLeveling = src.wearLeveling;
-            pBuffer->physicalDisks[i].totalBytesWritten = src.totalBytesWritten;
-            pBuffer->physicalDisks[i].totalBytesRead = src.totalBytesRead;
-            int ldCount = 0;
-            for (char l : src.logicalDriveLetters) {
-                if (ldCount >= 8 || l == 0) break;
-                if (std::isalpha(static_cast<unsigned char>(l))) pBuffer->physicalDisks[i].logicalDriveLetters[ldCount++] = l;
-            }
-            pBuffer->physicalDisks[i].logicalDriveCount = ldCount;
             int attrCount = src.attributeCount;
             if (attrCount < 0) attrCount = 0; if (attrCount > 32) attrCount = 32;
-            pBuffer->physicalDisks[i].attributeCount = attrCount;
-            for (int a = 0; a < attrCount; ++a) {
-                const auto& sa = src.attributes[a];
-                auto& dst = pBuffer->physicalDisks[i].attributes[a];
-                dst.id = sa.id;
-                dst.flags = sa.flags;
-                dst.current = sa.current;
-                dst.worst = sa.worst;
-                dst.threshold = sa.threshold;
-                dst.rawValue = sa.rawValue;
-                dst.isCritical = sa.isCritical;
-                dst.physicalValue = sa.physicalValue;
-                SafeCopyFromWideArray(dst.name, 64, sa.name, 64);
-                SafeCopyFromWideArray(dst.description, 128, sa.description, 128);
-                SafeCopyFromWideArray(dst.units, 16, sa.units, 16);
-            }
-            strncpy_s(pBuffer->physicalDisks[i].attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson), src.attrsJson, _TRUNCATE);
+            pBuffer->physicalDisks[i].attrCount = attrCount;
+            strncpy(pBuffer->physicalDisks[i].attrsJson, src.attrsJson, sizeof(pBuffer->physicalDisks[i].attrsJson) - 1);
         }
 
-        // Temperature array (sensor names in vector<pair<string,double>>)
-        pBuffer->tempCount = static_cast<int>(std::min<size_t>(systemInfo.temperatures.size(), static_cast<size_t>(10)));
-        for (int i = 0; i < pBuffer->tempCount; ++i) {
+        // Temperature sensors
+        pBuffer->tempCount = static_cast<uint8_t>((std::min)(systemInfo.temperatures.size(), static_cast<size_t>(10)));
+        for (int i = 0; i < static_cast<int>(pBuffer->tempCount); ++i) {
             const auto& temp = systemInfo.temperatures[i];
-            SafeCopyWideString(pBuffer->temperatures[i].sensorName, 64, WinUtils::StringToWstring(temp.first));
-            pBuffer->temperatures[i].temperature = temp.second;
+            SafeCopyStr(pBuffer->temperatures[i].name, sizeof(pBuffer->temperatures[i].name), temp.first);
+            pBuffer->temperatures[i].value = static_cast<float>(temp.second);
         }
 
-        // Independent CPU / GPU temperatures
-        pBuffer->cpuTemperature = systemInfo.cpuTemperature;
-        pBuffer->cpuPcoreTemperature = systemInfo.cpuPcoreTemperature;
-        pBuffer->cpuEcoreTemperature = systemInfo.cpuEcoreTemperature;
-        pBuffer->gpuTemperature = systemInfo.gpuTemperature;
-        pBuffer->cpuUsageSampleIntervalMs = systemInfo.cpuUsageSampleIntervalMs;
-
-        // TPM info
-        memset(&pBuffer->tpm, 0, sizeof(pBuffer->tpm));
+        // TPM
         pBuffer->tpmCount = 0;
         if (!systemInfo.tpms.empty()) {
             const auto& src = systemInfo.tpms[0];
-            SafeCopyFromWideArray(pBuffer->tpm.manufacturer, 32, src.manufacturer, 32);
-            SafeCopyFromWideArray(pBuffer->tpm.firmwareVersion, 32, src.firmwareVersion, 32);
+            SafeCopyStr(pBuffer->tpm.manufacturer, sizeof(pBuffer->tpm.manufacturer),
+                        WinUtils::WstringToString(src.manufacturer));
+            SafeCopyStr(pBuffer->tpm.firmwareVersion, sizeof(pBuffer->tpm.firmwareVersion),
+                        WinUtils::WstringToString(src.firmwareVersion));
             pBuffer->tpm.firmwareVersionMajor = src.firmwareVersionMajor;
             pBuffer->tpm.firmwareVersionMinor = src.firmwareVersionMinor;
             pBuffer->tpm.firmwareVersionBuild = src.firmwareVersionBuild;
@@ -438,7 +375,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->tpm.isEnabled = src.isEnabled;
             pBuffer->tpm.isActive = src.isActive;
             pBuffer->tpm.selfTestStatus = src.selfTestStatus;
-            pBuffer->tpm.status = src.isPresent ? 1 : 3; // 1=OK, 3=Disabled
+            pBuffer->tpm.status = src.isPresent ? 1 : 3;
             pBuffer->tpmCount = 1;
         }
 
@@ -447,17 +384,20 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->wifi.isConnected = systemInfo.wifiIsConnected;
         pBuffer->wifi.rssi = systemInfo.wifiRSSI;
         pBuffer->wifi.channel = systemInfo.wifiChannel;
-        SafeCopyWideString(pBuffer->wifi.ssid, 32, WinUtils::StringToWstring(systemInfo.wifiSSID));
-        SafeCopyWideString(pBuffer->wifi.security, 16, WinUtils::StringToWstring(systemInfo.wifiSecurity));
-        SafeCopyWideString(pBuffer->wifi.band, 8, WinUtils::StringToWstring(systemInfo.wifiBand));
-        SafeCopyWideString(pBuffer->wifi.wifiGen, 12, WinUtils::StringToWstring(systemInfo.wifiGen));
+        SafeCopyStr(pBuffer->wifi.ssid, sizeof(pBuffer->wifi.ssid), systemInfo.wifiSSID);
+        SafeCopyStr(pBuffer->wifi.security, sizeof(pBuffer->wifi.security), systemInfo.wifiSecurity);
+        SafeCopyStr(pBuffer->wifi.band, sizeof(pBuffer->wifi.band), systemInfo.wifiBand);
+        SafeCopyStr(pBuffer->wifi.wifiGen, sizeof(pBuffer->wifi.wifiGen), systemInfo.wifiGen);
 
         // Bluetooth
         pBuffer->bluetooth.powerOn = systemInfo.btPowerOn;
         pBuffer->bluetooth.deviceCount = systemInfo.btDeviceCount;
 
+        // App version
+        SafeCopyStr(pBuffer->appVersion, sizeof(pBuffer->appVersion), systemInfo.appVersion);
+
         pBuffer->lastUpdate = Platform::SystemTime::Now();
-        Logger::Trace("Successfully wrote system/disk/SMART information to shared memory");
+        Logger::Trace("Successfully wrote system info to IPC shared memory");
     } catch (const std::exception& e) {
         // seqlock: mark write complete (even) despite failure
         std::atomic_thread_fence(std::memory_order_release);

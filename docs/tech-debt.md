@@ -1,22 +1,22 @@
-# Technical Debt (2026-06-11)
+# Technical Debt (2026-06-27)
 
-## P0 — 双重 IPC 数据结构
+## P0 — 双重 IPC 数据结构 ✅ DONE (2026-06-27)
 
-ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataBlock`，但未执行。
+ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataBlock`。
 
 | 旧 | 新 | 状态 |
 |----|----|------|
-| `DataStruct.h` (305行) — `SharedMemoryBlock` | `IPCData.h` (214行) — `IPCDataBlock` | 两套并存 |
+| `DataStruct.h` (305行) — `SharedMemoryBlock` | `IPCData.h` (214行) — `IPCDataBlock` | ✅ 已迁移 |
 
-**仍在用 `DataStruct.h` 的文件：**
-- `main.cpp` — `BuildWindowsIpcSchema()` 用 `offsetof(SharedMemoryBlock, ...)` 算偏移
-- `main_mac.cpp` — `#include "core/DataStruct/DataStruct.h"`
-- `main_linux.cpp` — `#include "core/DataStruct/DataStruct.h"`
-- `DiskInfo.h`, `SmartReader.cpp`
-- `TpmBridge.h`, `LibreHardwareMonitorBridge.h`
-- `ModuleCoordinator.h`
+**已完成的变更：**
+- Windows `SharedMemoryManager` → `IPCDataBlock*`（SHM init, MapViewOfFile, WriteToSharedMemory）
+- `BuildWindowsIpcSchema` 从 offsetof(SharedMemoryBlock) 切换到 offsetof(IPCDataBlock)
+- WCHAR→char/String, Float64→Float32, Int32→UInt8 类型统一
+- macOS/Linux `WriteToSharedMemory` 改为 stub（这些平台用 IPCServer 直接路径）
+- `main.cpp` 移除冗余 WiFi/BT 直接写入
+- `IPCDataBlock` 补齐 WiFi band/gen + TPM + swapUsed/Total 字段
 
-**不一致：** Windows 用 `SharedMemoryBlock` 派生 schema，macOS 用 `IPCDataBlock` 派生 schema，两条路径不互通。
+**待清理：** `DataStruct.h` 中 `SharedMemoryBlock` struct 定义仍存在（无引用，可安全删除）。
 
 ## P1 — `main.cpp` 1974行
 

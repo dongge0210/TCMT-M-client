@@ -195,6 +195,8 @@ struct IPCDataBlock {
         int32_t  rssi                = 0;
         int32_t  channel             = 0;
         char     security[16]        = {};
+        char     band[8]             = {};
+        char     wifiGen[12]         = {};
         bool     powerOn             = false;
         bool     isConnected         = false;
     };
@@ -207,6 +209,23 @@ struct IPCDataBlock {
         char     name[64]            = {};
     };
     BtSlot bluetooth                  = {};
+
+    // TPM
+    struct TpmSlot {
+        char     manufacturer[32]    = {};
+        char     firmwareVersion[32] = {};
+        uint16_t vendorId            = 0;
+        uint8_t  firmwareVersionMajor = 0;
+        uint8_t  firmwareVersionMinor = 0;
+        uint8_t  firmwareVersionBuild = 0;
+        bool     isPresent           = false;
+        bool     isEnabled           = false;
+        bool     isActive            = false;
+        uint8_t  selfTestStatus      = 0;
+        uint8_t  status              = 0;
+    };
+    TpmSlot tpm                       = {};
+    uint8_t  tpmCount                 = 0;
 
     // App version string (e.g. "0.14.0")
     char     appVersion[16]          = {};

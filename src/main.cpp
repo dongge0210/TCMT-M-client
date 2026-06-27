@@ -594,12 +594,12 @@ public:
 
 // ======================== MCP Helpers ========================
 
-// Build schema describing SharedMemoryBlock fields (for IPCServer + ConnectDirect)
+// Build schema describing IPCDataBlock fields (for IPCServer + ConnectDirect)
 static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
                                    std::vector<tcmt::ipc::FieldDef>& fields) {
-    schemaHdr.totalSize = sizeof(SharedMemoryBlock);
+    schemaHdr.totalSize = sizeof(tcmt::ipc::IPCDataBlock);
     auto addField = [&](const char* name, uint32_t offset, uint16_t size,
-                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
+                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float32,
                         uint32_t count = 0) {
         tcmt::ipc::FieldDef f{};
         f.offset = offset; f.size = size; f.type = type; f.count = count;
@@ -607,124 +607,130 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         fields.push_back(f);
     };
     using FT = tcmt::ipc::FieldType;
-    addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
-    addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
-    addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
-    addField("cpu/freq/base", offsetof(SharedMemoryBlock, cpuBaseFreq), 8);
-    addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
-    addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
-    addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
-    addField("cpu/pcore/temperature", offsetof(SharedMemoryBlock, cpuPcoreTemperature), 8);
-    addField("cpu/ecore/temperature", offsetof(SharedMemoryBlock, cpuEcoreTemperature), 8);
-    addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/ramSpeed",   offsetof(SharedMemoryBlock, ramSpeed), 4, (uint8_t)FT::UInt32);
-    addField("memory/ramType",    offsetof(SharedMemoryBlock, ramType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
-    for (int i = 0; i < 2; i++) {
-        char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
-        addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
-        addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
-        addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
-        addField((std::string(prefix)+"memoryPercent").c_str(), base + offsetof(GPUData, coreClock), 8);
-        addField((std::string(prefix)+"temperature").c_str(), offsetof(SharedMemoryBlock, gpuTemperature), 8);
-    }
-    addField("gpu/freq", offsetof(SharedMemoryBlock, gpuFreq), 8);
-    addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
-    addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
-    addField("power/cpu", offsetof(SharedMemoryBlock, cpuPower), 8);
-    addField("power/gpu", offsetof(SharedMemoryBlock, gpuPower), 8);
-    addField("power/ane", offsetof(SharedMemoryBlock, anePower), 8);
-    addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("os/model", offsetof(SharedMemoryBlock, hardwareModel), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("app/version", offsetof(SharedMemoryBlock, appVersion), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    using B = tcmt::ipc::IPCDataBlock;
+
+    // CPU
+    addField("cpu/name", offsetof(B, cpuName), sizeof(B::cpuName), (uint8_t)FT::String);
+    addField("cpu/cores/physical", offsetof(B, physicalCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/cores/logical", offsetof(B, logicalCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/usage", offsetof(B, cpuUsage), 4);
+    addField("cpu/cores/performance", offsetof(B, performanceCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/cores/efficiency", offsetof(B, efficiencyCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/freq/pCore", offsetof(B, pCoreFreq), 4);
+    addField("cpu/freq/eCore", offsetof(B, eCoreFreq), 4);
+    addField("cpu/freq/base", offsetof(B, cpuBaseFreq), 4);
+    addField("cpu/hyperThreading", offsetof(B, hyperThreading), 1, (uint8_t)FT::Bool);
+    addField("cpu/virtualization", offsetof(B, virtualization), 1, (uint8_t)FT::Bool);
+    addField("cpu/temperature", offsetof(B, cpuTemp), 4);
+    addField("cpu/pcore/temperature", offsetof(B, cpuPcoreTemp), 4);
+    addField("cpu/ecore/temperature", offsetof(B, cpuEcoreTemp), 4);
+    addField("cpu/sampleIntervalMs", offsetof(B, cpuSampleIntervalMs), 4);
+
+    // Memory
+    addField("memory/total", offsetof(B, totalMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/used", offsetof(B, usedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/available", offsetof(B, availableMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/compressed", offsetof(B, compressedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/swapUsed", offsetof(B, swapUsed), 8, (uint8_t)FT::UInt64);
+    addField("memory/swapTotal", offsetof(B, swapTotal), 8, (uint8_t)FT::UInt64);
+    addField("memory/ramSpeed", offsetof(B, ramSpeed), 4, (uint8_t)FT::UInt32);
+    addField("memory/ramType", offsetof(B, ramType), sizeof(B::ramType), (uint8_t)FT::String);
+
+    // Battery/Power
+    addField("battery/percent", offsetof(B, batteryPercent), 4, (uint8_t)FT::Int32);
+    addField("battery/acOnline", offsetof(B, acOnline), 1, (uint8_t)FT::Bool);
+    addField("power/cpu", offsetof(B, cpuPower), 4);
+    addField("power/gpu", offsetof(B, gpuPower), 4);
+    addField("power/ane", offsetof(B, anePower), 4);
+
+    // OS
+    addField("os/version", offsetof(B, osVersion), sizeof(B::osVersion), (uint8_t)FT::String);
+    addField("os/model", offsetof(B, hardwareModel), sizeof(B::hardwareModel), (uint8_t)FT::String);
+
+    // GPU (single slot, mapped as gpu/0/ for C# compat)
+    addField("gpu/0/name", offsetof(B, gpuName), sizeof(B::gpuName), (uint8_t)FT::String);
+    addField("gpu/0/brand", offsetof(B, gpuBrand), sizeof(B::gpuBrand), (uint8_t)FT::String);
+    addField("gpu/0/memory", offsetof(B, gpuMemory), 8, (uint8_t)FT::UInt64);
+    addField("gpu/0/usage", offsetof(B, gpuUsage), 4);
+    addField("gpu/0/memoryPercent", offsetof(B, gpuMemoryPercent), 4);
+    addField("gpu/0/isVirtual", offsetof(B, gpuIsVirtual), 1, (uint8_t)FT::Bool);
+    addField("gpu/0/temperature", offsetof(B, gpuTemp), 4);
+    addField("gpu/freq", offsetof(B, gpuFreq), 4);
 
     // Network adapters (up to 4)
     for (int i = 0; i < 4; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "net/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, adapters) + i * sizeof(NetworkAdapterData);
-        addField((std::string(pfx)+"name").c_str(), base + offsetof(NetworkAdapterData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(NetworkAdapterData, ipAddress), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(NetworkAdapterData, mac), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"type").c_str(), base + offsetof(NetworkAdapterData, adapterType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(NetworkAdapterData, speed), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(NetworkAdapterData, downloadSpeed), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(NetworkAdapterData, uploadSpeed), 8, (uint8_t)FT::UInt64);
+        uint32_t base = offsetof(B, adapters) + i * sizeof(B::NetSlot);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::NetSlot, name), sizeof(B::NetSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(B::NetSlot, ip), sizeof(B::NetSlot::ip), (uint8_t)FT::String);
+        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(B::NetSlot, mac), sizeof(B::NetSlot::mac), (uint8_t)FT::String);
+        addField((std::string(pfx)+"type").c_str(), base + offsetof(B::NetSlot, type), sizeof(B::NetSlot::type), (uint8_t)FT::String);
+        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(B::NetSlot, speed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(B::NetSlot, downloadSpeed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(B::NetSlot, uploadSpeed), 8, (uint8_t)FT::UInt64);
     }
 
-    // Disks (up to 8)
-    for (int i = 0; i < 8; i++) {
+    // Disks (up to 4)
+    for (int i = 0; i < 4; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, disks) + i * sizeof(SharedMemoryBlock::SharedDiskData);
-        addField((std::string(pfx)+"letter").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, letter), 1, (uint8_t)FT::UInt8);
-        addField((std::string(pfx)+"label").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, label), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(SharedMemoryBlock::SharedDiskData, fileSystem), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"total").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, totalSize), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"used").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, usedSpace), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"free").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, freeSpace), 8, (uint8_t)FT::UInt64);
+        uint32_t base = offsetof(B, disks) + i * sizeof(B::DiskSlot);
+        addField((std::string(pfx)+"label").c_str(), base + offsetof(B::DiskSlot, label), sizeof(B::DiskSlot::label), (uint8_t)FT::String);
+        addField((std::string(pfx)+"total").c_str(), base + offsetof(B::DiskSlot, totalSize), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"used").c_str(),  base + offsetof(B::DiskSlot, usedSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"free").c_str(),  base + offsetof(B::DiskSlot, freeSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(B::DiskSlot, fs), sizeof(B::DiskSlot::fs), (uint8_t)FT::String);
     }
 
     // Temperature sensors (up to 10)
     for (int i = 0; i < 10; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "sensor/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, temperatures) + i * sizeof(TemperatureData);
-        addField((std::string(pfx)+"name").c_str(), base + offsetof(TemperatureData, sensorName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
+        uint32_t base = offsetof(B, temperatures) + i * sizeof(B::TempSlot);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::TempSlot, name), sizeof(B::TempSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"value").c_str(), base + offsetof(B::TempSlot, value), 4);
     }
 
     // Physical disks (SMART) (up to 8)
     for (int i = 0; i < 8; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "phys/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, physicalDisks) + i * sizeof(PhysicalDiskSmartData);
-        addField((std::string(pfx)+"model").c_str(),       base + offsetof(PhysicalDiskSmartData, model), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(PhysicalDiskSmartData, serialNumber), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(PhysicalDiskSmartData, capacity), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(PhysicalDiskSmartData, interfaceType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
-        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
-        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
-        addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(PhysicalDiskSmartData, attributeCount), 4, (uint8_t)FT::Int32);
-        addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(PhysicalDiskSmartData, attrsJson), 4096, (uint8_t)FT::String);
-        // logical drive letters (up to 8 letters, stored as individual bytes + count)
-        for (int j = 0; j < 8; j++) {
-            char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);
-            addField(fn, base + offsetof(PhysicalDiskSmartData, logicalDriveLetters) + j, 1, (uint8_t)FT::UInt8);
-        }
-        addField((std::string(pfx)+"letterCount").c_str(), base + offsetof(PhysicalDiskSmartData, logicalDriveCount), 4, (uint8_t)FT::Int32);
+        uint32_t base = offsetof(B, physicalDisks) + i * sizeof(B::PhysDiskSlot);
+        addField((std::string(pfx)+"model").c_str(),       base + offsetof(B::PhysDiskSlot, model), sizeof(B::PhysDiskSlot::model), (uint8_t)FT::String);
+        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(B::PhysDiskSlot, serial), sizeof(B::PhysDiskSlot::serial), (uint8_t)FT::String);
+        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(B::PhysDiskSlot, capacity), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(B::PhysDiskSlot, interfaceType), sizeof(B::PhysDiskSlot::interfaceType), (uint8_t)FT::String);
+        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(B::PhysDiskSlot, temperature), 4);
+        addField((std::string(pfx)+"health").c_str(),      base + offsetof(B::PhysDiskSlot, healthPercent), 4);
+        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(B::PhysDiskSlot, smartSupported), 1, (uint8_t)FT::Bool);
+        addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(B::PhysDiskSlot, attrCount), 4, (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(B::PhysDiskSlot, attrsJson), sizeof(B::PhysDiskSlot::attrsJson), (uint8_t)FT::String);
     }
 
     // WiFi
-    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifi.ssid), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
-    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
-    addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/band",     offsetof(SharedMemoryBlock, wifi.band), 8*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/gen",      offsetof(SharedMemoryBlock, wifi.wifiGen), 12*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
-    addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
+    addField("wifi/ssid",     offsetof(B, wifi.ssid), sizeof(B::WifiSlot::ssid), (uint8_t)FT::String);
+    addField("wifi/rssi",     offsetof(B, wifi.rssi), 4, (uint8_t)FT::Int32);
+    addField("wifi/channel",  offsetof(B, wifi.channel), 4, (uint8_t)FT::Int32);
+    addField("wifi/security", offsetof(B, wifi.security), sizeof(B::WifiSlot::security), (uint8_t)FT::String);
+    addField("wifi/band",     offsetof(B, wifi.band), sizeof(B::WifiSlot::band), (uint8_t)FT::String);
+    addField("wifi/gen",      offsetof(B, wifi.wifiGen), sizeof(B::WifiSlot::wifiGen), (uint8_t)FT::String);
+    addField("wifi/powerOn",  offsetof(B, wifi.powerOn), 1, (uint8_t)FT::Bool);
+    addField("wifi/isConnected", offsetof(B, wifi.isConnected), 1, (uint8_t)FT::Bool);
+
     // Bluetooth
-    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
-    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
-    addField("bluetooth/name",        offsetof(SharedMemoryBlock, bluetooth.name), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("bluetooth/powerOn",     offsetof(B, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
+    addField("bluetooth/deviceCount", offsetof(B, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
+    addField("bluetooth/name",        offsetof(B, bluetooth.name), sizeof(B::BtSlot::name), (uint8_t)FT::String);
 
     // TPM
-    addField("tpm/manufacturer",    offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, manufacturer), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("tpm/firmwareVersion", offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, firmwareVersion), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("tpm/status",          offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, status), 1, (uint8_t)FT::UInt8);
-    addField("tpm/selfTestStatus",  offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, selfTestStatus), 1, (uint8_t)FT::UInt8);
-    addField("tpm/isEnabled",       offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isEnabled), 1, (uint8_t)FT::Bool);
-    addField("tpm/isActive",        offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isActive), 1, (uint8_t)FT::Bool);
-    addField("tpm/count",           offsetof(SharedMemoryBlock, tpmCount), 1, (uint8_t)FT::UInt8);
+    addField("tpm/manufacturer",    offsetof(B, tpm.manufacturer), sizeof(B::TpmSlot::manufacturer), (uint8_t)FT::String);
+    addField("tpm/firmwareVersion", offsetof(B, tpm.firmwareVersion), sizeof(B::TpmSlot::firmwareVersion), (uint8_t)FT::String);
+    addField("tpm/isPresent",       offsetof(B, tpm.isPresent), 1, (uint8_t)FT::Bool);
+    addField("tpm/isEnabled",       offsetof(B, tpm.isEnabled), 1, (uint8_t)FT::Bool);
+    addField("tpm/isActive",        offsetof(B, tpm.isActive), 1, (uint8_t)FT::Bool);
+    addField("tpm/selfTestStatus",  offsetof(B, tpm.selfTestStatus), 1, (uint8_t)FT::UInt8);
+    addField("tpm/status",          offsetof(B, tpm.status), 1, (uint8_t)FT::UInt8);
+    addField("tpm/count",           offsetof(B, tpmCount), 1, (uint8_t)FT::UInt8);
+
+    // App version
+    addField("app/version", offsetof(B, appVersion), sizeof(B::appVersion), (uint8_t)FT::String);
 }
 
 int main(int argc, char* argv[]) {
@@ -1730,22 +1736,9 @@ int main(int argc, char* argv[]) {
                       sysInfo.btPowerOn = bd.adapter.powerOn;
                       sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
 
-                      // Write WiFi & Bluetooth to shared memory block
-                      if (auto* buf = SharedMemoryManager::GetBuffer()) {
-                          memset(&buf->wifi, 0, sizeof(buf->wifi));
-                          buf->wifi.powerOn = wd.powerOn;
-                          buf->wifi.isConnected = wd.isConnected;
-                          buf->wifi.rssi = wd.rssi;
-                          buf->wifi.channel = wd.channel;
-                          wcsncpy_s(buf->wifi.ssid, 32, WinUtils::StringToWstring(wd.ssid).c_str(), _TRUNCATE);
-                          wcsncpy_s(buf->wifi.security, 16, WinUtils::StringToWstring(wd.security).c_str(), _TRUNCATE);
-
-                          memset(&buf->bluetooth, 0, sizeof(buf->bluetooth));
-                          buf->bluetooth.powerOn = bd.adapter.powerOn;
-                          buf->bluetooth.deviceCount = static_cast<int32_t>(bd.devices.size());
-                          wcsncpy_s(buf->bluetooth.name, 64, WinUtils::StringToWstring(bd.adapter.name).c_str(), _TRUNCATE);
-                      }
-                    }
+                      // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)
+                      sysInfo.wifiPowerOn = wd.powerOn;
+                      sysInfo.wifiIsConnected = wd.isConnected;
 
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
 
