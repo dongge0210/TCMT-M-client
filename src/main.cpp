@@ -1606,6 +1606,7 @@ int main(int argc, char* argv[]) {
                     for (const auto& gp : GpuInfo::GetGpuProcesses()) {
                         tcmt::TuiData::GpuProcInfo pi;
                         pi.pid = gp.pid;
+                        pi.gpuIndex = gp.gpuIndex;
                         pi.vramBytes = gp.usedGpuMemory;
                         tuiData.gpuProcesses.push_back(pi);
                     }

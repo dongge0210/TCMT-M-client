@@ -54,6 +54,7 @@ struct nvmlProcessInfo_t {
 };
 constexpr unsigned int NVML_MAX_PROCESSES = 32;
 using NvmlDeviceGetComputeRunningProcessesFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*);
+using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -70,6 +71,7 @@ struct NvmlApi {
     NvmlDeviceGetNumFansFn getNumFans = nullptr;
     NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
     NvmlDeviceGetComputeRunningProcessesFn getComputeRunningProcesses = nullptr;
+    NvmlDeviceGetCountFn getDeviceCount = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -121,6 +123,12 @@ static NvmlApi& GetNvmlApi() {
         // buffer overrun and garbage VRAM values when interpreted as v1.
         api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
             GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses"));
+
+        api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
+        if (!api.getDeviceCount)
+            api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
+                GetProcAddress(api.module, "nvmlDeviceGetCount"));
 
         // Validate mandatory functions -- if any are missing, treat as unavailable
         if (!api.init || !api.shutdown || !api.getHandleByIndex) {
@@ -341,16 +349,23 @@ int GpuInfo::GetGpuFanSpeed() {
 std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() {
     std::vector<GpuProcess> result;
     auto& s = GetNvmlSession();
-    if (!s.ok || !s.api->getComputeRunningProcesses) return result;
+    if (!s.ok || !s.api->getComputeRunningProcesses || !s.api->getDeviceCount || !s.api->getHandleByIndex) return result;
+    unsigned int deviceCount = 0;
+    if (NVML_SUCCESS != s.api->getDeviceCount(&deviceCount)) return result;
     nvmlProcessInfo_t infos[NVML_MAX_PROCESSES];
-    unsigned int count = NVML_MAX_PROCESSES;
-    if (NVML_SUCCESS != s.api->getComputeRunningProcesses(s.device, &count, infos)) return result;
-    for (unsigned int i = 0; i < count && i < NVML_MAX_PROCESSES; ++i) {
-        if (infos[i].usedGpuMemory > 0) {
-            GpuProcess p;
-            p.pid = infos[i].pid;
-            p.usedGpuMemory = infos[i].usedGpuMemory;
-            result.push_back(p);
+    for (unsigned int d = 0; d < deviceCount; ++d) {
+        nvmlDevice_t dev = nullptr;
+        if (NVML_SUCCESS != s.api->getHandleByIndex(d, &dev)) continue;
+        unsigned int count = NVML_MAX_PROCESSES;
+        if (NVML_SUCCESS != s.api->getComputeRunningProcesses(dev, &count, infos)) continue;
+        for (unsigned int i = 0; i < count && i < NVML_MAX_PROCESSES; ++i) {
+            if (infos[i].usedGpuMemory > 0) {
+                GpuProcess p;
+                p.pid = infos[i].pid;
+                p.gpuIndex = d;
+                p.usedGpuMemory = infos[i].usedGpuMemory;
+                result.push_back(p);
+            }
         }
     }
     return result;

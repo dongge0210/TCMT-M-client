@@ -75,6 +75,7 @@ struct TuiData {
     int gpuFanSpeed = -1;            // NVML fan speed % (0-100), -1 = N/A
     struct GpuProcInfo {
         unsigned int pid = 0;
+        unsigned int gpuIndex = 0;
         unsigned long long vramBytes = 0;
     };
     std::vector<GpuProcInfo> gpuProcesses;

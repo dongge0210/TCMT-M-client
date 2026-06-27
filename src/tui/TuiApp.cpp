@@ -371,7 +371,10 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
     for (const auto& gp : data.gpuProcesses) {
         char buf[96];
-        snprintf(buf, sizeof(buf), "PID %-6u VRAM %s", gp.pid, FormatSize(gp.vramBytes).c_str());
+        if (gp.gpuIndex > 0)
+            snprintf(buf, sizeof(buf), "GPU%u PID %-6u VRAM %s", gp.gpuIndex, gp.pid, FormatSize(gp.vramBytes).c_str());
+        else
+            snprintf(buf, sizeof(buf), "PID %-6u VRAM %s", gp.pid, FormatSize(gp.vramBytes).c_str());
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, buf);
         lines++;
         if (lines > 10) break; // limit display
