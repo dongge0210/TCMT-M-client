@@ -59,6 +59,9 @@ bld/
 *.out
 *.app
 
+# Project notes (autonomous agent journal)
+/.notes/
+
 # Prerequisites
 *.d
 

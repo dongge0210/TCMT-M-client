@@ -1,4 +1,4 @@
-# Session State (2026-06-23)
+# Session State (2026-06-27)
 
 ## Branch
 `dev`
@@ -10,6 +10,12 @@
 - **IPC app version**: Added `appVersion[16]` to `IPCDataBlock` + schema field on macOS, read by `IPCSystemInfoMapper`, displayed in sidebar and top bar (no longer hardcoded)
 - **New converters**: `PercentToWidthConverter`, `NavSelectedToBgConverter`, `NavSelectedToFgConverter`, `NavSelectedToFontWeightConverter`
 - **Build**: Both C++ (macOS) and C# (Avalonia) build successfully
+- **TCMT-Dev Agent 创建**: `.github/agents/tcmt-dev.agent.md` — 自主开发个体，遵循先查文档、零假代码、不清就问、自觉记笔记等工作流
+- **笔记系统初始化**: `.notes/` 目录 (journal.md, insights.md, backup/)，已加入 .gitignore
+
+## Previous (2026-06-11)
+- **NamedPipeServer removed**: `NamedPipeServer.h/.cpp` deleted, merged into `IPCServer` with `#ifdef` (already done in previous session)
+- **Tech debt audit**: documented in `docs/tech-debt.md` — dual IPC structs, main.cpp bloat, three main files duplication, TemperatureWrapper inline hardware layers
 
 ## Paused
 - Windows `SharedMemoryBlock` not yet updated with `appVersion` field
