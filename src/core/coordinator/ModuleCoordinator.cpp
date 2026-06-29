@@ -286,6 +286,24 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();
     sysInfo.gpuFreq = data_.gpuFreq.load();
+
+    // ─── 4. Fan speeds (extracted from temperature list by "Fan" name) ───
+    sysInfo.fans.clear();
+    {
+        std::lock_guard<std::mutex> lock(data_.tempMutex);
+        for (const auto& [name, temp] : data_.temperatures) {
+            if (name.find("Fan") != std::string::npos ||
+                name.find("fan") != std::string::npos) {
+                SystemInfo::FanData fd;
+                fd.name = name;
+                fd.rpm = static_cast<float>(temp); // temp field reused for RPM
+                sysInfo.fans.push_back(fd);
+            }
+        }
+    }
+
+    // ─── 5+7+6: Process top, battery detail, per-core — populated by caller (main_mac/main) ───
+    // These are filled by the main loop, not by ModuleCoordinator
 }
 
 // =====================================================================

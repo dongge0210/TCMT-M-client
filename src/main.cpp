@@ -738,6 +738,53 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
 
     // App version
     addField("app/version", offsetof(B, appVersion), sizeof(B::appVersion), (uint8_t)FT::String);
+
+    // ─── 4. Fan speeds (up to 6) ───
+    for (int i = 0; i < 6; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "fan/%d/", i);
+        uint32_t base = offsetof(B, fans) + i * sizeof(B::FanSlot);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::FanSlot, name), sizeof(B::FanSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"rpm").c_str(),  base + offsetof(B::FanSlot, rpm), sizeof(float), (uint8_t)FT::Float32);
+    }
+    addField("fan/count", offsetof(B, fanCount), 1, (uint8_t)FT::UInt8);
+
+    // ─── 5. Process top (up to 7) ───
+    for (int i = 0; i < 7; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "proc/%d/", i);
+        uint32_t base = offsetof(B, topProcesses) + i * sizeof(B::ProcSlot);
+        addField((std::string(pfx)+"pid").c_str(),     base + offsetof(B::ProcSlot, pid), sizeof(int32_t), (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"name").c_str(),    base + offsetof(B::ProcSlot, name), sizeof(B::ProcSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"memory").c_str(),   base + offsetof(B::ProcSlot, memoryBytes), sizeof(uint64_t), (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"cpu").c_str(),     base + offsetof(B::ProcSlot, cpuPercent), sizeof(float), (uint8_t)FT::Float32);
+    }
+    addField("proc/count", offsetof(B, topProcCount), 1, (uint8_t)FT::UInt8);
+
+    // ─── 7. Battery detail ───
+    addField("battery/cycleCount",     offsetof(B, batteryCycleCount), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/designCapacity", offsetof(B, batteryDesignCapacity), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/maxCapacity",    offsetof(B, batteryMaxCapacity), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/healthPercent",  offsetof(B, batteryHealthPercent), sizeof(float), (uint8_t)FT::Float32);
+    addField("battery/temperature",    offsetof(B, batteryTemp), sizeof(float), (uint8_t)FT::Float32);
+    addField("battery/amperage",       offsetof(B, batteryAmperage), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/voltage",        offsetof(B, batteryVoltage), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/chargerWatts",   offsetof(B, batteryChargerWatts), sizeof(float), (uint8_t)FT::Float32);
+    addField("battery/isCharging",     offsetof(B, batteryIsCharging), 1, (uint8_t)FT::Bool);
+    addField("battery/isPresent",      offsetof(B, batteryIsPresent), 1, (uint8_t)FT::Bool);
+
+    // ─── 6. Per-core sensors (up to 16) ───
+    for (int i = 0; i < 16; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "core/%d/", i);
+        addField((std::string(pfx)+"temp").c_str(), offsetof(B, perCoreTemp) + i * sizeof(float), sizeof(float), (uint8_t)FT::Float32);
+        addField((std::string(pfx)+"freq").c_str(), offsetof(B, perCoreFreq) + i * sizeof(float), sizeof(float), (uint8_t)FT::Float32);
+    }
+    addField("core/count", offsetof(B, perCoreCount), 1, (uint8_t)FT::UInt8);
+
+    // ─── System info ───
+    addField("system/loadAvg1",    offsetof(B, loadAvg1), sizeof(float), (uint8_t)FT::Float32);
+    addField("system/loadAvg5",    offsetof(B, loadAvg5), sizeof(float), (uint8_t)FT::Float32);
+    addField("system/loadAvg15",   offsetof(B, loadAvg15), sizeof(float), (uint8_t)FT::Float32);
+    addField("system/processCount", offsetof(B, processCount), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("system/uptime",      offsetof(B, uptimeSeconds), sizeof(uint64_t), (uint8_t)FT::UInt64);
 }
 
 // ======================== Mode Handlers ========================
@@ -913,10 +960,6 @@ static int RunMcpMode() {
 
     server.Run();
     TemperatureWrapper::Cleanup();
-    return 0;
-}
-
-int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
     std::set_new_handler([]() {

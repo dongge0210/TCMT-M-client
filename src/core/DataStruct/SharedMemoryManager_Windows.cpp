@@ -406,6 +406,51 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         // App version
         SafeCopyStr(pBuffer->appVersion, sizeof(pBuffer->appVersion), systemInfo.appVersion);
 
+        // ─── 4. Fan speeds ───
+        pBuffer->fanCount = (int)(std::min)(systemInfo.fans.size(), (size_t)6);
+        for (int i = 0; i < pBuffer->fanCount; i++) {
+            SafeCopyStr(pBuffer->fans[i].name, sizeof(pBuffer->fans[i].name), systemInfo.fans[i].name);
+            pBuffer->fans[i].rpm = systemInfo.fans[i].rpm;
+        }
+
+        // ─── 5. Process top ───
+        pBuffer->topProcCount = (int)(std::min)(systemInfo.topProcesses.size(), (size_t)7);
+        for (int i = 0; i < pBuffer->topProcCount; i++) {
+            pBuffer->topProcesses[i].pid = systemInfo.topProcesses[i].pid;
+            SafeCopyStr(pBuffer->topProcesses[i].name, sizeof(pBuffer->topProcesses[i].name), systemInfo.topProcesses[i].name);
+            pBuffer->topProcesses[i].memoryBytes = systemInfo.topProcesses[i].memoryBytes;
+            pBuffer->topProcesses[i].cpuPercent = systemInfo.topProcesses[i].cpuPercent;
+        }
+
+        // ─── 6. Per-core sensors ───
+        pBuffer->perCoreCount = systemInfo.perCoreCount;
+        for (int i = 0; i < 16; i++) {
+            pBuffer->perCoreTemp[i] = systemInfo.perCoreTemp[i];
+            pBuffer->perCoreFreq[i] = systemInfo.perCoreFreq[i];
+        }
+
+        // ─── 7. Battery detail ───
+        pBuffer->batteryCycleCount = systemInfo.batteryCycleCount;
+        pBuffer->batteryDesignCapacity = systemInfo.batteryDesignCapacity;
+        pBuffer->batteryMaxCapacity = systemInfo.batteryMaxCapacity;
+        pBuffer->batteryHealthPercent = systemInfo.batteryHealthPercent;
+        pBuffer->batteryTemp = systemInfo.batteryTemp;
+        pBuffer->batteryAmperage = systemInfo.batteryAmperage;
+        pBuffer->batteryVoltage = systemInfo.batteryVoltage;
+        pBuffer->batteryChargerWatts = systemInfo.batteryChargerWatts;
+        pBuffer->batteryIsCharging = systemInfo.batteryIsCharging;
+        pBuffer->batteryIsPresent = systemInfo.batteryIsPresent;
+
+        // ─── System info ───
+        pBuffer->loadAvg1 = systemInfo.loadAvg1;
+        pBuffer->loadAvg5 = systemInfo.loadAvg5;
+        pBuffer->loadAvg15 = systemInfo.loadAvg15;
+        pBuffer->processCount = systemInfo.processCount;
+        pBuffer->uptimeSeconds = systemInfo.uptimeSeconds;
+
+        pBuffer->processCount = systemInfo.processCount;
+        pBuffer->uptimeSeconds = systemInfo.uptimeSeconds;
+
         Logger::Trace("Successfully wrote system info to IPC shared memory");
     } catch (const std::exception& e) {
         // seqlock: mark write complete (even) despite failure

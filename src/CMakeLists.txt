@@ -46,6 +46,7 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/display/DisplayInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/fan/FanSpeed.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/SpsManager.mm
@@ -182,6 +183,7 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
     ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
     ${CMAKE_CURRENT_SOURCE_DIR}/core/battery
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/fan
     ${CMAKE_CURRENT_SOURCE_DIR}/core/process
     ${CMAKE_CURRENT_SOURCE_DIR}/core/als
     ${CMAKE_CURRENT_SOURCE_DIR}/core/accel

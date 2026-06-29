@@ -232,6 +232,48 @@ struct IPCDataBlock {
 
     // App version string (e.g. "0.14.0")
     char     appVersion[16]          = {};
+
+    // ─── 4. Fan speeds (up to 6 fans) ───
+    struct FanSlot {
+        char     name[32]            = {};
+        float    rpm                 = 0;
+    };
+    FanSlot  fanSpeeds[6]            = {};
+    uint8_t  fanCount                = 0;
+
+    // ─── 5. Process Top N (up to 7 processes) ───
+    struct ProcSlot {
+        int32_t  pid                 = 0;
+        char     name[64]            = {};
+        uint64_t memoryBytes         = 0;
+        float    cpuPercent           = 0;
+    };
+    ProcSlot topProcesses[7]         = {};
+    uint8_t  topProcCount            = 0;
+
+    // ─── 7. Battery detail (health, cycle count, etc.) ───
+    int32_t  batteryCycleCount       = 0;
+    int32_t  batteryDesignCapacity   = 0;      // mAh
+    int32_t  batteryMaxCapacity      = 0;      // mAh (current max)
+    float    batteryHealthPercent    = 0;      // 0-100
+    float    batteryTemp             = 0;      // Celsius
+    int32_t  batteryAmperage         = 0;      // mA
+    int32_t  batteryVoltage          = 0;      // mV
+    float    batteryChargerWatts     = 0;      // connected charger W
+    bool     batteryIsCharging       = false;
+    bool     batteryIsPresent        = false;
+
+    // ─── 6. Per-core sensor data (up to 16 cores) ───
+    float    perCoreTemp[16]         = {};     // temperature per core (Celsius), 0=unavailable
+    float    perCoreFreq[16]         = {};     // frequency per core (MHz), 0=unavailable
+    uint8_t  perCoreCount            = 0;
+
+    // ─── System info ───
+    float    loadAvg1                = 0;
+    float    loadAvg5                = 0;
+    float    loadAvg15               = 0;
+    int32_t  processCount            = 0;
+    uint64_t uptimeSeconds           = 0;
 };
 
 #pragma pack(pop)

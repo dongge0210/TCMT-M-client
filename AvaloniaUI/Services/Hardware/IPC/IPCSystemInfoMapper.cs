@@ -49,6 +49,72 @@ public static class IPCSystemInfoMapper
             info.BatteryPercent = reader.ReadInt32("battery/percent") ?? -1;
             info.AcOnline = reader.ReadBool("battery/acOnline") ?? false;
 
+            // ─── 7. Battery detail ───
+            info.BatteryCycleCount = reader.ReadInt32("battery/cycleCount") ?? 0;
+            info.BatteryDesignCapacity = reader.ReadInt32("battery/designCapacity") ?? 0;
+            info.BatteryMaxCapacity = reader.ReadInt32("battery/maxCapacity") ?? 0;
+            info.BatteryHealthPercent = reader.ReadFloat64("battery/healthPercent") ?? (double?)reader.ReadFloat32("battery/healthPercent") ?? 0;
+            info.BatteryTemperature = reader.ReadFloat64("battery/temperature") ?? (double?)reader.ReadFloat32("battery/temperature") ?? 0;
+            info.BatteryAmperage = reader.ReadInt32("battery/amperage") ?? 0;
+            info.BatteryVoltage = reader.ReadInt32("battery/voltage") ?? 0;
+            info.BatteryChargerWatts = reader.ReadFloat64("battery/chargerWatts") ?? (double?)reader.ReadFloat32("battery/chargerWatts") ?? 0;
+            info.BatteryIsCharging = reader.ReadBool("battery/isCharging") ?? false;
+            info.BatteryIsPresent = reader.ReadBool("battery/isPresent") ?? false;
+
+            // ─── 4. Fan speeds ───
+            if (reader.HasField("fan/0/name"))
+            {
+                int idx = 0;
+                while (reader.HasField($"fan/{idx}/name") && idx < 6)
+                {
+                    var fName = reader.ReadString($"fan/{idx}/name") ?? "";
+                    var rpm = reader.ReadFloat32($"fan/{idx}/rpm") ?? 0f;
+                    if (rpm > 0)
+                    {
+                        info.Fans.Add(new FanData { Name = fName, Rpm = rpm });
+                    }
+                    idx++;
+                }
+            }
+
+            // ─── 5. Process Top N ───
+            if (reader.HasField("proc/0/name"))
+            {
+                int idx = 0;
+                while (reader.HasField($"proc/{idx}/name") && idx < 7)
+                {
+                    var pName = reader.ReadString($"proc/{idx}/name") ?? "";
+                    if (string.IsNullOrEmpty(pName)) { idx++; continue; }
+                    info.TopProcesses.Add(new ProcessTopEntry
+                    {
+                        Pid = reader.ReadInt32($"proc/{idx}/pid") ?? 0,
+                        Name = pName,
+                        MemoryBytes = reader.ReadUInt64($"proc/{idx}/memory") ?? 0,
+                        CpuPercent = reader.ReadFloat32($"proc/{idx}/cpu") ?? 0f
+                    });
+                    idx++;
+                }
+            }
+
+            // ─── 6. Per-core sensors ───
+            var coreCount = reader.ReadUInt8("core/count") ?? 0;
+            for (int i = 0; i < coreCount && i < 16; i++)
+            {
+                var temp = reader.ReadFloat32($"core/{i}/temp") ?? 0f;
+                var freq = reader.ReadFloat32($"core/{i}/freq") ?? 0f;
+                if (temp > 0 || freq > 0)
+                {
+                    info.PerCores.Add(new PerCoreData { Index = i, Temperature = temp, Frequency = freq });
+                }
+            }
+
+            // ─── System info ───
+            info.LoadAvg1 = reader.ReadFloat32("system/loadAvg1") ?? 0f;
+            info.LoadAvg5 = reader.ReadFloat32("system/loadAvg5") ?? 0f;
+            info.LoadAvg15 = reader.ReadFloat32("system/loadAvg15") ?? 0f;
+            info.ProcessCount = reader.ReadInt32("system/processCount") ?? 0;
+            info.UptimeSeconds = reader.ReadUInt64("system/uptime") ?? 0;
+
             // Power (mW)
             info.CpuPower = reader.ReadFloat64("power/cpu") ?? (double?)reader.ReadFloat32("power/cpu") ?? 0;
             info.GpuPower = reader.ReadFloat64("power/gpu") ?? (double?)reader.ReadFloat32("power/gpu") ?? 0;

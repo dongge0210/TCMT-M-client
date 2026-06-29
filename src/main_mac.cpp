@@ -36,6 +36,7 @@
 #include "core/bluetooth/BluetoothInfo.h"
 #include "core/display/DisplayInfo.h"
 #include "core/battery/BatteryHealth.h"
+#include "core/fan/FanSpeed.h"
 #include "core/notifications/DeviceChangeNotifier.h"
 #include "core/notifications/UserNotifier.h"
 #include "core/MCP/MCPServer.h"
@@ -198,6 +199,53 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addB("bluetooth/powerOn",     offsetof(B, bluetooth.powerOn));
     addI("bluetooth/deviceCount", offsetof(B, bluetooth.deviceCount));
     addS("bluetooth/name",        offsetof(B, bluetooth.name), 64);
+
+    // ─── 4. Fan speeds (up to 6) ───
+    for (int i = 0; i < 6; ++i) {
+        char p[32]; snprintf(p, sizeof(p), "fan/%d/", i);
+        uint32_t base = offsetof(B, fanSpeeds) + i * sizeof(B::FanSlot);
+        addS((std::string(p)+"name").c_str(), base + offsetof(B::FanSlot, name), 32);
+        addF((std::string(p)+"rpm").c_str(),  base + offsetof(B::FanSlot, rpm));
+    }
+    addU8("fan/count", offsetof(B, fanCount));
+
+    // ─── 5. Process Top N (up to 7) ───
+    for (int i = 0; i < 7; ++i) {
+        char p[32]; snprintf(p, sizeof(p), "proc/%d/", i);
+        uint32_t base = offsetof(B, topProcesses) + i * sizeof(B::ProcSlot);
+        addI((std::string(p)+"pid").c_str(),      base + offsetof(B::ProcSlot, pid));
+        addS((std::string(p)+"name").c_str(),      base + offsetof(B::ProcSlot, name), 64);
+        addU64((std::string(p)+"memory").c_str(),   base + offsetof(B::ProcSlot, memoryBytes));
+        addF((std::string(p)+"cpu").c_str(),       base + offsetof(B::ProcSlot, cpuPercent));
+    }
+    addU8("proc/count", offsetof(B, topProcCount));
+
+    // ─── 7. Battery detail ───
+    addI("battery/cycleCount",       offsetof(B, batteryCycleCount));
+    addI("battery/designCapacity",   offsetof(B, batteryDesignCapacity));
+    addI("battery/maxCapacity",      offsetof(B, batteryMaxCapacity));
+    addF("battery/healthPercent",    offsetof(B, batteryHealthPercent));
+    addF("battery/temperature",      offsetof(B, batteryTemp));
+    addI("battery/amperage",         offsetof(B, batteryAmperage));
+    addI("battery/voltage",          offsetof(B, batteryVoltage));
+    addF("battery/chargerWatts",     offsetof(B, batteryChargerWatts));
+    addB("battery/isCharging",       offsetof(B, batteryIsCharging));
+    addB("battery/isPresent",        offsetof(B, batteryIsPresent));
+
+    // ─── 6. Per-core sensor data (up to 16 cores) ───
+    for (int i = 0; i < 16; ++i) {
+        char p[32]; snprintf(p, sizeof(p), "core/%d/", i);
+        addF((std::string(p)+"temp").c_str(), offsetof(B, perCoreTemp) + i * sizeof(float));
+        addF((std::string(p)+"freq").c_str(), offsetof(B, perCoreFreq) + i * sizeof(float));
+    }
+    addU8("core/count", offsetof(B, perCoreCount));
+
+    // ─── System info (load avg, process count, uptime) ───
+    addF("system/loadAvg1",    offsetof(B, loadAvg1));
+    addF("system/loadAvg5",    offsetof(B, loadAvg5));
+    addF("system/loadAvg15",   offsetof(B, loadAvg15));
+    addI("system/processCount", offsetof(B, processCount));
+    addU64("system/uptime",     offsetof(B, uptimeSeconds));
 }
 
 // ======================== Formatting Helpers ========================
@@ -817,10 +865,12 @@ int main(int argc, char* argv[]) {
             static int displayCtr = 0;
             static DisplayInfo s_display;
             static BatteryHealth s_battery;
+            static FanSpeed s_fan;
             static ALSensor s_als;
             if (++displayCtr >= 6) { displayCtr = 0;
                 try { s_display.Detect(); } catch (...) {}
                 try { s_battery.Detect(); } catch (...) {}
+                try { s_fan.Detect(); } catch (...) {}
                 try { s_als.Detect(); } catch (...) {}
             } // end if loopCounter % HEAVY_SENSOR_SKIP
             // SPU sensors: SpsManager refreshes all sensors atomically (~500ms)
@@ -1246,6 +1296,53 @@ int main(int argc, char* argv[]) {
                     b->bluetooth.deviceCount = static_cast<int32_t>(bd2.devices.size());
                     std::strncpy(b->bluetooth.name, bd2.adapter.name.c_str(), 63);
                     b->bluetooth.name[63] = '\0';
+
+                    // ─── 4. Fan speeds ───
+                    b->fanCount = 0;
+                    {
+                        const auto& fans = s_fan.GetFans();
+                        b->fanCount = static_cast<uint8_t>(std::min(fans.size(), size_t(6)));
+                        for (size_t fi = 0; fi < b->fanCount; ++fi) {
+                            std::strncpy(b->fanSpeeds[fi].name, fans[fi].name.c_str(), 31);
+                            b->fanSpeeds[fi].name[31] = '\0';
+                            b->fanSpeeds[fi].rpm = fans[fi].rpm;
+                        }
+                    }
+
+                    // ─── 5. Process Top N ───
+                    b->topProcCount = static_cast<uint8_t>(std::min(data.topProcesses.size(), size_t(7)));
+                    for (size_t pi = 0; pi < b->topProcCount; ++pi) {
+                        auto& tp = b->topProcesses[pi];
+                        tp.pid = data.topProcesses[pi].pid;
+                        std::strncpy(tp.name, data.topProcesses[pi].name.c_str(), 63);
+                        tp.name[63] = '\0';
+                        tp.memoryBytes = data.topProcesses[pi].memoryBytes;
+                        tp.cpuPercent = static_cast<float>(data.topProcesses[pi].cpuPercent);
+                    }
+
+                    // ─── 7. Battery detail ───
+                    const auto& bd = s_battery.GetData();
+                    b->batteryCycleCount = bd.cycleCount;
+                    b->batteryDesignCapacity = bd.designCapacity;
+                    b->batteryMaxCapacity = bd.maxCapacity;
+                    b->batteryHealthPercent = static_cast<float>(bd.healthPercent);
+                    b->batteryTemp = static_cast<float>(bd.temperature);
+                    b->batteryAmperage = bd.amperage;
+                    b->batteryVoltage = bd.voltage;
+                    b->batteryChargerWatts = static_cast<float>(bd.chargerWatts);
+                    b->batteryIsCharging = bd.isCharging;
+                    b->batteryIsPresent = bd.present;
+
+                    // ─── 6. Per-core sensor data ───
+                    b->perCoreCount = 0;
+                    // Per-core data populated later (requires TemperatureWrapper expansion)
+
+                    // ─── System info (load avg, process count, uptime) ───
+                    b->loadAvg1 = static_cast<float>(data.loadAvg1);
+                    b->loadAvg5 = static_cast<float>(data.loadAvg5);
+                    b->loadAvg15 = static_cast<float>(data.loadAvg15);
+                    b->processCount = data.processCount;
+                    b->uptimeSeconds = data.uptimeSeconds;
 
                     // seqlock: mark write complete (even)
                     std::atomic_thread_fence(std::memory_order_release);

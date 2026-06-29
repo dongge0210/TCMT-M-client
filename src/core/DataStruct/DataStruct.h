@@ -197,6 +197,47 @@ struct SystemInfo {
     bool btPowerOn = false;
     int btDeviceCount = 0;
 
+    // ─── New fields (feature #4-9) ───
+    // 4. Fan speeds
+    struct FanData {
+        std::string name;
+        float rpm = 0;
+    };
+    std::vector<FanData> fans;
+
+    // 5. Process top
+    struct ProcData {
+        int32_t pid = 0;
+        std::string name;
+        uint64_t memoryBytes = 0;
+        float cpuPercent = 0;
+    };
+    std::vector<ProcData> topProcesses;
+
+    // 6. Per-core sensors
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    int perCoreCount = 0;
+
+    // 7. Battery detail (extended)
+    int batteryCycleCount = 0;
+    int batteryDesignCapacity = 0;
+    int batteryMaxCapacity = 0;
+    float batteryHealthPercent = 0;
+    float batteryTemp = 0;
+    int batteryAmperage = 0;
+    int batteryVoltage = 0;
+    float batteryChargerWatts = 0;
+    bool batteryIsCharging = false;
+    bool batteryIsPresent = false;
+
+    // System info
+    float loadAvg1 = 0;
+    float loadAvg5 = 0;
+    float loadAvg15 = 0;
+    int processCount = 0;
+    uint64_t uptimeSeconds = 0;
+
     // App version (e.g. "0.14.0")
     std::string appVersion = TCMT_VERSION_STR;
 
@@ -287,6 +328,46 @@ struct SharedMemoryBlock {
     double gpuPower;                // GPU power in mW
     double anePower;                // ANE power in mW
     double gpuFreq = 0.0;           // GPU frequency in MHz
+
+    // ─── 4. Fan speeds (up to 6 fans) ───
+    struct {
+        WCHAR name[32];
+        float rpm;
+    } fans[6];
+    int fanCount;
+
+    // ─── 5. Process top (up to 7) ───
+    struct {
+        int32_t pid;
+        WCHAR name[64];
+        uint64_t memoryBytes;
+        float cpuPercent;
+    } topProcesses[7];
+    int topProcCount;
+
+    // ─── 7. Battery detail ───
+    int32_t batteryCycleCount;
+    int32_t batteryDesignCapacity;
+    int32_t batteryMaxCapacity;
+    float batteryHealthPercent;
+    float batteryTemp;
+    int32_t batteryAmperage;
+    int32_t batteryVoltage;
+    float batteryChargerWatts;
+    bool batteryIsCharging;
+    bool batteryIsPresent;
+
+    // ─── 6. Per-core sensors (up to 16) ───
+    float perCoreTemp[16];
+    float perCoreFreq[16];
+    int perCoreCount;
+
+    // ─── System info ───
+    float loadAvg1;
+    float loadAvg5;
+    float loadAvg15;
+    int32_t processCount;
+    uint64_t uptimeSeconds;
 
     // OS version info
     WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
