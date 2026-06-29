@@ -418,83 +418,55 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
 
     // ── Try NVAPI for actual RPM first ──
     auto& napi = GetNvapi();
-    Logger::Info("GPU_FAN: napi.ready=" + std::to_string(napi.ready) +
-                  " napi.gpuCount=" + std::to_string(napi.gpuCount) +
-                  " nvs.ok=" + std::to_string(nvs.ok));
+    static bool fanLogged = false;
     if (napi.ready && napi.gpuCount > 0 && nvs.ok) {
         unsigned int nvapiIdx = 0;
         if (nvapiIdx < napi.gpuCount) {
             NvapiCoolerSettings cs = {};
-            cs.version = 2;
+            cs.version = sizeof(NvapiCoolerSettings) | 0x20000;  // v2
             auto coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
                 napi.query(NVAPI_GPU_GetCoolerSettings_ID);
-            Logger::Info("GPU_FAN: GetCoolerSettings fn=" + std::to_string((intptr_t)coolerFn));
-            if (coolerFn) {
-                NvAPI_Status rc = coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs));
-                Logger::Info("GPU_FAN: GetCoolerSettings rc=" + std::to_string(rc) +
-                              " count=" + std::to_string(cs.count));
-                if (rc == NVAPI_OK && cs.count > 0) {
-                    for (unsigned int i = 0; i < cs.count && i < 6; ++i) {
-                        Logger::Info("GPU_FAN: cooler[" + std::to_string(i) +
-                                      "] type=" + std::to_string(cs.coolers[i].type) +
-                                      " rpm=" + std::to_string(cs.coolers[i].currentRpm));
-                        GpuFanInfo fi;
-                        fi.index = i;
-                        unsigned int rpm = cs.coolers[i].currentRpm;
-                        if (cs.coolers[i].type == 1) {
-                            fi.speedRpm = static_cast<int>(rpm);
-                            fi.isRpm = true;
-                        } else {
-                            fi.speedRpm = -1;
-                        }
-                        result.push_back(fi);
+            if (coolerFn && coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) == NVAPI_OK && cs.count > 0) {
+                for (unsigned int i = 0; i < cs.count && i < 6; ++i) {
+                    GpuFanInfo fi;
+                    fi.index = i;
+                    if (cs.coolers[i].type == 1) {
+                        fi.speedRpm = static_cast<int>(cs.coolers[i].currentRpm);
+                        fi.isRpm = true;
+                    } else {
+                        fi.speedRpm = static_cast<int>(cs.coolers[i].currentRpm); // duty%
                     }
-                    // NVML backup for PWM-only coolers
-                    for (auto& fi : result) {
-                        if (fi.speedRpm < 0 && nvs.api->getFanSpeedV2) {
-                            unsigned int pct = 0;
-                            nvmlReturn_t r = nvs.api->getFanSpeedV2(nvs.device, fi.index, &pct);
-                            if (r != NVML_SUCCESS && fi.index == 0 && nvs.api->getFanSpeed)
-                                r = nvs.api->getFanSpeed(nvs.device, &pct);
-                            if (r == NVML_SUCCESS) fi.speedRpm = static_cast<int>(pct);
-                        }
-                    }
-                    if (!result.empty()) { Logger::Info("GPU_FAN: returning NVAPI cooler result"); return result; }
+                    result.push_back(fi);
                 }
+                if (!result.empty()) return result;
             }
-            // ── NVAPI fallback #2: ClientFanCoolersGetStatus ──
+            // ── NVAPI fallback: ClientFanCoolersGetStatus ──
             result.clear();
             NvapiClientCoolerStatus fcs = {};
-            fcs.version = sizeof(NvapiClientCoolerStatus) | 0x10001;
+            fcs.version = sizeof(NvapiClientCoolerStatus) | 0x10000;  // v1
             auto fanFn = (NvAPI_Status(*)(NvPhysicalGpuHandle, NvapiClientCoolerStatus*))
                 napi.query(NVAPI_GPU_ClientFanCoolersGetStatus_ID);
-            Logger::Info("GPU_FAN: ClientFanCoolers fn=" + std::to_string((intptr_t)fanFn));
-            if (fanFn) {
-                NvAPI_Status r = fanFn(napi.gpus[nvapiIdx], &fcs);
-                Logger::Info("GPU_FAN: ClientFanCoolers rc=" + std::to_string(r) +
-                              " count=" + std::to_string(fcs.count));
-                if (r == NVAPI_OK && fcs.count > 0) {
-                    for (unsigned int i = 0; i < fcs.count && i < 6; ++i) {
-                        Logger::Info("GPU_FAN: clientCooler[" + std::to_string(i) +
-                                      "] rpm=" + std::to_string(fcs.coolers[i].currentRpm));
-                        GpuFanInfo fi;
-                        fi.index = i;
-                        fi.speedRpm = static_cast<int>(fcs.coolers[i].currentRpm);
-                        fi.isRpm = true;
-                        result.push_back(fi);
-                    }
-                    if (!result.empty()) { Logger::Info("GPU_FAN: returning ClientFanCoolers result"); return result; }
+            if (fanFn && fanFn(napi.gpus[nvapiIdx], &fcs) == NVAPI_OK && fcs.count > 0) {
+                for (unsigned int i = 0; i < fcs.count && i < 6; ++i) {
+                    GpuFanInfo fi;
+                    fi.index = i;
+                    fi.speedRpm = static_cast<int>(fcs.coolers[i].currentRpm);
+                    fi.isRpm = true;
+                    result.push_back(fi);
                 }
+                if (!result.empty()) return result;
             }
+        }
+        if (!fanLogged) {
+            Logger::Info("GPU fans: NVAPI RPM not available, using NVML duty%");
+            fanLogged = true;
         }
     }
 
     // ── Fallback: NVML only (percentage) ──
-    if (!nvs.ok || !nvs.api->getNumFans) { Logger::Info("GPU_FAN: NVML unavailable, returning empty"); return result; }
+    if (!nvs.ok || !nvs.api->getNumFans) return result;
     unsigned int numFans = 0;
-    nvmlReturn_t nr = nvs.api->getNumFans(nvs.device, &numFans);
-    Logger::Info("GPU_FAN: NVML numFans=" + std::to_string(numFans) + " rc=" + std::to_string(nr));
-    if (nr != NVML_SUCCESS || numFans == 0) return result;
+    if (NVML_SUCCESS != nvs.api->getNumFans(nvs.device, &numFans) || numFans == 0) return result;
     for (unsigned int i = 0; i < numFans && i < 6; ++i) {
         unsigned int speed = 0;
         nvmlReturn_t rc = NVML_SUCCESS + 1;
@@ -502,14 +474,12 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
             rc = nvs.api->getFanSpeedV2(nvs.device, i, &speed);
         if (rc != NVML_SUCCESS && i == 0 && nvs.api->getFanSpeed)
             rc = nvs.api->getFanSpeed(nvs.device, &speed);
-        Logger::Info("GPU_FAN: NVML fan[" + std::to_string(i) + "] speed=" + std::to_string(speed) + " rc=" + std::to_string(rc));
         if (rc != NVML_SUCCESS) break;
         GpuFanInfo fi;
         fi.index = i;
         fi.speedRpm = static_cast<int>(speed);
         result.push_back(fi);
     }
-    Logger::Info("GPU_FAN: final result count=" + std::to_string(result.size()));
     return result;
 }
 
