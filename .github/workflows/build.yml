@@ -30,7 +30,7 @@ jobs:
 
     - name: Cache CUDA
       id: cache-cuda
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
         key: cuda-13.2.0
@@ -76,7 +76,7 @@ jobs:
 
     - name: Save CUDA cache
       if: steps.check-cuda.outputs.cuda_found != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
         key: cuda-13.2.0
@@ -85,7 +85,7 @@ jobs:
       uses: microsoft/setup-msbuild@v3
 
     - name: Cache .NET tools
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.dotnet/tools
         key: dotnet-tools-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
