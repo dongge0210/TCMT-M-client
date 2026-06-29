@@ -57,8 +57,13 @@ public:
     static double GetGpuUsage();
     // Returns GPU temperature (C) via NVML, or -1 if unavailable
     static double GetGpuTemperature();
-    // Returns GPU fan speed (%) via NVML, or -1 if unavailable
-    static int GetGpuFanSpeed();
+    // GPU fan info (multi-fan support)
+    struct GpuFanInfo {
+        unsigned int index = 0;
+        int speedRpm = 0;  // NVML reports % of max (not actual RPM)
+    };
+    // Returns per-fan speeds via NVML (NVML reports % of max, not actual RPM)
+    static std::vector<GpuFanInfo> GetGpuFans();
     // Returns GPU process list (PID, VRAM used) via NVML
     struct GpuProcess {
         unsigned int pid = 0;

@@ -1646,8 +1646,16 @@ int main(int argc, char* argv[]) {
                     tuiData.gpuPower = sysInfo.gpuPower;
                     tuiData.anePower = sysInfo.anePower;
                     tuiData.gpuFreq = sysInfo.gpuFreq;
-                    // GPU fan (NVML)
-                    tuiData.gpuFanSpeed = GpuInfo::GetGpuFanSpeed();
+                    // GPU fans (NVML multi-fan)
+                    tuiData.gpuFans.clear();
+                    for (const auto& gf : GpuInfo::GetGpuFans()) {
+                        tcmt::TuiData::GpuFanInfo fi;
+                        fi.index = gf.index;
+                        fi.speedRpm = gf.speedRpm;
+                        tuiData.gpuFans.push_back(fi);
+                    }
+                    // Keep legacy field for backward compat
+                    tuiData.gpuFanSpeed = tuiData.gpuFans.empty() ? -1 : tuiData.gpuFans[0].speedRpm;
                     // GPU processes (NVML)
                     tuiData.gpuProcesses.clear();
                     for (const auto& gp : GpuInfo::GetGpuProcesses()) {

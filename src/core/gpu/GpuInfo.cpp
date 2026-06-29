@@ -46,7 +46,8 @@ using NvmlDeviceGetTemperatureFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned 
 using NvmlDeviceGetClockInfoFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
 using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
 using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
-using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);  // v1: single fan
+using NvmlDeviceGetFanSpeedV2Fn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int, unsigned int*);  // v2: per-fan index
 // NVML process info (v2 layout — 24 bytes, matches driver's nvmlProcessInfo_v2_t)
 // Using v1-sized struct (16 bytes) with v2 driver causes buffer overflow → garbage VRAM + TUI freeze
 struct nvmlProcessInfo_t {
@@ -73,6 +74,7 @@ struct NvmlApi {
     NvmlDeviceGetCudaComputeCapabilityFn getCudaComputeCapability = nullptr;
     NvmlDeviceGetNumFansFn getNumFans = nullptr;
     NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
+    NvmlDeviceGetFanSpeedV2Fn getFanSpeedV2 = nullptr;  // v2: per-fan index
     NvmlDeviceGetComputeRunningProcessesFn getComputeRunningProcesses = nullptr;
     NvmlDeviceGetCountFn getDeviceCount = nullptr;
 };
@@ -121,6 +123,8 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetNumFans"));
         api.getFanSpeed = reinterpret_cast<NvmlDeviceGetFanSpeedFn>(
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
+        api.getFanSpeedV2 = reinterpret_cast<NvmlDeviceGetFanSpeedV2Fn>(
+            GetProcAddress(api.module, "nvmlDeviceGetFanSpeed_v2"));
         // Only use v1 of ComputeRunningProcesses — matches our nvmlProcessInfo_t layout.
         // v2/v3 structs are larger (extra instanceId fields + ccProtectedMemory), causing
         // buffer overrun and garbage VRAM values when interpreted as v1.
@@ -339,14 +343,31 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
 
-int GpuInfo::GetGpuFanSpeed() {
+std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
+    std::vector<GpuFanInfo> result;
     auto& s = GetNvmlSession();
-    if (!s.ok || !s.api->getNumFans || !s.api->getFanSpeed) return -1;
+    if (!s.ok || !s.api->getNumFans) return result;
     unsigned int numFans = 0;
-    if (NVML_SUCCESS != s.api->getNumFans(s.device, &numFans) || numFans == 0) return -1;
-    unsigned int speed = 0;
-    if (NVML_SUCCESS != s.api->getFanSpeed(s.device, &speed)) return -1;
-    return static_cast<int>(speed);
+    if (NVML_SUCCESS != s.api->getNumFans(s.device, &numFans) || numFans == 0) return result;
+
+    // Prefer v2 API for per-fan individual speeds, fall back to v1 (fan 0 only)
+    for (unsigned int i = 0; i < numFans && i < 6; ++i) {
+        unsigned int speed = 0;
+        nvmlReturn_t rc;
+        if (s.api->getFanSpeedV2)
+            rc = s.api->getFanSpeedV2(s.device, i, &speed);
+        else if (i == 0 && s.api->getFanSpeed)
+            rc = s.api->getFanSpeed(s.device, &speed);
+        else
+            break;
+        if (rc == NVML_SUCCESS) {
+            GpuFanInfo fi;
+            fi.index = i;
+            fi.speedRpm = static_cast<int>(speed);  // NVML returns % of max, not RPM
+            result.push_back(fi);
+        }
+    }
+    return result;
 }
 
 std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() {
