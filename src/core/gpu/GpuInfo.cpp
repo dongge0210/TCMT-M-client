@@ -429,8 +429,10 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                 for (auto& fi : result) {
                     if (fi.speedRpm < 0 && nvs.api->getFanSpeedV2) {
                         unsigned int pct = 0;
-                        if (nvs.api->getFanSpeedV2(nvs.device, fi.index, &pct) == NVML_SUCCESS)
-                            fi.speedRpm = static_cast<int>(pct);
+                        if (nvs.api->getFanSpeedV2(nvs.device, fi.index, &pct) != NVML_SUCCESS
+                            && fi.index == 0 && nvs.api->getFanSpeed)
+                            nvs.api->getFanSpeed(nvs.device, &pct);
+                        if (pct > 0) fi.speedRpm = static_cast<int>(pct);
                     }
                 }
                 // Filter out entries that still have no data
@@ -447,13 +449,14 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
     if (NVML_SUCCESS != nvs.api->getNumFans(nvs.device, &numFans) || numFans == 0) return result;
     for (unsigned int i = 0; i < numFans && i < 6; ++i) {
         unsigned int speed = 0;
-        nvmlReturn_t rc;
+        nvmlReturn_t rc = NVML_SUCCESS + 1; // non-success sentinel
         if (nvs.api->getFanSpeedV2)
             rc = nvs.api->getFanSpeedV2(nvs.device, i, &speed);
-        else if (i == 0 && nvs.api->getFanSpeed)
+        // v2 failed or unavailable → try v1 for fan 0 only
+        if (rc != NVML_SUCCESS && i == 0 && nvs.api->getFanSpeed)
             rc = nvs.api->getFanSpeed(nvs.device, &speed);
-        else break;
-        if (rc == NVML_SUCCESS && speed > 0) {
+        if (rc != NVML_SUCCESS) break;
+        if (speed > 0) {
             GpuFanInfo fi;
             fi.index = i;
             fi.speedRpm = static_cast<int>(speed);
