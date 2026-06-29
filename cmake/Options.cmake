@@ -57,7 +57,7 @@ function(tcmt_set_compile_options)
         # 平台特定选项
         if(TCMT_MACOS)
             add_compile_options(
-                -mmacosx-version-min=11.0  # 最低macOS版本
+                -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}
             )
             # -stdlib=libc++ is C++-only; applying it to C files triggers
             # "unused during compilation" warning. Set via CXX flags only.
@@ -96,7 +96,7 @@ function(tcmt_set_compile_options)
     else()
         message(STATUS "  GCC/Clang options: -fvisibility=hidden -fstack-protector-strong")
         if(TCMT_MACOS)
-            message(STATUS "  macOS options: -mmacosx-version-min=11.0 -stdlib=libc++")
+            message(STATUS "  macOS options: -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET} -stdlib=libc++")
         elseif(TCMT_LINUX)
             message(STATUS "  Linux options: -pipe")
         endif()

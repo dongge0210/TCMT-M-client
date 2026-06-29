@@ -10,6 +10,7 @@
 #include <sstream>
 #include <iomanip>
 #include <thread>
+#include <mutex>
 #include <atomic>
 #include <cstring>
 #include <csignal>
@@ -35,6 +36,7 @@
 #include "core/bluetooth/BluetoothInfo.h"
 #include "core/display/DisplayInfo.h"
 #include "core/battery/BatteryHealth.h"
+#include "core/fan/FanSpeed.h"
 #include "core/notifications/DeviceChangeNotifier.h"
 #include "core/notifications/UserNotifier.h"
 #include "core/MCP/MCPServer.h"
@@ -51,6 +53,8 @@
 
 // Config management (wraps CPP-parsers / nlohmann/json internally)
 #include "core/Config/ConfigManager.h"
+#include "core/HTTPServer/MotionHTTPServer.h"
+#include "core/ServerProbe.h"
 #include <fstream>
 #include <cstdio>
 
@@ -98,9 +102,12 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("cpu/freq/pCore",        offsetof(B, pCoreFreq));
     addF("cpu/freq/eCore",        offsetof(B, eCoreFreq));
     addF("cpu/temperature",       offsetof(B, cpuTemp));
+    addF("cpu/pcore/temperature", offsetof(B, cpuPcoreTemp));
+    addF("cpu/ecore/temperature", offsetof(B, cpuEcoreTemp));
     addB("cpu/hyperThreading",    offsetof(B, hyperThreading));
     addB("cpu/virtualization",    offsetof(B, virtualization));
     addF("cpu/sampleIntervalMs",  offsetof(B, cpuSampleIntervalMs));
+    addF("cpu/freq/base",         offsetof(B, cpuBaseFreq));
 
     // Memory
     addU64("memory/total",        offsetof(B, totalMemory));
@@ -122,6 +129,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     // OS
     addS("os/version",            offsetof(B, osVersion), 128);
     addS("os/model",              offsetof(B, hardwareModel), 128);
+    addS("app/version",           offsetof(B, appVersion), 16);
 
     // GPU
     addS("gpu/0/name",            offsetof(B, gpuName), 48);
@@ -191,6 +199,53 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addB("bluetooth/powerOn",     offsetof(B, bluetooth.powerOn));
     addI("bluetooth/deviceCount", offsetof(B, bluetooth.deviceCount));
     addS("bluetooth/name",        offsetof(B, bluetooth.name), 64);
+
+    // ─── 4. Fan speeds (up to 6) ───
+    for (int i = 0; i < 6; ++i) {
+        char p[32]; snprintf(p, sizeof(p), "fan/%d/", i);
+        uint32_t base = offsetof(B, fanSpeeds) + i * sizeof(B::FanSlot);
+        addS((std::string(p)+"name").c_str(), base + offsetof(B::FanSlot, name), 32);
+        addF((std::string(p)+"rpm").c_str(),  base + offsetof(B::FanSlot, rpm));
+    }
+    addU8("fan/count", offsetof(B, fanCount));
+
+    // ─── 5. Process Top N (up to 7) ───
+    for (int i = 0; i < 7; ++i) {
+        char p[32]; snprintf(p, sizeof(p), "proc/%d/", i);
+        uint32_t base = offsetof(B, topProcesses) + i * sizeof(B::ProcSlot);
+        addI((std::string(p)+"pid").c_str(),      base + offsetof(B::ProcSlot, pid));
+        addS((std::string(p)+"name").c_str(),      base + offsetof(B::ProcSlot, name), 64);
+        addU64((std::string(p)+"memory").c_str(),   base + offsetof(B::ProcSlot, memoryBytes));
+        addF((std::string(p)+"cpu").c_str(),       base + offsetof(B::ProcSlot, cpuPercent));
+    }
+    addU8("proc/count", offsetof(B, topProcCount));
+
+    // ─── 7. Battery detail ───
+    addI("battery/cycleCount",       offsetof(B, batteryCycleCount));
+    addI("battery/designCapacity",   offsetof(B, batteryDesignCapacity));
+    addI("battery/maxCapacity",      offsetof(B, batteryMaxCapacity));
+    addF("battery/healthPercent",    offsetof(B, batteryHealthPercent));
+    addF("battery/temperature",      offsetof(B, batteryTemp));
+    addI("battery/amperage",         offsetof(B, batteryAmperage));
+    addI("battery/voltage",          offsetof(B, batteryVoltage));
+    addF("battery/chargerWatts",     offsetof(B, batteryChargerWatts));
+    addB("battery/isCharging",       offsetof(B, batteryIsCharging));
+    addB("battery/isPresent",        offsetof(B, batteryIsPresent));
+
+    // ─── 6. Per-core sensor data (up to 16 cores) ───
+    for (int i = 0; i < 16; ++i) {
+        char p[32]; snprintf(p, sizeof(p), "core/%d/", i);
+        addF((std::string(p)+"temp").c_str(), offsetof(B, perCoreTemp) + i * sizeof(float));
+        addF((std::string(p)+"freq").c_str(), offsetof(B, perCoreFreq) + i * sizeof(float));
+    }
+    addU8("core/count", offsetof(B, perCoreCount));
+
+    // ─── System info (load avg, process count, uptime) ───
+    addF("system/loadAvg1",    offsetof(B, loadAvg1));
+    addF("system/loadAvg5",    offsetof(B, loadAvg5));
+    addF("system/loadAvg15",   offsetof(B, loadAvg15));
+    addI("system/processCount", offsetof(B, processCount));
+    addU64("system/uptime",     offsetof(B, uptimeSeconds));
 }
 
 // ======================== Formatting Helpers ========================
@@ -243,13 +298,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ======================== --json Mode ========================
-    bool jsonMode = false;
+    // ======================== Flags ========================
+    bool jsonMode = false, httpMode = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--json") {
-            jsonMode = true;
-            break;
-        }
+        std::string a(argv[i]);
+        if (a == "--json") jsonMode = true;
+        if (a == "--http") httpMode = true;
     }
 
     if (jsonMode) {
@@ -631,6 +685,14 @@ int main(int argc, char* argv[]) {
     // SPU Sensor Manager — reads ALL AppleSPUHIDDevice sensors via
     // asynchronous IOHIDDevice input report callbacks (no root needed).
     // Includes: gravity/orientation vector, gyroscope, ALS, lid angle.
+    // Global motion cache for HTTP server access (atomic swap)
+    static std::mutex s_motionMutex;
+    static double s_ax = 0, s_ay = 0, s_az = -1;
+    static double s_gx = 0, s_gy = 0, s_gz = 0;
+    static double s_lidAngle = 0, s_imut = 0;
+    static int s_heartbeat = 0, s_heartFlag = 0;
+    static bool s_hasAccel = false, s_hasGyro = false;
+
     static SpsManager s_sps;
     if (!s_sps.Start()) {
         Logger::Warn("SpsManager: no SPU HID sensors found — sensor features disabled");
@@ -638,6 +700,33 @@ int main(int argc, char* argv[]) {
         Logger::Info("SpsManager started with " + std::to_string(s_sps.Sensors().size()) + " sensors");
         for (auto& s : s_sps.Sensors())
             Logger::Info("  " + s->name);
+    }
+
+    // Motion HTTP server (--http flag only)
+    static MotionHTTPServer s_http;
+    if (httpMode) {
+        s_http.Start(9876, [](const std::string& method, const std::string& path) -> std::string {
+        if (path == "/sensors/motion" && method == "GET") {
+            std::lock_guard<std::mutex> lk(s_motionMutex);
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "{\"ax\":%.6f,\"ay\":%.6f,\"az\":%.6f,\"gx\":%.3f,\"gy\":%.3f,\"gz\":%.3f,\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f}",
+                s_ax, s_ay, s_az, s_gx, s_gy, s_gz, s_lidAngle, s_heartbeat, s_imut);
+            return std::string(buf);
+        }
+        extern int s_connCount;
+        if (path == "/system/ping" && method == "GET") {
+            char buf[128]; snprintf(buf, sizeof(buf), "{\"status\":\"ok\",\"conns\":%d}", s_connCount); return std::string(buf);
+        }
+        return "{}";
+    });
+    } // if (httpMode)
+
+    // ServerProbe: push data to tcmt-server (if available)
+    static ServerProbe s_probe;
+    if (httpMode) {
+        if (s_probe.Start("http://127.0.0.1:8080"))
+            Logger::Info("ServerProbe: connected to tcmt-server");
     }
 
     // Start history logger (SQLite)
@@ -676,6 +765,7 @@ int main(int argc, char* argv[]) {
     coordinator.Start();
 
     int loopCounter = 1;
+    const int HEAVY_SENSOR_SKIP = 30; // 30Hz ÷ 30 = 1Hz for CPU/GPU/disk/network/temp
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {
@@ -707,8 +797,10 @@ int main(int argc, char* argv[]) {
             data.performanceCores = cachedPCores;
             data.efficiencyCores = cachedECores;
 
-            // Coordinator snapshot fills CPU, Memory, Disk, Network, Temperature, Power
-            {
+            bool isHeavyFrame = (loopCounter % HEAVY_SENSOR_SKIP == 1);
+
+            // Coordinator snapshot — 2Hz only
+            if (isHeavyFrame) {
                 SystemInfo sysInfo;
                 coordinator.Snapshot(sysInfo, data);
 
@@ -724,6 +816,13 @@ int main(int argc, char* argv[]) {
                 data.swapTotal = sysInfo.swapTotal;
                 data.ramSpeed = sysInfo.ramSpeed;
                 strncpy(data.ramType, sysInfo.ramType, sizeof(data.ramType) - 1);
+
+                // ─── Per-core sensors (macOS: limited availability) ───
+                data.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
+                for (int ci = 0; ci < data.perCoreCount; ci++) {
+                    data.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
+                    data.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                }
             }
 
             // GPU (coordinator doesn't have a GPU loop — keep inline)
@@ -773,12 +872,14 @@ int main(int argc, char* argv[]) {
             static int displayCtr = 0;
             static DisplayInfo s_display;
             static BatteryHealth s_battery;
+            static FanSpeed s_fan;
             static ALSensor s_als;
             if (++displayCtr >= 6) { displayCtr = 0;
                 try { s_display.Detect(); } catch (...) {}
                 try { s_battery.Detect(); } catch (...) {}
+                try { s_fan.Detect(); } catch (...) {}
                 try { s_als.Detect(); } catch (...) {}
-            }
+            } // end if loopCounter % HEAVY_SENSOR_SKIP
             // SPU sensors: SpsManager refreshes all sensors atomically (~500ms)
             try { s_sps.Refresh(); } catch (...) {}
 
@@ -904,6 +1005,24 @@ int main(int argc, char* argv[]) {
                     data.temperatures.push_back({"IMU", data.spuTemp.celsius});
             }
 
+            // Update global motion cache for HTTP server
+            {
+                std::lock_guard<std::mutex> lk(s_motionMutex);
+                s_ax = data.accel.x; s_ay = data.accel.y; s_az = data.accel.z;
+                s_gx = data.gyro.x; s_gy = data.gyro.y; s_gz = data.gyro.z;
+                s_hasAccel = data.accel.valid;
+                s_hasGyro = data.gyro.valid;
+                if (data.lidAngle.valid) s_lidAngle = data.lidAngle.angle;
+                if (data.spuTemp.valid) s_imut = data.spuTemp.celsius;
+                if (data.motionHb.valid) {
+                    s_heartbeat = data.motionHb.counter;
+                    s_heartFlag = data.motionHb.eventFlag;
+                }
+            } // motion cache
+
+            // ── Heavy sensors / IPC write: 2Hz only ──
+            if (isHeavyFrame) {
+
             // System uptime / load / process count / top processes
             static ProcessTop s_procTop;
             static int procCtr = 0;
@@ -938,6 +1057,18 @@ int main(int argc, char* argv[]) {
                     pe.cpuPercent = e.cpuPercent;
                     data.topProcesses.push_back(pe);
                 }
+            }
+
+            // ─── Network traffic history ───
+            if (!data.adapters.empty()) {
+                uint64_t dl = data.adapters[0].downloadSpeed;
+                uint64_t ul = data.adapters[0].uploadSpeed;
+                int pos = data.dlHistoryPos;
+                data.dlHistory[pos] = dl;
+                data.ulHistory[pos] = ul;
+                data.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                if (data.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
+                    data.dlHistoryLen++;
             }
 
             // Timestamp
@@ -1030,9 +1161,12 @@ int main(int argc, char* argv[]) {
                         b->pCoreFreq = static_cast<float>(data.pCoreFreq);
                         b->eCoreFreq = static_cast<float>(data.eCoreFreq);
                         b->cpuTemp = static_cast<float>(data.cpuTemp);
+                        b->cpuPcoreTemp = static_cast<float>(data.cpuPcoreTemp);
+                        b->cpuEcoreTemp = static_cast<float>(data.cpuEcoreTemp);
                         b->hyperThreading = false;
                         b->virtualization = false;
                         b->cpuSampleIntervalMs = 500.0f;
+                        b->cpuBaseFreq = static_cast<float>(cpuInfo->GetLargeCoreSpeed());
                         // Memory
                         b->totalMemory = data.totalMemory;
                         b->usedMemory = data.usedMemory;
@@ -1054,6 +1188,9 @@ int main(int argc, char* argv[]) {
                         b->osVersion[127] = '\0';
                         std::strncpy(b->hardwareModel, data.hardwareModel.c_str(), 127);
                         b->hardwareModel[127] = '\0';
+                        // App version
+                        std::strncpy(b->appVersion, APP_VERSION, 15);
+                        b->appVersion[15] = '\0';
                         // GPU
                         std::strncpy(b->gpuName, data.gpuName.c_str(), 47);
                         b->gpuName[47] = '\0';
@@ -1179,19 +1316,86 @@ int main(int argc, char* argv[]) {
                     std::strncpy(b->bluetooth.name, bd2.adapter.name.c_str(), 63);
                     b->bluetooth.name[63] = '\0';
 
+                    // ─── 4. Fan speeds ───
+                    b->fanCount = 0;
+                    {
+                        const auto& fans = s_fan.GetFans();
+                        b->fanCount = static_cast<uint8_t>(std::min(fans.size(), size_t(6)));
+                        for (size_t fi = 0; fi < b->fanCount; ++fi) {
+                            std::strncpy(b->fanSpeeds[fi].name, fans[fi].name.c_str(), 31);
+                            b->fanSpeeds[fi].name[31] = '\0';
+                            b->fanSpeeds[fi].rpm = fans[fi].rpm;
+                        }
+                    }
+
+                    // ─── 5. Process Top N ───
+                    b->topProcCount = static_cast<uint8_t>(std::min(data.topProcesses.size(), size_t(7)));
+                    for (size_t pi = 0; pi < b->topProcCount; ++pi) {
+                        auto& tp = b->topProcesses[pi];
+                        tp.pid = data.topProcesses[pi].pid;
+                        std::strncpy(tp.name, data.topProcesses[pi].name.c_str(), 63);
+                        tp.name[63] = '\0';
+                        tp.memoryBytes = data.topProcesses[pi].memoryBytes;
+                        tp.cpuPercent = static_cast<float>(data.topProcesses[pi].cpuPercent);
+                    }
+
+                    // ─── 7. Battery detail ───
+                    const auto& bd = s_battery.GetData();
+                    b->batteryCycleCount = bd.cycleCount;
+                    b->batteryDesignCapacity = bd.designCapacity;
+                    b->batteryMaxCapacity = bd.maxCapacity;
+                    b->batteryHealthPercent = static_cast<float>(bd.healthPercent);
+                    b->batteryTemp = static_cast<float>(bd.temperature);
+                    b->batteryAmperage = bd.amperage;
+                    b->batteryVoltage = bd.voltage;
+                    b->batteryChargerWatts = static_cast<float>(bd.chargerWatts);
+                    b->batteryIsCharging = bd.isCharging;
+                    b->batteryIsPresent = bd.present;
+
+                    // ─── 6. Per-core sensor data ───
+                    b->perCoreCount = 0;
+                    // Per-core data populated later (requires TemperatureWrapper expansion)
+
+                    // ─── System info (load avg, process count, uptime) ───
+                    b->loadAvg1 = static_cast<float>(data.loadAvg1);
+                    b->loadAvg5 = static_cast<float>(data.loadAvg5);
+                    b->loadAvg15 = static_cast<float>(data.loadAvg15);
+                    b->processCount = data.processCount;
+                    b->uptimeSeconds = data.uptimeSeconds;
+
                     // seqlock: mark write complete (even)
                     std::atomic_thread_fence(std::memory_order_release);
                     b->writeSequence++;
                 }
 
+            } // isHeavyFrame
+
+            // Push snapshot to tcmt-server
+            if (httpMode && s_probe.Token().size() > 0) {
+                char snap[1024];
+                snprintf(snap, sizeof(snap),
+                    "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"
+                    "\"memory_used\":%llu,\"memory_total\":%llu,"
+                    "\"gpu_usage\":%.1f,\"gpu_temp\":%.1f,"
+                    "\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
+                    "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f,"
+                    "\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f",
+                    data.cpuUsage, data.cpuTemp,
+                    (unsigned long long)data.usedMemory, (unsigned long long)data.totalMemory,
+                    data.gpuUsage, data.gpuTemp,
+                    s_ax, s_ay, s_az, s_gx, s_gy, s_gz,
+                    s_lidAngle, s_heartbeat, s_imut);
+                s_probe.PostSnapshot(std::string("{") + snap + "}");
+            }
+
             // Sleep
             auto loopEnd = std::chrono::high_resolution_clock::now();
             int loopMs = (int)std::chrono::duration_cast<std::chrono::milliseconds>(
                 loopEnd - loopStart).count();
-            int sleepMs = std::max(500 - loopMs, 50);  // 2 Hz update
-            // Sleep with responsive exit (check every 50ms)
-            for (int s = 0; s < 10 && !g_shouldExit.load(); ++s) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            int sleepMs = std::max(33 - loopMs, 5);  // 30 Hz update
+            // Sleep with responsive exit (check every 5ms)
+            for (int s = 0; s < 7 && !g_shouldExit.load(); ++s) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             // Push sensor snapshots to history logger
             if (historyLogger.IsRunning()) {

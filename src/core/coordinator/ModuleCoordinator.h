@@ -48,6 +48,8 @@ struct ModuleData {
     std::mutex tempMutex;
     std::vector<std::pair<std::string, double>> temperatures;
     double cpuTemperature{0.0};
+    double cpuPcoreTemperature{0.0};
+    double cpuEcoreTemperature{0.0};
     double gpuTemperature{0.0};
     // Power (2s)
     std::atomic<int> batteryPercent{-1};

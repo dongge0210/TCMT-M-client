@@ -53,6 +53,8 @@ struct TuiData {
     double gpuFreq = 0.0;
     double gpuMaxFreq = 0.0;
     double cpuTemp = 0.0;
+    double cpuPcoreTemp = 0.0;
+    double cpuEcoreTemp = 0.0;
 
     // Memory
     uint64_t totalMemory = 0;
@@ -70,6 +72,19 @@ struct TuiData {
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
+    int gpuFanSpeed = -1;            // kept for compat, see gpuFans
+    struct GpuFanInfo {
+        unsigned int index = 0;
+        int speedRpm = 0;
+        bool isRpm = false;
+    };
+    std::vector<GpuFanInfo> gpuFans;
+    struct GpuProcInfo {
+        unsigned int pid = 0;
+        unsigned int gpuIndex = 0;
+        unsigned long long vramBytes = 0;
+    };
+    std::vector<GpuProcInfo> gpuProcesses;
 
     // Disk
     struct DiskInfo {
@@ -250,6 +265,18 @@ struct TuiData {
     };
     std::vector<ProcessTopEntry> topProcesses;
 
+    // Per-core sensor data (up to 16 cores)
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    uint8_t perCoreCount = 0;
+
+    // Network traffic sparkline history (last 40 samples)
+    static constexpr int NET_HISTORY_MAX = 40;
+    uint64_t dlHistory[NET_HISTORY_MAX] = {};
+    uint64_t ulHistory[NET_HISTORY_MAX] = {};
+    int dlHistoryPos = 0;
+    int dlHistoryLen = 0;
+
     // Timestamp
     std::string timestamp;
 };
@@ -291,6 +318,8 @@ private:
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);

@@ -64,7 +64,7 @@ public partial class NetworkViewModel : ViewModelBase
     public NetworkViewModel()
     {
         Title = "网络";
-        Icon = "🌐";
+        Icon = "network";
     }
 
     public override void Update(SystemInfo info)

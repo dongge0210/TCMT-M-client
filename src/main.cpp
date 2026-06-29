@@ -61,6 +61,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
 #include "core/wifi/WiFiInfo.h"
+#include <USBMonitor.h>
 #include "core/bluetooth/BluetoothInfo.h"
 #include "core/notifications/DeviceChangeNotifier.h"
 #include "core/MCP/MCPServer.h"
@@ -594,12 +595,12 @@ public:
 
 // ======================== MCP Helpers ========================
 
-// Build schema describing SharedMemoryBlock fields (for IPCServer + ConnectDirect)
+// Build schema describing IPCDataBlock fields (for IPCServer + ConnectDirect)
 static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
                                    std::vector<tcmt::ipc::FieldDef>& fields) {
-    schemaHdr.totalSize = sizeof(SharedMemoryBlock);
+    schemaHdr.totalSize = sizeof(tcmt::ipc::IPCDataBlock);
     auto addField = [&](const char* name, uint32_t offset, uint16_t size,
-                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float64,
+                        uint8_t type = (uint8_t)tcmt::ipc::FieldType::Float32,
                         uint32_t count = 0) {
         tcmt::ipc::FieldDef f{};
         f.offset = offset; f.size = size; f.type = type; f.count = count;
@@ -607,121 +608,359 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         fields.push_back(f);
     };
     using FT = tcmt::ipc::FieldType;
-    addField("cpu/name", offsetof(SharedMemoryBlock, cpuName), 128 * sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("cpu/cores/physical", offsetof(SharedMemoryBlock, physicalCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/cores/logical", offsetof(SharedMemoryBlock, logicalCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/usage", offsetof(SharedMemoryBlock, cpuUsage), 8);
-    addField("cpu/cores/performance", offsetof(SharedMemoryBlock, performanceCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/cores/efficiency", offsetof(SharedMemoryBlock, efficiencyCores), 4, (uint8_t)FT::Int32);
-    addField("cpu/freq/pCore", offsetof(SharedMemoryBlock, pCoreFreq), 8);
-    addField("cpu/freq/eCore", offsetof(SharedMemoryBlock, eCoreFreq), 8);
-    addField("cpu/freq/base", offsetof(SharedMemoryBlock, cpuBaseFreq), 8);
-    addField("cpu/hyperThreading", offsetof(SharedMemoryBlock, hyperThreading), 1, (uint8_t)FT::Bool);
-    addField("cpu/virtualization", offsetof(SharedMemoryBlock, virtualization), 1, (uint8_t)FT::Bool);
-    addField("cpu/temperature", offsetof(SharedMemoryBlock, cpuTemperature), 8);
-    addField("memory/total", offsetof(SharedMemoryBlock, totalMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/used", offsetof(SharedMemoryBlock, usedMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/available", offsetof(SharedMemoryBlock, availableMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/compressed", offsetof(SharedMemoryBlock, compressedMemory), 8, (uint8_t)FT::UInt64);
-    addField("memory/ramSpeed",   offsetof(SharedMemoryBlock, ramSpeed), 4, (uint8_t)FT::UInt32);
-    addField("memory/ramType",    offsetof(SharedMemoryBlock, ramType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("gpu/temperature", offsetof(SharedMemoryBlock, gpuTemperature), 8);
-    for (int i = 0; i < 2; i++) {
-        char prefix[32]; snprintf(prefix, sizeof(prefix), "gpu/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, gpus) + i * sizeof(GPUData);
-        addField((std::string(prefix)+"name").c_str(), base + offsetof(GPUData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(prefix)+"brand").c_str(), base + offsetof(GPUData, brand), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(prefix)+"memory").c_str(), base + offsetof(GPUData, memory), 8, (uint8_t)FT::UInt64);
-        addField((std::string(prefix)+"usage").c_str(), base + offsetof(GPUData, usage), 8);
-        addField((std::string(prefix)+"isVirtual").c_str(), base + offsetof(GPUData, isVirtual), 1, (uint8_t)FT::Bool);
-        addField((std::string(prefix)+"memoryPercent").c_str(), base + offsetof(GPUData, coreClock), 8);
-        addField((std::string(prefix)+"temperature").c_str(), offsetof(SharedMemoryBlock, gpuTemperature), 8);
-    }
-    addField("gpu/freq", offsetof(SharedMemoryBlock, gpuFreq), 8);
-    addField("battery/percent", offsetof(SharedMemoryBlock, batteryPercent), 4, (uint8_t)FT::Int32);
-    addField("battery/acOnline", offsetof(SharedMemoryBlock, acOnline), 1, (uint8_t)FT::Bool);
-    addField("power/cpu", offsetof(SharedMemoryBlock, cpuPower), 8);
-    addField("power/gpu", offsetof(SharedMemoryBlock, gpuPower), 8);
-    addField("power/ane", offsetof(SharedMemoryBlock, anePower), 8);
-    addField("os/version", offsetof(SharedMemoryBlock, osVersion), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("os/model", offsetof(SharedMemoryBlock, hardwareModel), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    using B = tcmt::ipc::IPCDataBlock;
+
+    // CPU
+    addField("cpu/name", offsetof(B, cpuName), sizeof(B::cpuName), (uint8_t)FT::String);
+    addField("cpu/cores/physical", offsetof(B, physicalCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/cores/logical", offsetof(B, logicalCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/usage", offsetof(B, cpuUsage), 4);
+    addField("cpu/cores/performance", offsetof(B, performanceCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/cores/efficiency", offsetof(B, efficiencyCores), 1, (uint8_t)FT::UInt8);
+    addField("cpu/freq/pCore", offsetof(B, pCoreFreq), 4);
+    addField("cpu/freq/eCore", offsetof(B, eCoreFreq), 4);
+    addField("cpu/freq/base", offsetof(B, cpuBaseFreq), 4);
+    addField("cpu/hyperThreading", offsetof(B, hyperThreading), 1, (uint8_t)FT::Bool);
+    addField("cpu/virtualization", offsetof(B, virtualization), 1, (uint8_t)FT::Bool);
+    addField("cpu/temperature", offsetof(B, cpuTemp), 4);
+    addField("cpu/pcore/temperature", offsetof(B, cpuPcoreTemp), 4);
+    addField("cpu/ecore/temperature", offsetof(B, cpuEcoreTemp), 4);
+    addField("cpu/sampleIntervalMs", offsetof(B, cpuSampleIntervalMs), 4);
+
+    // Memory
+    addField("memory/total", offsetof(B, totalMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/used", offsetof(B, usedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/available", offsetof(B, availableMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/compressed", offsetof(B, compressedMemory), 8, (uint8_t)FT::UInt64);
+    addField("memory/swapUsed", offsetof(B, swapUsed), 8, (uint8_t)FT::UInt64);
+    addField("memory/swapTotal", offsetof(B, swapTotal), 8, (uint8_t)FT::UInt64);
+    addField("memory/ramSpeed", offsetof(B, ramSpeed), 4, (uint8_t)FT::UInt32);
+    addField("memory/ramType", offsetof(B, ramType), sizeof(B::ramType), (uint8_t)FT::String);
+
+    // Battery/Power
+    addField("battery/percent", offsetof(B, batteryPercent), 4, (uint8_t)FT::Int32);
+    addField("battery/acOnline", offsetof(B, acOnline), 1, (uint8_t)FT::Bool);
+    addField("power/cpu", offsetof(B, cpuPower), 4);
+    addField("power/gpu", offsetof(B, gpuPower), 4);
+    addField("power/ane", offsetof(B, anePower), 4);
+
+    // OS
+    addField("os/version", offsetof(B, osVersion), sizeof(B::osVersion), (uint8_t)FT::String);
+    addField("os/model", offsetof(B, hardwareModel), sizeof(B::hardwareModel), (uint8_t)FT::String);
+
+    // GPU (single slot, mapped as gpu/0/ for C# compat)
+    addField("gpu/0/name", offsetof(B, gpuName), sizeof(B::gpuName), (uint8_t)FT::String);
+    addField("gpu/0/brand", offsetof(B, gpuBrand), sizeof(B::gpuBrand), (uint8_t)FT::String);
+    addField("gpu/0/memory", offsetof(B, gpuMemory), 8, (uint8_t)FT::UInt64);
+    addField("gpu/0/usage", offsetof(B, gpuUsage), 4);
+    addField("gpu/0/memoryPercent", offsetof(B, gpuMemoryPercent), 4);
+    addField("gpu/0/isVirtual", offsetof(B, gpuIsVirtual), 1, (uint8_t)FT::Bool);
+    addField("gpu/0/temperature", offsetof(B, gpuTemp), 4);
+    addField("gpu/freq", offsetof(B, gpuFreq), 4);
 
     // Network adapters (up to 4)
     for (int i = 0; i < 4; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "net/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, adapters) + i * sizeof(NetworkAdapterData);
-        addField((std::string(pfx)+"name").c_str(), base + offsetof(NetworkAdapterData, name), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(NetworkAdapterData, ipAddress), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(NetworkAdapterData, mac), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"type").c_str(), base + offsetof(NetworkAdapterData, adapterType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(NetworkAdapterData, speed), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(NetworkAdapterData, downloadSpeed), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(NetworkAdapterData, uploadSpeed), 8, (uint8_t)FT::UInt64);
+        uint32_t base = offsetof(B, adapters) + i * sizeof(B::NetSlot);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::NetSlot, name), sizeof(B::NetSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"ip").c_str(),   base + offsetof(B::NetSlot, ip), sizeof(B::NetSlot::ip), (uint8_t)FT::String);
+        addField((std::string(pfx)+"mac").c_str(),  base + offsetof(B::NetSlot, mac), sizeof(B::NetSlot::mac), (uint8_t)FT::String);
+        addField((std::string(pfx)+"type").c_str(), base + offsetof(B::NetSlot, type), sizeof(B::NetSlot::type), (uint8_t)FT::String);
+        addField((std::string(pfx)+"speed").c_str(),  base + offsetof(B::NetSlot, speed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"downloadSpeed").c_str(), base + offsetof(B::NetSlot, downloadSpeed), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"uploadSpeed").c_str(),   base + offsetof(B::NetSlot, uploadSpeed), 8, (uint8_t)FT::UInt64);
     }
 
-    // Disks (up to 8)
-    for (int i = 0; i < 8; i++) {
+    // Disks (up to 4)
+    for (int i = 0; i < 4; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, disks) + i * sizeof(SharedMemoryBlock::SharedDiskData);
-        addField((std::string(pfx)+"letter").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, letter), 1, (uint8_t)FT::UInt8);
-        addField((std::string(pfx)+"label").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, label), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(SharedMemoryBlock::SharedDiskData, fileSystem), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"total").c_str(), base + offsetof(SharedMemoryBlock::SharedDiskData, totalSize), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"used").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, usedSpace), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"free").c_str(),  base + offsetof(SharedMemoryBlock::SharedDiskData, freeSpace), 8, (uint8_t)FT::UInt64);
+        uint32_t base = offsetof(B, disks) + i * sizeof(B::DiskSlot);
+        addField((std::string(pfx)+"letter").c_str(), base + offsetof(B::DiskSlot, letter), 1, (uint8_t)FT::UInt8);
+        addField((std::string(pfx)+"label").c_str(), base + offsetof(B::DiskSlot, label), sizeof(B::DiskSlot::label), (uint8_t)FT::String);
+        addField((std::string(pfx)+"total").c_str(), base + offsetof(B::DiskSlot, totalSize), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"used").c_str(),  base + offsetof(B::DiskSlot, usedSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"free").c_str(),  base + offsetof(B::DiskSlot, freeSpace), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"fs").c_str(),    base + offsetof(B::DiskSlot, fs), sizeof(B::DiskSlot::fs), (uint8_t)FT::String);
     }
 
     // Temperature sensors (up to 10)
     for (int i = 0; i < 10; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "sensor/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, temperatures) + i * sizeof(TemperatureData);
-        addField((std::string(pfx)+"name").c_str(), base + offsetof(TemperatureData, sensorName), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"value").c_str(), base + offsetof(TemperatureData, temperature), 8);
+        uint32_t base = offsetof(B, temperatures) + i * sizeof(B::TempSlot);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::TempSlot, name), sizeof(B::TempSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"value").c_str(), base + offsetof(B::TempSlot, value), 4);
     }
 
     // Physical disks (SMART) (up to 8)
     for (int i = 0; i < 8; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "phys/%d/", i);
-        uint32_t base = offsetof(SharedMemoryBlock, physicalDisks) + i * sizeof(PhysicalDiskSmartData);
-        addField((std::string(pfx)+"model").c_str(),       base + offsetof(PhysicalDiskSmartData, model), 128*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(PhysicalDiskSmartData, serialNumber), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(PhysicalDiskSmartData, capacity), 8, (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(PhysicalDiskSmartData, interfaceType), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(PhysicalDiskSmartData, temperature), 8);
-        addField((std::string(pfx)+"health").c_str(),      base + offsetof(PhysicalDiskSmartData, healthPercentage), 1, (uint8_t)FT::UInt8);
-        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(PhysicalDiskSmartData, smartSupported), 1, (uint8_t)FT::Bool);
-        addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(PhysicalDiskSmartData, attributeCount), 4, (uint8_t)FT::Int32);
-        addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(PhysicalDiskSmartData, attrsJson), 4096, (uint8_t)FT::String);
-        // logical drive letters (up to 8 letters, stored as individual bytes + count)
+        uint32_t base = offsetof(B, physicalDisks) + i * sizeof(B::PhysDiskSlot);
+        addField((std::string(pfx)+"model").c_str(),       base + offsetof(B::PhysDiskSlot, model), sizeof(B::PhysDiskSlot::model), (uint8_t)FT::String);
+        addField((std::string(pfx)+"serial").c_str(),      base + offsetof(B::PhysDiskSlot, serial), sizeof(B::PhysDiskSlot::serial), (uint8_t)FT::String);
+        addField((std::string(pfx)+"capacity").c_str(),    base + offsetof(B::PhysDiskSlot, capacity), 8, (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"interface").c_str(),   base + offsetof(B::PhysDiskSlot, interfaceType), sizeof(B::PhysDiskSlot::interfaceType), (uint8_t)FT::String);
+        addField((std::string(pfx)+"temperature").c_str(), base + offsetof(B::PhysDiskSlot, temperature), 4);
+        addField((std::string(pfx)+"health").c_str(),      base + offsetof(B::PhysDiskSlot, healthPercent), 4);
+        addField((std::string(pfx)+"smartSupported").c_str(), base + offsetof(B::PhysDiskSlot, smartSupported), 1, (uint8_t)FT::Bool);
+        addField((std::string(pfx)+"attrCount").c_str(),    base + offsetof(B::PhysDiskSlot, attrCount), 4, (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"attrsJson").c_str(),     base + offsetof(B::PhysDiskSlot, attrsJson), sizeof(B::PhysDiskSlot::attrsJson), (uint8_t)FT::String);
         for (int j = 0; j < 8; j++) {
             char fn[64]; snprintf(fn, sizeof(fn), "%sletter%d", pfx, j);
-            addField(fn, base + offsetof(PhysicalDiskSmartData, logicalDriveLetters) + j, 1, (uint8_t)FT::UInt8);
+            addField(fn, base + offsetof(B::PhysDiskSlot, logicalDriveLetters) + j, 1, (uint8_t)FT::UInt8);
         }
-        addField((std::string(pfx)+"letterCount").c_str(), base + offsetof(PhysicalDiskSmartData, logicalDriveCount), 4, (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"letterCount").c_str(), base + offsetof(B::PhysDiskSlot, logicalDriveCount), 4, (uint8_t)FT::Int32);
     }
 
     // WiFi
-    addField("wifi/ssid",     offsetof(SharedMemoryBlock, wifi.ssid), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/rssi",     offsetof(SharedMemoryBlock, wifi.rssi), 4, (uint8_t)FT::Int32);
-    addField("wifi/channel",  offsetof(SharedMemoryBlock, wifi.channel), 4, (uint8_t)FT::Int32);
-    addField("wifi/security", offsetof(SharedMemoryBlock, wifi.security), 16*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/band",     offsetof(SharedMemoryBlock, wifi.band), 8*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/gen",      offsetof(SharedMemoryBlock, wifi.wifiGen), 12*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("wifi/powerOn",  offsetof(SharedMemoryBlock, wifi.powerOn), 1, (uint8_t)FT::Bool);
-    addField("wifi/isConnected", offsetof(SharedMemoryBlock, wifi.isConnected), 1, (uint8_t)FT::Bool);
+    addField("wifi/ssid",     offsetof(B, wifi.ssid), sizeof(B::WifiSlot::ssid), (uint8_t)FT::String);
+    addField("wifi/rssi",     offsetof(B, wifi.rssi), 4, (uint8_t)FT::Int32);
+    addField("wifi/channel",  offsetof(B, wifi.channel), 4, (uint8_t)FT::Int32);
+    addField("wifi/security", offsetof(B, wifi.security), sizeof(B::WifiSlot::security), (uint8_t)FT::String);
+    addField("wifi/band",     offsetof(B, wifi.band), sizeof(B::WifiSlot::band), (uint8_t)FT::String);
+    addField("wifi/gen",      offsetof(B, wifi.wifiGen), sizeof(B::WifiSlot::wifiGen), (uint8_t)FT::String);
+    addField("wifi/powerOn",  offsetof(B, wifi.powerOn), 1, (uint8_t)FT::Bool);
+    addField("wifi/isConnected", offsetof(B, wifi.isConnected), 1, (uint8_t)FT::Bool);
+
     // Bluetooth
-    addField("bluetooth/powerOn",     offsetof(SharedMemoryBlock, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
-    addField("bluetooth/deviceCount", offsetof(SharedMemoryBlock, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
-    addField("bluetooth/name",        offsetof(SharedMemoryBlock, bluetooth.name), 64*(int)sizeof(WCHAR), (uint8_t)FT::WString);
+    addField("bluetooth/powerOn",     offsetof(B, bluetooth.powerOn), 1, (uint8_t)FT::Bool);
+    addField("bluetooth/deviceCount", offsetof(B, bluetooth.deviceCount), 4, (uint8_t)FT::Int32);
+    addField("bluetooth/name",        offsetof(B, bluetooth.name), sizeof(B::BtSlot::name), (uint8_t)FT::String);
 
     // TPM
-    addField("tpm/manufacturer",    offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, manufacturer), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("tpm/firmwareVersion", offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, firmwareVersion), 32*(int)sizeof(WCHAR), (uint8_t)FT::WString);
-    addField("tpm/status",          offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, status), 1, (uint8_t)FT::UInt8);
-    addField("tpm/selfTestStatus",  offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, selfTestStatus), 1, (uint8_t)FT::UInt8);
-    addField("tpm/isEnabled",       offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isEnabled), 1, (uint8_t)FT::Bool);
-    addField("tpm/isActive",        offsetof(SharedMemoryBlock, tpm) + offsetof(TpmInfo, isActive), 1, (uint8_t)FT::Bool);
-    addField("tpm/count",           offsetof(SharedMemoryBlock, tpmCount), 1, (uint8_t)FT::UInt8);
+    addField("tpm/manufacturer",    offsetof(B, tpm.manufacturer), sizeof(B::TpmSlot::manufacturer), (uint8_t)FT::String);
+    addField("tpm/firmwareVersion", offsetof(B, tpm.firmwareVersion), sizeof(B::TpmSlot::firmwareVersion), (uint8_t)FT::String);
+    addField("tpm/isPresent",       offsetof(B, tpm.isPresent), 1, (uint8_t)FT::Bool);
+    addField("tpm/isEnabled",       offsetof(B, tpm.isEnabled), 1, (uint8_t)FT::Bool);
+    addField("tpm/isActive",        offsetof(B, tpm.isActive), 1, (uint8_t)FT::Bool);
+    addField("tpm/selfTestStatus",  offsetof(B, tpm.selfTestStatus), 1, (uint8_t)FT::UInt8);
+    addField("tpm/status",          offsetof(B, tpm.status), 1, (uint8_t)FT::UInt8);
+    addField("tpm/count",           offsetof(B, tpmCount), 1, (uint8_t)FT::UInt8);
+
+    // App version
+    addField("app/version", offsetof(B, appVersion), sizeof(B::appVersion), (uint8_t)FT::String);
+
+    // ─── 4. Fan speeds (up to 6) ───
+    for (int i = 0; i < 6; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "fan/%d/", i);
+        uint32_t base = offsetof(B, fanSpeeds) + i * sizeof(B::FanSlot);
+        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::FanSlot, name), sizeof(B::FanSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"rpm").c_str(),  base + offsetof(B::FanSlot, rpm), sizeof(float), (uint8_t)FT::Float32);
+    }
+    addField("fan/count", offsetof(B, fanCount), 1, (uint8_t)FT::UInt8);
+
+    // ─── 5. Process top (up to 7) ───
+    for (int i = 0; i < 7; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "proc/%d/", i);
+        uint32_t base = offsetof(B, topProcesses) + i * sizeof(B::ProcSlot);
+        addField((std::string(pfx)+"pid").c_str(),     base + offsetof(B::ProcSlot, pid), sizeof(int32_t), (uint8_t)FT::Int32);
+        addField((std::string(pfx)+"name").c_str(),    base + offsetof(B::ProcSlot, name), sizeof(B::ProcSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"memory").c_str(),   base + offsetof(B::ProcSlot, memoryBytes), sizeof(uint64_t), (uint8_t)FT::UInt64);
+        addField((std::string(pfx)+"cpu").c_str(),     base + offsetof(B::ProcSlot, cpuPercent), sizeof(float), (uint8_t)FT::Float32);
+    }
+    addField("proc/count", offsetof(B, topProcCount), 1, (uint8_t)FT::UInt8);
+
+    // ─── 7. Battery detail ───
+    addField("battery/cycleCount",     offsetof(B, batteryCycleCount), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/designCapacity", offsetof(B, batteryDesignCapacity), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/maxCapacity",    offsetof(B, batteryMaxCapacity), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/healthPercent",  offsetof(B, batteryHealthPercent), sizeof(float), (uint8_t)FT::Float32);
+    addField("battery/temperature",    offsetof(B, batteryTemp), sizeof(float), (uint8_t)FT::Float32);
+    addField("battery/amperage",       offsetof(B, batteryAmperage), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/voltage",        offsetof(B, batteryVoltage), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("battery/chargerWatts",   offsetof(B, batteryChargerWatts), sizeof(float), (uint8_t)FT::Float32);
+    addField("battery/isCharging",     offsetof(B, batteryIsCharging), 1, (uint8_t)FT::Bool);
+    addField("battery/isPresent",      offsetof(B, batteryIsPresent), 1, (uint8_t)FT::Bool);
+
+    // ─── 6. Per-core sensors (up to 16) ───
+    for (int i = 0; i < 16; i++) {
+        char pfx[32]; snprintf(pfx, sizeof(pfx), "core/%d/", i);
+        addField((std::string(pfx)+"temp").c_str(), offsetof(B, perCoreTemp) + i * sizeof(float), sizeof(float), (uint8_t)FT::Float32);
+        addField((std::string(pfx)+"freq").c_str(), offsetof(B, perCoreFreq) + i * sizeof(float), sizeof(float), (uint8_t)FT::Float32);
+    }
+    addField("core/count", offsetof(B, perCoreCount), 1, (uint8_t)FT::UInt8);
+
+    // ─── System info ───
+    addField("system/loadAvg1",    offsetof(B, loadAvg1), sizeof(float), (uint8_t)FT::Float32);
+    addField("system/loadAvg5",    offsetof(B, loadAvg5), sizeof(float), (uint8_t)FT::Float32);
+    addField("system/loadAvg15",   offsetof(B, loadAvg15), sizeof(float), (uint8_t)FT::Float32);
+    addField("system/processCount", offsetof(B, processCount), sizeof(int32_t), (uint8_t)FT::Int32);
+    addField("system/uptime",      offsetof(B, uptimeSeconds), sizeof(uint64_t), (uint8_t)FT::UInt64);
+}
+
+// ======================== Mode Handlers ========================
+
+// --json: one-shot JSON snapshot to stdout (for scripting / CI)
+static int RunJsonMode() {
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr)) {
+        Logger::Error("COM init failed for --json mode");
+        return 1;
+    }
+
+    auto wmiManager = std::make_unique<WmiManager>();
+    if (!wmiManager || !wmiManager->IsInitialized()) {
+        Logger::Error("WMI init failed for --json mode");
+        CoUninitialize();
+        return 1;
+    }
+
+    char tmpBuf[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmpBuf);
+    std::string tmpPath = std::string(tmpBuf) + "tcmt_export.json";
+    std::remove(tmpPath.c_str());
+    ConfigManager cfg(tmpPath);
+    cfg.Load();
+
+    try { OSInfo os; cfg.SetString("os.version", os.GetVersion()); } catch (...) {}
+    try {
+        auto cpu = std::make_unique<CpuInfo>();
+        cfg.SetString("cpu.name", cpu->GetName());
+        cfg.SetInt("cpu.cores.physical", cpu->GetLargeCores() + cpu->GetSmallCores());
+        cfg.SetInt("cpu.cores.logical", cpu->GetTotalCores());
+        cfg.SetDouble("cpu.usage", cpu->GetUsage());
+    } catch (...) {}
+    try {
+        MemoryInfo mem;
+        cfg.SetUint64("memory.total", mem.GetTotalPhysical());
+        cfg.SetUint64("memory.available", mem.GetAvailablePhysical());
+        cfg.SetUint64("memory.used", mem.GetTotalPhysical() - mem.GetAvailablePhysical());
+    } catch (...) {}
+    try {
+        GpuInfo gpuInfo(*wmiManager);
+        const auto& gpus = gpuInfo.GetGpuData();
+        if (!gpus.empty()) {
+            cfg.SetString("gpu.name", WinUtils::WstringToString(gpus[0].name));
+            cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
+            cfg.SetDouble("gpu.usage", gpus[0].usage);
+        }
+    } catch (...) {}
+    try {
+        NetworkAdapter netAdapter(*wmiManager);
+        const auto& adapters = netAdapter.GetAdapters();
+        for (const auto& a : adapters) {
+            nlohmann::json na;
+            na["name"] = a.name;
+            na["ip"] = a.ip;
+            na["mac"] = a.mac;
+            na["type"] = a.adapterType;
+            na["speed"] = a.speed;
+            cfg.AppendToArray("network.adapters", std::move(na));
+        }
+    } catch (...) {}
+    try {
+        DiskInfo disk;
+        auto volumes = disk.GetDisks();
+        for (const auto& v : volumes) {
+            nlohmann::json dj;
+            dj["label"] = v.label;
+            dj["fileSystem"] = v.fileSystem;
+            dj["total"] = v.totalSize;
+            dj["used"] = v.usedSpace;
+            cfg.AppendToArray("disks", std::move(dj));
+        }
+    } catch (...) {}
+    try {
+        auto temps = TemperatureWrapper::GetTemperatures();
+        nlohmann::json tempObj = nlohmann::json::object();
+        for (const auto& t : temps) tempObj[t.first] = t.second;
+        cfg.SetJson("temperatures", std::move(tempObj));
+    } catch (...) {}
+
+    if (cfg.Save()) {
+        std::ifstream in(tmpPath);
+        if (in) std::cout << in.rdbuf();
+    }
+    std::cout << std::endl;
+    std::remove(tmpPath.c_str());
+    TemperatureWrapper::Cleanup();
+    CoUninitialize();
+    return 0;
+}
+
+// --mcp: JSON-RPC 2.0 MCP server over stdio (for AI agent integration)
+static int RunMcpMode() {
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+    tcmt::mcp::MCPServer server;
+
+    tcmt::ipc::IPCClient ipc;
+    bool useIpc = ipc.Connect();
+    if (useIpc) {
+        Logger::Info("MCP: connected to running TCMT via IPC");
+        ipc.ClosePipe();
+    } else {
+        Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+    }
+
+    server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["name"]    = ipc.ReadString("cpu/name").value_or("");
+            j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+            j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+            j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
+            j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
+            j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
+            j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
+            j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+        } else {
+            CpuInfo cpu;
+            j["name"] = cpu.GetName();
+            j["usage"] = cpu.GetUsage();
+            j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
+            j["temperature"] = 0.0;
+        }
+        return j;
+    });
+    server.RegisterTool("get_memory", "System memory statistics",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
+            j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
+            j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
+        } else {
+            MemoryInfo mem;
+            j["total"] = mem.GetTotalPhysical();
+            j["available"] = mem.GetAvailablePhysical();
+            j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
+        }
+        return j;
+    });
+    server.RegisterTool("get_gpu_status", "GPU usage and memory",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
+            j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+            j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
+        }
+        return j;
+    });
+    server.RegisterTool("get_system_info", "OS version and hardware summary",
+    [&ipc, useIpc]() -> nlohmann::json {
+        nlohmann::json j;
+        if (useIpc) {
+            j["os"] = ipc.ReadString("os/version").value_or("");
+            j["cpu"] = ipc.ReadString("cpu/name").value_or("");
+            j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
+            j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
+        } else {
+            OSInfo os; CpuInfo cpu; MemoryInfo mem;
+            j["os"] = os.GetVersion();
+            j["cpu"] = cpu.GetName();
+            j["cores"] = cpu.GetTotalCores();
+            j["memoryTotal"] = mem.GetTotalPhysical();
+        }
+        return j;
+    });
+
+    server.Run();
+    TemperatureWrapper::Cleanup();
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -752,221 +991,12 @@ int main(int argc, char* argv[]) {
         }
 
         // ======================== --json Mode ========================
-        bool jsonMode = false;
-        for (int i = 1; i < argc; ++i) {
-            if (std::string(argv[i]) == "--json") {
-                jsonMode = true;
-                break;
-            }
-        }
-
-        if (jsonMode) {
-            // One-shot JSON output for scripting
-            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-            if (FAILED(hr)) {
-                Logger::Error("COM init failed for --json mode");
-                return 1;
-            }
-
-            auto wmiManager = std::make_unique<WmiManager>();
-            if (!wmiManager || !wmiManager->IsInitialized()) {
-                Logger::Error("WMI init failed for --json mode");
-                CoUninitialize();
-                return 1;
-            }
-
-
-            // Build JSON via ConfigManager, then dump to stdout via temp file
-            char tmpBuf[MAX_PATH];
-            GetTempPathA(MAX_PATH, tmpBuf);
-            std::string tmpPath = std::string(tmpBuf) + "tcmt_export.json";
-            std::remove(tmpPath.c_str());  // ensure clean start
-            ConfigManager cfg(tmpPath);
-            cfg.Load();  // starts with empty json::object
-
-            // OS
-            try {
-                OSInfo os;
-                cfg.SetString("os.version", os.GetVersion());
-            } catch (...) {}
-
-            // CPU
-            try {
-                auto cpu = std::make_unique<CpuInfo>();
-                cfg.SetString("cpu.name", cpu->GetName());
-                cfg.SetInt("cpu.cores.physical", cpu->GetLargeCores() + cpu->GetSmallCores());
-                cfg.SetInt("cpu.cores.logical", cpu->GetTotalCores());
-                cfg.SetDouble("cpu.usage", cpu->GetUsage());
-            } catch (...) {}
-
-            // Memory
-            try {
-                MemoryInfo mem;
-                cfg.SetUint64("memory.total", mem.GetTotalPhysical());
-                cfg.SetUint64("memory.available", mem.GetAvailablePhysical());
-                cfg.SetUint64("memory.used", mem.GetTotalPhysical() - mem.GetAvailablePhysical());
-            } catch (...) {}
-
-            // GPU
-            try {
-                GpuInfo gpuInfo(*wmiManager);
-                const auto& gpus = gpuInfo.GetGpuData();
-                if (!gpus.empty()) {
-                    cfg.SetString("gpu.name", WinUtils::WstringToString(gpus[0].name));
-                    cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
-                    cfg.SetDouble("gpu.usage", gpus[0].usage);
-                }
-            } catch (...) {}
-
-            // Network
-            try {
-                NetworkAdapter netAdapter(*wmiManager);
-                const auto& adapters = netAdapter.GetAdapters();
-                for (const auto& a : adapters) {
-                    nlohmann::json na;
-                    na["name"] = a.name;
-                    na["ip"] = a.ip;
-                    na["mac"] = a.mac;
-                    na["type"] = a.adapterType;
-                    na["speed"] = a.speed;
-                    cfg.AppendToArray("network.adapters", std::move(na));
-                }
-            } catch (...) {}
-
-            // Disks
-            try {
-                DiskInfo disk;
-                auto volumes = disk.GetDisks();
-                for (const auto& v : volumes) {
-                    nlohmann::json dj;
-                    dj["label"] = v.label;
-                    dj["fileSystem"] = v.fileSystem;
-                    dj["total"] = v.totalSize;
-                    dj["used"] = v.usedSpace;
-                    cfg.AppendToArray("disks", std::move(dj));
-                }
-            } catch (...) {}
-
-            // Temperatures
-            try {
-                auto temps = TemperatureWrapper::GetTemperatures();
-                nlohmann::json tempObj = nlohmann::json::object();
-                for (const auto& t : temps) {
-                    tempObj[t.first] = t.second;
-                }
-                cfg.SetJson("temperatures", std::move(tempObj));
-            } catch (...) {}
-
-            // Save to temp file, read back, print to stdout
-            if (cfg.Save()) {
-                std::ifstream in(tmpPath);
-                if (in) {
-                    std::cout << in.rdbuf();
-                }
-            }
-            std::cout << std::endl;
-            std::remove(tmpPath.c_str());
-
-            TemperatureWrapper::Cleanup();
-            CoUninitialize();
-            return 0;
-        }
+        bool jsonMode = (argc > 1 && std::string(argv[1]) == "--json");
+        if (jsonMode) return RunJsonMode();
 
         // ======================== --mcp Mode ========================
-        bool mcpMode = false;
-        for (int i = 1; i < argc; ++i) {
-            if (std::string(argv[i]) == "--mcp") {
-                mcpMode = true;
-                break;
-            }
-        }
-        if (mcpMode) {
-#ifdef _WIN32
-            _setmode(_fileno(stdout), _O_BINARY);
-            _setmode(_fileno(stdin), _O_BINARY);
-#endif
-            tcmt::mcp::MCPServer server;
-
-            // Try IPC client first — like Avalonia, reuse running TCMT instance
-            tcmt::ipc::IPCClient ipc;
-            bool useIpc = ipc.Connect();
-            if (useIpc) {
-                Logger::Info("MCP: connected to running TCMT via IPC");
-                ipc.ClosePipe(); // free server slot for other clients (Avalonia)
-            } else {
-                Logger::Info("MCP: IPC unavailable, using direct hardware reads");
-            }
-
-            server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["name"]    = ipc.ReadString("cpu/name").value_or("");
-                    j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
-                    j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                    j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
-                    j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
-                    j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
-                    j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
-                    j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
-                } else {
-                    CpuInfo cpu;
-                    j["name"] = cpu.GetName();
-                    j["usage"] = cpu.GetUsage();
-                    j["cores"]["physical"] = cpu.GetLargeCores() + cpu.GetSmallCores();
-                    j["temperature"] = 0.0;
-                }
-                return j;
-            });
-            server.RegisterTool("get_memory", "System memory statistics",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["total"] = ipc.ReadUInt64("memory/total").value_or(0);
-                    j["used"]  = ipc.ReadUInt64("memory/used").value_or(0);
-                    j["available"] = ipc.ReadUInt64("memory/available").value_or(0);
-                } else {
-                    MemoryInfo mem;
-                    j["total"] = mem.GetTotalPhysical();
-                    j["available"] = mem.GetAvailablePhysical();
-                    j["used"] = mem.GetTotalPhysical() - mem.GetAvailablePhysical();
-                }
-                return j;
-            });
-            server.RegisterTool("get_gpu_status", "GPU usage and memory",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
-                    j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
-                    j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
-                } else {
-                    // GPU fallback requires WmiManager — skip on Windows
-                }
-                return j;
-            });
-            server.RegisterTool("get_system_info", "OS version and hardware summary",
-            [&ipc, useIpc]() -> nlohmann::json {
-                nlohmann::json j;
-                if (useIpc) {
-                    j["os"] = ipc.ReadString("os/version").value_or("");
-                    j["cpu"] = ipc.ReadString("cpu/name").value_or("");
-                    j["cores"] = ipc.ReadInt32("cpu/cores/physical").value_or(0);
-                    j["memoryTotal"] = ipc.ReadUInt64("memory/total").value_or(0);
-                } else {
-                    OSInfo os; CpuInfo cpu; MemoryInfo mem;
-                    j["os"] = os.GetVersion();
-                    j["cpu"] = cpu.GetName();
-                    j["cores"] = cpu.GetTotalCores();
-                    j["memoryTotal"] = mem.GetTotalPhysical();
-                }
-                return j;
-            });
-
-            server.Run();
-            TemperatureWrapper::Cleanup();
-            return 0;
-        }
+        bool mcpMode = (argc > 1 && std::string(argv[1]) == "--mcp");
+        if (mcpMode) return RunMcpMode();
 
         if (!IsRunAsAdmin()) {
             wchar_t szPath[MAX_PATH];
@@ -1105,6 +1135,24 @@ int main(int argc, char* argv[]) {
                 Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
                             + " PID:" + std::to_string(devs[di].pid));
         } catch (...) { Logger::Debug("USB: initial scan failed"); }
+
+        // USB flash drive hotplug monitor (USBMonitor-cpp)
+        USBMonitor usbFlashMonitor(
+            [](UsbState state, std::string path) {
+                switch (state) {
+                    case UsbState::Inserted:
+                        Logger::Info("USB flash drive inserted: " + path);
+                        break;
+                    case UsbState::Removed:
+                        Logger::Info("USB flash drive removed: " + path);
+                        break;
+                    case UsbState::UpdateReady:
+                        Logger::Info("USB update drive detected: " + path);
+                        break;
+                }
+            }
+        );
+        usbFlashMonitor.startMonitoring();
 
         // History logger (SQLite)
         HistoryLogger historyLogger;
@@ -1552,29 +1600,9 @@ int main(int argc, char* argv[]) {
                     Logger::Error("Unknown exception during data validation");
                 }
 
-                // Write to shared memory - enhanced exception handling
+                // Write to shared memory (moved to TUI block after WiFi/BT populated)
                 try {
-                    // Shared memory write moved after TUI block (WiFi/BT data)
-                    if (false && SharedMemoryManager::GetBuffer()) {
-                        SharedMemoryManager::WriteToSharedMemory(sysInfo);
-                        if (isDetailedLogging) {
-                            Logger::Debug("Successfully updated shared memory");
-                        }
-                    } else if (false) {
-                        Logger::Error("Shared memory buffer unavailable");
-                        if (SharedMemoryManager::InitSharedMemory()) {
-                            SharedMemoryManager::WriteToSharedMemory(sysInfo);
-                            if (isDetailedLogging) {
-                                Logger::Info("Reinitialized and updated shared memory");
-                            }
-                        } else {
-                            Logger::Error("Failed to reinitialize shared memory: " + SharedMemoryManager::GetLastError());
-                        }
-                    }
-                    
-                    if (isDetailedLogging) {
-                        Logger::Debug("System info updated to shared memory");
-                    }
+                    // SharedMemory write now handled in TUI update section below
                 }
                 catch (const std::bad_alloc& e) {
                     Logger::Error("Out of memory while processing system info: " + std::string(e.what()));
@@ -1598,6 +1626,8 @@ int main(int argc, char* argv[]) {
                     tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
                     tuiData.cpuBaseFreq = sysInfo.cpuBaseFreq;
                     tuiData.cpuTemp = sysInfo.cpuTemperature;
+                    tuiData.cpuPcoreTemp = sysInfo.cpuPcoreTemperature;
+                    tuiData.cpuEcoreTemp = sysInfo.cpuEcoreTemperature;
                     tuiData.totalMemory = sysInfo.totalMemory;
                     tuiData.usedMemory = sysInfo.usedMemory;
                     tuiData.availableMemory = sysInfo.availableMemory;
@@ -1616,6 +1646,26 @@ int main(int argc, char* argv[]) {
                     tuiData.gpuPower = sysInfo.gpuPower;
                     tuiData.anePower = sysInfo.anePower;
                     tuiData.gpuFreq = sysInfo.gpuFreq;
+                    // GPU fans (NVAPI RPM + NVML fallback)
+                    tuiData.gpuFans.clear();
+                    for (const auto& gf : GpuInfo::GetGpuFans()) {
+                        tcmt::TuiData::GpuFanInfo fi;
+                        fi.index = gf.index;
+                        fi.speedRpm = gf.speedRpm;
+                        fi.isRpm = gf.isRpm;
+                        tuiData.gpuFans.push_back(fi);
+                    }
+                    // Keep legacy field for backward compat
+                    tuiData.gpuFanSpeed = tuiData.gpuFans.empty() ? -1 : tuiData.gpuFans[0].speedRpm;
+                    // GPU processes (NVML)
+                    tuiData.gpuProcesses.clear();
+                    for (const auto& gp : GpuInfo::GetGpuProcesses()) {
+                        tcmt::TuiData::GpuProcInfo pi;
+                        pi.pid = gp.pid;
+                        pi.gpuIndex = gp.gpuIndex;
+                        pi.vramBytes = gp.usedGpuMemory;
+                        tuiData.gpuProcesses.push_back(pi);
+                    }
 
                     // Disks
                     for (const auto& disk : sysInfo.disks) {
@@ -1668,6 +1718,25 @@ int main(int argc, char* argv[]) {
                     }
                     
                     tuiData.osVersion = sysInfo.osVersion;
+
+                    // ─── Per-core sensors ───
+                    tuiData.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
+                    for (int ci = 0; ci < tuiData.perCoreCount; ci++) {
+                        tuiData.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
+                        tuiData.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                    }
+
+                    // ─── Network traffic history (sparkline) ───
+                    if (tuiData.adapters.size() > 0) {
+                        uint64_t dl = tuiData.adapters[0].downloadSpeed;
+                        uint64_t ul = tuiData.adapters[0].uploadSpeed;
+                        int pos = tuiData.dlHistoryPos;
+                        tuiData.dlHistory[pos] = dl;
+                        tuiData.ulHistory[pos] = ul;
+                        tuiData.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                        if (tuiData.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
+                            tuiData.dlHistoryLen++;
+                    }
                     tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
                     if (ipcServer) {
                         auto ct = ipcServer->GetClientTypes();
@@ -1725,21 +1794,9 @@ int main(int argc, char* argv[]) {
                       sysInfo.btPowerOn = bd.adapter.powerOn;
                       sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
 
-                      // Write WiFi & Bluetooth to shared memory block
-                      if (auto* buf = SharedMemoryManager::GetBuffer()) {
-                          memset(&buf->wifi, 0, sizeof(buf->wifi));
-                          buf->wifi.powerOn = wd.powerOn;
-                          buf->wifi.isConnected = wd.isConnected;
-                          buf->wifi.rssi = wd.rssi;
-                          buf->wifi.channel = wd.channel;
-                          wcsncpy_s(buf->wifi.ssid, 32, WinUtils::StringToWstring(wd.ssid).c_str(), _TRUNCATE);
-                          wcsncpy_s(buf->wifi.security, 16, WinUtils::StringToWstring(wd.security).c_str(), _TRUNCATE);
-
-                          memset(&buf->bluetooth, 0, sizeof(buf->bluetooth));
-                          buf->bluetooth.powerOn = bd.adapter.powerOn;
-                          buf->bluetooth.deviceCount = static_cast<int32_t>(bd.devices.size());
-                          wcsncpy_s(buf->bluetooth.name, 64, WinUtils::StringToWstring(bd.adapter.name).c_str(), _TRUNCATE);
-                      }
+                      // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)
+                      sysInfo.wifiPowerOn = wd.powerOn;
+                      sysInfo.wifiIsConnected = wd.isConnected;
                     }
 
                     tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());

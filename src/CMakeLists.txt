@@ -46,9 +46,12 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/display/DisplayInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/fan/FanSpeed.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/SpsManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/HTTPServer/MotionHTTPServer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/ServerProbe.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
@@ -101,7 +104,6 @@ if(TCMT_WINDOWS)
     list(APPEND TEMP_SOURCES_WINDOWS
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/TemperatureWrapper.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/WMIManager.cpp
     )
     list(APPEND TEMP_SOURCES ${TEMP_SOURCES_WINDOWS})
@@ -181,6 +183,7 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
     ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
     ${CMAKE_CURRENT_SOURCE_DIR}/core/battery
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/fan
     ${CMAKE_CURRENT_SOURCE_DIR}/core/process
     ${CMAKE_CURRENT_SOURCE_DIR}/core/als
     ${CMAKE_CURRENT_SOURCE_DIR}/core/accel
@@ -237,25 +240,14 @@ elseif(TCMT_LINUX)
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
 endif()
 
-# SQLite3 — built from src/third_party/sqlite submodule.
-# Uses the amalgamation (single-file build) for hermetic, version-pinned builds.
-set(SQLITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
-set(SQLITE3_C "${SQLITE_DIR}/sqlite3.c")
-set(SQLITE3_H "${SQLITE_DIR}/sqlite3.h")
-
-# Generate amalgamation on first configure (requires jimsh/tclsh from submodule)
-if(NOT EXISTS "${SQLITE3_C}" OR NOT EXISTS "${SQLITE3_H}")
-    message(STATUS "Generating SQLite amalgamation...")
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E chdir "${SQLITE_DIR}"
-                sh -c "./configure > /dev/null 2>&1 && make sqlite3.c > /dev/null 2>&1"
-        RESULT_VARIABLE _sqlite_gen_rc
-        TIMEOUT 120
-    )
-    if(NOT _sqlite_gen_rc EQUAL 0)
-        message(FATAL_ERROR "SQLite amalgamation generation failed")
-    endif()
-endif()
+# SQLite3 — pre-generated amalgamation from the sqlite submodule.
+# Amalgamation files are committed directly (no CI-time generation needed).
+# To regenerate: cd src/third_party/sqlite && ./configure && make sqlite3.c
+#                 then copy sqlite3.c sqlite3.h sqlite3ext.h to sqlite-amalgamation/
+set(SQLITE_AMALG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite-amalgamation")
+set(SQLITE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
+set(SQLITE3_C "${SQLITE_AMALG_DIR}/sqlite3.c")
+set(SQLITE3_H "${SQLITE_AMALG_DIR}/sqlite3.h")
 
 # Stage sqlite3.h to a clean include dir (source dir has files like 'version' that
 # break C++ compilation when exposed via PUBLIC include paths)
@@ -271,7 +263,7 @@ add_library(sqlite3 STATIC "${SQLITE3_C}")
 add_dependencies(sqlite3 sqlite3_header)
 target_include_directories(sqlite3
     PUBLIC  "${SQLITE_BIN_DIR}"       # sqlite3.h
-    PRIVATE "${SQLITE_DIR}"           # sqlite_cfg.h, sqlite3ext.h
+    PRIVATE "${SQLITE_SRC_DIR}"        # sqlite_cfg.h, sqlite3ext.h
 )
 target_compile_definitions(sqlite3 PRIVATE
     SQLITE_ENABLE_DBSTAT_VTAB
@@ -362,14 +354,11 @@ if(TCMT_WINDOWS)
     # Windows: use main.cpp (with TUI support via #ifdef)
     add_executable(TCMT-M
         ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-        # Windows-specific GPU bridge (C++/CLI)
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
     )
 
     # C++/CLI support for Windows
     if(MSVC)
         set_source_files_properties(
-            ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
             PROPERTIES
             COMPILE_FLAGS "/clr"
@@ -389,6 +378,8 @@ elseif(TCMT_LINUX)
     )
 endif()
 
+target_compile_definitions(TCMTCore PUBLIC TCMT_VERSION_STR="${PROJECT_VERSION}")
+target_compile_definitions(TCMT-M PRIVATE APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
 
 set_target_properties(TCMT-M PROPERTIES

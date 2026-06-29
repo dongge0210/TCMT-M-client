@@ -41,7 +41,7 @@ public partial class MemoryViewModel : ViewModelBase
     public MemoryViewModel()
     {
         Title = "内存";
-        Icon = "🧠";
+        Icon = "memory";
     }
 
     public override void Update(SystemInfo info)

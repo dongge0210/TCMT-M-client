@@ -1,0 +1,135 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
+             mc:Ignorable="d"
+             d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.TemperaturesView"
+             x:DataType="vm:TemperaturesViewModel">
+
+  <Design.DataContext>
+    <vm:TemperaturesViewModel BatteryInfo="Battery 85% · AC Online" SystemInfo="macOS 14.5" LastUpdated="12:34:56" />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- TopBar matching pen design -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="温度" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="14 sensors" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Content matching pen design -->
+    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
+      <StackPanel Spacing="12">
+
+        <!-- TempScope: filter tabs matching pen design -->
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+          <Border Background="#3B82F6" CornerRadius="8" Padding="12,6">
+            <TextBlock Text="全部" FontSize="11" Foreground="White" FontWeight="SemiBold"/>
+          </Border>
+          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+            <TextBlock Text="CPU/GPU" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+            <TextBlock Text="内存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+            <TextBlock Text="存储" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+            <TextBlock Text="主板" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+        </StackPanel>
+
+        <!-- Group_CPU_GPU matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="6">
+            <TextBlock Text="CPU / GPU" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+            <ItemsControl ItemsSource="{Binding CpuGpuSensors}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:TemperatureData">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,3,0,3">
+                    <TextBlock Text="{Binding SensorName}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding TemperatureDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- Group_Memory_Storage matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="6">
+            <TextBlock Text="内存 / 存储" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+            <ItemsControl ItemsSource="{Binding MemoryStorageSensors}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:TemperatureData">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,3,0,3">
+                    <TextBlock Text="{Binding SensorName}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding TemperatureDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- Group_Motherboard matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="6">
+            <TextBlock Text="主板" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+            <ItemsControl ItemsSource="{Binding MotherboardSensors}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:TemperatureData">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,3,0,3">
+                    <TextBlock Text="{Binding SensorName}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding TemperatureDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- Group_Battery_Misc matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="6">
+            <TextBlock Text="电池 / 其他" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+            <ItemsControl ItemsSource="{Binding BatteryMiscSensors}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="models:TemperatureData">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,3,0,3">
+                    <TextBlock Text="{Binding SensorName}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding TemperatureDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- Battery + System info -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding BatteryInfo}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+            <TextBlock Text="{Binding SystemInfo}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+            <TextBlock Text="{Binding LastUpdated, StringFormat='最后更新: {0}'}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

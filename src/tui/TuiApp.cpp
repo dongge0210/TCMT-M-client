@@ -365,6 +365,23 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
             mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
+    for (const auto& gf : data.gpuFans) {
+        if (gf.isRpm)
+            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d RPM", gf.index, gf.speedRpm);
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d%%", gf.index, gf.speedRpm);
+        lines++;
+    }
+    for (const auto& gp : data.gpuProcesses) {
+        char buf[96];
+        if (gp.gpuIndex > 0)
+            snprintf(buf, sizeof(buf), "GPU%u PID %-6u VRAM %s", gp.gpuIndex, gp.pid, FormatSize(gp.vramBytes).c_str());
+        else
+            snprintf(buf, sizeof(buf), "PID %-6u VRAM %s", gp.pid, FormatSize(gp.vramBytes).c_str());
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, buf);
+        lines++;
+        if (lines > 10) break; // limit display
+    }
     return lines;
 }
 
@@ -729,6 +746,102 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     return lines;
 }
 
+// ─── Per-Core Sensor Panel ───
+int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 20 || data.perCoreCount == 0) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Per-Core Sensors");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    int count = std::min((int)data.perCoreCount, 16);
+    // Compact header: Core#0  Core#1  Core#2 ...
+    for (int i = 0; i < count; i++) {
+        int offset = x0 + 2 + i * 8;
+        if (offset + 7 > maxW) break;
+        mvwprintw(win, y + lines, offset, "C%02d", i);
+    }
+    lines++;
+    // Temperature row
+    for (int i = 0; i < count; i++) {
+        int offset = x0 + 2 + i * 8;
+        if (offset + 7 > maxW) break;
+        int t = static_cast<int>(data.perCoreTemp[i]);
+        int color = (t >= 80) ? 4 : (t >= 60) ? 3 : 2;
+        wattron(win, COLOR_PAIR(color));
+        mvwprintw(win, y + lines, offset, "%4d°", t);
+        wattroff(win, COLOR_PAIR(color));
+    }
+    lines++;
+    // Frequency row
+    for (int i = 0; i < count; i++) {
+        int offset = x0 + 2 + i * 8;
+        if (offset + 7 > maxW) break;
+        int f = static_cast<int>(data.perCoreFreq[i]);
+        if (f > 0)
+            mvwprintw(win, y + lines, offset, "%4dM", f);
+        else
+            mvwprintw(win, y + lines, offset, "    -");
+    }
+    lines++;
+    return lines + 1;
+}
+
+// ─── Network Traffic Sparkline ───
+// Unicode block characters: ▁▂▃▄▅▆▇█ (U+2581 through U+2588)
+static const char* SPARK_CHARS = " ▁▂▃▄▅▆▇█";
+
+int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 20 || data.dlHistoryLen < 2) return 0;
+
+    int graphW = std::min(maxW - 14, data.dlHistoryLen);
+    if (graphW < 4) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Traffic");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    // Find max for scaling
+    uint64_t maxVal = 1;
+    for (int i = 0; i < data.dlHistoryLen; i++) {
+        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        uint64_t v = data.dlHistory[idx];
+        if (v > maxVal) maxVal = v;
+        v = data.ulHistory[idx];
+        if (v > maxVal) maxVal = v;
+    }
+
+    // "D:" + sparkline (blue)
+    std::string dlSpark;
+    for (int i = graphW - 1; i >= 0; i--) {
+        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        int level = (maxVal > 0) ? (int)(data.dlHistory[idx] * 7 / maxVal) : 0;
+        if (level < 0) level = 0; if (level > 7) level = 7;
+        dlSpark += SPARK_CHARS[level];
+    }
+    wattron(win, COLOR_PAIR(6));
+    mvwprintw(win, y + lines, x0 + 2, "D:%s", dlSpark.c_str());
+    wattroff(win, COLOR_PAIR(6));
+    lines++;
+
+    // "U:" + sparkline (green) using pair 2
+    std::string ulSpark;
+    for (int i = graphW - 1; i >= 0; i--) {
+        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        int level = (maxVal > 0) ? (int)(data.ulHistory[idx] * 7 / maxVal) : 0;
+        if (level < 0) level = 0; if (level > 7) level = 7;
+        ulSpark += SPARK_CHARS[level];
+    }
+    wattron(win, COLOR_PAIR(2));
+    mvwprintw(win, y + lines, x0 + 2, "U:%s", ulSpark.c_str());
+    wattroff(win, COLOR_PAIR(2));
+    lines++;
+
+    return lines + 1;
+}
+
 int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 15 || data.topProcesses.empty()) return 0;
 
@@ -882,6 +995,9 @@ void TuiApp::Run() {
             if (ly < maxY) {
                 ly += DrawProcessPanel(stdscr, data, ly, lx, leftW);
             }
+            if (ly < maxY) {
+                ly += DrawCorePanel(stdscr, data, ly, lx, leftW);
+            }
         }
         if (ly > maxY) ly = maxY;
 
@@ -894,6 +1010,9 @@ void TuiApp::Run() {
             }
             if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawNetGraphPanel(stdscr, data, ry, rx, rightW);
             }
             // WiFi & Bluetooth supplementary info after Network
             if (ry < maxY) {

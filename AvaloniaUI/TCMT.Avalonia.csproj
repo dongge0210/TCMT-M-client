@@ -2,6 +2,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('osx'))">osx-arm64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('windows'))">win-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('linux'))">linux-x64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -11,6 +14,9 @@
     <AssemblyDescription>实时硬件监控工具 Avalonia 版本</AssemblyDescription>
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
     <RootNamespace>TCMT.Avalonia</RootNamespace>
+    <!-- OS support: Windows 10 22H2+ / Win11 24H2+, macOS 15+ (arm64 + Intel), Ubuntu 22.04 LTS+ -->
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::IsOSPlatform('osx'))">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::IsOSPlatform('windows'))">10.0.19041.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>

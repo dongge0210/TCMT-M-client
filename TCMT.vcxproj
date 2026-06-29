@@ -17,7 +17,7 @@
     <RootNamespace>TCMT</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
-    <WindowsTargetPlatformMinVersion>10.0.26100.0</WindowsTargetPlatformMinVersion>
+    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -81,7 +81,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>false</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;$(ProjectDir)src\third_party\USBMonitor-cpp\include;$(ProjectDir)src\third_party\websocketpp;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>$(WindowsSDK_MetadataPath);$(FrameworkPathOverride);$(DOTNET_ReferenceAssemblyPath_472);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -121,7 +121,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <CLRSupport>false</CLRSupport>
-      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;$(ProjectDir)src\third_party\USBMonitor-cpp\include;$(ProjectDir)src\third_party\websocketpp;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

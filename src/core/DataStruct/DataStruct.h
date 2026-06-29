@@ -3,6 +3,11 @@
 #include <string>
 #include <vector>
 
+// App version string (override via -DTCMT_VERSION_STR="x.y.z" in CMake/MSBuild)
+#ifndef TCMT_VERSION_STR
+#define TCMT_VERSION_STR "0.14.0"
+#endif
+
 // Platform abstraction
 #include "../Platform/Platform.h"
 
@@ -174,6 +179,8 @@ struct SystemInfo {
     std::string networkAdapterType; // Network adapter type (wireless/wired)
     uint64_t networkAdapterSpeed;   // Added
     double cpuTemperature; // CPU temperature
+    double cpuPcoreTemperature = 0.0; // P-core cluster temperature
+    double cpuEcoreTemperature = 0.0; // E-core cluster temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs = 0.0; // CPU usage sample interval (ms)
     // WiFi
@@ -189,6 +196,50 @@ struct SystemInfo {
     // Bluetooth
     bool btPowerOn = false;
     int btDeviceCount = 0;
+
+    // ─── New fields (feature #4-9) ───
+    // 4. Fan speeds
+    struct FanData {
+        std::string name;
+        float rpm = 0;
+    };
+    std::vector<FanData> fans;
+
+    // 5. Process top
+    struct ProcData {
+        int32_t pid = 0;
+        std::string name;
+        uint64_t memoryBytes = 0;
+        float cpuPercent = 0;
+    };
+    std::vector<ProcData> topProcesses;
+
+    // 6. Per-core sensors
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    int perCoreCount = 0;
+
+    // 7. Battery detail (extended)
+    int batteryCycleCount = 0;
+    int batteryDesignCapacity = 0;
+    int batteryMaxCapacity = 0;
+    float batteryHealthPercent = 0;
+    float batteryTemp = 0;
+    int batteryAmperage = 0;
+    int batteryVoltage = 0;
+    float batteryChargerWatts = 0;
+    bool batteryIsCharging = false;
+    bool batteryIsPresent = false;
+
+    // System info
+    float loadAvg1 = 0;
+    float loadAvg5 = 0;
+    float loadAvg15 = 0;
+    int processCount = 0;
+    uint64_t uptimeSeconds = 0;
+
+    // App version (e.g. "0.14.0")
+    std::string appVersion = TCMT_VERSION_STR;
 
     // Display monitors
     struct DisplayData {
@@ -233,6 +284,8 @@ struct SharedMemoryBlock {
     uint32_t ramSpeed;       // RAM frequency in MHz (e.g., 6400)
     WCHAR ramType[32];       // DDR generation (e.g., "DDR5", "LPDDR5")
     double cpuTemperature; // CPU temperature
+    double cpuPcoreTemperature = 0.0; // P-core cluster temperature
+    double cpuEcoreTemperature = 0.0; // E-core cluster temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs; // CPU usage sample interval (ms)
 
@@ -276,6 +329,46 @@ struct SharedMemoryBlock {
     double anePower;                // ANE power in mW
     double gpuFreq = 0.0;           // GPU frequency in MHz
 
+    // ─── 4. Fan speeds (up to 6 fans) ───
+    struct {
+        WCHAR name[32];
+        float rpm;
+    } fans[6];
+    int fanCount;
+
+    // ─── 5. Process top (up to 7) ───
+    struct {
+        int32_t pid;
+        WCHAR name[64];
+        uint64_t memoryBytes;
+        float cpuPercent;
+    } topProcesses[7];
+    int topProcCount;
+
+    // ─── 7. Battery detail ───
+    int32_t batteryCycleCount;
+    int32_t batteryDesignCapacity;
+    int32_t batteryMaxCapacity;
+    float batteryHealthPercent;
+    float batteryTemp;
+    int32_t batteryAmperage;
+    int32_t batteryVoltage;
+    float batteryChargerWatts;
+    bool batteryIsCharging;
+    bool batteryIsPresent;
+
+    // ─── 6. Per-core sensors (up to 16) ───
+    float perCoreTemp[16];
+    float perCoreFreq[16];
+    int perCoreCount;
+
+    // ─── System info ───
+    float loadAvg1;
+    float loadAvg5;
+    float loadAvg15;
+    int32_t processCount;
+    uint64_t uptimeSeconds;
+
     // OS version info
     WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
     WCHAR hardwareModel[128] = {};  // Hardware model (e.g. "Mac14,2" or "HP ZBook Fury G10")
@@ -298,6 +391,9 @@ struct SharedMemoryBlock {
         int32_t deviceCount;
         WCHAR name[64];
     } bluetooth;
+
+    // App version string (e.g. "0.14.0")
+    WCHAR appVersion[16] = {};
 
     PlatformSystemTime lastUpdate;
     PlatformCriticalSection lock;

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -84,6 +84,14 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v3
 
+    - name: Cache NuGet packages
+      uses: actions/cache@v5
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.config', '**/nuget.config') }}
+        restore-keys: |
+          nuget-${{ runner.os }}-
+
     - name: Cache .NET tools
       uses: actions/cache@v5
       with:
@@ -100,6 +108,17 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
+    - name: Restore MSBuild intermediates cache
+      uses: actions/cache/restore@v5
+      id: cache-msbuild-obj
+      with:
+        path: |
+          x64/${{ env.BUILD_CONFIGURATION }}/
+          src/CPP-parsers/CPP-parsers/x64/${{ env.BUILD_CONFIGURATION }}/
+        key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
+        restore-keys: |
+          msbuild-obj-${{ runner.os }}-
+
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
 
@@ -115,6 +134,15 @@ jobs:
     - name: Build main project
       run: |
         msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ env.BUILD_PLATFORM }} /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:LangVersion=preview /m
+
+    - name: Save MSBuild intermediates cache
+      if: always() && steps.cache-msbuild-obj.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          x64/${{ env.BUILD_CONFIGURATION }}/
+          src/CPP-parsers/CPP-parsers/x64/${{ env.BUILD_CONFIGURATION }}/
+        key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
@@ -137,18 +165,90 @@ jobs:
         fetch-depth: 0
 
     - name: Install dependencies
-      run: brew install ncurses
+      run: |
+        brew install ncurses ccache
+
+    - name: Restore ccache
+      uses: actions/cache/restore@v5
+      id: cache-ccache
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'cmake/**') }}
+        restore-keys: |
+          ccache-${{ runner.os }}-
 
     - name: Configure CMake
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake -B build -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
     - name: Build
       run: |
         cmake --build build -j$(sysctl -n hw.ncpu)
+
+    - name: Show ccache stats
+      run: ccache -s
+
+    - name: Save ccache
+      if: always() && steps.cache-ccache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'cmake/**') }}
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v7
       with:
         name: TCMT-macOS-arm64-Release
         path: build/src/TCMT-M
+
+  package-artifacts:
+    name: Package Artifacts
+    needs: [build-windows, build-macos]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: TCMT-Windows-x64-Release
+        path: artifacts/windows
+
+    - name: Download macOS artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: TCMT-macOS-arm64-Release
+        path: artifacts/macos
+
+    - name: Package artifacts
+      run: |
+        cd artifacts
+        chmod +x macos/TCMT-M
+        zip -r TCMT-Windows-x64-alpha.zip windows/
+        zip -r TCMT-macOS-arm64-alpha.zip macos/
+
+    - name: Generate alpha tag
+      id: tag
+      run: |
+        TAG="alpha-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_RUN_ID}"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Create Alpha Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        name: Alpha ${{ steps.tag.outputs.tag }}
+        body: |
+          Commit: ${{ github.sha }}
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Artifacts:
+          - TCMT-Windows-x64-alpha.zip
+          - TCMT-macOS-arm64-alpha.zip
+        draft: false
+        prerelease: true
+        files: |
+          artifacts/TCMT-Windows-x64-alpha.zip
+          artifacts/TCMT-macOS-arm64-alpha.zip

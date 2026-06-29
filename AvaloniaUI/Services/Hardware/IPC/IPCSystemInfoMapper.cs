@@ -31,6 +31,8 @@ public static class IPCSystemInfoMapper
             info.HyperThreading = reader.ReadBool("cpu/hyperThreading") ?? false;
             info.Virtualization = reader.ReadBool("cpu/virtualization") ?? false;
             info.CpuTemperature = reader.ReadFloat64("cpu/temperature") ?? (double?)reader.ReadFloat32("cpu/temperature") ?? 0;
+            info.CpuPcoreTemperature = reader.ReadFloat64("cpu/pcore/temperature") ?? (double?)reader.ReadFloat32("cpu/pcore/temperature") ?? 0;
+            info.CpuEcoreTemperature = reader.ReadFloat64("cpu/ecore/temperature") ?? (double?)reader.ReadFloat32("cpu/ecore/temperature") ?? 0;
             info.CpuUsageSampleIntervalMs = reader.ReadFloat64("cpu/sampleIntervalMs") ?? 500;
 
             // Memory
@@ -47,6 +49,72 @@ public static class IPCSystemInfoMapper
             info.BatteryPercent = reader.ReadInt32("battery/percent") ?? -1;
             info.AcOnline = reader.ReadBool("battery/acOnline") ?? false;
 
+            // ─── 7. Battery detail ───
+            info.BatteryCycleCount = reader.ReadInt32("battery/cycleCount") ?? 0;
+            info.BatteryDesignCapacity = reader.ReadInt32("battery/designCapacity") ?? 0;
+            info.BatteryMaxCapacity = reader.ReadInt32("battery/maxCapacity") ?? 0;
+            info.BatteryHealthPercent = reader.ReadFloat64("battery/healthPercent") ?? (double?)reader.ReadFloat32("battery/healthPercent") ?? 0;
+            info.BatteryTemperature = reader.ReadFloat64("battery/temperature") ?? (double?)reader.ReadFloat32("battery/temperature") ?? 0;
+            info.BatteryAmperage = reader.ReadInt32("battery/amperage") ?? 0;
+            info.BatteryVoltage = reader.ReadInt32("battery/voltage") ?? 0;
+            info.BatteryChargerWatts = reader.ReadFloat64("battery/chargerWatts") ?? (double?)reader.ReadFloat32("battery/chargerWatts") ?? 0;
+            info.BatteryIsCharging = reader.ReadBool("battery/isCharging") ?? false;
+            info.BatteryIsPresent = reader.ReadBool("battery/isPresent") ?? false;
+
+            // ─── 4. Fan speeds ───
+            if (reader.HasField("fan/0/name"))
+            {
+                int idx = 0;
+                while (reader.HasField($"fan/{idx}/name") && idx < 6)
+                {
+                    var fName = reader.ReadString($"fan/{idx}/name") ?? "";
+                    var rpm = reader.ReadFloat32($"fan/{idx}/rpm") ?? 0f;
+                    if (rpm > 0)
+                    {
+                        info.Fans.Add(new FanData { Name = fName, Rpm = rpm });
+                    }
+                    idx++;
+                }
+            }
+
+            // ─── 5. Process Top N ───
+            if (reader.HasField("proc/0/name"))
+            {
+                int idx = 0;
+                while (reader.HasField($"proc/{idx}/name") && idx < 7)
+                {
+                    var pName = reader.ReadString($"proc/{idx}/name") ?? "";
+                    if (string.IsNullOrEmpty(pName)) { idx++; continue; }
+                    info.TopProcesses.Add(new ProcessTopEntry
+                    {
+                        Pid = reader.ReadInt32($"proc/{idx}/pid") ?? 0,
+                        Name = pName,
+                        MemoryBytes = reader.ReadUInt64($"proc/{idx}/memory") ?? 0,
+                        CpuPercent = reader.ReadFloat32($"proc/{idx}/cpu") ?? 0f
+                    });
+                    idx++;
+                }
+            }
+
+            // ─── 6. Per-core sensors ───
+            var coreCount = reader.ReadUInt8("core/count") ?? 0;
+            for (int i = 0; i < coreCount && i < 16; i++)
+            {
+                var temp = reader.ReadFloat32($"core/{i}/temp") ?? 0f;
+                var freq = reader.ReadFloat32($"core/{i}/freq") ?? 0f;
+                if (temp > 0 || freq > 0)
+                {
+                    info.PerCores.Add(new PerCoreData { Index = i, Temperature = temp, Frequency = freq });
+                }
+            }
+
+            // ─── System info ───
+            info.LoadAvg1 = reader.ReadFloat32("system/loadAvg1") ?? 0f;
+            info.LoadAvg5 = reader.ReadFloat32("system/loadAvg5") ?? 0f;
+            info.LoadAvg15 = reader.ReadFloat32("system/loadAvg15") ?? 0f;
+            info.ProcessCount = reader.ReadInt32("system/processCount") ?? 0;
+            info.UptimeSeconds = reader.ReadUInt64("system/uptime") ?? 0;
+
             // Power (mW)
             info.CpuPower = reader.ReadFloat64("power/cpu") ?? (double?)reader.ReadFloat32("power/cpu") ?? 0;
             info.GpuPower = reader.ReadFloat64("power/gpu") ?? (double?)reader.ReadFloat32("power/gpu") ?? 0;
@@ -59,11 +127,11 @@ public static class IPCSystemInfoMapper
             info.GpuName = ipc.ReadWString("gpu/0/name") ?? reader.ReadString("gpu/0/name") ?? "";
             info.GpuBrand = ipc.ReadWString("gpu/0/brand") ?? reader.ReadString("gpu/0/brand") ?? "";
             info.GpuMemory = reader.ReadUInt64("gpu/0/memory") ?? 0;
-            info.GpuCoreFreq = reader.ReadFloat64("gpu/0/memoryPercent") ?? (double?)reader.ReadFloat32("gpu/0/memoryPercent") ?? 0;
+            info.GpuCoreFreq = reader.ReadFloat64("gpu/freq") ?? (double?)reader.ReadFloat32("gpu/freq") ?? 0;
+            info.GpuMemoryPercent = reader.ReadFloat64("gpu/0/memoryPercent") ?? (double?)reader.ReadFloat32("gpu/0/memoryPercent") ?? 0;
             var gpuUsage = reader.ReadFloat64("gpu/0/usage") ?? (double?)reader.ReadFloat32("gpu/0/usage") ?? 0;
             info.GpuTemperature = reader.ReadFloat64("gpu/0/temperature") ?? (double?)reader.ReadFloat32("gpu/0/temperature") ?? 0;
             info.GpuIsVirtual = reader.ReadBool("gpu/0/isVirtual") ?? false;
-            info.GpuFreq = reader.ReadFloat64("gpu/freq") ?? (double?)reader.ReadFloat32("gpu/freq") ?? 0;
 
             if (!string.IsNullOrEmpty(info.GpuName))
             {
@@ -76,6 +144,7 @@ public static class IPCSystemInfoMapper
                         Memory = info.GpuMemory,
                         Usage = gpuUsage,
                         CoreClock = info.GpuCoreFreq,
+                        MemoryPercent = info.GpuMemoryPercent,
                         IsVirtual = info.GpuIsVirtual,
                         Temperature = info.GpuTemperature
                     }
@@ -294,6 +363,11 @@ public static class IPCSystemInfoMapper
                     };
                 }
             }
+
+            // App version (from IPC, fallback to default)
+            var appVersion = reader.ReadString("app/version") ?? ipc.ReadWString("app/version");
+            if (!string.IsNullOrEmpty(appVersion))
+                info.Version = appVersion;
 
             return info;
         }
