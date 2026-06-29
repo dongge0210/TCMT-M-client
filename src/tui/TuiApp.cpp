@@ -366,7 +366,10 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
         lines++;
     }
     for (const auto& gf : data.gpuFans) {
-        mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d%%", gf.index, gf.speedRpm);
+        if (gf.isRpm)
+            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d RPM", gf.index, gf.speedRpm);
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d%%", gf.index, gf.speedRpm);
         lines++;
     }
     for (const auto& gp : data.gpuProcesses) {

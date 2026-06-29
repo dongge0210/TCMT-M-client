@@ -76,6 +76,7 @@ struct TuiData {
     struct GpuFanInfo {
         unsigned int index = 0;
         int speedRpm = 0;
+        bool isRpm = false;
     };
     std::vector<GpuFanInfo> gpuFans;
     struct GpuProcInfo {

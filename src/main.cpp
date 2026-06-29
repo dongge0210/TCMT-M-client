@@ -1646,12 +1646,13 @@ int main(int argc, char* argv[]) {
                     tuiData.gpuPower = sysInfo.gpuPower;
                     tuiData.anePower = sysInfo.anePower;
                     tuiData.gpuFreq = sysInfo.gpuFreq;
-                    // GPU fans (NVML multi-fan)
+                    // GPU fans (NVAPI RPM + NVML fallback)
                     tuiData.gpuFans.clear();
                     for (const auto& gf : GpuInfo::GetGpuFans()) {
                         tcmt::TuiData::GpuFanInfo fi;
                         fi.index = gf.index;
                         fi.speedRpm = gf.speedRpm;
+                        fi.isRpm = gf.isRpm;
                         tuiData.gpuFans.push_back(fi);
                     }
                     // Keep legacy field for backward compat

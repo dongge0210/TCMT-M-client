@@ -36,7 +36,63 @@ constexpr nvmlReturn_t NVML_SUCCESS = 0;
 constexpr int NVML_CLOCK_GRAPHICS = 1;
 constexpr int NVML_TEMPERATURE_GPU = 0;
 
-// Function pointer types for NVML API
+// ======================== NVAPI Dynamic Loading (fan RPM) ========================
+// NVML only gives fan speed as % of max. NVAPI returns actual RPM.
+
+using NvAPI_Status = int;
+using NvPhysicalGpuHandle = void*;
+#define NVAPI_OK 0
+#define NV_MAX_PHYSICAL_GPUS 64
+
+static constexpr unsigned int NVAPI_Initialize_ID        = 0x0150E828;
+static constexpr unsigned int NVAPI_EnumPhysicalGPUs_ID  = 0xE5AC921F;
+static constexpr unsigned int NVAPI_GPU_GetCoolerSettings_ID = 0xDA141340;
+
+struct NvapiCooler {
+    unsigned int type;       // 1=RPM, 2=duty%
+    unsigned int controller;
+    unsigned int currentRpm; // RPM if type==1, duty% if type==2
+    unsigned int defaultMin;
+    unsigned int defaultMax;
+    unsigned int currentMin;
+    unsigned int currentMax;
+    unsigned int targetLevel;
+    unsigned int policy;
+};
+struct NvapiCoolerSettings { unsigned int version; unsigned int count; NvapiCooler coolers[8]; };
+
+using NvapiQueryFn = void* (*)(unsigned int id);
+
+struct NvapiState {
+    HMODULE module = nullptr;
+    NvapiQueryFn query = nullptr;
+    bool ready = false;
+    NvPhysicalGpuHandle gpus[NV_MAX_PHYSICAL_GPUS] = {};
+    unsigned int gpuCount = 0;
+};
+
+static NvapiState& GetNvapi() {
+    static NvapiState ns;
+    static bool tried = false;
+    if (!tried) { tried = true;
+        ns.module = LoadLibraryW(L"nvapi64.dll");
+        if (!ns.module) { Logger::Debug("NVAPI: nvapi64.dll not found"); return ns; }
+        ns.query = (NvapiQueryFn)GetProcAddress(ns.module, "nvapi_QueryInterface");
+        if (!ns.query) { Logger::Debug("NVAPI: QueryInterface not found"); return ns; }
+        auto initFn = (NvAPI_Status(*)())ns.query(NVAPI_Initialize_ID);
+        if (!initFn || initFn() != NVAPI_OK) { Logger::Debug("NVAPI: Init failed"); return ns; }
+        ns.gpuCount = NV_MAX_PHYSICAL_GPUS;
+        auto enumFn = (NvAPI_Status(*)(NvPhysicalGpuHandle*,unsigned int*))ns.query(NVAPI_EnumPhysicalGPUs_ID);
+        if (!enumFn || enumFn(ns.gpus, &ns.gpuCount) != NVAPI_OK || ns.gpuCount == 0) {
+            Logger::Debug("NVAPI: no GPUs"); return ns;
+        }
+        ns.ready = true;
+        Logger::Info("NVAPI: " + std::to_string(ns.gpuCount) + " GPU(s)");
+    }
+    return ns;
+}
+
+// ======================== NVML Dynamic Loading ========================
 using NvmlInitFn = nvmlReturn_t (*)();
 using NvmlShutdownFn = nvmlReturn_t (*)();
 using NvmlDeviceGetHandleByIndexFn = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
@@ -345,25 +401,59 @@ const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuLis
 
 std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
     std::vector<GpuFanInfo> result;
-    auto& s = GetNvmlSession();
-    if (!s.ok || !s.api->getNumFans) return result;
-    unsigned int numFans = 0;
-    if (NVML_SUCCESS != s.api->getNumFans(s.device, &numFans) || numFans == 0) return result;
+    auto& nvs = GetNvmlSession();
 
-    // Prefer v2 API for per-fan individual speeds, fall back to v1 (fan 0 only)
+    // ── Try NVAPI for actual RPM first ──
+    auto& napi = GetNvapi();
+    if (napi.ready && napi.gpuCount > 0 && nvs.ok) {
+        // Map NVML device index → NVAPI GPU handle (both enumerate 0-based)
+        unsigned int nvapiIdx = 0; // assume single-GPU for now; multi-GPU later
+        if (nvapiIdx < napi.gpuCount) {
+            NvapiCoolerSettings cs = {};
+            cs.version = 2;
+            auto coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
+                napi.query(NVAPI_GPU_GetCoolerSettings_ID);
+            if (coolerFn && coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) == NVAPI_OK) {
+                for (unsigned int i = 0; i < cs.count && i < 6; ++i) {
+                    GpuFanInfo fi;
+                    fi.index = i;
+                    unsigned int rpm = cs.coolers[i].currentRpm;
+                    if (cs.coolers[i].type == 1 && rpm > 0) {
+                        fi.speedRpm = static_cast<int>(rpm);
+                        fi.isRpm = true;
+                    } else {
+                        fi.speedRpm = -1; // fallback to NVML % below
+                    }
+                    result.push_back(fi);
+                }
+                for (auto& fi : result) {
+                    if (fi.speedRpm < 0 && nvs.api->getFanSpeedV2) {
+                        unsigned int pct = 0;
+                        if (nvs.api->getFanSpeedV2(nvs.device, fi.index, &pct) == NVML_SUCCESS)
+                            fi.speedRpm = static_cast<int>(pct);
+                    }
+                }
+                return result;
+            }
+        }
+    }
+
+    // ── Fallback: NVML only (percentage) ──
+    if (!nvs.ok || !nvs.api->getNumFans) return result;
+    unsigned int numFans = 0;
+    if (NVML_SUCCESS != nvs.api->getNumFans(nvs.device, &numFans) || numFans == 0) return result;
     for (unsigned int i = 0; i < numFans && i < 6; ++i) {
         unsigned int speed = 0;
         nvmlReturn_t rc;
-        if (s.api->getFanSpeedV2)
-            rc = s.api->getFanSpeedV2(s.device, i, &speed);
-        else if (i == 0 && s.api->getFanSpeed)
-            rc = s.api->getFanSpeed(s.device, &speed);
-        else
-            break;
+        if (nvs.api->getFanSpeedV2)
+            rc = nvs.api->getFanSpeedV2(nvs.device, i, &speed);
+        else if (i == 0 && nvs.api->getFanSpeed)
+            rc = nvs.api->getFanSpeed(nvs.device, &speed);
+        else break;
         if (rc == NVML_SUCCESS) {
             GpuFanInfo fi;
             fi.index = i;
-            fi.speedRpm = static_cast<int>(speed);  // NVML returns % of max, not RPM
+            fi.speedRpm = static_cast<int>(speed);
             result.push_back(fi);
         }
     }
