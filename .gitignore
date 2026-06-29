@@ -127,3 +127,7 @@ tools/ioreport/ioreport_dump
 gha-creds-*.json
 .github/commands/
 .codegraph/daemon.pid
+/data
+/extensions
+/build_err.txt
+/build_out.txt
