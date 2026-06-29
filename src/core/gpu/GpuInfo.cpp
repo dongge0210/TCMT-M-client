@@ -418,14 +418,19 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
 
     // ── Try NVAPI for actual RPM first ──
     auto& napi = GetNvapi();
-    static bool fanLogged = false;
     if (napi.ready && napi.gpuCount > 0 && nvs.ok) {
         unsigned int nvapiIdx = 0;
         if (nvapiIdx < napi.gpuCount) {
             NvapiCoolerSettings cs = {};
             cs.version = sizeof(NvapiCoolerSettings) | 0x20000;  // v2
+            // Also try bare sizeof (some drivers expect this)
             auto coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
                 napi.query(NVAPI_GPU_GetCoolerSettings_ID);
+            if (!coolerFn || coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) != NVAPI_OK) {
+                cs.version = sizeof(NvapiCoolerSettings);  // bare size fallback
+                coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
+                    napi.query(NVAPI_GPU_GetCoolerSettings_ID);
+            }
             if (coolerFn && coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) == NVAPI_OK && cs.count > 0) {
                 for (unsigned int i = 0; i < cs.count && i < 6; ++i) {
                     GpuFanInfo fi;
@@ -457,10 +462,10 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                 if (!result.empty()) return result;
             }
         }
-        if (!fanLogged) {
-            Logger::Info("GPU fans: NVAPI RPM not available, using NVML duty%");
-            fanLogged = true;
-        }
+    } else if (napi.ready && napi.gpuCount == 0) {
+        Logger::Info("GPU fans: NVAPI initialized but 0 GPUs enumerated");
+    } else if (!napi.ready) {
+        Logger::Info("GPU fans: NVAPI not available, using NVML duty% only");
     }
 
     // ── Fallback: NVML only (percentage) ──
