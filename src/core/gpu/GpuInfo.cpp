@@ -47,6 +47,7 @@ using NvPhysicalGpuHandle = void*;
 static constexpr unsigned int NVAPI_Initialize_ID        = 0x0150E828;
 static constexpr unsigned int NVAPI_EnumPhysicalGPUs_ID  = 0xE5AC921F;
 static constexpr unsigned int NVAPI_GPU_GetCoolerSettings_ID = 0xDA141340;
+static constexpr unsigned int NVAPI_GPU_ClientFanCoolersGetStatus_ID = 0x35AED5E8;
 
 struct NvapiCooler {
     unsigned int type;       // 1=RPM, 2=duty%
@@ -60,6 +61,16 @@ struct NvapiCooler {
     unsigned int policy;
 };
 struct NvapiCoolerSettings { unsigned int version; unsigned int count; NvapiCooler coolers[8]; };
+
+// NVAPI ClientFanCoolers (consumer GPU fan status — returns actual RPM)
+struct NvapiClientCooler {
+    unsigned int currentRpm;
+    unsigned int targetMin;
+    unsigned int targetMax;
+    unsigned int controlMode;
+    unsigned int softwareBased;
+};
+struct NvapiClientCoolerStatus { unsigned int version; unsigned int count; unsigned int flags; NvapiClientCooler coolers[8]; };
 
 using NvapiQueryFn = void* (*)(unsigned int id);
 
@@ -425,7 +436,6 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                     }
                     result.push_back(fi);
                 }
-                // NVML backup for PWM-only coolers
                 for (auto& fi : result) {
                     if (fi.speedRpm < 0 && nvs.api->getFanSpeedV2) {
                         unsigned int pct = 0;
@@ -434,6 +444,22 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                             nvs.api->getFanSpeed(nvs.device, &pct);
                         fi.speedRpm = static_cast<int>(pct);
                     }
+                }
+                if (!result.empty()) return result;
+            }
+            // ── NVAPI fallback #2: ClientFanCoolersGetStatus (consumer API, always RPM) ──
+            result.clear();
+            NvapiClientCoolerStatus fcs = {};
+            fcs.version = sizeof(NvapiClientCoolerStatus) | 0x20000;
+            auto fanFn = (NvAPI_Status(*)(NvPhysicalGpuHandle, NvapiClientCoolerStatus*))
+                napi.query(NVAPI_GPU_ClientFanCoolersGetStatus_ID);
+            if (fanFn && fanFn(napi.gpus[nvapiIdx], &fcs) == NVAPI_OK && fcs.count > 0) {
+                for (unsigned int i = 0; i < fcs.count && i < 6; ++i) {
+                    GpuFanInfo fi;
+                    fi.index = i;
+                    fi.speedRpm = static_cast<int>(fcs.coolers[i].currentRpm);
+                    fi.isRpm = true;
+                    result.push_back(fi);
                 }
                 if (!result.empty()) return result;
             }
