@@ -816,6 +816,13 @@ int main(int argc, char* argv[]) {
                 data.swapTotal = sysInfo.swapTotal;
                 data.ramSpeed = sysInfo.ramSpeed;
                 strncpy(data.ramType, sysInfo.ramType, sizeof(data.ramType) - 1);
+
+                // ─── Per-core sensors (macOS: limited availability) ───
+                data.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
+                for (int ci = 0; ci < data.perCoreCount; ci++) {
+                    data.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
+                    data.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                }
             }
 
             // GPU (coordinator doesn't have a GPU loop — keep inline)
@@ -1050,6 +1057,18 @@ int main(int argc, char* argv[]) {
                     pe.cpuPercent = e.cpuPercent;
                     data.topProcesses.push_back(pe);
                 }
+            }
+
+            // ─── Network traffic history ───
+            if (!data.adapters.empty()) {
+                uint64_t dl = data.adapters[0].downloadSpeed;
+                uint64_t ul = data.adapters[0].uploadSpeed;
+                int pos = data.dlHistoryPos;
+                data.dlHistory[pos] = dl;
+                data.ulHistory[pos] = ul;
+                data.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                if (data.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
+                    data.dlHistoryLen++;
             }
 
             // Timestamp

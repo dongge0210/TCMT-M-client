@@ -1718,6 +1718,25 @@ int main(int argc, char* argv[]) {
                     }
                     
                     tuiData.osVersion = sysInfo.osVersion;
+
+                    // ─── Per-core sensors ───
+                    tuiData.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
+                    for (int ci = 0; ci < tuiData.perCoreCount; ci++) {
+                        tuiData.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
+                        tuiData.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                    }
+
+                    // ─── Network traffic history (sparkline) ───
+                    if (tuiData.adapters.size() > 0) {
+                        uint64_t dl = tuiData.adapters[0].downloadSpeed;
+                        uint64_t ul = tuiData.adapters[0].uploadSpeed;
+                        int pos = tuiData.dlHistoryPos;
+                        tuiData.dlHistory[pos] = dl;
+                        tuiData.ulHistory[pos] = ul;
+                        tuiData.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                        if (tuiData.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
+                            tuiData.dlHistoryLen++;
+                    }
                     tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
                     if (ipcServer) {
                         auto ct = ipcServer->GetClientTypes();

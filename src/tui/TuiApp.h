@@ -265,6 +265,18 @@ struct TuiData {
     };
     std::vector<ProcessTopEntry> topProcesses;
 
+    // Per-core sensor data (up to 16 cores)
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    uint8_t perCoreCount = 0;
+
+    // Network traffic sparkline history (last 40 samples)
+    static constexpr int NET_HISTORY_MAX = 40;
+    uint64_t dlHistory[NET_HISTORY_MAX] = {};
+    uint64_t ulHistory[NET_HISTORY_MAX] = {};
+    int dlHistoryPos = 0;
+    int dlHistoryLen = 0;
+
     // Timestamp
     std::string timestamp;
 };
@@ -306,6 +318,8 @@ private:
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);
