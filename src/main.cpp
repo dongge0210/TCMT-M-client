@@ -742,7 +742,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     // ─── 4. Fan speeds (up to 6) ───
     for (int i = 0; i < 6; i++) {
         char pfx[32]; snprintf(pfx, sizeof(pfx), "fan/%d/", i);
-        uint32_t base = offsetof(B, fans) + i * sizeof(B::FanSlot);
+        uint32_t base = offsetof(B, fanSpeeds) + i * sizeof(B::FanSlot);
         addField((std::string(pfx)+"name").c_str(), base + offsetof(B::FanSlot, name), sizeof(B::FanSlot::name), (uint8_t)FT::String);
         addField((std::string(pfx)+"rpm").c_str(),  base + offsetof(B::FanSlot, rpm), sizeof(float), (uint8_t)FT::Float32);
     }
@@ -960,6 +960,10 @@ static int RunMcpMode() {
 
     server.Run();
     TemperatureWrapper::Cleanup();
+    return 0;
+}
+
+int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
     std::set_new_handler([]() {

@@ -409,8 +409,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         // ─── 4. Fan speeds ───
         pBuffer->fanCount = (int)(std::min)(systemInfo.fans.size(), (size_t)6);
         for (int i = 0; i < pBuffer->fanCount; i++) {
-            SafeCopyStr(pBuffer->fans[i].name, sizeof(pBuffer->fans[i].name), systemInfo.fans[i].name);
-            pBuffer->fans[i].rpm = systemInfo.fans[i].rpm;
+            SafeCopyStr(pBuffer->fanSpeeds[i].name, sizeof(pBuffer->fanSpeeds[i].name), systemInfo.fans[i].name);
+            pBuffer->fanSpeeds[i].rpm = systemInfo.fans[i].rpm;
         }
 
         // ─── 5. Process top ───
