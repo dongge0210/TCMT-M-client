@@ -417,7 +417,7 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                     GpuFanInfo fi;
                     fi.index = i;
                     unsigned int rpm = cs.coolers[i].currentRpm;
-                    if (cs.coolers[i].type == 1 && rpm > 0) {
+                    if (cs.coolers[i].type == 1) {
                         fi.speedRpm = static_cast<int>(rpm);
                         fi.isRpm = true;
                     } else {
@@ -432,12 +432,9 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                         if (nvs.api->getFanSpeedV2(nvs.device, fi.index, &pct) != NVML_SUCCESS
                             && fi.index == 0 && nvs.api->getFanSpeed)
                             nvs.api->getFanSpeed(nvs.device, &pct);
-                        if (pct > 0) fi.speedRpm = static_cast<int>(pct);
+                        fi.speedRpm = static_cast<int>(pct);
                     }
                 }
-                // Filter out entries that still have no data
-                result.erase(std::remove_if(result.begin(), result.end(),
-                    [](const GpuFanInfo& f) { return f.speedRpm <= 0; }), result.end());
                 if (!result.empty()) return result;
             }
         }
@@ -456,12 +453,10 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
         if (rc != NVML_SUCCESS && i == 0 && nvs.api->getFanSpeed)
             rc = nvs.api->getFanSpeed(nvs.device, &speed);
         if (rc != NVML_SUCCESS) break;
-        if (speed > 0) {
-            GpuFanInfo fi;
-            fi.index = i;
-            fi.speedRpm = static_cast<int>(speed);
-            result.push_back(fi);
-        }
+        GpuFanInfo fi;
+        fi.index = i;
+        fi.speedRpm = static_cast<int>(speed);
+        result.push_back(fi);
     }
     return result;
 }
