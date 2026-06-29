@@ -406,14 +406,13 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
     // ── Try NVAPI for actual RPM first ──
     auto& napi = GetNvapi();
     if (napi.ready && napi.gpuCount > 0 && nvs.ok) {
-        // Map NVML device index → NVAPI GPU handle (both enumerate 0-based)
-        unsigned int nvapiIdx = 0; // assume single-GPU for now; multi-GPU later
+        unsigned int nvapiIdx = 0;
         if (nvapiIdx < napi.gpuCount) {
             NvapiCoolerSettings cs = {};
             cs.version = 2;
             auto coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
                 napi.query(NVAPI_GPU_GetCoolerSettings_ID);
-            if (coolerFn && coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) == NVAPI_OK) {
+            if (coolerFn && coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) == NVAPI_OK && cs.count > 0) {
                 for (unsigned int i = 0; i < cs.count && i < 6; ++i) {
                     GpuFanInfo fi;
                     fi.index = i;
@@ -422,10 +421,11 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                         fi.speedRpm = static_cast<int>(rpm);
                         fi.isRpm = true;
                     } else {
-                        fi.speedRpm = -1; // fallback to NVML % below
+                        fi.speedRpm = -1;
                     }
                     result.push_back(fi);
                 }
+                // NVML backup for PWM-only coolers
                 for (auto& fi : result) {
                     if (fi.speedRpm < 0 && nvs.api->getFanSpeedV2) {
                         unsigned int pct = 0;
@@ -433,7 +433,10 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
                             fi.speedRpm = static_cast<int>(pct);
                     }
                 }
-                return result;
+                // Filter out entries that still have no data
+                result.erase(std::remove_if(result.begin(), result.end(),
+                    [](const GpuFanInfo& f) { return f.speedRpm <= 0; }), result.end());
+                if (!result.empty()) return result;
             }
         }
     }
@@ -450,7 +453,7 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
         else if (i == 0 && nvs.api->getFanSpeed)
             rc = nvs.api->getFanSpeed(nvs.device, &speed);
         else break;
-        if (rc == NVML_SUCCESS) {
+        if (rc == NVML_SUCCESS && speed > 0) {
             GpuFanInfo fi;
             fi.index = i;
             fi.speedRpm = static_cast<int>(speed);
