@@ -47,12 +47,15 @@ using NvmlDeviceGetClockInfoFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned in
 using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
 using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
-// NVML process info (locally defined struct to avoid header dependency)
+// NVML process info (v2 layout — 24 bytes, matches driver's nvmlProcessInfo_v2_t)
+// Using v1-sized struct (16 bytes) with v2 driver causes buffer overflow → garbage VRAM + TUI freeze
 struct nvmlProcessInfo_t {
     unsigned int pid;
     unsigned long long usedGpuMemory;
+    unsigned int gpuInstanceId;
+    unsigned int computeInstanceId;
 };
-constexpr unsigned int NVML_MAX_PROCESSES = 32;
+constexpr unsigned int NVML_MAX_PROCESSES = 16;  // 16 × 24 = 384 bytes, safe stack
 using NvmlDeviceGetComputeRunningProcessesFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*);
 using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
 
@@ -602,9 +605,6 @@ void GpuInfo::RefreshUsage() {
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
 
-int GpuInfo::GetGpuFanSpeed() { return -1; }
-std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() { return {}; }
-
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
 #include <fstream>
@@ -801,9 +801,6 @@ void GpuInfo::RefreshUsage() {
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
-
-int GpuInfo::GetGpuFanSpeed() { return -1; }
-std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() { return {}; }
 
 #else
 #error "Unsupported platform"
