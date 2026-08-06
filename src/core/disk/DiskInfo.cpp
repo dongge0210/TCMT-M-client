@@ -201,7 +201,18 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                     else
                         wcsncpy_s(data.diskType, L"HDD", _TRUNCATE);
                 } else {
-                    wcsncpy_s(data.diskType, L"Unknown", _TRUNCATE);
+                    // MediaType missing — infer from model name (case-insensitive)
+                    bool isSSD = false;
+                    if (vModel.vt == VT_BSTR) {
+                        std::wstring mdl = vModel.bstrVal;
+                        isSSD = (mdl.find(L"SSD") != std::wstring::npos ||
+                                 mdl.find(L"ssd") != std::wstring::npos ||
+                                 mdl.find(L"Solid State") != std::wstring::npos ||
+                                 mdl.find(L"NVMe") != std::wstring::npos ||
+                                 mdl.find(L"MZ") != std::wstring::npos ||
+                                 mdl.find(L"mz") != std::wstring::npos);
+                    }
+                    wcsncpy_s(data.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
                 }
                 data.smartSupported = false;
                 data.smartEnabled = false;

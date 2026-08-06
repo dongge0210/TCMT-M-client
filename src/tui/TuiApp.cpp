@@ -545,9 +545,26 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
 
     for (const auto& pd : data.physicalDisks) {
         if (y + lines >= LINES - 5) break;
+        // Show model + type, then whatever health data is available.
+        // Pool disks may have health% from WMI but no direct SMART access,
+        // so we display partial data instead of a blank line.
         std::string line = pd.model;
         if (!pd.diskType.empty()) line += " " + pd.diskType;
-        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
+        {
+            char buf[128];
+            int off = 0;
+            if (pd.smartSupported && pd.healthPct > 0)
+                off += snprintf(buf + off, sizeof(buf) - off, " %d%%", pd.healthPct);
+            else
+                off += snprintf(buf + off, sizeof(buf) - off, " N/A");
+            if (pd.temperature > 0)
+                off += snprintf(buf + off, sizeof(buf) - off, " %.0fC", pd.temperature);
+            if (pd.smartSupported && pd.powerOnHours > 0)
+                off += snprintf(buf + off, sizeof(buf) - off, " %lluh", pd.powerOnHours);
+            if (pd.smartSupported && pd.wearLeveling > 0 && pd.wearLeveling <= 1.0)
+                off += snprintf(buf + off, sizeof(buf) - off, " WL%.0f%%", pd.wearLeveling * 100.0);
+            line += buf;
+        }
         line = TrimRight(line, maxW - 2);
         mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
     }
