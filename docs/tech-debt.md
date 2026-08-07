@@ -18,7 +18,7 @@ ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataB
 
 **待清理：** `DataStruct.h` 中 `SharedMemoryBlock` struct 定义仍存在（无引用，可安全删除）。
 
-## P1 — `main.cpp` 1974行
+## P1 — `main.cpp` 2031行
 
 `main()` 函数 ~1200 行（L727–L1939），内含：
 - COM 初始化
@@ -35,8 +35,8 @@ ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataB
 
 | 文件 | 行数 | 平台 |
 |------|------|------|
-| `main.cpp` | 1974 | Windows |
-| `main_mac.cpp` | 1282 | macOS |
+| `main.cpp` | 2031 | Windows |
+| `main_mac.cpp` | 1461 | macOS |
 | `main_linux.cpp` | 735 | Linux |
 
 每个都有自己的 Schema builder、格式化 helper、信号处理，同逻辑抄三份。
@@ -52,5 +52,5 @@ ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataB
 
 ## P4 — 其他大文件
 
-- `TemperatureWrapper.cpp` — 1571行，可拆分
+- `TemperatureWrapper.cpp` — 1464行，可拆分
 - `IPCServer.cpp` — 583行，8个 `#ifdef`，双实现块塞一个文件（ADR-0005）
