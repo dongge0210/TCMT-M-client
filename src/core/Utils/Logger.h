@@ -7,6 +7,7 @@
 #include <atomic>
 #include <vector>
 #include <algorithm>
+#include <functional>
 #ifdef TCMT_WINDOWS
 // winsock2.h must be before windows.h
 #include <winsock2.h>
@@ -39,6 +40,11 @@ enum class ConsoleColor {
 };
 
 class Logger {
+public:
+    // Optional sink receiving every formatted log line (e.g. dedicated log viewer pipe).
+    // Called from the logging thread; must be non-blocking / cheap. Default: none.
+    using LogSink = std::function<void(const std::string&)>;
+
 private:
     static std::ofstream logFile;
     static std::mutex logMutex;
@@ -56,6 +62,7 @@ private:
     static std::thread workerThread;
     static std::atomic<bool> shutdownFlag;
     static std::atomic<bool> logFileOpen;
+    static LogSink logSink_;
 
     static void WorkerThreadFunc();
     static void WriteLog(const std::string& level, const std::string& message, LogLevel msgLevel, ConsoleColor color);
@@ -68,6 +75,7 @@ public:
     static void SetLogLevel(LogLevel level);
     static LogLevel GetLogLevel();
     static bool IsInitialized();
+    static void SetLogSink(LogSink sink);
     static void Trace(const std::string& message);
     static void Debug(const std::string& message);
     static void Info(const std::string& message);

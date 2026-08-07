@@ -12,6 +12,7 @@ set(PLATFORM_SOURCES
 
 set(UTILS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/Logger.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LogPipe.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/WinUtils.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/ComInitializationHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/TimeUtils.cpp

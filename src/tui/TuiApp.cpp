@@ -62,7 +62,7 @@ namespace tcmt {
 // TuiApp
 // ============================================================================
 
-TuiApp::TuiApp() {
+TuiApp::TuiApp(TuiMode mode) : mode_(mode) {
     logBuf_ = &defaultBuffer_;
 }
 
@@ -101,6 +101,13 @@ LogBuffer& TuiApp::GetLogBuffer() {
 
 void TuiApp::SetLogBuffer(LogBuffer* buf) {
     logBuf_ = buf ? buf : &defaultBuffer_;
+}
+
+void TuiApp::PushLogLine(const std::string& line) {
+    std::lock_guard<std::mutex> lock(logLinesMutex_);
+    logLines_.push_back(line);
+    while (logLines_.size() > kMaxLogLines)
+        logLines_.pop_front();
 }
 
 void TuiApp::InitColors() {
@@ -903,7 +910,135 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     return lines + 1;  // +1 bottom padding
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Log mode — standalone full-screen scrolling log view (separate console/process)
+// ────────────────────────────────────────────────────────────────────────────
+void TuiApp::RunLog() {
+    setlocale(LC_ALL, "");
+
+    initscr();
+    cursesActive_ = true;
+#ifndef __PDCURSES__
+    ESCDELAY = 25;   // 25ms Esc timeout
+#endif
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    curs_set(0);
+    nodelay(stdscr, TRUE);
+
+    InitColors();
+
+    getmaxyx(stdscr, termRows_, termCols_);
+
+    int scrollOffset = 0;   // lines scrolled up from bottom
+    bool follow = true;     // auto-follow newest lines
+
+    while (running_.load()) {
+        int rows = termRows_, cols = termCols_;
+
+#ifdef __PDCURSES__
+        if (is_termresized()) {
+            resize_term(0, 0);
+            getmaxyx(stdscr, rows, cols);
+            termRows_ = rows;
+            termCols_ = cols;
+            clear();
+        }
+#else
+        getmaxyx(stdscr, rows, cols);
+#endif
+
+        int ch = getch();
+        if (ch == 'q' || ch == 'Q' || ch == 27) {
+            running_ = false;
+            break;
+        }
+        if (ch == KEY_UP) { scrollOffset++; follow = false; }
+        else if (ch == KEY_DOWN) {
+            if (scrollOffset > 0) scrollOffset--;
+            else follow = true;
+        }
+        else if (ch == KEY_PPAGE) { scrollOffset += 10; follow = false; }
+        else if (ch == KEY_NPAGE) {
+            scrollOffset = (std::max)(0, scrollOffset - 10);
+            if (scrollOffset == 0) follow = true;
+        }
+        else if (ch == KEY_HOME) { follow = true; scrollOffset = 0; }
+        else if (ch == KEY_END)  { follow = true; scrollOffset = 0; }
+        else if (ch == 'f' || ch == 'F') {
+            follow = !follow;
+            if (follow) scrollOffset = 0;
+        }
+
+        if (rows < 10 || cols < 40) {
+            clear();
+            mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            continue;
+        }
+
+        std::vector<std::string> lines;
+        {
+            std::lock_guard<std::mutex> lock(logLinesMutex_);
+            lines.assign(logLines_.begin(), logLines_.end());
+        }
+
+        erase();
+
+        std::string topBot(cols, '-');
+        mvwprintw(stdscr, 0, 0, "%s", topBot.c_str());
+        mvwprintw(stdscr, rows - 1, 0, "%s", topBot.c_str());
+
+        std::string header = " TCMT Log    lines: " + std::to_string(lines.size()) +
+                             "    " + (follow ? "[FOLLOW]" : "[SCROLL]") +
+                             "    q=quit f=follow";
+        wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+        mvwprintw(stdscr, 1, 1, "%.*s", cols - 2, header.c_str());
+        wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+
+        int contentRows = rows - 3;
+        int total = static_cast<int>(lines.size());
+        int start = 0;
+        if (follow) {
+            start = (std::max)(0, total - contentRows);
+        } else {
+            start = (std::max)(0, total - scrollOffset - contentRows);
+        }
+
+        if (total == 0) {
+            mvwprintw(stdscr, 2, 2, "等待主进程日志... (q 退出)");
+        }
+
+        for (int r = 0; r < contentRows; ++r) {
+            int idx = start + r;
+            if (idx >= total) break;
+            const std::string& entry = lines[idx];
+            int color = 2;
+            if (entry.find("[ERROR]") != std::string::npos) color = 4;
+            else if (entry.find("[WARN]") != std::string::npos) color = 3;
+            else if (entry.find("[DEBUG]") != std::string::npos) color = 6;
+
+            std::string disp = utf8_truncate(entry, cols - 3);
+            wattron(stdscr, COLOR_PAIR(color));
+            mvwprintw(stdscr, 2 + r, 1, "%.*s", cols - 2, disp.c_str());
+            wattroff(stdscr, COLOR_PAIR(color));
+        }
+
+        refresh();
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
+
+    SafeEndwin();
+}
+
 void TuiApp::Run() {
+    if (mode_ == TuiMode::Log) {
+        RunLog();
+        return;
+    }
+
     setlocale(LC_ALL, "");
 
     initscr();
@@ -1090,30 +1225,6 @@ void TuiApp::Run() {
                 wattroff(stdscr, COLOR_PAIR(color));
             } else {
                 mvwprintw(stdscr, connTop, 14, "no clients connected");
-            }
-        }
-
-        int logEnd = showConn ? connTop - 1 : sysTop;
-        int logSpace = logEnd - contentEnd - 2;
-        // === Log panel (sacrificial) ===
-        if (logSpace > 1) {
-            int logTop = contentEnd + 1;
-            mvwprintw(stdscr, logTop - 1, 1, "%.*s", cols - 2, logSep.c_str());
-            mvwprintw(stdscr, logTop, 1, "Log");
-            int logLinesAvail = std::max(0, logEnd - logTop - 1);
-            if (logLinesAvail > 0) {
-                auto logEntries = logBuf_->GetRecent(logLinesAvail);
-                for (size_t i = 0; i < logEntries.size() && static_cast<int>(i) < logLinesAvail; ++i) {
-                    const auto& entry = logEntries[i];
-                    int color = 2;
-                    if (entry.find("[ERROR]") != std::string::npos) color = 4;
-                    else if (entry.find("[WARN]") != std::string::npos) color = 3;
-                    else if (entry.find("[DEBUG]") != std::string::npos) color = 6;
-                    wattron(stdscr, COLOR_PAIR(color));
-                    mvwprintw(stdscr, logTop + 1 + static_cast<int>(i), 2, "%.*s",
-                              cols - 4, entry.c_str());
-                    wattroff(stdscr, COLOR_PAIR(color));
-                }
             }
         }
 

@@ -45,6 +45,9 @@
     <ClInclude Include="src\core\Utils\Logger.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\Utils\LogPipe.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\Utils\TimeUtils.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -120,6 +123,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Utils\Logger.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\Utils\LogPipe.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\Utils\TimeUtils.cpp">
