@@ -874,6 +874,10 @@ static int RunJsonMode() {
     std::cout << std::endl;
     std::remove(tmpPath.c_str());
     TemperatureWrapper::Cleanup();
+    // Release WMI COM interfaces BEFORE CoUninitialize — otherwise the
+    // WmiManager destructor (on scope exit) releases pointers after the
+    // COM apartment is torn down → access violation at process exit.
+    wmiManager.reset();
     CoUninitialize();
     return 0;
 }
