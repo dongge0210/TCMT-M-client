@@ -17,7 +17,7 @@
 // formatted log lines and is invisible to Avalonia/MCP clients.
 //
 //   Windows: named pipe  \\.\pipe\TCMT_Log_Pipe
-//   macOS/Linux: Unix domain socket /tmp/tcmt_log.sock (TODO, stubs for now)
+//   macOS/Linux: Unix domain socket /tmp/tcmt_log.sock
 //
 // Server side (dashboard process): Start() + WriteLine().
 // Client side (--tui-log process):  StartClient(callback).
@@ -56,8 +56,10 @@ private:
 
     std::atomic<bool> running_{false};
 
-    // Server-side state (Windows: HANDLE; POSIX: fd — opaque pointer for now)
-    void* clientHandle_ = nullptr;
+    // Server-side state
+    void* clientHandle_ = nullptr;  // Windows: HANDLE
+    int   clientFd_     = -1;       // POSIX: accepted client fd
+    int   listenFd_     = -1;       // POSIX: listening fd
     std::mutex clientMutex_;
 
     // Write queue
