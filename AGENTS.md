@@ -38,7 +38,7 @@ cd AvaloniaUI && dotnet build AvaloniaUI.csproj -c Release
 
 ## Submodules
 
-7 submodules in `src/third_party/` plus `src/CPP-parsers/`. CPP-parsers (dongge0210 fork) has **5 nested extern submodules** (inih, json, tinyxml2, tomlplusplus, yaml-cpp). Always use `--recursive`:
+10 submodules in `src/third_party/` plus `src/CPP-parsers/`. CPP-parsers (dongge0210 fork) has **5 nested extern submodules** (inih, json, tinyxml2, tomlplusplus, yaml-cpp). Always use `--recursive`:
 ```bash
 git submodule update --init --recursive
 ```
