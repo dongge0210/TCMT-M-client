@@ -99,10 +99,16 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     case CTRL_CLOSE_EVENT:
     case CTRL_LOGOFF_EVENT:
     case CTRL_SHUTDOWN_EVENT:
+    {
+        // Ctrl+C can be delivered multiple times — only act once, otherwise the
+        // exit path gets spammed with "Received shutdown signal" log lines.
+        static std::atomic<bool> handled{false};
+        if (handled.exchange(true)) return TRUE;
         Logger::Info("Received shutdown signal, exiting safely...");
         g_shouldExit = true;
         SafeConsoleOutput("Exiting program...\n", 14);
         return TRUE;
+    }
     }
     return FALSE;
 }
