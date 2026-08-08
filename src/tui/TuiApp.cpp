@@ -366,7 +366,7 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
         char buf[96];
         // Guard against invalid pids (UINT32_MAX) and garbage VRAM values.
         const std::string pidStr = (gp.pid == 0xFFFFFFFFu) ? "N/A" : std::to_string(gp.pid);
-        const std::string vramStr = (gp.vramBytes == 0 || gp.vramBytes > (1ULL << 37))
+        const std::string vramStr = (gp.vramBytes > (1ULL << 37))
                                         ? "N/A"
                                         : FormatSize(gp.vramBytes);
         if (gp.gpuIndex > 0)

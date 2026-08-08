@@ -507,7 +507,7 @@ std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() {
             // exited processes (e.g. 0xFFFFFFFF pid, UINT64_MAX or >128GiB VRAM).
             // Skip them instead of rendering absurd values in the TUI.
             if (pid == 0 || pid == 0xFFFFFFFFu) continue;
-            if (mem == 0 || mem > (1ULL << 37)) continue;  // >128 GiB is not real
+            if (mem > (1ULL << 37)) continue;  // >128 GiB is not real
             GpuProcess p;
             p.pid = pid;
             p.gpuIndex = d;
