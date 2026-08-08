@@ -501,13 +501,18 @@ std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() {
         unsigned int count = NVML_MAX_PROCESSES;
         if (NVML_SUCCESS != s.api->getComputeRunningProcesses(dev, &count, infos)) continue;
         for (unsigned int i = 0; i < count && i < NVML_MAX_PROCESSES; ++i) {
-            if (infos[i].usedGpuMemory > 0) {
-                GpuProcess p;
-                p.pid = infos[i].pid;
-                p.gpuIndex = d;
-                p.usedGpuMemory = infos[i].usedGpuMemory;
-                result.push_back(p);
-            }
+            const unsigned int pid = infos[i].pid;
+            const unsigned long long mem = infos[i].usedGpuMemory;
+            // NVML reports UINT32_MAX as the pid and garbage VRAM for unknown /
+            // exited processes (e.g. 0xFFFFFFFF pid, UINT64_MAX or >128GiB VRAM).
+            // Skip them instead of rendering absurd values in the TUI.
+            if (pid == 0 || pid == 0xFFFFFFFFu) continue;
+            if (mem == 0 || mem > (1ULL << 37)) continue;  // >128 GiB is not real
+            GpuProcess p;
+            p.pid = pid;
+            p.gpuIndex = d;
+            p.usedGpuMemory = mem;
+            result.push_back(p);
         }
     }
     return result;

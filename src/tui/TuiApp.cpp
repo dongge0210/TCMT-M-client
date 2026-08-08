@@ -364,10 +364,15 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     }
     for (const auto& gp : data.gpuProcesses) {
         char buf[96];
+        // Guard against invalid pids (UINT32_MAX) and garbage VRAM values.
+        const std::string pidStr = (gp.pid == 0xFFFFFFFFu) ? "N/A" : std::to_string(gp.pid);
+        const std::string vramStr = (gp.vramBytes == 0 || gp.vramBytes > (1ULL << 37))
+                                        ? "N/A"
+                                        : FormatSize(gp.vramBytes);
         if (gp.gpuIndex > 0)
-            snprintf(buf, sizeof(buf), "GPU%u PID %-6u VRAM %s", gp.gpuIndex, gp.pid, FormatSize(gp.vramBytes).c_str());
+            snprintf(buf, sizeof(buf), "GPU%u PID %-6s VRAM %s", gp.gpuIndex, pidStr.c_str(), vramStr.c_str());
         else
-            snprintf(buf, sizeof(buf), "PID %-6u VRAM %s", gp.pid, FormatSize(gp.vramBytes).c_str());
+            snprintf(buf, sizeof(buf), "PID %-6s VRAM %s", pidStr.c_str(), vramStr.c_str());
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, buf);
         lines++;
         if (lines > 10) break; // limit display
