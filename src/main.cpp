@@ -1087,9 +1087,9 @@ int main(int argc, char* argv[]) {
         }
 
         // Create and initialize WMI manager - enhanced memory allocation exception handling
-        std::unique_ptr<WmiManager> wmiManager;
+        std::shared_ptr<WmiManager> wmiManager;
         try {
-            wmiManager = std::make_unique<WmiManager>();
+            wmiManager = std::make_shared<WmiManager>();
             if (!wmiManager) {
                 Logger::Fatal("WMI manager object creation failed - memory allocation returned null");
                 SafeExit(1);
@@ -1478,20 +1478,48 @@ int main(int argc, char* argv[]) {
 
                 // Physical disk (SMART) and TPM collection (coordinator handles logical disks)
                 try {
-                    // Collect physical disks (cached — WMI is slow, re-query every 60s)
-                    static std::vector<PhysicalDiskSmartData> cachedPhysDisks;
-                    static auto lastPhysQuery = std::chrono::steady_clock::now() - std::chrono::seconds(61);
+                    // Collect physical disks on a background thread. DeviceIoControl SMART
+                    // reads can block indefinitely on unresponsive drives/controllers (no
+                    // timeout), so the main loop must never wait on them. Results are cached.
+                    // The cache is intentionally heap-allocated for the process lifetime so a
+                    // detached worker can touch it safely even while the program is exiting.
+                    static auto* physDiskMutex = new std::mutex();
+                    static auto* cachedPhysDisks = new std::vector<PhysicalDiskSmartData>();
+                    static std::atomic<bool> physScanInFlight{false};
+                    static auto lastPhysScanStart = std::chrono::steady_clock::now() - std::chrono::seconds(61);
                     auto now = std::chrono::steady_clock::now();
-                    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysQuery).count() >= 60) {
-                        if (wmiManager) {
-                            DiskInfo::CollectPhysicalDisks(*wmiManager, sysInfo.disks, sysInfo);
-                            if (!sysInfo.physicalDisks.empty())
-                                cachedPhysDisks = sysInfo.physicalDisks;
-                            lastPhysQuery = now; // always update — avoid retry flood on empty result
-                        }
+                    // A scan that has been running too long is considered stuck (hung drive) —
+                    // clear the flag so the next refresh window can retry.
+                    if (physScanInFlight.load() &&
+                        std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysScanStart).count() > 120) {
+                        physScanInFlight.store(false);
                     }
-                    if (!cachedPhysDisks.empty())
-                        sysInfo.physicalDisks = cachedPhysDisks;
+                    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysScanStart).count() >= 60 &&
+                        wmiManager && !physScanInFlight.exchange(true)) {
+                        lastPhysScanStart = now; // throttle only when a scan actually starts
+                        auto wmi = wmiManager;   // shared_ptr keeps WmiManager alive for the worker
+                        std::vector<DiskData> logical = sysInfo.disks;
+                        std::thread([wmi, logical = std::move(logical)]() {
+                            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                            bool comInit = SUCCEEDED(hr);
+                            SystemInfo tmp;
+                            try {
+                                DiskInfo::CollectPhysicalDisks(*wmi, logical, tmp);
+                            } catch (...) {}
+                            // Only overwrite the cache with a successful non-empty scan,
+                            // otherwise keep the last known-good data.
+                            if (!tmp.physicalDisks.empty()) {
+                                std::lock_guard<std::mutex> lock(*physDiskMutex);
+                                *cachedPhysDisks = std::move(tmp.physicalDisks);
+                            }
+                            physScanInFlight.store(false);
+                            if (comInit) CoUninitialize();
+                        }).detach();
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(*physDiskMutex);
+                        sysInfo.physicalDisks = *cachedPhysDisks;
+                    }
 
                     // Serialize SMART attributes to JSON for each physical disk
                     for (auto& pd : sysInfo.physicalDisks) {
