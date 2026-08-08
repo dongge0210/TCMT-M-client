@@ -117,6 +117,9 @@
     <ClInclude Include="src\core\power\PowerMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\temperature\BoardTempReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Utils\Logger.cpp">
@@ -245,5 +248,11 @@
     <ClCompile Include="src\core\disk\SmartReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\temperature\BoardTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="物理磁盘扫描后台线程-代码审查报告.md" />
   </ItemGroup>
 </Project>
