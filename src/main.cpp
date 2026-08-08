@@ -1499,15 +1499,14 @@ int main(int argc, char* argv[]) {
                         wmiManager && !physScanInFlight.exchange(true)) {
                         lastPhysScanStart = now; // throttle only when a scan actually starts
                         auto wmi = wmiManager;   // shared_ptr keeps WmiManager alive for the worker
-                        std::vector<DiskData> logical = sysInfo.disks;
-                        std::thread([wmi, logical = std::move(logical)]() {
+                        std::thread([wmi]() {
                             HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
                             bool comInit = SUCCEEDED(hr);
                             SystemInfo tmp;
                             try {
-                                // Phase 1: WMI-only disk list (fast) — publish immediately so the
-                                // TUI shows physical disks even if a SMART read hangs.
-                                DiskInfo::CollectPhysicalDisks(*wmi, logical, tmp, /*readSmart=*/false);
+                                // Phase 1: fast single-query WMI disk list — publish immediately
+                                // so the TUI shows physical disks even if a SMART read hangs.
+                                DiskInfo::CollectPhysicalDiskInfo(*wmi, tmp);
                                 if (!tmp.physicalDisks.empty()) {
                                     {
                                         std::lock_guard<std::mutex> lock(*physDiskMutex);
