@@ -508,20 +508,6 @@ static void PrintInfoItem(const std::string& label, const std::string& value, in
     SafeConsoleOutput(line);
 }
 
-// Main function
-bool IsRunAsAdmin() {
-    BOOL isAdmin = FALSE;
-    PSID adminGroup = NULL;
-    SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
-    if (AllocateAndInitializeSid(&NtAuthority, 2,
-        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
-        0, 0, 0, 0, 0, 0, &adminGroup)) {
-        CheckTokenMembership(NULL, adminGroup, &isAdmin);
-        FreeSid(adminGroup);
-    }
-    return isAdmin == TRUE;
-}
-
 // Thread-safe GPU info cache class
 class ThreadSafeGpuCache {
 private:
@@ -975,27 +961,6 @@ static int RunMcpMode() {
 }
 
 // ======================== Startup Helpers ========================
-
-// Re-launch elevated (UAC) when the process was not started as administrator.
-static void EnsureElevated() {
-    if (IsRunAsAdmin()) return;
-
-    wchar_t szPath[MAX_PATH];
-    GetModuleFileNameW(NULL, szPath, MAX_PATH);
-
-    SHELLEXECUTEINFOW sei = { sizeof(sei) };
-    sei.lpVerb = L"runas";
-    sei.lpFile = szPath;
-    sei.hwnd = NULL;
-    sei.nShow = SW_NORMAL;
-
-    if (ShellExecuteExW(&sei)) {
-        exit(0);
-    } else {
-        MessageBoxW(NULL, L"Auto elevation failed, please right-click and run as administrator.", L"Insufficient Privileges", MB_OK | MB_ICONERROR);
-        SafeExit(1);
-    }
-}
 
 // Initialize COM for the monitoring process (retries single-threaded mode
 // when the apartment model conflicts with an earlier initializer).
@@ -2021,7 +1986,6 @@ int main(int argc, char* argv[]) {
         bool mcpMode = (argc > 1 && std::string(argv[1]) == "--mcp");
         if (mcpMode) return RunMcpMode();
 
-        EnsureElevated();
         if (!InitCom()) return -1;
 
         std::unique_ptr<tcmt::ipc::IPCServer> ipcServer;

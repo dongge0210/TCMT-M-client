@@ -96,6 +96,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <EnableUAC>false</EnableUAC>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -124,6 +125,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <EnableUAC>false</EnableUAC>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -220,6 +222,9 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\tui\TuiApp.cpp" />
     <ClCompile Include="src\core\etw\EtwMonitor.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="src\tcmt.manifest" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib">

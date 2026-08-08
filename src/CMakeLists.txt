@@ -380,6 +380,10 @@ set_target_properties(TCMT-M PROPERTIES
 
 # Platform-specific exe settings
 if(TCMT_WINDOWS)
+    # Embed UAC requireAdministrator manifest (fixes double console window)
+    target_link_options(TCMT-M PRIVATE
+        /MANIFEST:EMBED /MANIFESTUAC:NO /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/tcmt.manifest
+    )
     if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_link_options(TCMT-M PRIVATE
             /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup
