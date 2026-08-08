@@ -115,9 +115,16 @@ LRESULT CALLBACK LogWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     case WM_CREATE:
         SetTimer(hwnd, kRefreshTimer, kRefreshMs, nullptr);
         return 0;
-    case WM_TIMER:
-        InvalidateRect(hwnd, nullptr, FALSE);
+    case WM_TIMER: {
+        // Repaint only when new log lines arrived (or follow state changed).
+        if (self && self->buffer_ && self->lastRenderCount_ != self->buffer_->Size()) {
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
+    }
+    case WM_ERASEBKGND:
+        // Background is fully covered by the double-buffered WM_PAINT.
+        return 1;
     case WM_PAINT:
         if (self) {
             self->OnPaint(hwnd);
@@ -192,19 +199,26 @@ void LogWindow::OnPaint(HWND hwnd) {
     HDC hdc = BeginPaint(hwnd, &ps);
     RECT rc;
     GetClientRect(hwnd, &rc);
+    const int w = (std::max)(1, static_cast<int>(rc.right - rc.left));
+    const int h = (std::max)(1, static_cast<int>(rc.bottom - rc.top));
 
-    FillRect(hdc, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+    // Double buffer: draw everything off-screen, then blit once.
+    HDC memDC = CreateCompatibleDC(hdc);
+    HBITMAP memBmp = CreateCompatibleBitmap(hdc, w, h);
+    HBITMAP oldBmp = static_cast<HBITMAP>(SelectObject(memDC, memBmp));
+
+    FillRect(memDC, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
 
     if (!font_) {
         font_ = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                             CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
     }
-    HFONT oldFont = static_cast<HFONT>(SelectObject(hdc, font_));
-    SetBkMode(hdc, TRANSPARENT);
+    HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font_));
+    SetBkMode(memDC, TRANSPARENT);
 
     TEXTMETRICW tm = {};
-    GetTextMetricsW(hdc, &tm);
+    GetTextMetricsW(memDC, &tm);
     const int rowHeight = (std::max)(1, static_cast<int>(tm.tmHeight + tm.tmExternalLeading + 1));
     const int visibleRows = (std::max)(1, static_cast<int>(rc.bottom - rc.top) / rowHeight);
     const int maxChars = (std::max)(1, static_cast<int>(rc.right - rc.left) /
@@ -225,17 +239,24 @@ void LogWindow::OnPaint(HWND hwnd) {
     for (int i = 0; i < count; ++i) {
         const std::string& line = lines[start + i];
         const int y = (visibleRows - count + i) * rowHeight;
-        SetTextColor(hdc, SeverityColor(line));
+        SetTextColor(memDC, SeverityColor(line));
 
         const std::wstring wline = Utf8ToWide(line);
         int len = static_cast<int>(wline.size());
         if (len > maxChars) {
             len = maxChars;
         }
-        TextOutW(hdc, 2, y, wline.c_str(), len);
+        TextOutW(memDC, 2, y, wline.c_str(), len);
     }
 
-    SelectObject(hdc, oldFont);
+    SelectObject(memDC, oldFont);
+    BitBlt(hdc, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+
+    SelectObject(memDC, oldBmp);
+    DeleteObject(memBmp);
+    DeleteDC(memDC);
+
+    lastRenderCount_ = buffer_ ? buffer_->Size() : 0;
     EndPaint(hwnd, &ps);
 }
 

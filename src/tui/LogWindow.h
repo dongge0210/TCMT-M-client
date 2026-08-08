@@ -41,6 +41,7 @@ private:
 
     std::atomic<bool> follow_{true};  // auto-scroll to newest line
     int scrollOffset_ = 0;            // lines scrolled back from newest
+    size_t lastRenderCount_ = 0;      // LogBuffer size at last paint (change detection)
     HFONT font_ = nullptr;
 };
 
