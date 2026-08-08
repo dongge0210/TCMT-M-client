@@ -12,6 +12,7 @@
 #include <future>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace tcmt {
 
@@ -32,7 +33,24 @@ public:
     void Shutdown();
 
 private:
+    // Geometry + visible-window info for hit-testing and painting.
+    struct LogView {
+        int rowHeight = 1;
+        int visibleRows = 1;
+        int start = 0;        // first visible line (absolute index)
+        int count = 0;        // visible line count
+        int charWidth = 8;    // average character width (px)
+        int maxChars = 1;     // max chars per line that fit the client width
+        int total = 0;        // lines in the recent buffer window
+        std::vector<std::string> lines;  // UTF-8, oldest -> newest
+    };
+
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    LogView ComputeView(HWND hwnd);
+    bool HitTest(const LogView& view, int x, int y, int& line, int& col) const;
+    std::wstring BuildSelectionText(const LogView& view) const;
+    std::wstring BuildAllText(const LogView& view) const;
+    void CopyToClipboard(const std::wstring& text);
     void OnPaint(HWND hwnd);
 
     HWND hwnd_ = nullptr;
@@ -43,6 +61,13 @@ private:
     int scrollOffset_ = 0;            // lines scrolled back from newest
     size_t lastRenderCount_ = 0;      // LogBuffer size at last paint (change detection)
     HFONT font_ = nullptr;
+
+    // Text selection (absolute line indexes into the recent buffer window).
+    int selAnchorLine_ = -1;
+    int selAnchorCol_ = 0;
+    int selActiveLine_ = -1;
+    int selActiveCol_ = 0;
+    bool selecting_ = false;
 };
 
 }  // namespace tcmt

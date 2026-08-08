@@ -3,7 +3,10 @@
 #include "LogWindow.h"
 #include "LogBuffer.h"
 
+#include <windowsx.h>
+
 #include <algorithm>
+#include <cstring>
 #include <vector>
 
 namespace tcmt {
@@ -101,6 +104,114 @@ void LogWindow::Shutdown() {
     }
 }
 
+LogWindow::LogView LogWindow::ComputeView(HWND hwnd) {
+    LogView v;
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+
+    HDC dc = GetDC(hwnd);
+    if (!font_) {
+        font_ = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                            CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
+    }
+    HFONT oldFont = static_cast<HFONT>(SelectObject(dc, font_));
+    TEXTMETRICW tm = {};
+    GetTextMetricsW(dc, &tm);
+    SelectObject(dc, oldFont);
+    ReleaseDC(hwnd, dc);
+
+    v.rowHeight = (std::max)(1, static_cast<int>(tm.tmHeight + tm.tmExternalLeading + 1));
+    v.visibleRows = (std::max)(1, static_cast<int>(rc.bottom - rc.top) / v.rowHeight);
+    v.charWidth = (std::max)(1, static_cast<int>(tm.tmAveCharWidth));
+    v.maxChars = (std::max)(1, static_cast<int>(rc.right - rc.left) / v.charWidth);
+
+    if (buffer_) {
+        v.lines = buffer_->GetRecent(LogBuffer::MAX_LINES);
+    }
+    v.total = static_cast<int>(v.lines.size());
+    if (follow_) {
+        scrollOffset_ = 0;
+    }
+    v.start = (std::max)(0, v.total - scrollOffset_ - v.visibleRows);
+    v.count = (std::min)(v.visibleRows, v.total - v.start);
+    return v;
+}
+
+bool LogWindow::HitTest(const LogView& view, int x, int y, int& line, int& col) const {
+    const int disp = y / view.rowHeight - (view.visibleRows - view.count);
+    if (disp < 0 || disp >= view.count) {
+        return false;
+    }
+    line = view.start + disp;
+    const std::wstring wline = Utf8ToWide(view.lines[line]);
+    col = (std::max)(0, (x - 2) / view.charWidth);
+    col = (std::min)(col, static_cast<int>(wline.size()));
+    col = (std::min)(col, view.maxChars);
+    return true;
+}
+
+std::wstring LogWindow::BuildSelectionText(const LogView& view) const {
+    if (selAnchorLine_ < 0 || selActiveLine_ < 0) {
+        return {};
+    }
+    const int l1 = (std::min)(selAnchorLine_, selActiveLine_);
+    const int l2 = (std::max)(selAnchorLine_, selActiveLine_);
+    const int c1 = (l1 == selAnchorLine_) ? selAnchorCol_ : selActiveCol_;
+    const int c2 = (l2 == selActiveLine_) ? selActiveCol_ : selAnchorCol_;
+
+    std::wstring result;
+    for (int li = l1; li <= l2; ++li) {
+        if (li < 0 || li >= view.total) {
+            continue;
+        }
+        const std::wstring wline = Utf8ToWide(view.lines[li]);
+        const int startC = (li == l1) ? (std::min)(c1, static_cast<int>(wline.size())) : 0;
+        const int endC = (li == l2) ? (std::min)(c2, static_cast<int>(wline.size()))
+                                    : static_cast<int>(wline.size());
+        if (endC <= startC) {
+            continue;
+        }
+        if (!result.empty()) {
+            result += L"\r\n";
+        }
+        result.append(wline, static_cast<size_t>(startC), static_cast<size_t>(endC - startC));
+    }
+    return result;
+}
+
+std::wstring LogWindow::BuildAllText(const LogView& view) const {
+    std::wstring result;
+    for (const std::string& line : view.lines) {
+        if (!result.empty()) {
+            result += L"\r\n";
+        }
+        result += Utf8ToWide(line);
+    }
+    return result;
+}
+
+void LogWindow::CopyToClipboard(const std::wstring& text) {
+    if (text.empty() || !hwnd_) {
+        return;
+    }
+    if (!OpenClipboard(hwnd_)) {
+        return;
+    }
+    EmptyClipboard();
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (hMem) {
+        void* dst = GlobalLock(hMem);
+        if (dst) {
+            memcpy(dst, text.c_str(), bytes);
+            GlobalUnlock(hMem);
+        }
+        SetClipboardData(CF_UNICODETEXT, hMem);
+    }
+    CloseClipboard();
+}
+
 LRESULT CALLBACK LogWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     LogWindow* self = nullptr;
     if (msg == WM_NCCREATE) {
@@ -130,6 +241,44 @@ LRESULT CALLBACK LogWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             self->OnPaint(hwnd);
         }
         return 0;
+    case WM_LBUTTONDOWN: {
+        if (!self) {
+            break;
+        }
+        self->selecting_ = true;
+        SetCapture(hwnd);
+        const LogView v = self->ComputeView(hwnd);
+        int line = -1, col = 0;
+        if (self->HitTest(v, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), line, col)) {
+            self->selAnchorLine_ = line;
+            self->selAnchorCol_ = col;
+            self->selActiveLine_ = line;
+            self->selActiveCol_ = col;
+        } else {
+            self->selAnchorLine_ = self->selActiveLine_ = -1;
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        if (!self || !self->selecting_) {
+            break;
+        }
+        const LogView v = self->ComputeView(hwnd);
+        int line = -1, col = 0;
+        if (self->HitTest(v, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), line, col)) {
+            self->selActiveLine_ = line;
+            self->selActiveCol_ = col;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    }
+    case WM_LBUTTONUP:
+        if (self) {
+            self->selecting_ = false;
+            ReleaseCapture();
+        }
+        return 0;
     case WM_MOUSEWHEEL: {
         if (!self) {
             break;
@@ -147,9 +296,44 @@ LRESULT CALLBACK LogWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }
+    case WM_COPY: {
+        if (!self) {
+            break;
+        }
+        const LogView v = self->ComputeView(hwnd);
+        std::wstring text = self->BuildSelectionText(v);
+        if (text.empty()) {
+            text = self->BuildAllText(v);
+        }
+        self->CopyToClipboard(text);
+        return 0;
+    }
     case WM_KEYDOWN: {
         if (!self) {
             break;
+        }
+        const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        if (ctrl && wParam == 'C') {
+            const LogView v = self->ComputeView(hwnd);
+            std::wstring text = self->BuildSelectionText(v);
+            if (text.empty()) {
+                text = self->BuildAllText(v);
+            }
+            self->CopyToClipboard(text);
+            return 0;
+        }
+        if (ctrl && wParam == 'A') {
+            const LogView v = self->ComputeView(hwnd);
+            self->selAnchorLine_ = 0;
+            self->selAnchorCol_ = 0;
+            if (v.total > 0) {
+                self->selActiveLine_ = v.total - 1;
+                self->selActiveCol_ = static_cast<int>(Utf8ToWide(v.lines[v.total - 1]).size());
+            } else {
+                self->selActiveLine_ = -1;
+            }
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
         }
         switch (wParam) {
         case VK_UP:
@@ -202,6 +386,8 @@ void LogWindow::OnPaint(HWND hwnd) {
     const int w = (std::max)(1, static_cast<int>(rc.right - rc.left));
     const int h = (std::max)(1, static_cast<int>(rc.bottom - rc.top));
 
+    const LogView view = ComputeView(hwnd);
+
     // Double buffer: draw everything off-screen, then blit once.
     HDC memDC = CreateCompatibleDC(hdc);
     HBITMAP memBmp = CreateCompatibleBitmap(hdc, w, h);
@@ -209,44 +395,46 @@ void LogWindow::OnPaint(HWND hwnd) {
 
     FillRect(memDC, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
 
-    if (!font_) {
-        font_ = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                            CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
-    }
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font_));
     SetBkMode(memDC, TRANSPARENT);
 
-    TEXTMETRICW tm = {};
-    GetTextMetricsW(memDC, &tm);
-    const int rowHeight = (std::max)(1, static_cast<int>(tm.tmHeight + tm.tmExternalLeading + 1));
-    const int visibleRows = (std::max)(1, static_cast<int>(rc.bottom - rc.top) / rowHeight);
-    const int maxChars = (std::max)(1, static_cast<int>(rc.right - rc.left) /
-                                        (std::max)(1, static_cast<int>(tm.tmAveCharWidth)));
+    const bool hasSel = selAnchorLine_ >= 0 && selActiveLine_ >= 0;
+    const int selL1 = (std::min)(selAnchorLine_, selActiveLine_);
+    const int selL2 = (std::max)(selAnchorLine_, selActiveLine_);
+    const int selC1 = (selL1 == selAnchorLine_) ? selAnchorCol_ : selActiveCol_;
+    const int selC2 = (selL2 == selActiveLine_) ? selActiveCol_ : selAnchorCol_;
 
-    std::vector<std::string> lines;
-    if (buffer_) {
-        lines = buffer_->GetRecent(LogBuffer::MAX_LINES);
-    }
+    for (int i = 0; i < view.count; ++i) {
+        const int lineIdx = view.start + i;
+        const std::wstring wline = Utf8ToWide(view.lines[lineIdx]);
+        const int y = (view.visibleRows - view.count + i) * view.rowHeight;
+        const int lineLen = (std::min)(static_cast<int>(wline.size()), view.maxChars);
+        SetTextColor(memDC, SeverityColor(view.lines[lineIdx]));
 
-    const int total = static_cast<int>(lines.size());
-    if (follow_) {
-        scrollOffset_ = 0;
-    }
-    const int start = (std::max)(0, total - scrollOffset_ - visibleRows);
-    const int count = (std::min)(visibleRows, total - start);
+        int x = 2;
+        if (hasSel && lineIdx >= selL1 && lineIdx <= selL2) {
+            const int selStart = (std::min)((lineIdx == selL1) ? selC1 : 0, lineLen);
+            const int selEnd = (std::min)((lineIdx == selL2) ? selC2 : lineLen, lineLen);
 
-    for (int i = 0; i < count; ++i) {
-        const std::string& line = lines[start + i];
-        const int y = (visibleRows - count + i) * rowHeight;
-        SetTextColor(memDC, SeverityColor(line));
-
-        const std::wstring wline = Utf8ToWide(line);
-        int len = static_cast<int>(wline.size());
-        if (len > maxChars) {
-            len = maxChars;
+            if (selStart > 0) {
+                TextOutW(memDC, x, y, wline.c_str(), selStart);
+                x += selStart * view.charWidth;
+            }
+            if (selEnd > selStart) {
+                SetBkMode(memDC, OPAQUE);
+                SetBkColor(memDC, RGB(38, 79, 120));
+                SetTextColor(memDC, RGB(255, 255, 255));
+                TextOutW(memDC, x, y, wline.c_str() + selStart, selEnd - selStart);
+                x += (selEnd - selStart) * view.charWidth;
+                SetBkMode(memDC, TRANSPARENT);
+                SetTextColor(memDC, SeverityColor(view.lines[lineIdx]));
+            }
+            if (selEnd < lineLen) {
+                TextOutW(memDC, x, y, wline.c_str() + selEnd, lineLen - selEnd);
+            }
+        } else {
+            TextOutW(memDC, x, y, wline.c_str(), lineLen);
         }
-        TextOutW(memDC, 2, y, wline.c_str(), len);
     }
 
     SelectObject(memDC, oldFont);
