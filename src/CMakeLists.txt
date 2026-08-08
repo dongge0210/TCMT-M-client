@@ -121,6 +121,12 @@ if(TCMT_WINDOWS OR TCMT_MACOS OR TCMT_LINUX)
         ${CMAKE_CURRENT_SOURCE_DIR}/tui/TuiApp.cpp
     )
 endif()
+if(TCMT_WINDOWS)
+    # Standalone log window is Win32-only
+    list(APPEND TUI_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/tui/LogWindow.cpp
+    )
+endif()
 
 # Curses library - platform specific
 if(TCMT_WINDOWS)

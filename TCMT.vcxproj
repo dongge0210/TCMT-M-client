@@ -169,6 +169,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\etw\EtwMonitor.h" />
     <ClInclude Include="src\tui\TuiApp.h" />
     <ClInclude Include="src\tui\LogBuffer.h" />
+    <ClInclude Include="src\tui\LogWindow.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Config\ConfigManager.cpp" />
@@ -221,6 +222,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\Utils\TpmBridge.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\tui\TuiApp.cpp" />
+    <ClCompile Include="src\tui\LogWindow.cpp" />
     <ClCompile Include="src\core\etw\EtwMonitor.cpp" />
   </ItemGroup>
   <ItemGroup>

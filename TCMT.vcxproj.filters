@@ -81,6 +81,9 @@
     <ClInclude Include="src\tui\LogBuffer.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\tui\LogWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\tui\TuiApp.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -197,6 +200,9 @@
     <ClCompile Include="src\tui\TuiApp.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\tui\LogWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\usb\UsbInfo.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -254,8 +260,5 @@
     <ClCompile Include="src\core\temperature\BoardTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="物理磁盘扫描后台线程-代码审查报告.md" />
   </ItemGroup>
 </Project>

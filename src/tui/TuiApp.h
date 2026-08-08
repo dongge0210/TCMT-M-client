@@ -294,15 +294,8 @@ public:
     // Update data from main thread (thread-safe)
     void UpdateData(const TuiData& data);
 
-    // Get the log buffer for Logger to write into
-    LogBuffer& GetLogBuffer();
-
-    // Inject external log buffer (e.g. from Logger)
-    void SetLogBuffer(LogBuffer* buf);
-
 private:
     void Run();
-    void RenderLogPage(int rows, int cols, int ch);
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -331,18 +324,8 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
 
-    // Page state: Dashboard (hardware panels) or Log (scrolling log page)
-    bool logPage_ = false;
-    int logScrollOffset_ = 0;   // lines scrolled up from bottom
-    bool logFollow_ = true;     // auto-follow newest lines
-
     TuiData data_;
     mutable std::mutex dataMutex_;
-
-    // Internal buffer (fallback), or use external via SetLogBuffer()
-    LogBuffer defaultBuffer_;
-    // Points to either &defaultBuffer_ or an external buffer
-    LogBuffer* logBuf_ = nullptr;
 
     // Window dimensions
     int termRows_ = 0;

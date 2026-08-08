@@ -70,6 +70,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "tui/TuiApp.h"
+#include "tui/LogWindow.h"
 #include "core/Config/ConfigManager.h"
 #include <fstream>
 #include <cstdio>
@@ -2000,9 +2001,13 @@ int main(int argc, char* argv[]) {
 
         // Start TUI (Windows version)
         tcmt::TuiApp tuiApp;
-        tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
         tuiApp.Start();
         Logger::Info("TUI started");
+
+        // Standalone log window (Win32, same process): shows the in-process
+        // Logger buffer in its own window — no IPC, no log file, no child process.
+        tcmt::LogWindow logWindow;
+        logWindow.Create(&Logger::GetTuiBuffer());
 
         // Initial USB detection (startup scan)
         try {
@@ -2039,7 +2044,10 @@ int main(int argc, char* argv[]) {
 
         RunMonitoringLoop(wmiManager, ipcServer, tuiApp, historyLogger);
         Logger::Info("Program received exit signal, starting cleanup");
-        
+
+        // Close the log window before tearing down the TUI/logger.
+        logWindow.Shutdown();
+
         // Stop TUI before cleanup
         try {
             tuiApp.Stop();
