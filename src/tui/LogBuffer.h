@@ -10,7 +10,7 @@ namespace tcmt {
 // Log ring buffer for TUI log panel
 class LogBuffer {
 public:
-    static constexpr size_t MAX_LINES = 500;
+    static constexpr size_t MAX_LINES = 2000;
 
     void Push(const std::string& line) {
         std::lock_guard<std::mutex> lock(mutex_);

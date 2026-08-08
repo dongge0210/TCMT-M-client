@@ -50,7 +50,6 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/network/NetworkAdapter.h"
 #include "core/os/OSInfo.h"
 #include "core/Utils/Logger.h"
-#include "core/Utils/LogPipe.h"
 #include "core/Utils/TimeUtils.h"
 #include "core/Utils/WinUtils.h"
 #include "core/Utils/WmiManager.h"
@@ -968,50 +967,6 @@ static int RunMcpMode() {
     return 0;
 }
 
-// ======================== TUI Log Viewer Mode ========================
-// --tui-log: standalone scrolling log window in its own console/process.
-// Receives formatted log lines from the dashboard process via the dedicated
-// log pipe (TCMT_Log_Pipe) — no file reads, no schema IPC.
-static int RunTuiLogMode() {
-    tcmt::TuiApp tuiApp(tcmt::TuiMode::Log);
-    tuiApp.Start();
-
-    LogPipe::Instance().StartClient([&tuiApp](const std::string& line) {
-        tuiApp.PushLogLine(line);
-    });
-
-    while (tuiApp.IsRunning() && !g_shouldExit.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    LogPipe::Instance().Stop();
-    return 0;
-}
-
-// Spawn the log viewer in a separate console window (different PID/terminal).
-static void SpawnLogViewer() {
-    wchar_t exePath[MAX_PATH];
-    if (!GetModuleFileNameW(nullptr, exePath, MAX_PATH)) {
-        Logger::Warn("Log viewer: GetModuleFileName failed");
-        return;
-    }
-
-    std::wstring cmdLine = L"\"" + std::wstring(exePath) + L"\" --tui-log";
-
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi{};
-
-    if (CreateProcessW(exePath, cmdLine.data(), nullptr, nullptr, FALSE,
-                       CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi)) {
-        Logger::Info("Log viewer started (pid=" + std::to_string(pi.dwProcessId) + ")");
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-    } else {
-        Logger::Warn("Log viewer: CreateProcess failed, err=" + std::to_string(GetLastError()));
-    }
-}
-
 int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
@@ -1027,15 +982,13 @@ int main(int argc, char* argv[]) {
     
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
-    // --tui-log: standalone log viewer (own console). No logger/hardware here.
-    if (argc > 1 && std::string(argv[1]) == "--tui-log") {
-        return RunTuiLogMode();
-    }
-    
     try {
         try {
             Logger::EnableConsoleOutput(true);
-            Logger::Initialize("system_monitor.log");
+            // Absolute path next to the exe — the process may be auto-elevated
+            // (ShellExecuteEx runas) which changes the working directory, so a
+            // relative "system_monitor.log" would land in System32 or elsewhere.
+            Logger::Initialize(WinUtils::GetExecutableDirectory() + "\\system_monitor.log");
             Logger::SetLogLevel(LOG_INFO);
             Logger::Info("Program started");
         }
@@ -1172,13 +1125,6 @@ int main(int argc, char* argv[]) {
         }
 
         Logger::Info("Program startup complete");
-
-        // Dedicated log channel → spawn --tui-log viewer in its own console (different PID)
-        LogPipe::Instance().Start();
-        SpawnLogViewer();
-        Logger::SetLogSink([](const std::string& line) {
-            LogPipe::Instance().WriteLine(line);
-        });
 
         // Start TUI (Windows version)
         tcmt::TuiApp tuiApp;
@@ -2041,10 +1987,6 @@ int main(int argc, char* argv[]) {
         
         historyLogger.Shutdown();
         Logger::Info("HistoryLogger stopped");
-
-        // Close the dedicated log channel — the viewer exits on broken pipe
-        Logger::SetLogSink(nullptr);
-        LogPipe::Instance().Stop();
 
         SafeExit(0);
     }

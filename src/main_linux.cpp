@@ -37,7 +37,6 @@
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
-#include "core/Utils/LogPipe.h"
 #include "tui/TuiApp.h"
 
 #include "core/Config/ConfigManager.h"
@@ -86,57 +85,11 @@ static int GetProcessCount() {
     return count;
 }
 
-// ======================== TUI Log Viewer Mode ========================
-// --tui-log: standalone scrolling log window in its own terminal/process.
-static int RunTuiLogMode() {
-    tcmt::TuiApp tuiApp(tcmt::TuiMode::Log);
-    tuiApp.Start();
-
-    LogPipe::Instance().StartClient([&tuiApp](const std::string& line) {
-        tuiApp.PushLogLine(line);
-    });
-
-    while (tuiApp.IsRunning() && !g_shouldExit.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    LogPipe::Instance().Stop();
-    return 0;
-}
-
-// Spawn the log viewer in a separate terminal window (different PID/terminal).
-static void SpawnLogViewer() {
-    char path[1024];
-    ssize_t n = ::readlink("/proc/self/exe", path, sizeof(path) - 1);
-    if (n <= 0) {
-        Logger::Warn("Log viewer: readlink /proc/self/exe failed");
-        return;
-    }
-    path[n] = '\0';
-
-    pid_t pid = fork();
-    if (pid == 0) {
-        setsid();
-        execlp("x-terminal-emulator", "x-terminal-emulator", "-e", path, "--tui-log", (char*)nullptr);
-        execlp("gnome-terminal", "gnome-terminal", "--", path, "--tui-log", (char*)nullptr);
-        _exit(1);
-    }
-    if (pid > 0)
-        Logger::Info("Log viewer launched (pid=" + std::to_string(pid) + ")");
-    else
-        Logger::Warn("Log viewer: fork failed");
-}
-
 // ======================== Main ========================
 int main(int argc, char* argv[]) {
 
     std::signal(SIGINT, SignalHandler);
     std::signal(SIGTERM, SignalHandler);
-
-    // --tui-log: standalone log viewer (own terminal). No logger/hardware here.
-    for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--tui-log") return RunTuiLogMode();
-    }
 
     try {
         Logger::Initialize("system_monitor.log");
@@ -508,13 +461,6 @@ int main(int argc, char* argv[]) {
                         + " PID:" + std::to_string(devs[di].pid));
     } catch (...) { Logger::Debug("USB: initial scan failed"); }
 
-    // Dedicated log channel → spawn --tui-log viewer in a new terminal (separate PID)
-    LogPipe::Instance().Start();
-    SpawnLogViewer();
-    Logger::SetLogSink([](const std::string& line) {
-        LogPipe::Instance().WriteLine(line);
-    });
-
     // Start TUI
     tcmt::TuiApp tuiApp;
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
@@ -780,8 +726,6 @@ int main(int argc, char* argv[]) {
     }
 
     Logger::Info("Exiting, cleaning up...");
-    Logger::SetLogSink(nullptr);
-    LogPipe::Instance().Stop();
     tuiApp.Stop();
     TemperatureWrapper::Cleanup();
     historyLogger.Shutdown();

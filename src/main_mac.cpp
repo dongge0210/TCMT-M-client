@@ -49,7 +49,6 @@
 #include "core/accel/SpsManager.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
-#include "core/Utils/LogPipe.h"
 #include "tui/TuiApp.h"
 
 // Config management (wraps CPP-parsers / nlohmann/json internally)
@@ -58,8 +57,6 @@
 #include "core/ServerProbe.h"
 #include <fstream>
 #include <cstdio>
-#include <cstdlib>
-#include <mach-o/dyld.h>
 
 // ======================== Signal Handling ========================
 static std::atomic<bool> g_shouldExit{false};
@@ -263,41 +260,6 @@ static std::string FormatSize(uint64_t bytes) {
     return ss.str();
 }
 
-// ======================== TUI Log Viewer Mode ========================
-// --tui-log: standalone scrolling log window in its own Terminal window/process.
-static int RunTuiLogMode() {
-    tcmt::TuiApp tuiApp(tcmt::TuiMode::Log);
-    tuiApp.Start();
-
-    LogPipe::Instance().StartClient([&tuiApp](const std::string& line) {
-        tuiApp.PushLogLine(line);
-    });
-
-    while (tuiApp.IsRunning() && !g_shouldExit.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    LogPipe::Instance().Stop();
-    return 0;
-}
-
-// Spawn the log viewer in a separate Terminal window (different PID/terminal).
-static void SpawnLogViewer() {
-    char path[1024];
-    uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) != 0) {
-        Logger::Warn("Log viewer: _NSGetExecutablePath failed");
-        return;
-    }
-
-    std::string cmd = "open -a Terminal \"" + std::string(path) + "\" --args --tui-log";
-    int rc = std::system(cmd.c_str());
-    if (rc != 0)
-        Logger::Warn("Log viewer: open -a Terminal failed (rc=" + std::to_string(rc) + ")");
-    else
-        Logger::Info("Log viewer launched in new Terminal window");
-}
-
 // ======================== Main ========================
 int main(int argc, char* argv[]) {
 
@@ -305,11 +267,6 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, SignalHandler);
     std::signal(SIGTERM, SignalHandler);
     std::signal(SIGHUP, SignalHandler);
-
-    // --tui-log: standalone log viewer (own Terminal). No logger/hardware here.
-    for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--tui-log") return RunTuiLogMode();
-    }
 
     try {
         Logger::Initialize("system_monitor.log");
@@ -719,13 +676,6 @@ int main(int argc, char* argv[]) {
             Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
                         + " PID:" + std::to_string(devs[di].pid));
     } catch (...) { Logger::Debug("USB: initial scan failed"); }
-
-    // Dedicated log channel → spawn --tui-log viewer in a new Terminal (separate PID)
-    LogPipe::Instance().Start();
-    SpawnLogViewer();
-    Logger::SetLogSink([](const std::string& line) {
-        LogPipe::Instance().WriteLine(line);
-    });
 
     // Start TUI
     tcmt::TuiApp tuiApp;
@@ -1500,8 +1450,6 @@ int main(int argc, char* argv[]) {
     }
 
     Logger::Info("Exiting, cleaning up...");
-    Logger::SetLogSink(nullptr);
-    LogPipe::Instance().Stop();
     tuiApp.Stop();
     TemperatureWrapper::Cleanup();
     historyLogger.Shutdown();

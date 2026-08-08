@@ -22,7 +22,6 @@ std::condition_variable Logger::queueCV;
 std::thread Logger::workerThread;
 std::atomic<bool> Logger::shutdownFlag{false};
 std::atomic<bool> Logger::logFileOpen{false};
-Logger::LogSink Logger::logSink_;
 
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
 // Global TUI log buffer (for TUI mode)
@@ -115,7 +114,6 @@ void Logger::EnableConsoleOutput(bool enable) { consoleOutputEnabled = enable; }
 void Logger::SetLogLevel(LogLevel level) { currentLogLevel = level; }
 LogLevel Logger::GetLogLevel() { return currentLogLevel; }
 bool Logger::IsInitialized() { return logFile.is_open(); }
-void Logger::SetLogSink(LogSink sink) { logSink_ = std::move(sink); }
 
 void Logger::SetConsoleColor(ConsoleColor color) {
     if (hConsole != nullptr && hConsole != INVALID_HANDLE_VALUE)
@@ -142,11 +140,6 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
-
-    // Forward to optional sink (e.g. dedicated log viewer pipe) — non-blocking, best effort
-    if (logSink_) {
-        try { logSink_(logEntry); } catch (...) {}
-    }
 
     // Push to TUI buffer before moving string to async queue
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
@@ -264,11 +257,6 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
 
-    // Forward to optional sink (e.g. dedicated log viewer pipe) — non-blocking, best effort
-    if (logSink_) {
-        try { logSink_(logEntry); } catch (...) {}
-    }
-
     // Push to TUI log buffer before moving string to async queue
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
     g_tuiLogBuffer.Push(logEntry);
@@ -354,11 +342,6 @@ void Logger::WriteLog(const std::string& level, const std::string& message,
     ss << "[" << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S") << "]"
        << "[" << level << "] " << message << "\n";
     std::string logEntry = ss.str();
-
-    // Forward to optional sink (e.g. dedicated log viewer pipe) — non-blocking, best effort
-    if (logSink_) {
-        try { logSink_(logEntry); } catch (...) {}
-    }
 
     // Console output before moving logEntry to queue
     if (consoleOutputEnabled) {

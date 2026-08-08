@@ -24,7 +24,6 @@
 typedef int pid_t;
 #endif
 #include <vector>
-#include <deque>
 #include <mutex>
 #include <atomic>
 #include <thread>
@@ -37,14 +36,6 @@ typedef struct _win_st WINDOW;
 #endif
 
 namespace tcmt {
-
-// TUI mode:
-//   Dashboard — full hardware monitoring panels (default, separate process).
-//   Log       — standalone scrolling log view (--tui-log, separate console).
-enum class TuiMode {
-    Dashboard,
-    Log,
-};
 
 // Data snapshot for TUI rendering (filled by main thread)
 struct TuiData {
@@ -292,7 +283,7 @@ struct TuiData {
 
 class TuiApp {
 public:
-    explicit TuiApp(TuiMode mode = TuiMode::Dashboard);
+    TuiApp();
     ~TuiApp();
 
     // Start/stop the TUI (runs in its own thread)
@@ -309,12 +300,9 @@ public:
     // Inject external log buffer (e.g. from Logger)
     void SetLogBuffer(LogBuffer* buf);
 
-    // Feed a single log line into the Log-mode view (thread-safe).
-    void PushLogLine(const std::string& line);
-
 private:
     void Run();
-    void RunLog();
+    void RenderLogPage(int rows, int cols, int ch);
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -343,15 +331,13 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
 
-    TuiMode mode_ = TuiMode::Dashboard;
+    // Page state: Dashboard (hardware panels) or Log (scrolling log page)
+    bool logPage_ = false;
+    int logScrollOffset_ = 0;   // lines scrolled up from bottom
+    bool logFollow_ = true;     // auto-follow newest lines
 
     TuiData data_;
     mutable std::mutex dataMutex_;
-
-    // Log-mode ring buffer
-    std::deque<std::string> logLines_;
-    mutable std::mutex logLinesMutex_;
-    static constexpr size_t kMaxLogLines = 2000;
 
     // Internal buffer (fallback), or use external via SetLogBuffer()
     LogBuffer defaultBuffer_;

@@ -152,7 +152,6 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\os\OSInfo.h" />
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
     <ClInclude Include="src\core\Utils\Logger.h" />
-    <ClInclude Include="src\core\Utils\LogPipe.h" />
     <ClInclude Include="src\core\Utils\stdafx.h" />
     <ClInclude Include="src\core\Utils\TimeUtils.h" />
     <ClInclude Include="src\core\Utils\WinUtils.h" />
@@ -208,7 +207,6 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp" />
     <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp" />
     <ClCompile Include="src\core\Utils\Logger.cpp" />
-    <ClCompile Include="src\core\Utils\LogPipe.cpp" />
     <ClCompile Include="src\core\Utils\TimeUtils.cpp" />
     <ClCompile Include="src\core\Utils\WinUtils.cpp" />
     <ClCompile Include="src\core\Utils\WMIManager.cpp" />

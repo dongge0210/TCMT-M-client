@@ -1,16 +1,16 @@
 # Session State (2026-08-08)
 
-## TUI 重做 — dashboard + 独立 LOG 终端（Windows 版已提交）
+## TUI 重做 — dashboard / log 双页面（都在主程序内，不走 IPC）
 
-- 需求：dashboard 与 log 分成两个独立终端/进程（不同 PID），默认双开；双击 exe 自动拉起第二个窗口，不需要脚本
-- 方案：Logger 增加可插拔 sink → 专用日志管道 `TCMT_Log_Pipe`（完全独立于监控 schema IPC，不读日志文件）
-- 改动：
-  - `TuiApp` 支持 `TuiMode::Dashboard / Log`；Log 模式为全屏滚动日志（f=跟随、方向键/PgUp/PgDn/Home/End 滚动、q 退出）
-  - dashboard 移除底部压缩日志面板
-  - `main.cpp` 新增 `--tui-log` 分支；dashboard 用 `CREATE_NEW_CONSOLE` 自动拉起 `--tui-log` 窗口
-  - 新增 `src/core/Utils/LogPipe.{h,cpp}`（Windows 命名管道；POSIX 待接）
+- 需求（最终版）：TUI 与 LOG 都是主程序的一部分，**不做独立进程、不走任何 IPC、不读日志文件**；默认启用两个页面
+- 方案：
+  - `TuiApp` 单进程内双页面：Dashboard（硬件面板）+ Log（全屏滚动日志页）
+  - 按键 `Tab` / `l` 切换页面；Log 页 `f`=跟随、方向键/PgUp/PgDn/Home/End 滚动、`q` 退出
+  - Log 页直接读进程内 Logger 日志缓冲（`LogBuffer`），容量 500 → 2000 行
+  - dashboard 移除底部压缩日志面板（原遗留问题，2026-07-22 会话已记录）
+- 废弃：之前实现的 `LogPipe`（命名管道/Unix socket）、`--tui-log` 独立进程方案已整体删除
 - 其他：全仓库文本文件统一转 UTF-8（原 6 个 UTF-16LE + 4 个 UTF-8 BOM 已转换）
-- 注意：本机全量 msbuild 受机器稳定性影响暂无法完整跑通；改动文件已单文件编译验证通过
+- 注意：本机全量 msbuild 需加 `/p:WholeProgramOptimization=false`（LTCG 代码生成在当前会话环境会 ICE）；`/MP` 已从 TCMT.vcxproj 移除
 
 ---
 
