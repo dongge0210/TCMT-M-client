@@ -117,15 +117,14 @@ using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*
 using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);  // v1: single fan
 using NvmlDeviceGetFanSpeedV2Fn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int, unsigned int*);  // v2: per-fan index
-// NVML process info (v2 layout — 24 bytes, matches driver's nvmlProcessInfo_v2_t)
-// Using v1-sized struct (16 bytes) with v2 driver causes buffer overflow → garbage VRAM + TUI freeze
+// NVML process info (v1 layout — 16 bytes, matches nvmlDeviceGetComputeRunningProcesses).
+// The v1 function fills the array with 16-byte entries; using a larger struct here
+// (e.g. the 24-byte v2 layout) shifts every field and produces garbage PID/VRAM.
 struct nvmlProcessInfo_t {
     unsigned int pid;
     unsigned long long usedGpuMemory;
-    unsigned int gpuInstanceId;
-    unsigned int computeInstanceId;
 };
-constexpr unsigned int NVML_MAX_PROCESSES = 16;  // 16 × 24 = 384 bytes, safe stack
+constexpr unsigned int NVML_MAX_PROCESSES = 16;  // 16 × 16 = 256 bytes, safe stack
 using NvmlDeviceGetComputeRunningProcessesFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*);
 using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
 
