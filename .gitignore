@@ -132,5 +132,8 @@ gha-creds-*.json
 /build_err.txt
 /build_out.txt
 
+# IDE encoding tool temp folder
+enc_temp_folder/
+
 # Avalonia build server artifacts
 **/BuildServices/
