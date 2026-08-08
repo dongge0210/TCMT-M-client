@@ -974,6 +974,1015 @@ static int RunMcpMode() {
     return 0;
 }
 
+// ======================== Startup Helpers ========================
+
+// Re-launch elevated (UAC) when the process was not started as administrator.
+static void EnsureElevated() {
+    if (IsRunAsAdmin()) return;
+
+    wchar_t szPath[MAX_PATH];
+    GetModuleFileNameW(NULL, szPath, MAX_PATH);
+
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = szPath;
+    sei.hwnd = NULL;
+    sei.nShow = SW_NORMAL;
+
+    if (ShellExecuteExW(&sei)) {
+        exit(0);
+    } else {
+        MessageBoxW(NULL, L"Auto elevation failed, please right-click and run as administrator.", L"Insufficient Privileges", MB_OK | MB_ICONERROR);
+        SafeExit(1);
+    }
+}
+
+// Initialize COM for the monitoring process (retries single-threaded mode
+// when the apartment model conflicts with an earlier initializer).
+static bool InitCom() {
+    try {
+        HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (FAILED(hr)) {
+            if (hr == RPC_E_CHANGED_MODE) {
+                Logger::Warn("COM initialization mode conflict: thread already initialized in different mode, trying single-threaded mode");
+                hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+                if (FAILED(hr)) {
+                    Logger::Error("COM initialization failed: 0x" + std::to_string(hr));
+                    return false;
+                }
+            }
+            else {
+                Logger::Error("COM initialization failed: 0x" + std::to_string(hr));
+                return false;
+            }
+        }
+        g_comInitialized = true;
+        Logger::Debug("COM initialized successfully");
+        return true;
+    }
+    catch (const std::exception& e) {
+        Logger::Error("Exception during COM initialization: " + std::string(e.what()));
+        return false;
+    }
+}
+
+// Create the shared memory block and start the IPC server (schema broadcast
+// to C# Avalonia via Named Pipe on Windows, UDS on macOS).
+static bool InitSharedMemoryAndIpc(std::unique_ptr<tcmt::ipc::IPCServer>& ipcServer) {
+    try {
+        if (!SharedMemoryManager::InitSharedMemory()) {
+            std::string error = SharedMemoryManager::GetLastError();
+            Logger::Error("Shared memory initialization failed: " + error);
+
+            Logger::Info("Attempting to reinitialize shared memory...");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+            if (!SharedMemoryManager::InitSharedMemory()) {
+                Logger::Critical("Shared memory reinitialization failed, program cannot continue");
+                return false;
+            }
+        }
+        Logger::Info("Shared memory initialized successfully");
+
+        ipcServer = std::make_unique<tcmt::ipc::IPCServer>();
+        {
+            tcmt::ipc::SchemaHeader schemaHdr;
+            std::vector<tcmt::ipc::FieldDef> fields;
+            BuildWindowsIpcSchema(schemaHdr, fields);
+            ipcServer->UpdateSchema(schemaHdr, fields);
+        }
+        if (ipcServer->Start()) {
+            Logger::Info("IPC server started (named pipe)");
+        } else {
+            Logger::Warn("IPC server failed: " + ipcServer->GetLastError());
+        }
+        return true;
+    }
+    catch (const std::exception& e) {
+        Logger::Error("Exception during shared memory initialization: " + std::string(e.what()));
+        return false;
+    }
+}
+
+// Create the WMI manager; returns nullptr on fatal failure.
+static std::shared_ptr<WmiManager> InitWmiManager() {
+    std::shared_ptr<WmiManager> wmiManager;
+    try {
+        wmiManager = std::make_shared<WmiManager>();
+        if (!wmiManager) {
+            Logger::Fatal("WMI manager object creation failed - memory allocation returned null");
+            return nullptr;
+        }
+        if (!wmiManager->IsInitialized()) {
+            Logger::Error("WMI initialization failed");
+            MessageBoxA(NULL, "WMI initialization failed, cannot retrieve system information.", "Error", MB_OK | MB_ICONERROR);
+            return nullptr;
+        }
+        Logger::Debug("WMI manager initialized successfully");
+    }
+    catch (const std::bad_alloc& e) {
+        Logger::Fatal("WMI manager creation failed - memory allocation failed: " + std::string(e.what()));
+        return nullptr;
+    }
+    catch (const std::exception& e) {
+        Logger::Error("WMI manager creation failed: " + std::string(e.what()));
+        return nullptr;
+    }
+    catch (...) {
+        Logger::Fatal("WMI manager creation failed - unknown exception");
+        return nullptr;
+    }
+    return wmiManager;
+}
+
+// Initialize temperature monitoring (PawnIO + NVML on Windows, SMC on macOS,
+// sysfs on Linux). Failures are non-fatal: the program continues without temps.
+static void InitTemperatureBridge() {
+    try {
+        TemperatureWrapper::Initialize();
+        Logger::Info("Temperature monitoring initialized");
+    }
+    catch (const std::exception& e) {
+        Logger::Error("Hardware monitoring bridge initialization failed: " + std::string(e.what()));
+        // Do not exit program, continue running but temperature data may not be available
+    }
+}
+
+// Open the SQLite sensor history database next to %APPDATA%\TCMT (Windows) or
+// ~/.tcmt (POSIX). Returns true when the database is ready for writes.
+static bool InitHistoryLogger(HistoryLogger& historyLogger) {
+    historyLogger.SetRetentionDays(30);
+    std::string dbPath;
+#ifdef _WIN32
+    char envBuf[MAX_PATH];
+    DWORD envLen = GetEnvironmentVariableA("APPDATA", envBuf, sizeof(envBuf));
+    if (envLen > 0 && envLen < sizeof(envBuf))
+        dbPath = std::string(envBuf) + "\\TCMT\\history.db";
+    else
+        dbPath = std::string(getenv("TEMP") ? getenv("TEMP") : "C:\\TEMP") + "\\tcmt_history.db";
+    // Create directory tree
+    std::string dir = dbPath.substr(0, dbPath.find_last_of('\\'));
+    for (size_t i = 0; i < dir.size(); i++)
+        if (dir[i] == '\\' || dir[i] == '/') {
+            dir[i] = '\0';
+            CreateDirectoryA(dir.c_str(), nullptr);
+            dir[i] = '\\';
+        }
+    CreateDirectoryA(dir.c_str(), nullptr);
+#else
+    dbPath = getenv("HOME") ? std::string(getenv("HOME")) + "/.tcmt/history.db" : "/tmp/tcmt_history.db";
+    {
+        std::string dir = dbPath.substr(0, dbPath.find_last_of('/'));
+        mkdir(dir.c_str(), 0755);
+    }
+#endif
+    if (historyLogger.Initialize(dbPath)) {
+        Logger::Info("HistoryLogger: " + dbPath);
+        return true;
+    }
+    Logger::Warn("HistoryLogger failed to initialize");
+    return false;
+}
+
+// ======================== Monitoring Main Loop ========================
+// Collects CPU/GPU/memory/disk/temperature snapshots once per second,
+// publishes them to the TUI and shared memory, and stores sensor history.
+// Returns when the global exit flag is set.
+static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
+                              std::unique_ptr<tcmt::ipc::IPCServer>& ipcServer,
+                              tcmt::TuiApp& tuiApp,
+                              HistoryLogger& historyLogger) {
+    int loopCounter = 1;
+    bool isFirstRun = true;
+    
+    // Cache static system info (only on first fetch)
+    static std::atomic<bool> systemInfoCached{false};
+    static std::string cachedOsVersion;
+    static std::string cachedCpuName;
+    static uint32_t cachedPhysicalCores = 0;
+    static uint32_t cachedLogicalCores = 0;
+    static uint32_t cachedPerformanceCores = 0;
+    static uint32_t cachedEfficiencyCores = 0;
+    static bool cachedHyperThreading = false;
+    static bool cachedVirtualization = false;
+    static double cachedBaseFreq = 0.0;
+    // WMI: Win32_Processor.MaxClockSpeed (MHz) — read once
+    if (cachedBaseFreq == 0.0 && wmiManager && wmiManager->IsInitialized()) {
+        IEnumWbemClassObject* pEnumCpu = nullptr;
+        HRESULT hr = wmiManager->GetWmiService()->ExecQuery(
+            _bstr_t("WQL"), _bstr_t("SELECT MaxClockSpeed FROM Win32_Processor"),
+            WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnumCpu);
+        if (SUCCEEDED(hr) && pEnumCpu) {
+            IWbemClassObject* pObj = nullptr;
+            ULONG ret = 0;
+            while (pEnumCpu->Next(WBEM_INFINITE, 1, &pObj, &ret) == S_OK) {
+                VARIANT vt; VariantInit(&vt);
+                if (SUCCEEDED(pObj->Get(L"MaxClockSpeed", 0, &vt, 0, 0)) && vt.vt == VT_I4)
+                    cachedBaseFreq = (double)vt.intVal;
+                VariantClear(&vt);
+                pObj->Release();
+            }
+            pEnumCpu->Release();
+        }
+    }
+    
+    std::unique_ptr<CpuInfo> cpuInfo;
+    try {
+        cpuInfo = std::make_unique<CpuInfo>();
+        if (!cpuInfo) {
+            Logger::Fatal("CPU info object creation failed - memory allocation returned null");
+            SafeExit(1);
+        }
+        Logger::Debug("CPU info object created successfully");
+    }
+    catch (const std::bad_alloc& e) {
+        Logger::Fatal("CPU info object creation failed - memory allocation failed: " + std::string(e.what()));
+        SafeExit(1);
+    }
+    catch (const std::exception& e) {
+        Logger::Error("CPU info object creation failed: " + std::string(e.what()));
+        SafeExit(1);
+    }
+    catch (...) {
+        Logger::Fatal("CPU info object creation failed - unknown exception");
+        SafeExit(1);
+    }
+    
+    ThreadSafeGpuCache gpuCache;
+
+    // Start ModuleCoordinator background collection threads
+    ModuleCoordinator coordinator;
+    coordinator.Start();
+
+    while (!g_shouldExit.load()) {
+        static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
+        static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
+        static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
+        try {
+            auto loopStart = std::chrono::high_resolution_clock::now();
+            
+            bool isDetailedLogging = (loopCounter % 5 == 1);
+            
+            if (isDetailedLogging) {
+                Logger::Debug("Starting main monitoring loop iteration #" + std::to_string(loopCounter));
+            }
+            
+            if (loopCounter == 5) {
+                g_monitoringStarted = true;
+                Logger::Info("Program is running stable");
+            }
+            
+            SystemInfo sysInfo{};
+            // compressedMemory populated by ModuleCoordinator (PDH \Memory\Modified Page List Bytes)
+
+            try {
+                sysInfo.cpuUsage = 0.0;
+                sysInfo.performanceCoreFreq = 0.0;
+                sysInfo.efficiencyCoreFreq = 0.0;
+                sysInfo.totalMemory = 0;
+                sysInfo.usedMemory = 0;
+                sysInfo.availableMemory = 0;
+                sysInfo.gpuMemory = 0;
+                sysInfo.gpuCoreFreq = 0.0;
+                sysInfo.gpuIsVirtual = false;
+                sysInfo.networkAdapterSpeed = 0;
+                sysInfo.lastUpdate = Platform::SystemTime::Now();
+                
+                if (sysInfo.lastUpdate.year < 2020 || sysInfo.lastUpdate.year > 2050) {
+                    Logger::Warn("Abnormal system time: " + std::to_string(sysInfo.lastUpdate.year));
+                }
+            }
+            catch (const std::exception& e) {
+                Logger::Error("SystemInfo initialization failed: " + std::string(e.what()));
+                continue;
+            }
+            catch (...) {
+                Logger::Error("SystemInfo initialization failed - unknown exception");
+                continue;
+            }
+
+            if (!systemInfoCached.load()) {
+                try {
+                    Logger::Info("Initializing system information");
+                    
+                    OSInfo os;
+                    cachedOsVersion = os.GetVersion();
+
+                    if (cpuInfo) {
+                        cachedCpuName = cpuInfo->GetName();
+                        cachedPhysicalCores = cpuInfo->GetLargeCores() + cpuInfo->GetSmallCores();
+                        cachedLogicalCores = cpuInfo->GetTotalCores();
+                        cachedPerformanceCores = cpuInfo->GetLargeCores();
+                        cachedEfficiencyCores = cpuInfo->GetSmallCores();
+                        cachedHyperThreading = cpuInfo->IsHyperThreadingEnabled();
+                        cachedVirtualization = cpuInfo->IsVirtualizationEnabled();
+                    }
+                    
+                    systemInfoCached = true;
+                    Logger::Info("System information initialized");
+                }
+                catch (const std::exception& e) {
+                    Logger::Error("System info initialization failed: " + std::string(e.what()));
+                    cachedOsVersion = "Unknown";
+                    cachedCpuName = "Unknown";
+                    systemInfoCached = true;
+                }
+            }
+            
+            sysInfo.osVersion = cachedOsVersion;
+            sysInfo.cpuName = cachedCpuName;
+            sysInfo.physicalCores = cachedPhysicalCores;
+            sysInfo.logicalCores = cachedLogicalCores;
+            sysInfo.performanceCores = cachedPerformanceCores;
+            sysInfo.efficiencyCores = cachedEfficiencyCores;
+            sysInfo.hyperThreading = cachedHyperThreading;
+            sysInfo.virtualization = cachedVirtualization;
+            sysInfo.cpuBaseFreq = cachedBaseFreq;
+
+            // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
+            {
+                tcmt::TuiData tempTui;
+                coordinator.Snapshot(sysInfo, tempTui);
+            }
+
+            if (!gpuCache.IsInitialized()) {
+                try {
+                    gpuCache.Initialize(*wmiManager);
+                }
+                catch (const std::exception& e) {
+                    Logger::Error("GPU cache initialization failed: " + std::string(e.what()));
+                }
+            }
+            
+            try {
+                std::string cachedGpuName, cachedGpuBrand;
+                uint64_t cachedGpuMemory;
+                uint32_t cachedGpuCoreFreq;
+                bool cachedGpuIsVirtual;
+                double cachedGpuUsage;
+                
+                gpuCache.GetCachedInfo(cachedGpuName, cachedGpuBrand, cachedGpuMemory, 
+                                      cachedGpuCoreFreq, cachedGpuIsVirtual, cachedGpuUsage);
+                
+                sysInfo.gpuName = cachedGpuName;
+                sysInfo.gpuBrand = cachedGpuBrand;
+                sysInfo.gpuMemory = cachedGpuMemory;
+                sysInfo.gpuCoreFreq = cachedGpuCoreFreq;
+                sysInfo.gpuFreq = cachedGpuCoreFreq;  // NVML real-time clock → TUI
+                sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
+                sysInfo.gpuUsage = cachedGpuUsage;
+
+                // Override with NVML real-time data (NVIDIA GPUs only)
+                double nvmlUsage  = GpuInfo::GetGpuUsage();
+                double nvmlTemp   = GpuInfo::GetGpuTemperature();
+                double nvmlVramPct = GpuInfo::GetVramUsagePercent();
+                if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
+                if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
+                if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
+
+                // Fix GPU array population - add data validation and cleanup
+                sysInfo.gpus.clear();
+                if (!cachedGpuName.empty() && cachedGpuName != "No GPU detected") {
+                    GPUData gpu;
+                    
+                    // Initialize GPU struct to avoid garbage data
+                    memset(&gpu, 0, sizeof(GPUData));
+                    
+                    // Safely copy GPU name and brand to wchar_t arrays
+                    std::wstring gpuNameW = WinUtils::StringToWstring(cachedGpuName);
+                    std::wstring gpuBrandW = WinUtils::StringToWstring(cachedGpuBrand);
+                    
+                    // Limit string length to prevent buffer overflow
+                    if (gpuNameW.length() >= sizeof(gpu.name)/sizeof(wchar_t)) {
+                        gpuNameW = gpuNameW.substr(0, sizeof(gpu.name)/sizeof(wchar_t) - 1);
+                    }
+                    if (gpuBrandW.length() >= sizeof(gpu.brand)/sizeof(wchar_t)) {
+                        gpuBrandW = gpuBrandW.substr(0, sizeof(gpu.brand)/sizeof(wchar_t) - 1);
+                    }
+                    
+                    wcsncpy_s(gpu.name, sizeof(gpu.name)/sizeof(wchar_t), gpuNameW.c_str(), _TRUNCATE);
+                    wcsncpy_s(gpu.brand, sizeof(gpu.brand)/sizeof(wchar_t), gpuBrandW.c_str(), _TRUNCATE);
+                    
+                    // Validate and clean GPU data - avoid abnormal values
+                    gpu.memory = (cachedGpuMemory > 0 && cachedGpuMemory < UINT64_MAX) ? cachedGpuMemory : 0;
+                    
+                    // Fix GPU core clock - ensure it's in reasonable range
+                    if (cachedGpuCoreFreq > 0 && cachedGpuCoreFreq < 10000) {
+                        gpu.coreClock = cachedGpuCoreFreq;
+                    } else {
+                        gpu.coreClock = 0; // Set to 0 instead of abnormal value
+                        if (isFirstRun && cachedGpuCoreFreq > 10000) {
+                            Logger::Warn("GPU core clock abnormal: " + std::to_string(cachedGpuCoreFreq) + "MHz, reset to 0");
+                        }
+                    }
+                    
+                    gpu.isVirtual = cachedGpuIsVirtual;
+                    gpu.usage = cachedGpuUsage;  // GPU usage
+                    
+                    sysInfo.gpus.push_back(gpu);
+                    
+                    if (isFirstRun) {
+                        Logger::Debug("Added GPU to array: " + cachedGpuName + 
+                                     " (Memory: " + FormatSize(cachedGpuMemory) + 
+                                     ", Clock: " + std::to_string(gpu.coreClock) + "MHz" +
+                                     ", Virtual: " + (cachedGpuIsVirtual ? "Yes" : "No") + ")");
+                    }
+                } else {
+                    if (isFirstRun) {
+                        Logger::Debug("No valid GPU detected, skipping GPU data population");
+                    }
+                }
+            }
+            catch (const std::bad_alloc& e) {
+                Logger::Error("GPU cache info processing failed - Out of memory: " + std::string(e.what()));
+                sysInfo.gpus.clear();
+                sysInfo.gpuName = "Out of memory";
+                sysInfo.gpuBrand = "Unknown";
+                sysInfo.gpuMemory = 0;
+                sysInfo.gpuCoreFreq = 0;
+                sysInfo.gpuIsVirtual = false;
+            }
+            catch (const std::exception& e) {
+                Logger::Error("Failed to get GPU cache info: " + std::string(e.what()));
+                sysInfo.gpus.clear();
+                sysInfo.gpuName = "Failed to get GPU info";
+                sysInfo.gpuBrand = "Unknown";
+                sysInfo.gpuMemory = 0;
+                sysInfo.gpuCoreFreq = 0;
+                sysInfo.gpuIsVirtual = false;
+            }
+            catch (...) {
+                Logger::Error("Failed to get GPU cache info - Unknown exception");
+                sysInfo.gpus.clear();
+                sysInfo.gpuName = "Unknown exception";
+                sysInfo.gpuBrand = "Unknown";
+                sysInfo.gpuMemory = 0;
+                sysInfo.gpuCoreFreq = 0;
+                sysInfo.gpuIsVirtual = false;
+            }
+
+            // Initialize network adapter info (avoid crash due to invalid data)
+            sysInfo.networkAdapterName = "No network adapter detected";
+            sysInfo.networkAdapterMac = "00-00-00-00-00-00";
+            sysInfo.networkAdapterSpeed = 0;
+            sysInfo.networkAdapterIp = "N/A";
+            sysInfo.networkAdapterType = "Unknown";
+
+            // Network adapter info now populated by ModuleCoordinator::Snapshot()
+            // (was duplicated here — removed to avoid redundant WMI queries)
+
+            // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
+
+            // Physical disk (SMART) and TPM collection (coordinator handles logical disks)
+            try {
+                // Collect physical disks on a background thread. DeviceIoControl SMART
+                // reads can block indefinitely on unresponsive drives/controllers (no
+                // timeout), so the main loop must never wait on them. Results are cached.
+                // The cache is intentionally heap-allocated for the process lifetime so a
+                // detached worker can touch it safely even while the program is exiting.
+                static auto* physDiskMutex = new std::mutex();
+                static auto* cachedPhysDisks = new std::vector<PhysicalDiskSmartData>();
+                static std::atomic<bool> physScanInFlight{false};
+                static auto lastPhysScanStart = std::chrono::steady_clock::now() - std::chrono::seconds(61);
+                auto now = std::chrono::steady_clock::now();
+                // A scan that has been running too long is considered stuck (hung drive) —
+                // clear the flag so the next refresh window can retry.
+                if (physScanInFlight.load() &&
+                    std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysScanStart).count() > 120) {
+                    physScanInFlight.store(false);
+                }
+                if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysScanStart).count() >= 60 &&
+                    wmiManager && !physScanInFlight.exchange(true)) {
+                    lastPhysScanStart = now; // throttle only when a scan actually starts
+                    auto wmi = wmiManager;   // shared_ptr keeps WmiManager alive for the worker
+                    std::thread([wmi]() {
+                        HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                        bool comInit = SUCCEEDED(hr);
+                        SystemInfo tmp;
+                        try {
+                            // Phase 1: fast single-query WMI disk list — publish immediately
+                            // so the TUI shows physical disks even if a SMART read hangs.
+                            DiskInfo::CollectPhysicalDiskInfo(*wmi, tmp);
+                            if (!tmp.physicalDisks.empty()) {
+                                {
+                                    std::lock_guard<std::mutex> lock(*physDiskMutex);
+                                    *cachedPhysDisks = tmp.physicalDisks;
+                                }
+                                // Phase 2: SMART per disk on its own thread — a hung drive
+                                // never blocks the list or the other disks.
+                                auto disks = tmp.physicalDisks;
+                                for (const auto& d : disks) {
+                                    if (d.physicalIndex < 0) continue;
+                                    std::thread([d]() {
+                                        PhysicalDiskSmartData out = d;
+                                        bool ok = false;
+                                        try {
+                                            ok = SmartReader::Read(out.physicalIndex, out);
+                                        } catch (...) {}
+                                        if (ok) {
+                                            std::lock_guard<std::mutex> lock(*physDiskMutex);
+                                            for (auto& e : *cachedPhysDisks) {
+                                                if (e.physicalIndex == out.physicalIndex) {
+                                                    e = out;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }).detach();
+                                }
+                            }
+                        } catch (...) {}
+                        physScanInFlight.store(false);
+                        if (comInit) CoUninitialize();
+                    }).detach();
+                }
+                {
+                    std::lock_guard<std::mutex> lock(*physDiskMutex);
+                    sysInfo.physicalDisks = *cachedPhysDisks;
+                }
+
+                // Serialize SMART attributes to JSON for each physical disk
+                for (auto& pd : sysInfo.physicalDisks) {
+                    if (pd.attributeCount > 0 && pd.attributeCount <= 32) {
+                        std::string json = "[";
+                        for (int ai = 0; ai < pd.attributeCount; ai++) {
+                            if (ai > 0) json += ",";
+                            auto& a = pd.attributes[ai];
+                            // Convert WCHAR name to UTF-8
+                            char nameUtf8[256] = {};
+                            WideCharToMultiByte(CP_UTF8, 0, a.name, -1,
+                                nameUtf8, (int)sizeof(nameUtf8) - 1, nullptr, nullptr);
+                            // JSON-escape name
+                            std::string nameEscaped;
+                            for (const char* p = nameUtf8; *p; p++) {
+                                if (*p == '"') nameEscaped += "\\\"";
+                                else if (*p == '\\') nameEscaped += "\\\\";
+                                else nameEscaped += *p;
+                            }
+                            // Convert WCHAR desc to UTF-8 and escape
+                            char descUtf8[512] = {};
+                            WideCharToMultiByte(CP_UTF8, 0, a.description, -1,
+                                descUtf8, (int)sizeof(descUtf8) - 1, nullptr, nullptr);
+                            std::string descEscaped;
+                            for (const char* p = descUtf8; *p; p++) {
+                                if (*p == '"') descEscaped += "\\\"";
+                                else if (*p == '\\') descEscaped += "\\\\";
+                                else descEscaped += *p;
+                            }
+                            char buf[768];
+                            snprintf(buf, sizeof(buf),
+                                "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu,\"name\":\"%s\",\"desc\":\"%s\"}",
+                                a.id, a.current, a.worst, a.rawValue, nameEscaped.c_str(), descEscaped.c_str());
+                            json += buf;
+                        }
+                        json += "]";
+                        strncpy_s(pd.attrsJson, json.c_str(), sizeof(pd.attrsJson) - 1);
+                        pd.attrsJson[sizeof(pd.attrsJson) - 1] = '\0';
+                    }
+                }
+
+                // Collect TPM data
+                {
+                    TpmInfo tpmInfo = {};
+                    if (TpmBridge::GetTpmInfo(tpmInfo)) {
+                        sysInfo.tpms.clear();
+                        sysInfo.tpms.push_back(tpmInfo);
+                        Logger::Debug("TPM data collected, isPresent=" + std::to_string(tpmInfo.isPresent));
+                    }
+                }
+            }
+            catch (const std::bad_alloc& e) {
+                Logger::Error("Failed to get physical disk / TPM data - Out of memory: " + std::string(e.what()));
+                sysInfo.physicalDisks.clear();
+            }
+            catch (const std::exception& e) {
+                Logger::Error("Failed to get physical disk / TPM data: " + std::string(e.what()));
+                sysInfo.physicalDisks.clear();
+            }
+            catch (...) {
+                Logger::Error("Failed to get physical disk / TPM data - Unknown exception");
+                sysInfo.physicalDisks.clear();
+            }
+
+            // Validate data before writing to shared memory - enhanced data validation
+            try {
+                // CPU usage validation
+                if (sysInfo.cpuUsage < 0.0 || sysInfo.cpuUsage > 100.0) {
+                    Logger::Warn("CPU usage data abnormal: " + std::to_string(sysInfo.cpuUsage) + "%, resetting to 0");
+                    sysInfo.cpuUsage = 0.0;
+                }
+                
+                if (sysInfo.totalMemory > 0) {
+                    if (sysInfo.usedMemory > sysInfo.totalMemory) {
+                        Logger::Warn("Used memory exceeds total memory, data abnormal");
+                        sysInfo.usedMemory = sysInfo.totalMemory;
+                    }
+                    if (sysInfo.availableMemory > sysInfo.totalMemory) {
+                        Logger::Warn("Available memory exceeds total memory, data abnormal");
+                        sysInfo.availableMemory = sysInfo.totalMemory;
+                    }
+                }
+                
+                // Frequency data validation
+                if (std::isnan(sysInfo.performanceCoreFreq) || std::isinf(sysInfo.performanceCoreFreq)) {
+                    sysInfo.performanceCoreFreq = 0.0;
+                }
+                if (std::isnan(sysInfo.efficiencyCoreFreq) || std::isinf(sysInfo.efficiencyCoreFreq)) {
+                    sysInfo.efficiencyCoreFreq = 0.0;
+                }
+                if (std::isnan(sysInfo.gpuCoreFreq) || std::isinf(sysInfo.gpuCoreFreq)) {
+                    sysInfo.gpuCoreFreq = 0.0;
+                }
+                
+                // Temperature data validation
+                if (std::isnan(sysInfo.cpuTemperature) || std::isinf(sysInfo.cpuTemperature)) {
+                    sysInfo.cpuTemperature = 0.0;
+                }
+                if (std::isnan(sysInfo.gpuTemperature) || std::isinf(sysInfo.gpuTemperature)) {
+                    sysInfo.gpuTemperature = 0.0;
+                }
+                
+                // Network speed validation
+                if (sysInfo.networkAdapterSpeed > 1000000000000ULL) {
+                    Logger::Warn("Network adapter speed abnormal: " + std::to_string(sysInfo.networkAdapterSpeed));
+                    sysInfo.networkAdapterSpeed = 0;
+                }
+            }
+            catch (const std::exception& e) {
+                Logger::Error("Exception during data validation: " + std::string(e.what()));
+            }
+            catch (...) {
+                Logger::Error("Unknown exception during data validation");
+            }
+
+            // Write to shared memory (moved to TUI block after WiFi/BT populated)
+            try {
+                // SharedMemory write now handled in TUI update section below
+            }
+            catch (const std::bad_alloc& e) {
+                Logger::Error("Out of memory while processing system info: " + std::string(e.what()));
+            }
+            catch (const std::exception& e) {
+                Logger::Error("Exception while processing system info: " + std::string(e.what()));
+            }
+            catch (...) {
+                Logger::Error("Unknown exception while processing system info");
+            }
+            
+            // Update TUI with current data
+            try {
+                tcmt::TuiData tuiData;
+                tuiData.cpuName = sysInfo.cpuName;
+                tuiData.cpuUsage = sysInfo.cpuUsage;
+                tuiData.physicalCores = sysInfo.physicalCores;
+                tuiData.performanceCores = sysInfo.performanceCores;
+                tuiData.efficiencyCores = sysInfo.efficiencyCores;
+                tuiData.pCoreFreq = sysInfo.performanceCoreFreq;
+                tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
+                tuiData.cpuBaseFreq = sysInfo.cpuBaseFreq;
+                tuiData.cpuTemp = sysInfo.cpuTemperature;
+                tuiData.cpuPcoreTemp = sysInfo.cpuPcoreTemperature;
+                tuiData.cpuEcoreTemp = sysInfo.cpuEcoreTemperature;
+                tuiData.totalMemory = sysInfo.totalMemory;
+                tuiData.usedMemory = sysInfo.usedMemory;
+                tuiData.availableMemory = sysInfo.availableMemory;
+                tuiData.compressedMemory = sysInfo.compressedMemory;
+                tuiData.ramSpeed = sysInfo.ramSpeed;
+                snprintf(tuiData.ramType, sizeof(tuiData.ramType), "%s", sysInfo.ramType);
+
+                if (!sysInfo.gpus.empty()) {
+                    tuiData.gpuName = sysInfo.gpuName;
+                    tuiData.gpuMemory = sysInfo.gpuMemory;
+                    tuiData.gpuUsage = sysInfo.gpuUsage;
+                    tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
+                }
+                tuiData.gpuTemp = sysInfo.gpuTemperature;
+                tuiData.cpuPower = sysInfo.cpuPower;
+                tuiData.gpuPower = sysInfo.gpuPower;
+                tuiData.anePower = sysInfo.anePower;
+                tuiData.gpuFreq = sysInfo.gpuFreq;
+                // GPU fans (NVAPI RPM + NVML fallback)
+                tuiData.gpuFans.clear();
+                for (const auto& gf : GpuInfo::GetGpuFans()) {
+                    tcmt::TuiData::GpuFanInfo fi;
+                    fi.index = gf.index;
+                    fi.speedRpm = gf.speedRpm;
+                    fi.isRpm = gf.isRpm;
+                    tuiData.gpuFans.push_back(fi);
+                }
+                // Keep legacy field for backward compat
+                tuiData.gpuFanSpeed = tuiData.gpuFans.empty() ? -1 : tuiData.gpuFans[0].speedRpm;
+                // GPU processes (NVML)
+                tuiData.gpuProcesses.clear();
+                for (const auto& gp : GpuInfo::GetGpuProcesses()) {
+                    tcmt::TuiData::GpuProcInfo pi;
+                    pi.pid = gp.pid;
+                    pi.gpuIndex = gp.gpuIndex;
+                    pi.vramBytes = gp.usedGpuMemory;
+                    tuiData.gpuProcesses.push_back(pi);
+                }
+
+                // Disks
+                for (const auto& disk : sysInfo.disks) {
+                    tcmt::TuiData::DiskInfo di;
+                    di.letter = disk.letter;
+                    di.label = disk.label;
+                    di.totalSize = disk.totalSize;
+                    di.usedSpace = disk.usedSpace;
+                    di.fileSystem = disk.fileSystem;
+                    tuiData.disks.push_back(di);
+                }
+
+                // Physical disks (SMART)
+                for (const auto& pd : sysInfo.physicalDisks) {
+                    tcmt::TuiData::PhysicalDiskInfo pi;
+                    pi.model = WinUtils::WstringToString(pd.model);
+                    pi.serial = WinUtils::WstringToString(pd.serialNumber);
+                    pi.interfaceType = WinUtils::WstringToString(pd.interfaceType);
+                    pi.diskType = WinUtils::WstringToString(pd.diskType);
+                    pi.capacity = pd.capacity;
+                    pi.temperature = pd.temperature;
+                    pi.healthPct = pd.healthPercentage;
+                    pi.smartSupported = pd.smartSupported;
+                    pi.powerOnHours = pd.powerOnHours;
+                    pi.wearLeveling = pd.wearLeveling;
+                    for (int ai = 0; ai < pd.attributeCount && ai < 32; ai++) {
+                        const auto& sa = pd.attributes[ai];
+                        tcmt::TuiData::SmAttributeInfo ai2;
+                        ai2.id = sa.id;
+                        ai2.current = sa.current;
+                        ai2.worst = sa.worst;
+                        ai2.rawValue = sa.rawValue;
+                        pi.attributes.push_back(ai2);
+                    }
+                    tuiData.physicalDisks.push_back(pi);
+                }
+                
+                // Network adapters
+                for (const auto& adapter : sysInfo.adapters) {
+                    tcmt::TuiData::NetInfo ni;
+                    // Convert wchar_t[] arrays to std::string
+                    ni.name = WinUtils::WstringToString(adapter.name);
+                    ni.ip = WinUtils::WstringToString(adapter.ipAddress);
+                    ni.mac = WinUtils::WstringToString(adapter.mac);
+                    ni.type = WinUtils::WstringToString(adapter.adapterType);
+                    ni.speed = adapter.speed;
+                    ni.downloadSpeed = adapter.downloadSpeed;
+                    ni.uploadSpeed = adapter.uploadSpeed;
+                    tuiData.adapters.push_back(ni);
+                }
+                
+                tuiData.osVersion = sysInfo.osVersion;
+
+                // ─── Per-core sensors ───
+                tuiData.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
+                for (int ci = 0; ci < tuiData.perCoreCount; ci++) {
+                    tuiData.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
+                    tuiData.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                }
+
+                // ─── Network traffic history (sparkline) ───
+                if (tuiData.adapters.size() > 0) {
+                    uint64_t dl = tuiData.adapters[0].downloadSpeed;
+                    uint64_t ul = tuiData.adapters[0].uploadSpeed;
+                    int pos = tuiData.dlHistoryPos;
+                    tuiData.dlHistory[pos] = dl;
+                    tuiData.ulHistory[pos] = ul;
+                    tuiData.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                    if (tuiData.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
+                        tuiData.dlHistoryLen++;
+                }
+                tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
+                if (ipcServer) {
+                    auto ct = ipcServer->GetClientTypes();
+                    tuiData.clientTypes.clear();
+                    for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
+                }
+                tuiData.temperatures = sysInfo.temperatures;
+                // Add physical disk temps to unified temperature list
+                for (size_t di = 0; di < tuiData.physicalDisks.size(); ++di) {
+                    if (tuiData.physicalDisks[di].temperature > 0) {
+                        std::string label = tuiData.physicalDisks[di].model;
+                        if (label.empty()) label = "Disk";
+                        tuiData.temperatures.push_back({label, tuiData.physicalDisks[di].temperature});
+                    }
+                }
+                if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
+                    auto& tpm = sysInfo.tpms[0];
+                    tuiData.tpmInfo = WinUtils::WstringToString(tpm.manufacturer)
+                                    + " v" + WinUtils::WstringToString(tpm.firmwareVersion);
+                    if (!tpm.isEnabled) tuiData.tpmInfo += " (Disabled)";
+                    else if (!tpm.isActive) tuiData.tpmInfo += " (Inactive)";
+                } else {
+                    tuiData.tpmInfo = "No TPM";
+                }
+
+                // WiFi & Bluetooth (every ~3s, or immediate on ETW event)
+                { static int wbCtr = 0;
+                  static WiFiInfo s_wifi;
+                  static BluetoothInfo s_bt;
+                  bool forcePoll = coordinator.IsWifiDirty() || coordinator.IsBtDirty();
+                  if (++wbCtr >= 3 || forcePoll) { wbCtr = 0;
+                      try { s_wifi.Detect(); } catch (...) {}
+                      if (s_btNotify.Poll() || forcePoll) { try { s_bt.Detect(); } catch (...) {} }
+                  }
+                  const auto& wd = s_wifi.GetData();
+                  tuiData.hasWiFi = wd.powerOn;
+                  tuiData.wifiSSID = wd.ssid;
+                  tuiData.wifiRSSI = wd.rssi;
+                  tuiData.wifiChannel = wd.channel;
+                  tuiData.wifiSecurity = wd.security;
+                  tuiData.wifiBand = wd.band;
+                  tuiData.wifiGen = wd.wifiGen;
+                  sysInfo.wifiPowerOn = wd.powerOn;
+                  sysInfo.wifiIsConnected = wd.isConnected;
+                  sysInfo.wifiSSID = wd.ssid;
+                  sysInfo.wifiRSSI = wd.rssi;
+                  sysInfo.wifiChannel = wd.channel;
+                  sysInfo.wifiSecurity = wd.security;
+                  sysInfo.wifiBand = wd.band;
+                  sysInfo.wifiGen = wd.wifiGen;
+                  const auto& bd = s_bt.GetData();
+                  tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
+                  tuiData.btPowerOn = bd.adapter.powerOn;
+                  tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+                  sysInfo.btPowerOn = bd.adapter.powerOn;
+                  sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
+
+                  // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)
+                  sysInfo.wifiPowerOn = wd.powerOn;
+                  sysInfo.wifiIsConnected = wd.isConnected;
+                }
+
+                tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
+
+                tuiApp.UpdateData(tuiData);
+
+                // Write to shared memory (after WiFi/BT data populated)
+                try {
+                    if (SharedMemoryManager::GetBuffer()) {
+                        SharedMemoryManager::WriteToSharedMemory(sysInfo);
+                    }
+                } catch (...) {}
+            }
+            catch (const std::exception& e) {
+                Logger::Warn("TUI data update failed: " + std::string(e.what()));
+            }
+
+            // Calculate loop execution time and adaptive sleep - optimize refresh speed, enhanced exception handling
+            try {
+                auto loopEnd = std::chrono::high_resolution_clock::now();
+                auto loopDuration = std::chrono::duration_cast<std::chrono::milliseconds>(loopEnd - loopStart);
+                
+                // 1 second cycle time
+                int targetCycleTime = 1000;
+                int sleepTime = (std::max)(targetCycleTime - static_cast<int>(loopDuration.count()), 100); // Min sleep 100ms
+                
+                if (isDetailedLogging) {
+                    double loopTimeSeconds = loopDuration.count() / 1000.0;
+                    double sleepTimeSeconds = sleepTime / 1000.0;
+                    
+                    if (loopTimeSeconds < 0 || loopTimeSeconds > 60) {
+                        Logger::Warn("Loop time calculation abnormal: " + std::to_string(loopTimeSeconds) + " seconds");
+                    }
+                    
+                    std::stringstream ss;
+                    ss << std::fixed << std::setprecision(2);
+                    ss << "Main monitoring loop #" << loopCounter << " executed in " 
+                       << loopTimeSeconds << "s, will sleep for " << sleepTimeSeconds << "s";
+                    
+                    Logger::Debug(ss.str());
+                }
+                
+                // Check exit flag during sleep - use shorter check interval for better responsiveness
+                auto sleepStart = std::chrono::high_resolution_clock::now();
+                while (!g_shouldExit.load()) {
+                    try {
+                        auto now = std::chrono::high_resolution_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - sleepStart);
+                        if (elapsed.count() >= sleepTime) {
+                            break;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    }
+                    catch (const std::exception& e) {
+                        Logger::Warn("Exception during sleep: " + std::string(e.what()));
+                        break;
+                    }
+                    catch (...) {
+                        Logger::Warn("Unknown exception during sleep");
+                        break;
+                    }
+                }
+            }
+            catch (const std::exception& e) {
+                Logger::Error("Exception while calculating loop time: " + std::string(e.what()));
+                try {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                } catch (...) {
+                    Logger::Fatal("System sleep function abnormal");
+                }
+            }
+            catch (...) {
+                Logger::Error("Unknown exception while calculating loop time");
+                try {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                } catch (...) {
+                    Logger::Fatal("System sleep function abnormal");
+                }
+            }
+            
+            // Safely increment loop counter
+            try {
+                // Push sensor history
+                if (historyLogger.IsRunning()) {
+                    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    std::vector<SensorSnapshot> snapshots;
+                    snapshots.push_back({"cpu/usage", sysInfo.cpuUsage, "%", (uint64_t)nowMs});
+                    snapshots.push_back({"cpu/temperature", sysInfo.cpuTemperature, "C", (uint64_t)nowMs});
+                    snapshots.push_back({"gpu/usage", sysInfo.gpuUsage, "%", (uint64_t)nowMs});
+                    snapshots.push_back({"gpu/temperature", sysInfo.gpuTemperature, "C", (uint64_t)nowMs});
+                    if (sysInfo.totalMemory > 0) {
+                        double memPct = 100.0 * sysInfo.usedMemory / sysInfo.totalMemory;
+                        snapshots.push_back({"memory/percent", memPct, "%", (uint64_t)nowMs});
+                    }
+                    if (sysInfo.batteryPercent >= 0)
+                        snapshots.push_back({"battery/percent", (double)sysInfo.batteryPercent, "%", (uint64_t)nowMs});
+                    // USB detection (every ~10 seconds)
+                    static int usbCheckCounter = 0;
+                    static size_t prevUsbCount = 0;
+                    if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
+                    if (++usbCheckCounter >= 20) {
+                        usbCheckCounter = 0;
+                        try {
+                            UsbInfo usb;
+                            usb.Detect();
+                            const auto& devs = usb.GetDevices();
+                            if (devs.size() != prevUsbCount) {
+                                if (devs.empty())
+                                    Logger::Info("USB: all devices removed");
+                                else {
+                                    Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
+                                    for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
+                                        Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
+                                                    + " PID:" + std::to_string(devs[di].pid));
+                                }
+                                prevUsbCount = devs.size();
+                            }
+                        } catch (...) {}
+                    }
+
+                    historyLogger.WriteBatch(snapshots);
+                    }
+
+                loopCounter++;
+                
+                if (loopCounter < 0 || loopCounter > 2000000000) {
+                    Logger::Warn("Loop counter abnormal, resetting to 1");
+                    loopCounter = 1;
+                }
+            }
+            catch (...) {
+                Logger::Error("Failed to update loop counter");
+                loopCounter = 1;
+            }
+            
+            // Set flag after first run
+            if (isFirstRun) {
+                isFirstRun = false;
+            }
+        }
+        catch (const std::bad_alloc& e) {
+            Logger::Critical("Memory allocation exception in main loop: " + std::string(e.what()));
+            try {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            } catch (...) {
+                Logger::Fatal("Cannot execute sleep, system severe exception");
+            }
+            continue;
+        }
+        catch (const std::exception& e) {
+            Logger::Critical("Exception in main loop: " + std::string(e.what()));
+            try {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            } catch (...) {
+                Logger::Fatal("Cannot execute sleep, system severe exception");
+            }
+            continue;
+        }
+        catch (...) {
+            Logger::Fatal("Unknown exception in main loop");
+            try {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            } catch (...) {
+                SafeExit(1);
+            }
+            continue;
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     _set_se_translator(SEHTranslator);
     
@@ -1012,124 +2021,16 @@ int main(int argc, char* argv[]) {
         bool mcpMode = (argc > 1 && std::string(argv[1]) == "--mcp");
         if (mcpMode) return RunMcpMode();
 
-        if (!IsRunAsAdmin()) {
-            wchar_t szPath[MAX_PATH];
-            GetModuleFileNameW(NULL, szPath, MAX_PATH);
+        EnsureElevated();
+        if (!InitCom()) return -1;
 
-            SHELLEXECUTEINFOW sei = { sizeof(sei) };
-            sei.lpVerb = L"runas";
-            sei.lpFile = szPath;
-            sei.hwnd = NULL;
-            sei.nShow = SW_NORMAL;
-
-            if (ShellExecuteExW(&sei)) {
-                exit(0);
-            } else {
-                MessageBoxW(NULL, L"Auto elevation failed, please right-click and run as administrator.", L"Insufficient Privileges", MB_OK | MB_ICONERROR);
-                SafeExit(1);
-            }
-        }
-
-        try {
-            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-            if (FAILED(hr)) {
-                if (hr == RPC_E_CHANGED_MODE) {
-                    Logger::Warn("COM initialization mode conflict: thread already initialized in different mode, trying single-threaded mode");
-                    hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-                    if (FAILED(hr)) {
-                        Logger::Error("COM initialization failed: 0x" + std::to_string(hr));
-                        return -1;
-                    }
-                }
-                else {
-                    Logger::Error("COM initialization failed: 0x" + std::to_string(hr));
-                    return -1;
-                }
-            }
-            g_comInitialized = true;
-            Logger::Debug("COM initialized successfully");
-        }
-        catch (const std::exception& e) {
-            Logger::Error("Exception during COM initialization: " + std::string(e.what()));
-            return -1;
-        }
-
-#ifdef _WIN32
         std::unique_ptr<tcmt::ipc::IPCServer> ipcServer;
-#endif
-        try {
-            if (!SharedMemoryManager::InitSharedMemory()) {
-                std::string error = SharedMemoryManager::GetLastError();
-                Logger::Error("Shared memory initialization failed: " + error);
-                
-                Logger::Info("Attempting to reinitialize shared memory...");
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                
-                if (!SharedMemoryManager::InitSharedMemory()) {
-                    Logger::Critical("Shared memory reinitialization failed, program cannot continue");
-                    SafeExit(1);
-                }
-            }
-            Logger::Info("Shared memory initialized successfully");
+        if (!InitSharedMemoryAndIpc(ipcServer)) SafeExit(1);
 
-            // IPC server — sends schema to C# Avalonia (Named Pipe on Windows, UDS on macOS)
-#ifdef _WIN32
-            ipcServer = std::make_unique<tcmt::ipc::IPCServer>();
-            {
-                tcmt::ipc::SchemaHeader schemaHdr;
-                std::vector<tcmt::ipc::FieldDef> fields;
-                BuildWindowsIpcSchema(schemaHdr, fields);
-                ipcServer->UpdateSchema(schemaHdr, fields);
-            }
-            if (ipcServer->Start()) {
-                Logger::Info("IPC server started (named pipe)");
-            } else {
-                Logger::Warn("IPC server failed: " + ipcServer->GetLastError());
-            }
-#endif
-        }
-        catch (const std::exception& e) {
-            Logger::Error("Exception during shared memory initialization: " + std::string(e.what()));
-            SafeExit(1);
-        }
+        auto wmiManager = InitWmiManager();
+        if (!wmiManager) SafeExit(1);
 
-        // Create and initialize WMI manager - enhanced memory allocation exception handling
-        std::shared_ptr<WmiManager> wmiManager;
-        try {
-            wmiManager = std::make_shared<WmiManager>();
-            if (!wmiManager) {
-                Logger::Fatal("WMI manager object creation failed - memory allocation returned null");
-                SafeExit(1);
-            }
-            if (!wmiManager->IsInitialized()) {
-                Logger::Error("WMI initialization failed");
-                MessageBoxA(NULL, "WMI initialization failed, cannot retrieve system information.", "Error", MB_OK | MB_ICONERROR);
-                SafeExit(1);
-            }
-            Logger::Debug("WMI manager initialized successfully");
-        }
-        catch (const std::bad_alloc& e) {
-            Logger::Fatal("WMI manager creation failed - memory allocation failed: " + std::string(e.what()));
-            SafeExit(1);
-        }
-        catch (const std::exception& e) {
-            Logger::Error("WMI manager creation failed: " + std::string(e.what()));
-            SafeExit(1);
-        }
-        catch (...) {
-            Logger::Fatal("WMI manager creation failed - unknown exception");
-            SafeExit(1);
-        }
-
-        // Initialize temperature monitoring (PawnIO + NVML on Windows, SMC on macOS, sysfs on Linux)
-        try {
-            TemperatureWrapper::Initialize();
-            Logger::Info("Temperature monitoring initialized");
-        }
-        catch (const std::exception& e) {
-            Logger::Error("Hardware monitoring bridge initialization failed: " + std::string(e.what()));
-            // Do not exit program, continue running but temperature data may not be available
-        }
+        InitTemperatureBridge();
 
         Logger::Info("Program startup complete");
 
@@ -1170,868 +2071,9 @@ int main(int argc, char* argv[]) {
 
         // History logger (SQLite)
         HistoryLogger historyLogger;
-        historyLogger.SetRetentionDays(30);
-        {
-            std::string dbPath;
-#ifdef _WIN32
-            char envBuf[MAX_PATH];
-            DWORD envLen = GetEnvironmentVariableA("APPDATA", envBuf, sizeof(envBuf));
-            if (envLen > 0 && envLen < sizeof(envBuf))
-                dbPath = std::string(envBuf) + "\\TCMT\\history.db";
-            else
-                dbPath = std::string(getenv("TEMP") ? getenv("TEMP") : "C:\\TEMP") + "\\tcmt_history.db";
-            // Create directory tree
-            std::string dir = dbPath.substr(0, dbPath.find_last_of('\\'));
-            for (size_t i = 0; i < dir.size(); i++)
-                if (dir[i] == '\\' || dir[i] == '/') {
-                    dir[i] = '\0';
-                    CreateDirectoryA(dir.c_str(), nullptr);
-                    dir[i] = '\\';
-                }
-            CreateDirectoryA(dir.c_str(), nullptr);
-#else
-            dbPath = getenv("HOME") ? std::string(getenv("HOME")) + "/.tcmt/history.db" : "/tmp/tcmt_history.db";
-            {
-                std::string dir = dbPath.substr(0, dbPath.find_last_of('/'));
-                mkdir(dir.c_str(), 0755);
-            }
-#endif
-            if (historyLogger.Initialize(dbPath))
-                Logger::Info("HistoryLogger: " + dbPath);
-            else
-                Logger::Warn("HistoryLogger failed to initialize");
-        }
+        InitHistoryLogger(historyLogger);
 
-        int loopCounter = 1;
-        bool isFirstRun = true;
-        
-        // Cache static system info (only on first fetch)
-        static std::atomic<bool> systemInfoCached{false};
-        static std::string cachedOsVersion;
-        static std::string cachedCpuName;
-        static uint32_t cachedPhysicalCores = 0;
-        static uint32_t cachedLogicalCores = 0;
-        static uint32_t cachedPerformanceCores = 0;
-        static uint32_t cachedEfficiencyCores = 0;
-        static bool cachedHyperThreading = false;
-        static bool cachedVirtualization = false;
-        static double cachedBaseFreq = 0.0;
-        // WMI: Win32_Processor.MaxClockSpeed (MHz) — read once
-        if (cachedBaseFreq == 0.0 && wmiManager && wmiManager->IsInitialized()) {
-            IEnumWbemClassObject* pEnumCpu = nullptr;
-            HRESULT hr = wmiManager->GetWmiService()->ExecQuery(
-                _bstr_t("WQL"), _bstr_t("SELECT MaxClockSpeed FROM Win32_Processor"),
-                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnumCpu);
-            if (SUCCEEDED(hr) && pEnumCpu) {
-                IWbemClassObject* pObj = nullptr;
-                ULONG ret = 0;
-                while (pEnumCpu->Next(WBEM_INFINITE, 1, &pObj, &ret) == S_OK) {
-                    VARIANT vt; VariantInit(&vt);
-                    if (SUCCEEDED(pObj->Get(L"MaxClockSpeed", 0, &vt, 0, 0)) && vt.vt == VT_I4)
-                        cachedBaseFreq = (double)vt.intVal;
-                    VariantClear(&vt);
-                    pObj->Release();
-                }
-                pEnumCpu->Release();
-            }
-        }
-        
-        std::unique_ptr<CpuInfo> cpuInfo;
-        try {
-            cpuInfo = std::make_unique<CpuInfo>();
-            if (!cpuInfo) {
-                Logger::Fatal("CPU info object creation failed - memory allocation returned null");
-                SafeExit(1);
-            }
-            Logger::Debug("CPU info object created successfully");
-        }
-        catch (const std::bad_alloc& e) {
-            Logger::Fatal("CPU info object creation failed - memory allocation failed: " + std::string(e.what()));
-            SafeExit(1);
-        }
-        catch (const std::exception& e) {
-            Logger::Error("CPU info object creation failed: " + std::string(e.what()));
-            SafeExit(1);
-        }
-        catch (...) {
-            Logger::Fatal("CPU info object creation failed - unknown exception");
-            SafeExit(1);
-        }
-        
-        ThreadSafeGpuCache gpuCache;
-
-        // Start ModuleCoordinator background collection threads
-        ModuleCoordinator coordinator;
-        coordinator.Start();
-
-        while (!g_shouldExit.load()) {
-            static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
-            static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
-            static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
-            try {
-                auto loopStart = std::chrono::high_resolution_clock::now();
-                
-                bool isDetailedLogging = (loopCounter % 5 == 1);
-                
-                if (isDetailedLogging) {
-                    Logger::Debug("Starting main monitoring loop iteration #" + std::to_string(loopCounter));
-                }
-                
-                if (loopCounter == 5) {
-                    g_monitoringStarted = true;
-                    Logger::Info("Program is running stable");
-                }
-                
-                SystemInfo sysInfo{};
-                // compressedMemory populated by ModuleCoordinator (PDH \Memory\Modified Page List Bytes)
-
-                try {
-                    sysInfo.cpuUsage = 0.0;
-                    sysInfo.performanceCoreFreq = 0.0;
-                    sysInfo.efficiencyCoreFreq = 0.0;
-                    sysInfo.totalMemory = 0;
-                    sysInfo.usedMemory = 0;
-                    sysInfo.availableMemory = 0;
-                    sysInfo.gpuMemory = 0;
-                    sysInfo.gpuCoreFreq = 0.0;
-                    sysInfo.gpuIsVirtual = false;
-                    sysInfo.networkAdapterSpeed = 0;
-                    sysInfo.lastUpdate = Platform::SystemTime::Now();
-                    
-                    if (sysInfo.lastUpdate.year < 2020 || sysInfo.lastUpdate.year > 2050) {
-                        Logger::Warn("Abnormal system time: " + std::to_string(sysInfo.lastUpdate.year));
-                    }
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("SystemInfo initialization failed: " + std::string(e.what()));
-                    continue;
-                }
-                catch (...) {
-                    Logger::Error("SystemInfo initialization failed - unknown exception");
-                    continue;
-                }
-
-                if (!systemInfoCached.load()) {
-                    try {
-                        Logger::Info("Initializing system information");
-                        
-                        OSInfo os;
-                        cachedOsVersion = os.GetVersion();
-
-                        if (cpuInfo) {
-                            cachedCpuName = cpuInfo->GetName();
-                            cachedPhysicalCores = cpuInfo->GetLargeCores() + cpuInfo->GetSmallCores();
-                            cachedLogicalCores = cpuInfo->GetTotalCores();
-                            cachedPerformanceCores = cpuInfo->GetLargeCores();
-                            cachedEfficiencyCores = cpuInfo->GetSmallCores();
-                            cachedHyperThreading = cpuInfo->IsHyperThreadingEnabled();
-                            cachedVirtualization = cpuInfo->IsVirtualizationEnabled();
-                        }
-                        
-                        systemInfoCached = true;
-                        Logger::Info("System information initialized");
-                    }
-                    catch (const std::exception& e) {
-                        Logger::Error("System info initialization failed: " + std::string(e.what()));
-                        cachedOsVersion = "Unknown";
-                        cachedCpuName = "Unknown";
-                        systemInfoCached = true;
-                    }
-                }
-                
-                sysInfo.osVersion = cachedOsVersion;
-                sysInfo.cpuName = cachedCpuName;
-                sysInfo.physicalCores = cachedPhysicalCores;
-                sysInfo.logicalCores = cachedLogicalCores;
-                sysInfo.performanceCores = cachedPerformanceCores;
-                sysInfo.efficiencyCores = cachedEfficiencyCores;
-                sysInfo.hyperThreading = cachedHyperThreading;
-                sysInfo.virtualization = cachedVirtualization;
-                sysInfo.cpuBaseFreq = cachedBaseFreq;
-
-                // Coordinator snapshot fills CPU, Memory, Temperature, Power, Disk
-                {
-                    tcmt::TuiData tempTui;
-                    coordinator.Snapshot(sysInfo, tempTui);
-                }
-
-                if (!gpuCache.IsInitialized()) {
-                    try {
-                        gpuCache.Initialize(*wmiManager);
-                    }
-                    catch (const std::exception& e) {
-                        Logger::Error("GPU cache initialization failed: " + std::string(e.what()));
-                    }
-                }
-                
-                try {
-                    std::string cachedGpuName, cachedGpuBrand;
-                    uint64_t cachedGpuMemory;
-                    uint32_t cachedGpuCoreFreq;
-                    bool cachedGpuIsVirtual;
-                    double cachedGpuUsage;
-                    
-                    gpuCache.GetCachedInfo(cachedGpuName, cachedGpuBrand, cachedGpuMemory, 
-                                          cachedGpuCoreFreq, cachedGpuIsVirtual, cachedGpuUsage);
-                    
-                    sysInfo.gpuName = cachedGpuName;
-                    sysInfo.gpuBrand = cachedGpuBrand;
-                    sysInfo.gpuMemory = cachedGpuMemory;
-                    sysInfo.gpuCoreFreq = cachedGpuCoreFreq;
-                    sysInfo.gpuFreq = cachedGpuCoreFreq;  // NVML real-time clock → TUI
-                    sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
-                    sysInfo.gpuUsage = cachedGpuUsage;
-
-                    // Override with NVML real-time data (NVIDIA GPUs only)
-                    double nvmlUsage  = GpuInfo::GetGpuUsage();
-                    double nvmlTemp   = GpuInfo::GetGpuTemperature();
-                    double nvmlVramPct = GpuInfo::GetVramUsagePercent();
-                    if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
-                    if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
-                    if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
-
-                    // Fix GPU array population - add data validation and cleanup
-                    sysInfo.gpus.clear();
-                    if (!cachedGpuName.empty() && cachedGpuName != "No GPU detected") {
-                        GPUData gpu;
-                        
-                        // Initialize GPU struct to avoid garbage data
-                        memset(&gpu, 0, sizeof(GPUData));
-                        
-                        // Safely copy GPU name and brand to wchar_t arrays
-                        std::wstring gpuNameW = WinUtils::StringToWstring(cachedGpuName);
-                        std::wstring gpuBrandW = WinUtils::StringToWstring(cachedGpuBrand);
-                        
-                        // Limit string length to prevent buffer overflow
-                        if (gpuNameW.length() >= sizeof(gpu.name)/sizeof(wchar_t)) {
-                            gpuNameW = gpuNameW.substr(0, sizeof(gpu.name)/sizeof(wchar_t) - 1);
-                        }
-                        if (gpuBrandW.length() >= sizeof(gpu.brand)/sizeof(wchar_t)) {
-                            gpuBrandW = gpuBrandW.substr(0, sizeof(gpu.brand)/sizeof(wchar_t) - 1);
-                        }
-                        
-                        wcsncpy_s(gpu.name, sizeof(gpu.name)/sizeof(wchar_t), gpuNameW.c_str(), _TRUNCATE);
-                        wcsncpy_s(gpu.brand, sizeof(gpu.brand)/sizeof(wchar_t), gpuBrandW.c_str(), _TRUNCATE);
-                        
-                        // Validate and clean GPU data - avoid abnormal values
-                        gpu.memory = (cachedGpuMemory > 0 && cachedGpuMemory < UINT64_MAX) ? cachedGpuMemory : 0;
-                        
-                        // Fix GPU core clock - ensure it's in reasonable range
-                        if (cachedGpuCoreFreq > 0 && cachedGpuCoreFreq < 10000) {
-                            gpu.coreClock = cachedGpuCoreFreq;
-                        } else {
-                            gpu.coreClock = 0; // Set to 0 instead of abnormal value
-                            if (isFirstRun && cachedGpuCoreFreq > 10000) {
-                                Logger::Warn("GPU core clock abnormal: " + std::to_string(cachedGpuCoreFreq) + "MHz, reset to 0");
-                            }
-                        }
-                        
-                        gpu.isVirtual = cachedGpuIsVirtual;
-                        gpu.usage = cachedGpuUsage;  // GPU usage
-                        
-                        sysInfo.gpus.push_back(gpu);
-                        
-                        if (isFirstRun) {
-                            Logger::Debug("Added GPU to array: " + cachedGpuName + 
-                                         " (Memory: " + FormatSize(cachedGpuMemory) + 
-                                         ", Clock: " + std::to_string(gpu.coreClock) + "MHz" +
-                                         ", Virtual: " + (cachedGpuIsVirtual ? "Yes" : "No") + ")");
-                        }
-                    } else {
-                        if (isFirstRun) {
-                            Logger::Debug("No valid GPU detected, skipping GPU data population");
-                        }
-                    }
-                }
-                catch (const std::bad_alloc& e) {
-                    Logger::Error("GPU cache info processing failed - Out of memory: " + std::string(e.what()));
-                    sysInfo.gpus.clear();
-                    sysInfo.gpuName = "Out of memory";
-                    sysInfo.gpuBrand = "Unknown";
-                    sysInfo.gpuMemory = 0;
-                    sysInfo.gpuCoreFreq = 0;
-                    sysInfo.gpuIsVirtual = false;
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get GPU cache info: " + std::string(e.what()));
-                    sysInfo.gpus.clear();
-                    sysInfo.gpuName = "Failed to get GPU info";
-                    sysInfo.gpuBrand = "Unknown";
-                    sysInfo.gpuMemory = 0;
-                    sysInfo.gpuCoreFreq = 0;
-                    sysInfo.gpuIsVirtual = false;
-                }
-                catch (...) {
-                    Logger::Error("Failed to get GPU cache info - Unknown exception");
-                    sysInfo.gpus.clear();
-                    sysInfo.gpuName = "Unknown exception";
-                    sysInfo.gpuBrand = "Unknown";
-                    sysInfo.gpuMemory = 0;
-                    sysInfo.gpuCoreFreq = 0;
-                    sysInfo.gpuIsVirtual = false;
-                }
-
-                // Initialize network adapter info (avoid crash due to invalid data)
-                sysInfo.networkAdapterName = "No network adapter detected";
-                sysInfo.networkAdapterMac = "00-00-00-00-00-00";
-                sysInfo.networkAdapterSpeed = 0;
-                sysInfo.networkAdapterIp = "N/A";
-                sysInfo.networkAdapterType = "Unknown";
-
-                // Network adapter info now populated by ModuleCoordinator::Snapshot()
-                // (was duplicated here — removed to avoid redundant WMI queries)
-
-                // Temperature data handled by coordinator (TemperatureLoop via TemperatureWrapper)
-
-                // Physical disk (SMART) and TPM collection (coordinator handles logical disks)
-                try {
-                    // Collect physical disks on a background thread. DeviceIoControl SMART
-                    // reads can block indefinitely on unresponsive drives/controllers (no
-                    // timeout), so the main loop must never wait on them. Results are cached.
-                    // The cache is intentionally heap-allocated for the process lifetime so a
-                    // detached worker can touch it safely even while the program is exiting.
-                    static auto* physDiskMutex = new std::mutex();
-                    static auto* cachedPhysDisks = new std::vector<PhysicalDiskSmartData>();
-                    static std::atomic<bool> physScanInFlight{false};
-                    static auto lastPhysScanStart = std::chrono::steady_clock::now() - std::chrono::seconds(61);
-                    auto now = std::chrono::steady_clock::now();
-                    // A scan that has been running too long is considered stuck (hung drive) —
-                    // clear the flag so the next refresh window can retry.
-                    if (physScanInFlight.load() &&
-                        std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysScanStart).count() > 120) {
-                        physScanInFlight.store(false);
-                    }
-                    if (std::chrono::duration_cast<std::chrono::seconds>(now - lastPhysScanStart).count() >= 60 &&
-                        wmiManager && !physScanInFlight.exchange(true)) {
-                        lastPhysScanStart = now; // throttle only when a scan actually starts
-                        auto wmi = wmiManager;   // shared_ptr keeps WmiManager alive for the worker
-                        std::thread([wmi]() {
-                            HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-                            bool comInit = SUCCEEDED(hr);
-                            SystemInfo tmp;
-                            try {
-                                // Phase 1: fast single-query WMI disk list — publish immediately
-                                // so the TUI shows physical disks even if a SMART read hangs.
-                                DiskInfo::CollectPhysicalDiskInfo(*wmi, tmp);
-                                if (!tmp.physicalDisks.empty()) {
-                                    {
-                                        std::lock_guard<std::mutex> lock(*physDiskMutex);
-                                        *cachedPhysDisks = tmp.physicalDisks;
-                                    }
-                                    // Phase 2: SMART per disk on its own thread — a hung drive
-                                    // never blocks the list or the other disks.
-                                    auto disks = tmp.physicalDisks;
-                                    for (const auto& d : disks) {
-                                        if (d.physicalIndex < 0) continue;
-                                        std::thread([d]() {
-                                            PhysicalDiskSmartData out = d;
-                                            bool ok = false;
-                                            try {
-                                                ok = SmartReader::Read(out.physicalIndex, out);
-                                            } catch (...) {}
-                                            if (ok) {
-                                                std::lock_guard<std::mutex> lock(*physDiskMutex);
-                                                for (auto& e : *cachedPhysDisks) {
-                                                    if (e.physicalIndex == out.physicalIndex) {
-                                                        e = out;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }).detach();
-                                    }
-                                }
-                            } catch (...) {}
-                            physScanInFlight.store(false);
-                            if (comInit) CoUninitialize();
-                        }).detach();
-                    }
-                    {
-                        std::lock_guard<std::mutex> lock(*physDiskMutex);
-                        sysInfo.physicalDisks = *cachedPhysDisks;
-                    }
-
-                    // Serialize SMART attributes to JSON for each physical disk
-                    for (auto& pd : sysInfo.physicalDisks) {
-                        if (pd.attributeCount > 0 && pd.attributeCount <= 32) {
-                            std::string json = "[";
-                            for (int ai = 0; ai < pd.attributeCount; ai++) {
-                                if (ai > 0) json += ",";
-                                auto& a = pd.attributes[ai];
-                                // Convert WCHAR name to UTF-8
-                                char nameUtf8[256] = {};
-                                WideCharToMultiByte(CP_UTF8, 0, a.name, -1,
-                                    nameUtf8, (int)sizeof(nameUtf8) - 1, nullptr, nullptr);
-                                // JSON-escape name
-                                std::string nameEscaped;
-                                for (const char* p = nameUtf8; *p; p++) {
-                                    if (*p == '"') nameEscaped += "\\\"";
-                                    else if (*p == '\\') nameEscaped += "\\\\";
-                                    else nameEscaped += *p;
-                                }
-                                // Convert WCHAR desc to UTF-8 and escape
-                                char descUtf8[512] = {};
-                                WideCharToMultiByte(CP_UTF8, 0, a.description, -1,
-                                    descUtf8, (int)sizeof(descUtf8) - 1, nullptr, nullptr);
-                                std::string descEscaped;
-                                for (const char* p = descUtf8; *p; p++) {
-                                    if (*p == '"') descEscaped += "\\\"";
-                                    else if (*p == '\\') descEscaped += "\\\\";
-                                    else descEscaped += *p;
-                                }
-                                char buf[768];
-                                snprintf(buf, sizeof(buf),
-                                    "{\"id\":%u,\"cur\":%u,\"worst\":%u,\"raw\":%llu,\"name\":\"%s\",\"desc\":\"%s\"}",
-                                    a.id, a.current, a.worst, a.rawValue, nameEscaped.c_str(), descEscaped.c_str());
-                                json += buf;
-                            }
-                            json += "]";
-                            strncpy_s(pd.attrsJson, json.c_str(), sizeof(pd.attrsJson) - 1);
-                            pd.attrsJson[sizeof(pd.attrsJson) - 1] = '\0';
-                        }
-                    }
-
-                    // Collect TPM data
-                    {
-                        TpmInfo tpmInfo = {};
-                        if (TpmBridge::GetTpmInfo(tpmInfo)) {
-                            sysInfo.tpms.clear();
-                            sysInfo.tpms.push_back(tpmInfo);
-                            Logger::Debug("TPM data collected, isPresent=" + std::to_string(tpmInfo.isPresent));
-                        }
-                    }
-                }
-                catch (const std::bad_alloc& e) {
-                    Logger::Error("Failed to get physical disk / TPM data - Out of memory: " + std::string(e.what()));
-                    sysInfo.physicalDisks.clear();
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Failed to get physical disk / TPM data: " + std::string(e.what()));
-                    sysInfo.physicalDisks.clear();
-                }
-                catch (...) {
-                    Logger::Error("Failed to get physical disk / TPM data - Unknown exception");
-                    sysInfo.physicalDisks.clear();
-                }
-
-                // Validate data before writing to shared memory - enhanced data validation
-                try {
-                    // CPU usage validation
-                    if (sysInfo.cpuUsage < 0.0 || sysInfo.cpuUsage > 100.0) {
-                        Logger::Warn("CPU usage data abnormal: " + std::to_string(sysInfo.cpuUsage) + "%, resetting to 0");
-                        sysInfo.cpuUsage = 0.0;
-                    }
-                    
-                    if (sysInfo.totalMemory > 0) {
-                        if (sysInfo.usedMemory > sysInfo.totalMemory) {
-                            Logger::Warn("Used memory exceeds total memory, data abnormal");
-                            sysInfo.usedMemory = sysInfo.totalMemory;
-                        }
-                        if (sysInfo.availableMemory > sysInfo.totalMemory) {
-                            Logger::Warn("Available memory exceeds total memory, data abnormal");
-                            sysInfo.availableMemory = sysInfo.totalMemory;
-                        }
-                    }
-                    
-                    // Frequency data validation
-                    if (std::isnan(sysInfo.performanceCoreFreq) || std::isinf(sysInfo.performanceCoreFreq)) {
-                        sysInfo.performanceCoreFreq = 0.0;
-                    }
-                    if (std::isnan(sysInfo.efficiencyCoreFreq) || std::isinf(sysInfo.efficiencyCoreFreq)) {
-                        sysInfo.efficiencyCoreFreq = 0.0;
-                    }
-                    if (std::isnan(sysInfo.gpuCoreFreq) || std::isinf(sysInfo.gpuCoreFreq)) {
-                        sysInfo.gpuCoreFreq = 0.0;
-                    }
-                    
-                    // Temperature data validation
-                    if (std::isnan(sysInfo.cpuTemperature) || std::isinf(sysInfo.cpuTemperature)) {
-                        sysInfo.cpuTemperature = 0.0;
-                    }
-                    if (std::isnan(sysInfo.gpuTemperature) || std::isinf(sysInfo.gpuTemperature)) {
-                        sysInfo.gpuTemperature = 0.0;
-                    }
-                    
-                    // Network speed validation
-                    if (sysInfo.networkAdapterSpeed > 1000000000000ULL) {
-                        Logger::Warn("Network adapter speed abnormal: " + std::to_string(sysInfo.networkAdapterSpeed));
-                        sysInfo.networkAdapterSpeed = 0;
-                    }
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Exception during data validation: " + std::string(e.what()));
-                }
-                catch (...) {
-                    Logger::Error("Unknown exception during data validation");
-                }
-
-                // Write to shared memory (moved to TUI block after WiFi/BT populated)
-                try {
-                    // SharedMemory write now handled in TUI update section below
-                }
-                catch (const std::bad_alloc& e) {
-                    Logger::Error("Out of memory while processing system info: " + std::string(e.what()));
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Exception while processing system info: " + std::string(e.what()));
-                }
-                catch (...) {
-                    Logger::Error("Unknown exception while processing system info");
-                }
-                
-                // Update TUI with current data
-                try {
-                    tcmt::TuiData tuiData;
-                    tuiData.cpuName = sysInfo.cpuName;
-                    tuiData.cpuUsage = sysInfo.cpuUsage;
-                    tuiData.physicalCores = sysInfo.physicalCores;
-                    tuiData.performanceCores = sysInfo.performanceCores;
-                    tuiData.efficiencyCores = sysInfo.efficiencyCores;
-                    tuiData.pCoreFreq = sysInfo.performanceCoreFreq;
-                    tuiData.eCoreFreq = sysInfo.efficiencyCoreFreq;
-                    tuiData.cpuBaseFreq = sysInfo.cpuBaseFreq;
-                    tuiData.cpuTemp = sysInfo.cpuTemperature;
-                    tuiData.cpuPcoreTemp = sysInfo.cpuPcoreTemperature;
-                    tuiData.cpuEcoreTemp = sysInfo.cpuEcoreTemperature;
-                    tuiData.totalMemory = sysInfo.totalMemory;
-                    tuiData.usedMemory = sysInfo.usedMemory;
-                    tuiData.availableMemory = sysInfo.availableMemory;
-                    tuiData.compressedMemory = sysInfo.compressedMemory;
-                    tuiData.ramSpeed = sysInfo.ramSpeed;
-                    snprintf(tuiData.ramType, sizeof(tuiData.ramType), "%s", sysInfo.ramType);
-
-                    if (!sysInfo.gpus.empty()) {
-                        tuiData.gpuName = sysInfo.gpuName;
-                        tuiData.gpuMemory = sysInfo.gpuMemory;
-                        tuiData.gpuUsage = sysInfo.gpuUsage;
-                        tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
-                    }
-                    tuiData.gpuTemp = sysInfo.gpuTemperature;
-                    tuiData.cpuPower = sysInfo.cpuPower;
-                    tuiData.gpuPower = sysInfo.gpuPower;
-                    tuiData.anePower = sysInfo.anePower;
-                    tuiData.gpuFreq = sysInfo.gpuFreq;
-                    // GPU fans (NVAPI RPM + NVML fallback)
-                    tuiData.gpuFans.clear();
-                    for (const auto& gf : GpuInfo::GetGpuFans()) {
-                        tcmt::TuiData::GpuFanInfo fi;
-                        fi.index = gf.index;
-                        fi.speedRpm = gf.speedRpm;
-                        fi.isRpm = gf.isRpm;
-                        tuiData.gpuFans.push_back(fi);
-                    }
-                    // Keep legacy field for backward compat
-                    tuiData.gpuFanSpeed = tuiData.gpuFans.empty() ? -1 : tuiData.gpuFans[0].speedRpm;
-                    // GPU processes (NVML)
-                    tuiData.gpuProcesses.clear();
-                    for (const auto& gp : GpuInfo::GetGpuProcesses()) {
-                        tcmt::TuiData::GpuProcInfo pi;
-                        pi.pid = gp.pid;
-                        pi.gpuIndex = gp.gpuIndex;
-                        pi.vramBytes = gp.usedGpuMemory;
-                        tuiData.gpuProcesses.push_back(pi);
-                    }
-
-                    // Disks
-                    for (const auto& disk : sysInfo.disks) {
-                        tcmt::TuiData::DiskInfo di;
-                        di.letter = disk.letter;
-                        di.label = disk.label;
-                        di.totalSize = disk.totalSize;
-                        di.usedSpace = disk.usedSpace;
-                        di.fileSystem = disk.fileSystem;
-                        tuiData.disks.push_back(di);
-                    }
-
-                    // Physical disks (SMART)
-                    for (const auto& pd : sysInfo.physicalDisks) {
-                        tcmt::TuiData::PhysicalDiskInfo pi;
-                        pi.model = WinUtils::WstringToString(pd.model);
-                        pi.serial = WinUtils::WstringToString(pd.serialNumber);
-                        pi.interfaceType = WinUtils::WstringToString(pd.interfaceType);
-                        pi.diskType = WinUtils::WstringToString(pd.diskType);
-                        pi.capacity = pd.capacity;
-                        pi.temperature = pd.temperature;
-                        pi.healthPct = pd.healthPercentage;
-                        pi.smartSupported = pd.smartSupported;
-                        pi.powerOnHours = pd.powerOnHours;
-                        pi.wearLeveling = pd.wearLeveling;
-                        for (int ai = 0; ai < pd.attributeCount && ai < 32; ai++) {
-                            const auto& sa = pd.attributes[ai];
-                            tcmt::TuiData::SmAttributeInfo ai2;
-                            ai2.id = sa.id;
-                            ai2.current = sa.current;
-                            ai2.worst = sa.worst;
-                            ai2.rawValue = sa.rawValue;
-                            pi.attributes.push_back(ai2);
-                        }
-                        tuiData.physicalDisks.push_back(pi);
-                    }
-                    
-                    // Network adapters
-                    for (const auto& adapter : sysInfo.adapters) {
-                        tcmt::TuiData::NetInfo ni;
-                        // Convert wchar_t[] arrays to std::string
-                        ni.name = WinUtils::WstringToString(adapter.name);
-                        ni.ip = WinUtils::WstringToString(adapter.ipAddress);
-                        ni.mac = WinUtils::WstringToString(adapter.mac);
-                        ni.type = WinUtils::WstringToString(adapter.adapterType);
-                        ni.speed = adapter.speed;
-                        ni.downloadSpeed = adapter.downloadSpeed;
-                        ni.uploadSpeed = adapter.uploadSpeed;
-                        tuiData.adapters.push_back(ni);
-                    }
-                    
-                    tuiData.osVersion = sysInfo.osVersion;
-
-                    // ─── Per-core sensors ───
-                    tuiData.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
-                    for (int ci = 0; ci < tuiData.perCoreCount; ci++) {
-                        tuiData.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
-                        tuiData.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
-                    }
-
-                    // ─── Network traffic history (sparkline) ───
-                    if (tuiData.adapters.size() > 0) {
-                        uint64_t dl = tuiData.adapters[0].downloadSpeed;
-                        uint64_t ul = tuiData.adapters[0].uploadSpeed;
-                        int pos = tuiData.dlHistoryPos;
-                        tuiData.dlHistory[pos] = dl;
-                        tuiData.ulHistory[pos] = ul;
-                        tuiData.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
-                        if (tuiData.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
-                            tuiData.dlHistoryLen++;
-                    }
-                    tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
-                    if (ipcServer) {
-                        auto ct = ipcServer->GetClientTypes();
-                        tuiData.clientTypes.clear();
-                        for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
-                    }
-                    tuiData.temperatures = sysInfo.temperatures;
-                    // Add physical disk temps to unified temperature list
-                    for (size_t di = 0; di < tuiData.physicalDisks.size(); ++di) {
-                        if (tuiData.physicalDisks[di].temperature > 0) {
-                            std::string label = tuiData.physicalDisks[di].model;
-                            if (label.empty()) label = "Disk";
-                            tuiData.temperatures.push_back({label, tuiData.physicalDisks[di].temperature});
-                        }
-                    }
-                    if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
-                        auto& tpm = sysInfo.tpms[0];
-                        tuiData.tpmInfo = WinUtils::WstringToString(tpm.manufacturer)
-                                        + " v" + WinUtils::WstringToString(tpm.firmwareVersion);
-                        if (!tpm.isEnabled) tuiData.tpmInfo += " (Disabled)";
-                        else if (!tpm.isActive) tuiData.tpmInfo += " (Inactive)";
-                    } else {
-                        tuiData.tpmInfo = "No TPM";
-                    }
-
-                    // WiFi & Bluetooth (every ~3s, or immediate on ETW event)
-                    { static int wbCtr = 0;
-                      static WiFiInfo s_wifi;
-                      static BluetoothInfo s_bt;
-                      bool forcePoll = coordinator.IsWifiDirty() || coordinator.IsBtDirty();
-                      if (++wbCtr >= 3 || forcePoll) { wbCtr = 0;
-                          try { s_wifi.Detect(); } catch (...) {}
-                          if (s_btNotify.Poll() || forcePoll) { try { s_bt.Detect(); } catch (...) {} }
-                      }
-                      const auto& wd = s_wifi.GetData();
-                      tuiData.hasWiFi = wd.powerOn;
-                      tuiData.wifiSSID = wd.ssid;
-                      tuiData.wifiRSSI = wd.rssi;
-                      tuiData.wifiChannel = wd.channel;
-                      tuiData.wifiSecurity = wd.security;
-                      tuiData.wifiBand = wd.band;
-                      tuiData.wifiGen = wd.wifiGen;
-                      sysInfo.wifiPowerOn = wd.powerOn;
-                      sysInfo.wifiIsConnected = wd.isConnected;
-                      sysInfo.wifiSSID = wd.ssid;
-                      sysInfo.wifiRSSI = wd.rssi;
-                      sysInfo.wifiChannel = wd.channel;
-                      sysInfo.wifiSecurity = wd.security;
-                      sysInfo.wifiBand = wd.band;
-                      sysInfo.wifiGen = wd.wifiGen;
-                      const auto& bd = s_bt.GetData();
-                      tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
-                      tuiData.btPowerOn = bd.adapter.powerOn;
-                      tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
-                      sysInfo.btPowerOn = bd.adapter.powerOn;
-                      sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
-
-                      // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)
-                      sysInfo.wifiPowerOn = wd.powerOn;
-                      sysInfo.wifiIsConnected = wd.isConnected;
-                    }
-
-                    tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
-
-                    tuiApp.UpdateData(tuiData);
-
-                    // Write to shared memory (after WiFi/BT data populated)
-                    try {
-                        if (SharedMemoryManager::GetBuffer()) {
-                            SharedMemoryManager::WriteToSharedMemory(sysInfo);
-                        }
-                    } catch (...) {}
-                }
-                catch (const std::exception& e) {
-                    Logger::Warn("TUI data update failed: " + std::string(e.what()));
-                }
-
-                // Calculate loop execution time and adaptive sleep - optimize refresh speed, enhanced exception handling
-                try {
-                    auto loopEnd = std::chrono::high_resolution_clock::now();
-                    auto loopDuration = std::chrono::duration_cast<std::chrono::milliseconds>(loopEnd - loopStart);
-                    
-                    // 1 second cycle time
-                    int targetCycleTime = 1000;
-                    int sleepTime = (std::max)(targetCycleTime - static_cast<int>(loopDuration.count()), 100); // Min sleep 100ms
-                    
-                    if (isDetailedLogging) {
-                        double loopTimeSeconds = loopDuration.count() / 1000.0;
-                        double sleepTimeSeconds = sleepTime / 1000.0;
-                        
-                        if (loopTimeSeconds < 0 || loopTimeSeconds > 60) {
-                            Logger::Warn("Loop time calculation abnormal: " + std::to_string(loopTimeSeconds) + " seconds");
-                        }
-                        
-                        std::stringstream ss;
-                        ss << std::fixed << std::setprecision(2);
-                        ss << "Main monitoring loop #" << loopCounter << " executed in " 
-                           << loopTimeSeconds << "s, will sleep for " << sleepTimeSeconds << "s";
-                        
-                        Logger::Debug(ss.str());
-                    }
-                    
-                    // Check exit flag during sleep - use shorter check interval for better responsiveness
-                    auto sleepStart = std::chrono::high_resolution_clock::now();
-                    while (!g_shouldExit.load()) {
-                        try {
-                            auto now = std::chrono::high_resolution_clock::now();
-                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - sleepStart);
-                            if (elapsed.count() >= sleepTime) {
-                                break;
-                            }
-                            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                        }
-                        catch (const std::exception& e) {
-                            Logger::Warn("Exception during sleep: " + std::string(e.what()));
-                            break;
-                        }
-                        catch (...) {
-                            Logger::Warn("Unknown exception during sleep");
-                            break;
-                        }
-                    }
-                }
-                catch (const std::exception& e) {
-                    Logger::Error("Exception while calculating loop time: " + std::string(e.what()));
-                    try {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                    } catch (...) {
-                        Logger::Fatal("System sleep function abnormal");
-                    }
-                }
-                catch (...) {
-                    Logger::Error("Unknown exception while calculating loop time");
-                    try {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                    } catch (...) {
-                        Logger::Fatal("System sleep function abnormal");
-                    }
-                }
-                
-                // Safely increment loop counter
-                try {
-                    // Push sensor history
-                    if (historyLogger.IsRunning()) {
-                        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::system_clock::now().time_since_epoch()).count();
-                        std::vector<SensorSnapshot> snapshots;
-                        snapshots.push_back({"cpu/usage", sysInfo.cpuUsage, "%", (uint64_t)nowMs});
-                        snapshots.push_back({"cpu/temperature", sysInfo.cpuTemperature, "C", (uint64_t)nowMs});
-                        snapshots.push_back({"gpu/usage", sysInfo.gpuUsage, "%", (uint64_t)nowMs});
-                        snapshots.push_back({"gpu/temperature", sysInfo.gpuTemperature, "C", (uint64_t)nowMs});
-                        if (sysInfo.totalMemory > 0) {
-                            double memPct = 100.0 * sysInfo.usedMemory / sysInfo.totalMemory;
-                            snapshots.push_back({"memory/percent", memPct, "%", (uint64_t)nowMs});
-                        }
-                        if (sysInfo.batteryPercent >= 0)
-                            snapshots.push_back({"battery/percent", (double)sysInfo.batteryPercent, "%", (uint64_t)nowMs});
-                        // USB detection (every ~10 seconds)
-                        static int usbCheckCounter = 0;
-                        static size_t prevUsbCount = 0;
-                        if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
-                        if (++usbCheckCounter >= 20) {
-                            usbCheckCounter = 0;
-                            try {
-                                UsbInfo usb;
-                                usb.Detect();
-                                const auto& devs = usb.GetDevices();
-                                if (devs.size() != prevUsbCount) {
-                                    if (devs.empty())
-                                        Logger::Info("USB: all devices removed");
-                                    else {
-                                        Logger::Info("USB: " + std::to_string(devs.size()) + " device(s)");
-                                        for (size_t di = 0; di < std::min(devs.size(), size_t(8)); ++di)
-                                            Logger::Debug("  " + devs[di].name + " VID:" + std::to_string(devs[di].vid)
-                                                        + " PID:" + std::to_string(devs[di].pid));
-                                    }
-                                    prevUsbCount = devs.size();
-                                }
-                            } catch (...) {}
-                        }
-
-                        historyLogger.WriteBatch(snapshots);
-                        }
-
-                    loopCounter++;
-                    
-                    if (loopCounter < 0 || loopCounter > 2000000000) {
-                        Logger::Warn("Loop counter abnormal, resetting to 1");
-                        loopCounter = 1;
-                    }
-                }
-                catch (...) {
-                    Logger::Error("Failed to update loop counter");
-                    loopCounter = 1;
-                }
-                
-                // Set flag after first run
-                if (isFirstRun) {
-                    isFirstRun = false;
-                }
-            }
-            catch (const std::bad_alloc& e) {
-                Logger::Critical("Memory allocation exception in main loop: " + std::string(e.what()));
-                try {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-                } catch (...) {
-                    Logger::Fatal("Cannot execute sleep, system severe exception");
-                }
-                continue;
-            }
-            catch (const std::exception& e) {
-                Logger::Critical("Exception in main loop: " + std::string(e.what()));
-                try {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                } catch (...) {
-                    Logger::Fatal("Cannot execute sleep, system severe exception");
-                }
-                continue;
-            }
-            catch (...) {
-                Logger::Fatal("Unknown exception in main loop");
-                try {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                } catch (...) {
-                    SafeExit(1);
-                }
-                continue;
-            }
-        }
-        
+        RunMonitoringLoop(wmiManager, ipcServer, tuiApp, historyLogger);
         Logger::Info("Program received exit signal, starting cleanup");
         
         // Stop TUI before cleanup
