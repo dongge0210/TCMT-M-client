@@ -30,8 +30,9 @@
 
 ### NVMe Health Log offset — confirmed via DiskGenius
 - Power On Hours at **byte 128** (not 11 or 32 as previously guessed)
-- Created `NVMe_HealthLog.h` with all field offsets as constexpr
-- Tries standard offset (56) first, falls back to vendor-specific (128)
+- `NVMe_HealthLog.h` now exists with all field offsets as constexpr (was referenced in docs but missing from tree)
+- Byte 128 is the *standard* offset: NVMe counters are 128-bit fields; byte 56 is Host Write Commands (earlier "standard 56" belief was wrong)
+- Fixed `SmartReader.cpp` top-level `powerOnHours` (was reading byte 32 = Data Units Read)
 
 ### SMART path order (final)
 1. NVMe admin command (NVMe drives)

@@ -1,6 +1,7 @@
 // SmartReader.cpp — DeviceIoControl SMART reader for Windows physical disks
 
 #include "SmartReader.h"
+#include "NVMe_HealthLog.h"
 #include "../DataStruct/DataStruct.h"
 #include "../Utils/Logger.h"
 
@@ -383,13 +384,16 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 // NVMe drives are always SSDs
                 wcsncpy_s(smartData.diskType, L"SSD", _TRUNCATE);
 
-                // NVMe SMART / Health Information Log layout (NVM Express 1.4 §5.14.1.2):
+                // NVMe SMART / Health Information Log layout (Log Page 02h):
                 // Offset 0:   CriticalWarning (1 byte)
                 // Offset 1:   Temperature[2] (composite temp, uint16 LE, Kelvin)
                 // Offset 3:   AvailableSpare
                 // Offset 4:   AvailableSpareThreshold
                 // Offset 5:   PercentageUsed
-                // Offset 32:  PowerOnHours[16] (first 8 bytes LE)
+                // Offset 128: PowerOnHours[16] (low 8 bytes LE)
+
+                // All counters are 128-bit (16-byte) LE values; the low 64
+                // bits hold the count. See NVMe_HealthLog.h for all offsets.
 
                 // Temperature: composite temp (2 bytes LE, Kelvin) → Celsius
                 USHORT tempKelvin = raw[1] | (raw[2] << 8);
@@ -405,9 +409,10 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     smartData.wearLeveling = pctUsed / 100.0;
                 }
 
-                // Power-on hours (offset 32, first 8 bytes LE)
+                // Power-on hours (standard offset 128, low 64 bits LE;
+                // confirmed with DiskGenius: 0x37E3 = 14307 hours)
                 uint64_t hours = 0;
-                memcpy(&hours, raw + 32, sizeof(uint64_t));
+                memcpy(&hours, raw + NVMeHealthLog::kPowerOnHoursOffset, sizeof(uint64_t));
                 if (hours > 0 && hours < 300000)
                     smartData.powerOnHours = hours;
 
@@ -440,16 +445,16 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 addAttr(0x05, raw[5], raw[5], L"Percentage Used",
                     L"Percentage of rated write endurance consumed (100=exhausted)");
                 uint64_t v6=0,v7=0,v8=0,v9=0,v10=0,v11=0,v12=0,v13=0,v14=0,v15=0;
-                memcpy(&v6,  raw + 32, 8);
-                memcpy(&v7,  raw + 48, 8);
-                memcpy(&v8,  raw + 64, 8);
-                memcpy(&v9,  raw + 80, 8);
-                memcpy(&v10, raw + 96, 8);
-                memcpy(&v11, raw + 112, 8);
-                memcpy(&v12, raw + 128, 8);
-                memcpy(&v13, raw + 144, 8);
-                memcpy(&v14, raw + 160, 8);
-                memcpy(&v15, raw + 176, 8);
+                memcpy(&v6,  raw + NVMeHealthLog::kDataUnitsReadOffset, 8);
+                memcpy(&v7,  raw + NVMeHealthLog::kDataUnitsWrittenOffset, 8);
+                memcpy(&v8,  raw + NVMeHealthLog::kHostReadCommandsOffset, 8);
+                memcpy(&v9,  raw + NVMeHealthLog::kHostWriteCommandsOffset, 8);
+                memcpy(&v10, raw + NVMeHealthLog::kControllerBusyTimeOffset, 8);
+                memcpy(&v11, raw + NVMeHealthLog::kPowerCyclesOffset, 8);
+                memcpy(&v12, raw + NVMeHealthLog::kPowerOnHoursOffset, 8);
+                memcpy(&v13, raw + NVMeHealthLog::kUnsafeShutdownsOffset, 8);
+                memcpy(&v14, raw + NVMeHealthLog::kMediaDataIntegrityErrorsOffset, 8);
+                memcpy(&v15, raw + NVMeHealthLog::kErrorLogEntriesOffset, 8);
                 addAttr(0x06, 0, v6,  L"Data Units Read", L"Total data read from NVMe drive (units of 512 bytes)");
                 addAttr(0x07, 0, v7,  L"Data Units Written", L"Total data written to NVMe drive (units of 512 bytes)");
                 addAttr(0x08, 0, v8,  L"Host Read Commands", L"Total read commands issued by host");
