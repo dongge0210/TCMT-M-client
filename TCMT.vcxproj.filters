@@ -248,6 +248,9 @@
     <ClCompile Include="src\core\disk\SmartReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\third_party\sqlite-amalgamation\sqlite3.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\temperature\BoardTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>

@@ -1,13 +1,10 @@
 #include "HistoryLogger.h"
 
-#ifndef _WIN32
 #include <sqlite3.h>
 #include <chrono>
 #include <algorithm>
 #include <cstring>
-#endif
 
-#ifndef _WIN32
 
 // ============================================================================
 // Construction / destruction
@@ -334,19 +331,3 @@ void HistoryLogger::RotateIfNeeded()
     sqlite3_finalize(stmt);
 }
 
-#else  // _WIN32 — no sqlite3, provide stubs
-
-HistoryLogger::HistoryLogger() {}
-HistoryLogger::~HistoryLogger() {}
-bool HistoryLogger::Initialize(const std::string&) { return false; }
-void HistoryLogger::Shutdown() {}
-bool HistoryLogger::IsRunning() const { return false; }
-void HistoryLogger::WriteBatch(const std::vector<SensorSnapshot>&) {}
-std::vector<SensorSnapshot> HistoryLogger::GetSnapshots(const std::string&, int) { return {}; }
-std::vector<SensorSnapshot> HistoryLogger::GetSnapshots(int64_t, int) { return {}; }
-void HistoryLogger::RunLoop() {}
-bool HistoryLogger::CreateTables() { return false; }
-void HistoryLogger::FlushBatch(const std::vector<SensorSnapshot>&) {}
-void HistoryLogger::RotateIfNeeded() {}
-
-#endif
