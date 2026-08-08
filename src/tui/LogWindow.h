@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <future>
 #include <string>
 #include <thread>
 

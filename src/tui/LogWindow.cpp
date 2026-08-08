@@ -4,6 +4,7 @@
 #include "LogBuffer.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace tcmt {
 namespace {
@@ -24,6 +25,21 @@ COLORREF SeverityColor(const std::string& line) {
     return RGB(200, 200, 200);
 }
 
+std::wstring Utf8ToWide(const std::string& text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int len = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
+                                        nullptr, 0);
+    if (len <= 0) {
+        return {};
+    }
+    std::wstring result(static_cast<size_t>(len), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
+                        result.data(), len);
+    return result;
+}
+
 }  // namespace
 
 LogWindow::~LogWindow() {
@@ -33,36 +49,42 @@ LogWindow::~LogWindow() {
 bool LogWindow::Create(LogBuffer* buffer, const std::wstring& title) {
     buffer_ = buffer;
 
-    HINSTANCE hInst = GetModuleHandleW(nullptr);
-    WNDCLASSW wc = {};
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInst;
-    wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
-    wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    wc.lpszClassName = kWindowClass;
-    if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-        return false;
-    }
+    // The window must be created on the same thread that runs its message loop:
+    // window messages are delivered to the thread that created the window.
+    std::promise<bool> created;
+    thread_ = std::thread([this, title, &created]() {
+        HINSTANCE hInst = GetModuleHandleW(nullptr);
+        WNDCLASSW wc = {};
+        wc.style = CS_HREDRAW | CS_VREDRAW;
+        wc.lpfnWndProc = WndProc;
+        wc.hInstance = hInst;
+        wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
+        wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        wc.lpszClassName = kWindowClass;
+        if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+            created.set_value(false);
+            return;
+        }
 
-    hwnd_ = CreateWindowExW(0, kWindowClass, title.c_str(), WS_OVERLAPPEDWINDOW,
-                            CW_USEDEFAULT, CW_USEDEFAULT, 780, 520,
-                            nullptr, nullptr, hInst, this);
-    if (!hwnd_) {
-        return false;
-    }
+        hwnd_ = CreateWindowExW(0, kWindowClass, title.c_str(), WS_OVERLAPPEDWINDOW,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 780, 520,
+                                nullptr, nullptr, hInst, this);
+        if (!hwnd_) {
+            created.set_value(false);
+            return;
+        }
 
-    ShowWindow(hwnd_, SW_SHOW);
-    UpdateWindow(hwnd_);
+        ShowWindow(hwnd_, SW_SHOW);
+        UpdateWindow(hwnd_);
+        created.set_value(true);
 
-    thread_ = std::thread([this]() {
         MSG msg;
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     });
-    return true;
+    return created.get_future().get();
 }
 
 void LogWindow::Shutdown() {
@@ -205,11 +227,12 @@ void LogWindow::OnPaint(HWND hwnd) {
         const int y = (visibleRows - count + i) * rowHeight;
         SetTextColor(hdc, SeverityColor(line));
 
-        int len = static_cast<int>(line.size());
+        const std::wstring wline = Utf8ToWide(line);
+        int len = static_cast<int>(wline.size());
         if (len > maxChars) {
             len = maxChars;
         }
-        TextOutA(hdc, 2, y, line.c_str(), len);
+        TextOutW(hdc, 2, y, wline.c_str(), len);
     }
 
     SelectObject(hdc, oldFont);
