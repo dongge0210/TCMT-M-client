@@ -12,6 +12,12 @@
 - 其他：全仓库文本文件统一转 UTF-8（原 6 个 UTF-16LE + 4 个 UTF-8 BOM 已转换）
 - 注意：本机全量 msbuild 需加 `/p:WholeProgramOptimization=false`（LTCG 代码生成在当前会话环境会 ICE）；`/MP` 已从 TCMT.vcxproj 移除
 
+
+### 2026-08-08 完成
+- `fix(disk)` d8001522 — NVMe Power On Hours 改读标准偏移 128（NVMe 计数器为 128-bit 字段；与 DiskGenius 实测 14307h 吻合），补建 `NVMe_HealthLog.h` 偏移常量，修正规范文档布局表
+- `refactor(win)` 008afc63 — main.cpp 拆层：`main()` 由 ~1080 行降到 ~120 行，抽出 `EnsureElevated`/`InitCom`/`InitSharedMemoryAndIpc`/`InitWmiManager`/`InitTemperatureBridge`/`InitHistoryLogger` + `RunMonitoringLoop`
+- 待办池：Linux WiFi 编译修复（无硬件，暂缓）、MCP 工具扩展、P2 三份 main 文件重复逻辑
+
 ---
 
 ## 2026-07-22（历史）
