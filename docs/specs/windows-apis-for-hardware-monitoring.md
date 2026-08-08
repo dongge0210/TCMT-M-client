@@ -31,7 +31,7 @@
 
 **结论**: 没有完美的原生 Windows 温度 API。实际方案依赖：
 - 硬件厂商 WMI 实现（不可靠）
-- 第三方库（LHM 等）
+
 - 内核驱动直通（PawnIO）
 
 ---
@@ -144,7 +144,7 @@
 
 | 功能 | 方案 |
 |------|------|
-| CPU/GPU 温度 | LibreHardwareMonitor（需要驱动签名） |
+| CPU/GPU 温度 | PawnIO / NVML（需要内核驱动签名） |
 | 内存 SPD 温度 | PawnIO + SMBus 模块（需要内核驱动签名） |
 | USB 桥 SMART | 厂商特定驱动 + 内核过滤驱动 |
 
@@ -168,7 +168,7 @@ TCMT 当前的 API 选择已基本最优：
 |---------|---------|------|
 | PDH (CPU/NET/DISK) | ✅ | 标准 API，无需替代 |
 | NVML (GPU) | ✅ | NVIDIA 官方 API |
-| LHM (温度/风扇) | ✅ | 需要驱动签名，但功能最全 |
+| PawnIO (温度/风扇) | ✅ | 需要内核驱动签名 |
 | PawnIO (SMBus/MSR) | ✅ | 需要内核驱动签名 |
 | IOCTL_SCSI (SMART) | ⚠️ | 原生 SATA 可用，USB 桥受限 |
 | WM_DEVICECHANGE (USB) | ⚠️ | 可升级至 CM_Register_Notification，但无文档链接 |
@@ -267,7 +267,7 @@ TCMT 当前的 API 选择已基本最优：
 - **相关 WMI**: `Win32_Processor` 的 `CurrentClockSpeed`、`LoadPercentage`
 - **说明**: Windows 通过电源管理框架调节处理器频率和电压
 
-**结论**: 电源管理 API 主要用于电池和热区控制，TCMT 的 WMI + LHM 方案已覆盖。
+**结论**: 电源管理 API 主要用于电池和热区控制，TCMT 的 WMI + PawnIO 方案已覆盖。
 
 ---
 
@@ -320,7 +320,7 @@ TCMT 当前的 API 选择已基本最优：
 | GPU 温度/功耗 | NVML | NVIDIA 官方 API |
 | 内存信息 | GlobalMemoryStatusEx | 标准 API |
 | 网络事件 | ETW | 内核级追踪 |
-| 温度/风扇 | LHM | 功能最全 |
+| 温度/风扇 | PawnIO | 内核直通 |
 | 内存 SPD | PawnIO | 内核直通 |
 
 ### 14.2 可选升级
@@ -381,7 +381,7 @@ GetSystemFirmwareTable('RSMB', 0, buffer.data(), bufferSize);
 - **相关 API**: `PowerSetActiveScheme`, `PowerGetActiveScheme`
 - **说明**: 枚举和修改电源方案
 
-**结论**: TCMT 的 WMI + LHM 已覆盖大部分电源需求。电源管理 API 可用于获取电源方案详情和处理器功耗限制。
+**结论**: TCMT 的 WMI + PawnIO 已覆盖大部分电源需求。电源管理 API 可用于获取电源方案详情和处理器功耗限制。
 
 ---
 
@@ -414,7 +414,7 @@ GetSystemFirmwareTable('RSMB', 0, buffer.data(), bufferSize);
 |------|-----|------|
 | CPU 使用率 | PDH | ✅ 标准 API |
 | GPU 数据 | NVML | ✅ NVIDIA 官方 |
-| 温度/风扇 | LHM | ✅ 功能最全 |
+| 温度/风扇 | PawnIO | ✅ 内核直通 |
 | 内存 SPD | PawnIO | ✅ 内核直通 |
 | 网络事件 | ETW | ✅ 内核追踪 |
 | 磁盘健康 | IOCTL_STORAGE | ✅ 标准 API |

@@ -16,6 +16,7 @@
 ### 2026-08-08 完成
 - `fix(disk)` d8001522 — NVMe Power On Hours 改读标准偏移 128（NVMe 计数器为 128-bit 字段；与 DiskGenius 实测 14307h 吻合），补建 `NVMe_HealthLog.h` 偏移常量，修正规范文档布局表
 - `refactor(win)` 008afc63 — main.cpp 拆层：`main()` 由 ~1080 行降到 ~120 行，抽出 `EnsureElevated`/`InitCom`/`InitSharedMemoryAndIpc`/`InitWmiManager`/`InitTemperatureBridge`/`InitHistoryLogger` + `RunMonitoringLoop`
+- `chore` — 移除 LibreHardwareMonitor：子模块、TCMT.sln 项目、CMake 引用、空桥接文件、ADR-0003、文档与注释中的 LHM 引用全部清除（TemperatureWrapper 早已不用 LHM）
 - 待办池：Linux WiFi 编译修复（无硬件，暂缓）、MCP 工具扩展、P2 三份 main 文件重复逻辑
 
 ---

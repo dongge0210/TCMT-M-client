@@ -102,7 +102,6 @@ set(TEMP_SOURCES "")
 set(TEMP_SOURCES_WINDOWS "")
 if(TCMT_WINDOWS)
     list(APPEND TEMP_SOURCES_WINDOWS
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/TemperatureWrapper.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/WMIManager.cpp
     )
@@ -355,15 +354,6 @@ if(TCMT_WINDOWS)
     add_executable(TCMT-M
         ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
     )
-
-    # C++/CLI support for Windows
-    if(MSVC)
-        set_source_files_properties(
-            ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
-            PROPERTIES
-            COMPILE_FLAGS "/clr"
-        )
-    endif()
 
 elseif(TCMT_MACOS)
     # macOS: use main_mac.cpp

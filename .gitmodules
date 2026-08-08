@@ -1,6 +1,3 @@
-[submodule "src/third_party/LibreHardwareMonitor"]
-	path = src/third_party/LibreHardwareMonitor
-	url = https://github.com/dongge0210/LibreHardwareMonitor
 [submodule "src/CPP-parsers"]
 	path = src/CPP-parsers
 	url = https://github.com/dongge0210/CPP-parsers.git
