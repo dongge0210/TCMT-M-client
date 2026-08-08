@@ -30,7 +30,11 @@ public:
     std::vector<DiskData> GetDisks();
 
 #ifdef TCMT_WINDOWS
-    static void CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo);
+    // readSmart=false: WMI-only enumeration (fast, never blocks). SMART reads can
+    // hang on unresponsive drives, so callers can publish the list first and read
+    // SMART per disk separately.
+    static void CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
+                                     SystemInfo& sysInfo, bool readSmart = true);
 #endif
 
     // Collect SMART data (DeviceIoControl on Windows, IOKit on macOS)

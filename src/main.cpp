@@ -54,6 +54,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/Utils/WinUtils.h"
 #include "core/Utils/WmiManager.h"
 #include "core/disk/DiskInfo.h"
+#include "core/disk/SmartReader.h"
 #include "core/Utils/TpmBridge.h"
 #include "core/DataStruct/DataStruct.h"
 #include "core/DataStruct/SharedMemoryManager.h"
@@ -1504,14 +1505,38 @@ int main(int argc, char* argv[]) {
                             bool comInit = SUCCEEDED(hr);
                             SystemInfo tmp;
                             try {
-                                DiskInfo::CollectPhysicalDisks(*wmi, logical, tmp);
+                                // Phase 1: WMI-only disk list (fast) — publish immediately so the
+                                // TUI shows physical disks even if a SMART read hangs.
+                                DiskInfo::CollectPhysicalDisks(*wmi, logical, tmp, /*readSmart=*/false);
+                                if (!tmp.physicalDisks.empty()) {
+                                    {
+                                        std::lock_guard<std::mutex> lock(*physDiskMutex);
+                                        *cachedPhysDisks = tmp.physicalDisks;
+                                    }
+                                    // Phase 2: SMART per disk on its own thread — a hung drive
+                                    // never blocks the list or the other disks.
+                                    auto disks = tmp.physicalDisks;
+                                    for (const auto& d : disks) {
+                                        if (d.physicalIndex < 0) continue;
+                                        std::thread([d]() {
+                                            PhysicalDiskSmartData out = d;
+                                            bool ok = false;
+                                            try {
+                                                ok = SmartReader::Read(out.physicalIndex, out);
+                                            } catch (...) {}
+                                            if (ok) {
+                                                std::lock_guard<std::mutex> lock(*physDiskMutex);
+                                                for (auto& e : *cachedPhysDisks) {
+                                                    if (e.physicalIndex == out.physicalIndex) {
+                                                        e = out;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }).detach();
+                                    }
+                                }
                             } catch (...) {}
-                            // Only overwrite the cache with a successful non-empty scan,
-                            // otherwise keep the last known-good data.
-                            if (!tmp.physicalDisks.empty()) {
-                                std::lock_guard<std::mutex> lock(*physDiskMutex);
-                                *cachedPhysDisks = std::move(tmp.physicalDisks);
-                            }
                             physScanInFlight.store(false);
                             if (comInit) CoUninitialize();
                         }).detach();

@@ -39,6 +39,7 @@ struct SmartAttributeData {
 
 // Physical disk SMART info
 struct PhysicalDiskSmartData {
+    int physicalIndex = -1;        // Windows: Win32_DiskDrive.Index (used for SMART re-reads)
     WCHAR model[128];              // Disk model
     WCHAR serialNumber[64];        // Serial number
     WCHAR firmwareVersion[32];     // Firmware version

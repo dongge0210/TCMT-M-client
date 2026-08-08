@@ -89,7 +89,8 @@ static bool ParseDiskPartition(const std::wstring& text, int& diskIndexOut) {
 }
 
 // 使用 WMI 关联查询获取物理磁盘到逻辑驱动器的映射
-void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo) {
+void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
+                                    SystemInfo& sysInfo, bool readSmart) {
     IWbemServices* svc = wmi.GetWmiService();
     if (!svc) { Logger::Warn("WMI service invalid, skipping physical disk enumeration"); return; }
     std::map<int, std::vector<char>> physicalIndexToLetters;
@@ -184,6 +185,7 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 && (vIndex.vt == VT_I4 || vIndex.vt == VT_UI4)) {
                 int idx = (vIndex.vt == VT_I4) ? vIndex.intVal : static_cast<int>(vIndex.uintVal);
                 PhysicalDiskSmartData data{};
+                data.physicalIndex = idx;
                 if (SUCCEEDED(obj->Get(L"Model", 0, &vModel, 0, 0)) && vModel.vt == VT_BSTR)
                     wcsncpy_s(data.model, vModel.bstrVal, _TRUNCATE);
                 if (SUCCEEDED(obj->Get(L"SerialNumber", 0, &vSerial, 0, 0)) && vSerial.vt == VT_BSTR)
@@ -220,8 +222,10 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 data.temperature = -1;
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
-                // Try DeviceIoControl SMART
-                SmartReader::Read(idx, tempDisks[idx]);
+                // Try DeviceIoControl SMART — skip when caller wants a non-blocking
+                // WMI-only enumeration (SMART can hang on unresponsive drives).
+                if (readSmart)
+                    SmartReader::Read(idx, tempDisks[idx]);
             }
             VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
             VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
