@@ -117,15 +117,6 @@ using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*
 using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);  // v1: single fan
 using NvmlDeviceGetFanSpeedV2Fn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int, unsigned int*);  // v2: per-fan index
-// NVML process info (v1 layout — 16 bytes, matches nvmlDeviceGetComputeRunningProcesses).
-// The v1 function fills the array with 16-byte entries; using a larger struct here
-// (e.g. the 24-byte v2 layout) shifts every field and produces garbage PID/VRAM.
-struct nvmlProcessInfo_t {
-    unsigned int pid;
-    unsigned long long usedGpuMemory;
-};
-constexpr unsigned int NVML_MAX_PROCESSES = 16;  // 16 × 16 = 256 bytes, safe stack
-using NvmlDeviceGetComputeRunningProcessesFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*);
 using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
 
 // Runtime NVML function table -- loaded once on first use
@@ -143,7 +134,6 @@ struct NvmlApi {
     NvmlDeviceGetNumFansFn getNumFans = nullptr;
     NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
     NvmlDeviceGetFanSpeedV2Fn getFanSpeedV2 = nullptr;  // v2: per-fan index
-    NvmlDeviceGetComputeRunningProcessesFn getComputeRunningProcesses = nullptr;
     NvmlDeviceGetCountFn getDeviceCount = nullptr;
 };
 
@@ -193,12 +183,6 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
         api.getFanSpeedV2 = reinterpret_cast<NvmlDeviceGetFanSpeedV2Fn>(
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed_v2"));
-        // Only use v1 of ComputeRunningProcesses — matches our nvmlProcessInfo_t layout.
-        // v2/v3 structs are larger (extra instanceId fields + ccProtectedMemory), causing
-        // buffer overrun and garbage VRAM values when interpreted as v1.
-        api.getComputeRunningProcesses = reinterpret_cast<NvmlDeviceGetComputeRunningProcessesFn>(
-            GetProcAddress(api.module, "nvmlDeviceGetComputeRunningProcesses"));
-
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -483,36 +467,6 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
         fi.index = i;
         fi.speedRpm = static_cast<int>(speed);
         result.push_back(fi);
-    }
-    return result;
-}
-
-std::vector<GpuInfo::GpuProcess> GpuInfo::GetGpuProcesses() {
-    std::vector<GpuProcess> result;
-    auto& s = GetNvmlSession();
-    if (!s.ok || !s.api->getComputeRunningProcesses || !s.api->getDeviceCount || !s.api->getHandleByIndex) return result;
-    unsigned int deviceCount = 0;
-    if (NVML_SUCCESS != s.api->getDeviceCount(&deviceCount)) return result;
-    nvmlProcessInfo_t infos[NVML_MAX_PROCESSES];
-    for (unsigned int d = 0; d < deviceCount; ++d) {
-        nvmlDevice_t dev = nullptr;
-        if (NVML_SUCCESS != s.api->getHandleByIndex(d, &dev)) continue;
-        unsigned int count = NVML_MAX_PROCESSES;
-        if (NVML_SUCCESS != s.api->getComputeRunningProcesses(dev, &count, infos)) continue;
-        for (unsigned int i = 0; i < count && i < NVML_MAX_PROCESSES; ++i) {
-            const unsigned int pid = infos[i].pid;
-            const unsigned long long mem = infos[i].usedGpuMemory;
-            // NVML reports UINT32_MAX as the pid and garbage VRAM for unknown /
-            // exited processes (e.g. 0xFFFFFFFF pid, UINT64_MAX or >128GiB VRAM).
-            // Skip them instead of rendering absurd values in the TUI.
-            if (pid == 0 || pid == 0xFFFFFFFFu) continue;
-            if (mem > (1ULL << 37)) continue;  // >128 GiB is not real
-            GpuProcess p;
-            p.pid = pid;
-            p.gpuIndex = d;
-            p.usedGpuMemory = mem;
-            result.push_back(p);
-        }
     }
     return result;
 }

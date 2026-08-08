@@ -62,6 +62,7 @@ if(TCMT_WINDOWS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/etw/EtwMonitor.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessMonitor.cpp
     )
 endif()
 

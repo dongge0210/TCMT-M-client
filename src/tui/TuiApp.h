@@ -79,12 +79,6 @@ struct TuiData {
         bool isRpm = false;
     };
     std::vector<GpuFanInfo> gpuFans;
-    struct GpuProcInfo {
-        unsigned int pid = 0;
-        unsigned int gpuIndex = 0;
-        unsigned long long vramBytes = 0;
-    };
-    std::vector<GpuProcInfo> gpuProcesses;
 
     // Disk
     struct DiskInfo {

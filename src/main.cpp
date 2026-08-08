@@ -49,6 +49,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/memory/MemoryInfo.h"
 #include "core/network/NetworkAdapter.h"
 #include "core/os/OSInfo.h"
+#include "core/process/ProcessMonitor.h"
 #include "core/Utils/Logger.h"
 #include "core/Utils/TimeUtils.h"
 #include "core/Utils/WinUtils.h"
@@ -1638,14 +1639,22 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 }
                 // Keep legacy field for backward compat
                 tuiData.gpuFanSpeed = tuiData.gpuFans.empty() ? -1 : tuiData.gpuFans[0].speedRpm;
-                // GPU processes (NVML)
-                tuiData.gpuProcesses.clear();
-                for (const auto& gp : GpuInfo::GetGpuProcesses()) {
-                    tcmt::TuiData::GpuProcInfo pi;
-                    pi.pid = gp.pid;
-                    pi.gpuIndex = gp.gpuIndex;
-                    pi.vramBytes = gp.usedGpuMemory;
-                    tuiData.gpuProcesses.push_back(pi);
+                // PID monitor — top processes by memory (refresh every ~3s)
+                { static int procCtr = 0;
+                  static ProcessMonitor s_procMon;
+                  if (++procCtr >= 3) {
+                      procCtr = 0;
+                      try { s_procMon.Refresh(); } catch (...) {}
+                  }
+                  tuiData.topProcesses.clear();
+                  for (const auto& e : s_procMon.GetTop()) {
+                      tcmt::TuiData::ProcessTopEntry pe;
+                      pe.pid = e.pid;
+                      pe.name = e.name;
+                      pe.memoryBytes = e.memoryBytes;
+                      pe.cpuPercent = e.cpuPercent;
+                      tuiData.topProcesses.push_back(pe);
+                  }
                 }
 
                 // Disks

@@ -65,13 +65,6 @@ public:
     };
     // Returns per-fan speeds via NVML (NVML reports % of max, not actual RPM)
     static std::vector<GpuFanInfo> GetGpuFans();
-    // Returns GPU process list (PID, VRAM used) via NVML
-    struct GpuProcess {
-        unsigned int pid = 0;
-        unsigned int gpuIndex = 0;
-        unsigned long long usedGpuMemory = 0;
-    };
-    static std::vector<GpuProcess> GetGpuProcesses();
 #else
     GpuInfo();
 #endif

@@ -120,6 +120,9 @@
     <ClInclude Include="src\core\power\PowerMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\process\ProcessMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\temperature\BoardTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -246,6 +249,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\power\PowerMonitor.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\process\ProcessMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\etw\EtwMonitor.cpp">
