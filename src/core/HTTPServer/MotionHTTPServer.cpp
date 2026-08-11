@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <sstream>
+#include <chrono>
 
 bool MotionHTTPServer::Start(int port, Handler handler) {
     _handler = std::move(handler);
@@ -38,7 +39,27 @@ void MotionHTTPServer::Stop() {
     if (_thread.joinable()) _thread.join();
 }
 
-int s_connCount = 0;
+// Current connected HTTP clients (incremented on accept, decremented on close).
+std::atomic<int> s_connCount{0};
+// Monotonic microseconds of the most recent request (for "recently active").
+std::atomic<int64_t> s_lastRequestUs{0};
+
+static int64_t NowUs() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+int MotionHTTPServer::OpenClients() const {
+    return s_connCount.load();
+}
+
+int MotionHTTPServer::ActiveClients() const {
+    int open = s_connCount.load();
+    if (open > 0) return open;
+    int64_t last = s_lastRequestUs.load();
+    if (last > 0 && (NowUs() - last) < 2'000'000) return 1;
+    return 0;
+}
 
 void MotionHTTPServer::AcceptLoop() {
     while (_running) {
@@ -48,11 +69,19 @@ void MotionHTTPServer::AcceptLoop() {
         if (clientFd < 0) continue;
         s_connCount++;
 
+        // Single-threaded accept loop: a client that connects but never sends
+        // (browser speculative/idle connections) would block recv() forever
+        // and stall the whole server. Drop silent connections after 3s.
+        timeval tv{};
+        tv.tv_sec = 3;
+        setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
         // Read request
         char buf[4096] = {};
         ssize_t n = recv(clientFd, buf, sizeof(buf) - 1, 0);
-        if (n <= 0) { close(clientFd); continue; }
+        if (n <= 0) { s_connCount--; close(clientFd); continue; }
         buf[n] = '\0';
+        s_lastRequestUs.store(NowUs());
 
         // Parse first line: METHOD /path HTTP/1.x
         std::string method, path;
@@ -77,6 +106,7 @@ void MotionHTTPServer::AcceptLoop() {
                 "Content-Length: 0\r\n"
                 "Connection: close\r\n\r\n";
             send(clientFd, r.c_str(), r.size(), 0);
+            s_connCount--;
             close(clientFd);
             continue;
         }
@@ -98,6 +128,7 @@ void MotionHTTPServer::AcceptLoop() {
 
         std::string r = resp.str();
         send(clientFd, r.c_str(), r.size(), 0);
+        s_connCount--;
         close(clientFd);
     }
 }

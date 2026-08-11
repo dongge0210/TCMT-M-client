@@ -23,6 +23,12 @@ public:
 
     bool Start(int port, Handler handler);
     void Stop();
+    // Number of currently open HTTP connections (accepted, not yet closed).
+    int OpenClients() const;
+    // Clients considered connected: open connections, or any request within
+    // the last 2s (webpage polls open/close per request, so instantaneous
+    // open count flickers).
+    int ActiveClients() const;
 
 private:
     void AcceptLoop();
