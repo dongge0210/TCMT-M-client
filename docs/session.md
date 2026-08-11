@@ -16,6 +16,9 @@
   - 默认监听 `0.0.0.0`，启动打印 LAN URL；`--host`/`--port`/`--data-dir` 可配
 - `viewer/`（原生 HTML/CSS/JS，无构建）：多设备总览条（同屏所有设备：在线/CPU/内存/GPU/温度，
   实时更新），点击卡片或下拉切换详情；详情含仪表盘、运动传感器、温度列表、字段索引、历史曲线
+- 结构定稿：三个端（client / server / viewer）都在 client 主仓库内；**viewer 是独立展示端，
+  随 server 保留在 `server/viewer/`**（server 自带托管，`server.js` 默认从 `./viewer` 找页面，
+  `--static-dir` 可覆盖）
 
 ### client 改动（macOS）
 - `ServerProbe` 不再硬编码 127.0.0.1:8080：解析 URL（支持 IP/主机名/base path），

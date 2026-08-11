@@ -26,7 +26,18 @@ const PORT = Number(arg('--port', process.env.TCMT_SERVER_PORT || '8080'));
 // viewers on other machines can reach the server over the network.
 const HOST = arg('--host', process.env.TCMT_SERVER_HOST || '0.0.0.0');
 const DATA_DIR = path.resolve(__dirname, arg('--data-dir', 'data'));
-const STATIC_DIR = path.resolve(__dirname, arg('--static-dir', '../viewer'));
+// The viewer end lives with the server (server/viewer) so the server is
+// self-contained for display. --static-dir overrides it; ../viewer remains
+// a fallback for older layouts.
+const STATIC_DIR = (() => {
+  const explicit = arg('--static-dir', '');
+  if (explicit) return path.resolve(explicit);
+  for (const candidate of ['viewer', '../viewer']) {
+    const p = path.resolve(__dirname, candidate);
+    if (fs.existsSync(path.join(p, 'index.html'))) return p;
+  }
+  return path.resolve(__dirname, 'viewer');
+})();
 const AUTH_TOKEN = arg('--auth-token', process.env.TCMT_SERVER_TOKEN || '');
 const PUBLIC_URL = arg('--public-url', process.env.TCMT_SERVER_PUBLIC_URL || '');
 const TLS_CERT = arg('--tls-cert', process.env.TCMT_SERVER_TLS_CERT || '');

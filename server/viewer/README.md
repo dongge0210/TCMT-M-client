@@ -1,14 +1,14 @@
 # TCMT Viewer
 
-纯展示页面：只从 tcmt-server 读取数据（REST + WebSocket），不含任何业务、
-存储或采集逻辑。
+展示端：只从 tcmt-server 读取数据（REST + WebSocket），不含任何业务、存储或采集逻辑。
+viewer 本身就是一个独立的端，随 server 保留在 `server/viewer/`，由 server 直接托管。
 
 ## 使用
 
 推荐由 server 托管（零配置）：
 
 ```bash
-cd ../server && node server.js
+cd server && node server.js
 # 本机浏览器打开 http://127.0.0.1:8080/
 # 其他设备浏览器打开 http://<server-ip>:8080/ （server 默认监听 0.0.0.0）
 ```

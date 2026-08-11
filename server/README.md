@@ -9,7 +9,7 @@
 | --- | --- |
 | client (TCMT-M) | 采集硬件信息，`--http` 模式下每 2s 推送快照（现有 ServerProbe 逻辑） |
 | **server** (本目录) | 中转 + 整理：注册设备、保留环形历史、字段索引、派生 summary，对外提供 REST/WS |
-| viewer (../viewer) | 纯展示：只读 server 数据，无任何业务/存储逻辑 |
+| viewer (server/viewer) | 展示端：纯前端页面，只读 server 数据，无任何业务/存储逻辑（随 server 保留） |
 
 ## 运行
 
@@ -32,6 +32,9 @@ node server.js --public-url https://tcmt.example.com  # 对外展示地址（hel
 
 任意设备浏览器打开 `http://<server-ip>:8080/` 即为 viewer（多设备同屏显示，
 点击设备卡片切换详情）。
+
+viewer 是独立的展示端，随 server 一起保留在 `server/viewer/`，由 server 直接托管；
+也可以单独双击 `viewer/index.html` 使用（自动回退到 127.0.0.1:8080 取数）。
 
 ## 跨设备 / 网络说明
 
@@ -118,5 +121,6 @@ server/
 ├── lib/store.js       # 设备注册表 + 环形历史 + 字段索引 + 派生 summary
 ├── lib/api.js         # REST 路由 + 静态文件
 ├── lib/ws.js          # RFC-6455 握手/帧/心跳（零依赖）
+├── viewer/            # 展示端：纯前端仪表盘（独立端，由 server 托管）
 └── data/              # 运行时数据（gitignore）
 ```
