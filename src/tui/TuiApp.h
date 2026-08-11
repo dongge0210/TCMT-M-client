@@ -18,6 +18,7 @@
 #pragma once
 
 #include "LogBuffer.h"
+#include <functional>
 #include <string>
 // pid_t: POSIX on macOS/Linux, need explicit definition on Windows
 #ifdef _WIN32
@@ -168,6 +169,7 @@ struct TuiData {
     std::string wifiGen;
     double wifiTxRate = 0;
     bool wifiLocationDenied = false; // macOS 15+: SSID blocked by Location Services
+    int wifiLocationStatus = 0;      // 0=not determined, 1=denied, 2=authorized
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
@@ -288,6 +290,12 @@ public:
     // Update data from main thread (thread-safe)
     void UpdateData(const TuiData& data);
 
+    // Optional handler invoked when the user presses R on the dashboard
+    // (e.g. request macOS Location Services for WiFi SSID).
+    void SetLocationRequestHandler(std::function<void()> handler) {
+        locationRequestHandler_ = std::move(handler);
+    }
+
 #ifndef TCMT_WINDOWS
     // Inject external log buffer (e.g. from Logger) — used by the in-TUI
     // log page on macOS/Linux (Windows uses the standalone Win32 LogWindow).
@@ -341,6 +349,8 @@ private:
 
     TuiData data_;
     mutable std::mutex dataMutex_;
+
+    std::function<void()> locationRequestHandler_;
 
     // Window dimensions
     int termRows_ = 0;

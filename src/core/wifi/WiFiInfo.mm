@@ -128,6 +128,16 @@ static void RunSystemProfiler() {
 // Shared CLLocationManager retained across Detect() calls for auth polling.
 static CLLocationManager* s_locMgr = nil;
 
+void WiFiInfo::RequestLocationAuthorization() {
+    static dispatch_once_t s_onceToken;
+    dispatch_once(&s_onceToken, ^{
+        @autoreleasepool {
+            s_locMgr = [[CLLocationManager alloc] init];
+            [s_locMgr requestWhenInUseAuthorization];
+        }
+    });
+}
+
 void WiFiInfo::Detect() {
     Clear();
 
@@ -136,23 +146,27 @@ void WiFiInfo::Detect() {
         data_.bssid.clear();
 
         // --- CoreLocation authorization (needed for SSID on macOS 15+) ---
-        // NOTE: do NOT force an NSApplication context here. The previous
-        // [NSApplication sharedApplication] call SIGABRTs in sessions where
-        // LaunchServices cannot register the app bundle (e.g. degraded or
-        // background contexts). CoreLocation authorization status and the
-        // location manager work fine without it; the system_profiler fallback
-        // below still provides SSID when location is not granted.
-        static dispatch_once_t s_onceToken;
-        dispatch_once(&s_onceToken, ^{
-            s_locMgr = [[CLLocationManager alloc] init];
-            [s_locMgr requestWhenInUseAuthorization];
-        });
+        // NOTE: authorization is NEVER requested automatically — the TUI
+        // shows a judgment first and the user triggers the request (see
+        // RequestLocationAuthorization). Also do NOT force an NSApplication
+        // context here ([NSApplication sharedApplication] SIGABRTs in
+        // degraded LaunchServices sessions).
 
         CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
         bool locationOK = (auth == kCLAuthorizationStatusAuthorized);
+        if (auth == kCLAuthorizationStatusDenied || auth == kCLAuthorizationStatusRestricted) {
+            data_.locationStatus = 1;
+            data_.locationDenied = true;
+        } else if (locationOK) {
+            data_.locationStatus = 2;
+        } else {
+            data_.locationStatus = 0;
+        }
 
         // --- Primary: CoreWLAN (fast, non-blocking) ---
-        // SSID/BSSID require Location Services on macOS 15+.
+        // SSID/BSSID require Location Services on macOS 15+. Run the
+        // authorization judgment FIRST; only request the SSID field after
+        // the user has granted Location Services.
         CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
         if (iface) {
             data_.powerOn = [iface powerOn];
@@ -197,8 +211,9 @@ void WiFiInfo::Detect() {
 
         // --- Fallback: system_profiler (async, non-blocking) ---
         // system_profiler SPAirPortDataType bypasses the LS gate for RSSI/etc.
-        // SSID is optional and is filtered for "<redacted>".
-        if (!locationOK && (data_.ssid.empty() || data_.bssid.empty())) {
+        // SSID is optional and is filtered for "<redacted>". Still gated on
+        // Location Services authorization — the judgment comes first.
+        if (locationOK && (data_.ssid.empty() || data_.bssid.empty())) {
             int state = s_profilerState.load(std::memory_order_acquire);
             if (state == 2) {
                 std::lock_guard<std::mutex> lk(s_cacheMutex);

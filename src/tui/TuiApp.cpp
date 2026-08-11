@@ -456,8 +456,8 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     if (data.hasWiFi) {
         bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
         std::string wifiStr;
-        if (data.wifiLocationDenied) {
-            wifiStr = "On  SSID unavailable (Location Services)";
+        if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+            wifiStr = "On  SSID unavailable (Location Services denied)";
         } else {
             wifiStr = hasData ? "On" : "Disconnected";
             if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
@@ -475,6 +475,24 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattroff(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
         lines++;
+
+        // Location Services guidance — show the user where to grant SSID
+        // access BEFORE expecting the SSID field (macOS 15+).
+        if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+            mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "> Location Services, allow TCMT-M");
+            lines++;
+        } else if (data.wifiLocationStatus == 0) {
+            mvwprintw(win, y + lines, x0 + 2, "Location not granted, SSID hidden");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "Press R to request Location Services");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+            lines++;
+        }
     } else {
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
@@ -1006,6 +1024,9 @@ void TuiApp::Run() {
         if (ch == 'q' || ch == 'Q' || ch == 27) {
             running_ = false;
             break;
+        }
+        if ((ch == 'r' || ch == 'R') && locationRequestHandler_) {
+            locationRequestHandler_();
         }
 #ifndef TCMT_WINDOWS
         if (ch == 'l' || ch == 'L' || ch == '\t') {

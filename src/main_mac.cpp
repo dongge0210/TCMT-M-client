@@ -682,6 +682,11 @@ int main(int argc, char* argv[]) {
     // Start TUI
     tcmt::TuiApp tuiApp;
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
+    // Location Services request is user-triggered (press R in the TUI):
+    // the judgment/guidance comes first, only then does the app ask.
+    tuiApp.SetLocationRequestHandler([] {
+        WiFiInfo::RequestLocationAuthorization();
+    });
     tuiApp.Start();
 
     // In-process native log window (AppKit), mirroring the Windows LogWindow:
@@ -882,6 +887,7 @@ int main(int argc, char* argv[]) {
               data.wifiBand = wd.band;
               data.wifiGen = wd.wifiGen;
               data.wifiLocationDenied = wd.locationDenied;
+              data.wifiLocationStatus = wd.locationStatus;
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
               data.btPowerOn = bd.adapter.powerOn;
