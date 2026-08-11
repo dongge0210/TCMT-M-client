@@ -2,7 +2,7 @@
 // Data source: tcmt-server via IPC MotionClient
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { MotionClient, connectionState } from './ipc-client.js?v=4-roll-sign';
+import { MotionClient, connectionState } from './ipc-client.js?v=5-yaw-tuning';
 
 // Keyboard state (must be before render loop)
 let keys = {};
@@ -220,8 +220,9 @@ const ALPHA = 0.05; // heavy LP filter — rejects linear acceleration noise
 let _yaw = 0;                 // degrees around world-Y
 let _sYawRate = 0;            // smoothed gyro Z rate (deg/s)
 let _lastT = performance.now();
-const YAW_ALPHA = 0.15;
-const GYRO_DEADZONE = 2;      // deg/s — ignore sensor noise when idle
+const YAW_ALPHA = 0.4;        // faster response (~80ms lag at 30Hz)
+const GYRO_DEADZONE = 0.2;    // deg/s — just above the sensor noise floor
+                              // (server already deadzones ~0.1 LSB)
 // Sensor frame: Z = keyboard normal, Y = front-back, X = left-right.
 // Flip a sign if the corresponding tilt direction is inverted.
 const PITCH_SIGN = 1;
@@ -250,8 +251,11 @@ export function update(data) {
   const now = performance.now();
   const dt = Math.min((now - _lastT) / 1000, 0.2);
   _lastT = now;
-  _sYawRate += YAW_ALPHA * (gz - _sYawRate);
-  if (Math.abs(_sYawRate) > GYRO_DEADZONE) _yaw += _sYawRate * dt;
+  // Deadzone the RAW rate first so slow deliberate turns still integrate;
+  // smooth afterwards to reject noise.
+  const rawYawRate = Math.abs(gz) > GYRO_DEADZONE ? gz : 0;
+  _sYawRate += YAW_ALPHA * (rawYawRate - _sYawRate);
+  _yaw += _sYawRate * dt;
   const yawQ = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 1, 0), _yaw * (Math.PI / 180));
   macbook.quaternion.copy(yawQ.multiply(tiltQ));
