@@ -288,8 +288,17 @@ public:
     // Update data from main thread (thread-safe)
     void UpdateData(const TuiData& data);
 
+#ifndef TCMT_WINDOWS
+    // Inject external log buffer (e.g. from Logger) — used by the in-TUI
+    // log page on macOS/Linux (Windows uses the standalone Win32 LogWindow).
+    void SetLogBuffer(LogBuffer* buf);
+#endif
+
 private:
     void Run();
+#ifndef TCMT_WINDOWS
+    void RenderLogPage(int rows, int cols, int ch);
+#endif
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -317,6 +326,18 @@ private:
 
     std::thread thread_;
     std::atomic<bool> running_{false};
+
+#ifndef TCMT_WINDOWS
+    // Page state: Dashboard (hardware panels) or Log (scrolling log page)
+    bool logPage_ = false;
+    int logScrollOffset_ = 0;   // lines scrolled up from bottom
+    bool logFollow_ = true;     // auto-follow newest lines
+
+    // Internal buffer (fallback), or use external via SetLogBuffer()
+    LogBuffer defaultBuffer_;
+    // Points to either &defaultBuffer_ or an external buffer
+    LogBuffer* logBuf_ = nullptr;
+#endif
 
     TuiData data_;
     mutable std::mutex dataMutex_;

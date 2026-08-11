@@ -62,7 +62,13 @@ namespace tcmt {
 // TuiApp
 // ============================================================================
 
+#ifndef TCMT_WINDOWS
+TuiApp::TuiApp() {
+    logBuf_ = &defaultBuffer_;
+}
+#else
 TuiApp::TuiApp() {}
+#endif
 
 TuiApp::~TuiApp() {
     Stop();
@@ -75,7 +81,9 @@ void TuiApp::Start() {
 }
 
 void TuiApp::Stop() {
-    if (!running_.load()) return;
+    // Always join if a thread exists. The TUI thread sets running_ = false
+    // itself when quitting via 'q', so an early return here would leave
+    // thread_ joinable and std::terminate() in ~thread at scope exit.
     running_ = false;
     if (thread_.joinable()) {
         thread_.join();
@@ -92,6 +100,12 @@ void TuiApp::UpdateData(const TuiData& data) {
     std::lock_guard<std::mutex> lock(dataMutex_);
     data_ = data;
 }
+
+#ifndef TCMT_WINDOWS
+void TuiApp::SetLogBuffer(LogBuffer* buf) {
+    logBuf_ = buf ? buf : &defaultBuffer_;
+}
+#endif
 
 void TuiApp::InitColors() {
     if (!has_colors()) return;
@@ -883,6 +897,77 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     return lines + 1;  // +1 bottom padding
 }
 
+#ifndef TCMT_WINDOWS
+// ────────────────────────────────────────────────────────────────────────────
+// Log page — full-screen scrolling log view inside the main TUI (macOS/Linux).
+// Data comes from the in-process Logger log buffer (no IPC, no files).
+// Windows uses the standalone Win32 LogWindow instead (dashboard-only console).
+// ────────────────────────────────────────────────────────────────────────────
+void TuiApp::RenderLogPage(int rows, int cols, int ch) {
+    if (ch == KEY_UP) { logScrollOffset_++; logFollow_ = false; }
+    else if (ch == KEY_DOWN) {
+        if (logScrollOffset_ > 0) logScrollOffset_--;
+        else logFollow_ = true;
+    }
+    else if (ch == KEY_PPAGE) { logScrollOffset_ += 10; logFollow_ = false; }
+    else if (ch == KEY_NPAGE) {
+        logScrollOffset_ = (std::max)(0, logScrollOffset_ - 10);
+        if (logScrollOffset_ == 0) logFollow_ = true;
+    }
+    else if (ch == KEY_HOME) { logFollow_ = true; logScrollOffset_ = 0; }
+    else if (ch == KEY_END)  { logFollow_ = true; logScrollOffset_ = 0; }
+    else if (ch == 'f' || ch == 'F') {
+        logFollow_ = !logFollow_;
+        if (logFollow_) logScrollOffset_ = 0;
+    }
+
+    std::vector<std::string> lines;
+    if (logBuf_)
+        lines = logBuf_->GetRecent(LogBuffer::MAX_LINES);
+
+    erase();
+
+    std::string topBot(cols, '-');
+    mvwprintw(stdscr, 0, 0, "%s", topBot.c_str());
+    mvwprintw(stdscr, rows - 1, 0, "%s", topBot.c_str());
+
+    std::string header = " TCMT Log    lines: " + std::to_string(lines.size()) +
+                         "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]") +
+                         "    q=quit l=dashboard f=follow";
+    wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(stdscr, 1, 1, "%.*s", cols - 2, header.c_str());
+    wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+
+    int contentRows = rows - 3;
+    int total = static_cast<int>(lines.size());
+    int start = 0;
+    if (logFollow_) {
+        start = (std::max)(0, total - contentRows);
+    } else {
+        start = (std::max)(0, total - logScrollOffset_ - contentRows);
+    }
+
+    if (total == 0) {
+        mvwprintw(stdscr, 2, 2, "暂无日志... (l 返回 dashboard)");
+    }
+
+    for (int r = 0; r < contentRows; ++r) {
+        int idx = start + r;
+        if (idx >= total) break;
+        const std::string& entry = lines[idx];
+        int color = 2;
+        if (entry.find("[ERROR]") != std::string::npos) color = 4;
+        else if (entry.find("[WARN]") != std::string::npos) color = 3;
+        else if (entry.find("[DEBUG]") != std::string::npos) color = 6;
+
+        std::string disp = utf8_truncate(entry, cols - 3);
+        wattron(stdscr, COLOR_PAIR(color));
+        mvwprintw(stdscr, 2 + r, 1, "%.*s", cols - 2, disp.c_str());
+        wattroff(stdscr, COLOR_PAIR(color));
+    }
+}
+#endif
+
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
 
@@ -922,6 +1007,12 @@ void TuiApp::Run() {
             running_ = false;
             break;
         }
+#ifndef TCMT_WINDOWS
+        if (ch == 'l' || ch == 'L' || ch == '\t') {
+            logPage_ = !logPage_;
+            clear();
+        }
+#endif
         if (rows < 24 || cols < 80) {
             clear();
             mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
@@ -929,6 +1020,18 @@ void TuiApp::Run() {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
+
+#ifndef TCMT_WINDOWS
+        // Log page — in-process full-screen log view (Tab / L to switch back)
+        if (logPage_) {
+            RenderLogPage(rows, cols, ch);
+            refresh();
+            for (int i = 0; i < 3 && running_.load(); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            continue;
+        }
+#endif
 
         TuiData data;
         {
