@@ -778,6 +778,10 @@ int main(int argc, char* argv[]) {
     ModuleCoordinator coordinator;
     coordinator.Start();
 
+    // Run the monitoring loop on a background thread so the main thread can
+    // run the AppKit event loop (fully interactive log window). The loop
+    // exits when the TUI quits or a signal arrives, then stops the run loop.
+    std::thread monitorThread([&] {
     int loopCounter = 1;
     const int HEAVY_SENSOR_SKIP = 30; // 30Hz ÷ 30 = 1Hz for CPU/GPU/disk/network/temp
 
@@ -1415,13 +1419,7 @@ int main(int argc, char* argv[]) {
             int sleepMs = std::max(33 - loopMs, 5);  // 30 Hz update
             // Sleep with responsive exit (check every 5ms)
             for (int s = 0; s < 7 && !g_shouldExit.load(); ++s) {
-                if (logWindow.IsActive()) {
-                    // Pump the AppKit run loop so the log window refreshes and
-                    // stays responsive while the monitoring loop runs.
-                    tcmt::mac::MacLogWindow::PumpRunLoop(0.005);
-                } else {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             // Push sensor snapshots to history logger
             if (historyLogger.IsRunning()) {
@@ -1474,6 +1472,18 @@ int main(int argc, char* argv[]) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
+
+        if (logWindow.IsActive())
+            tcmt::mac::MacLogWindow::StopApp();
+    });
+
+    // Main thread: run the AppKit event loop so the log window is fully
+    // interactive (scrolling, selection, copy). Without a window (headless
+    // fallback) just wait for the monitoring thread to finish.
+    if (logWindow.IsActive()) {
+        logWindow.Run();
+    }
+    monitorThread.join();
 
     Logger::Info("Exiting, cleaning up...");
     logWindow.Stop();

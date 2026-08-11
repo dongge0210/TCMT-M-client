@@ -29,6 +29,28 @@
         NSApplication* app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
 
+        // Minimal main menu: needed for Edit actions (Cmd+C copy, Cmd+A
+        // select all) to reach the log text view via the responder chain.
+        NSMenu* menubar = [[NSMenu alloc] init];
+        NSMenuItem* appMenuItem = [[NSMenuItem alloc] init];
+        [menubar addItem:appMenuItem];
+        NSMenu* appMenu = [[NSMenu alloc] initWithTitle:@"TCMT-M"];
+        [appMenu addItemWithTitle:@"Quit TCMT-M"
+                           action:@selector(terminate:)
+                    keyEquivalent:@"q"];
+        [appMenuItem setSubmenu:appMenu];
+        NSMenuItem* editMenuItem = [[NSMenuItem alloc] init];
+        [menubar addItem:editMenuItem];
+        NSMenu* editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+        [editMenu addItemWithTitle:@"Copy"
+                            action:@selector(copy:)
+                     keyEquivalent:@"c"];
+        [editMenu addItemWithTitle:@"Select All"
+                            action:@selector(selectAll:)
+                     keyEquivalent:@"a"];
+        [editMenuItem setSubmenu:editMenu];
+        [app setMainMenu:menubar];
+
         NSWindow* win = [[NSWindow alloc]
             initWithContentRect:NSMakeRect(200, 160, 720, 520)
             styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -45,6 +67,7 @@
         NSTextView* tv = [[NSTextView alloc]
             initWithFrame:NSMakeRect(0, 0, scroll.contentSize.width, scroll.contentSize.height)];
         tv.editable = NO;
+        tv.selectable = YES;
         tv.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
         tv.autoresizingMask = NSViewWidthSizable;
         scroll.documentView = tv;
@@ -53,6 +76,8 @@
         _textView = tv;
 
         [win makeKeyAndOrderFront:nil];
+        [win makeFirstResponder:tv];
+        [win setInitialFirstResponder:tv];
         [app activateIgnoringOtherApps:YES];
 
         _timer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer* t) {
@@ -122,11 +147,19 @@ void MacLogWindow::Stop() {
     controller_ = nullptr;
 }
 
-void MacLogWindow::PumpRunLoop(double seconds) {
+void MacLogWindow::Run() {
+    if (!controller_) return;
     @autoreleasepool {
-        [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode
-                              beforeDate:[NSDate dateWithTimeIntervalSinceNow:seconds]];
+        [NSApp run];
     }
+}
+
+void MacLogWindow::StopApp() {
+    // [NSApp stop:] must run on the main thread; the main dispatch queue is
+    // serviced by the AppKit run loop, so hop through it.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSApp stop:nil];
+    });
 }
 
 } // namespace mac

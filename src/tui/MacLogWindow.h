@@ -23,11 +23,14 @@ public:
     // Close the window and release resources. Safe to call multiple times.
     void Stop();
 
-    bool IsActive() const { return controller_ != nullptr; }
+    // Run the AppKit event loop on the main thread until StopApp() is called.
+    // Makes the log window fully interactive (scrolling, selection, copy).
+    void Run();
 
-    // Run the main run loop for a short slice so the log window can refresh
-    // and process events. Call periodically from the main thread's loop.
-    static void PumpRunLoop(double seconds);
+    // Ask the AppKit run loop (main thread) to stop. Thread-safe.
+    static void StopApp();
+
+    bool IsActive() const { return controller_ != nullptr; }
 
 private:
     // TCMTLogWindowController* (kept opaque so the header stays C++).
