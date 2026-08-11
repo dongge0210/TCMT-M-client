@@ -57,8 +57,24 @@ jobs:
           ruleset: NativeRecommendedRules.ruleset
 
       # Upload SARIF file to GitHub Code Scanning Alerts
+      - name: Normalize SARIF categories
+        shell: bash
+        env:
+          SARIF: ${{ steps.run-analysis.outputs.sarif }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = process.env.SARIF;
+            const sarif = JSON.parse(fs.readFileSync(p, "utf8"));
+            (sarif.runs || []).forEach((run, i) => {
+              run.category = (run.category || "msvc") + "-" + i;
+            });
+            fs.writeFileSync(p, JSON.stringify(sarif));
+            console.log("normalized " + (sarif.runs || []).length + " SARIF run(s)");
+          '
+
       - name: Upload SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ steps.run-analysis.outputs.sarif }}
 
