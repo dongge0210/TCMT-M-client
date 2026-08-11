@@ -1,5 +1,19 @@
 # Session State (2026-08-08)
 
+## 2026-08-12 — 前后端分离：server / viewer 移出 client 仓库
+
+- 结构变更：本仓库的 `server/`（Node 中转）提升为独立仓库/目录 `TCMT-M-server`
+  （仓库根：`/Users/huangzhaoming/TCMT/`）；viewer 独立为 `TCMT-M-viewer`
+  （纯前端，通过 CORS 调 API）。本仓库不再包含 server/viewer 代码。
+- 后端升级（TCMT-M-server，零依赖）：SQLite 落盘（`node:sqlite`，
+  默认 `~/.tcmt/server.db`）、`--retention-days`（默认 30 天）、
+  `/history` 支持 `bucket` 秒级即时降采样、`--cors-origin`（默认 `*`）；
+  不再托管静态页面（`/` 返回服务信息）；旧 `data/devices.json` 首次启动自动迁移。
+- 前端（TCMT-M-viewer）：`config.js` 配置 API 地址（localStorage `tcmt_api` 可覆盖）；
+  历史曲线支持 1h / 6h / 24h / 7d 时间范围 + 最多三条字段叠加，后端降采样不卡。
+- C++ `TCMT-M-server` v0.1.0 原型已由 Node 实现替换（删除源码与已入库的 build 产物，
+  git 历史保留，可随时找回）。
+
 ## 2026-08-11 追加 — server + viewer（跨设备，纯网络）
 
 ### 目标
