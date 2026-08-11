@@ -2,7 +2,7 @@
 // Data source: tcmt-server via IPC MotionClient
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { MotionClient, connectionState, registerDevice } from './ipc-client.js';
+import { MotionClient, connectionState } from './ipc-client.js?v=4-roll-sign';
 
 // Keyboard state (must be before render loop)
 let keys = {};
@@ -215,6 +215,18 @@ buildPanel();
 /* ── Update from sensor data ────────────────────────────────── */
 let _sax = 0, _say = 0, _saz = -1, _sgx = 0, _sgy = 0, _sgz = 0, _slid = 110;
 const ALPHA = 0.05; // heavy LP filter — rejects linear acceleration noise
+// Yaw (left/right turning) cannot be derived from gravity — integrate the
+// gyro Z rate instead. Deadzone + smoothing keep it jitter-free while idle.
+let _yaw = 0;                 // degrees around world-Y
+let _sYawRate = 0;            // smoothed gyro Z rate (deg/s)
+let _lastT = performance.now();
+const YAW_ALPHA = 0.15;
+const GYRO_DEADZONE = 2;      // deg/s — ignore sensor noise when idle
+// Sensor frame: Z = keyboard normal, Y = front-back, X = left-right.
+// Flip a sign if the corresponding tilt direction is inverted.
+const PITCH_SIGN = 1;
+const ROLL_SIGN = -1;
+
 export function update(data) {
   const { ax = 0, ay = 0, az = -1, gx = 0, gy = 0, gz = 0, lidAngle, hb, imut } = data;
 
@@ -223,16 +235,26 @@ export function update(data) {
   _sgx += ALPHA * (gx - _sgx); _sgy += ALPHA * (gy - _sgy); _sgz += ALPHA * (gz - _sgz);
 
   // gravity → tilt angles (using smoothed values)
-  const pitch = Math.atan2(-_sax, -_saz) * (180 / Math.PI);
-  const roll  = Math.atan2(_say, -_saz) * (180 / Math.PI);
+  const pitch = Math.atan2(PITCH_SIGN * _say, -_saz) * (180 / Math.PI);
+  const roll  = Math.atan2(ROLL_SIGN * _sax, -_saz) * (180 / Math.PI);
 
   // Model lies in XZ plane (long edge=X, short edge=Z, thickness=Y)
   // Pitch = rotate around device-X (world-X), Roll = rotate around device-Y (world-Z)
   // Quaternion from gravity — avoids Euler gimbal cross-coupling
-  const gWorld = new THREE.Vector3(-_sax, -_saz, -_say).normalize(); // device→world remap
-  macbook.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(
+  const gWorld = new THREE.Vector3(ROLL_SIGN * _sax, -_saz, PITCH_SIGN * _say).normalize(); // device→world remap
+  const tiltQ = new THREE.Quaternion().setFromUnitVectors(
     new THREE.Vector3(0, 1, 0), gWorld
-  ));
+  );
+
+  // Yaw: integrate gyro Z with deadzone, then apply around the world-Y axis
+  const now = performance.now();
+  const dt = Math.min((now - _lastT) / 1000, 0.2);
+  _lastT = now;
+  _sYawRate += YAW_ALPHA * (gz - _sYawRate);
+  if (Math.abs(_sYawRate) > GYRO_DEADZONE) _yaw += _sYawRate * dt;
+  const yawQ = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 1, 0), _yaw * (Math.PI / 180));
+  macbook.quaternion.copy(yawQ.multiply(tiltQ));
 
   // Keep orbit centered on model (y=0.06 is base center)
   controls.target.set(0, 0.06, 0);
@@ -244,6 +266,7 @@ export function update(data) {
   const el = id => document.getElementById(id);
   if (el('pitchVal')) el('pitchVal').textContent = pitch.toFixed(1) + '°';
   if (el('rollVal')) el('rollVal').textContent = roll.toFixed(1) + '°';
+  if (el('yawVal')) el('yawVal').textContent = _yaw.toFixed(1) + '°';
   if (el('ax')) el('ax').textContent = _sax.toFixed(3);
   if (el('ay')) el('ay').textContent = _say.toFixed(3);
   if (el('az')) el('az').textContent = _saz.toFixed(3);
@@ -257,17 +280,13 @@ export function update(data) {
 
 /* ── IPC: MotionClient ─────────────────────────────────────── */
 // Register with tcmt-server before starting data polling
-registerDevice('3D Viz').then(() => {
-  const motion = new MotionClient();
-  motion.onData(data => {
-    console.log('motion:', data);
-    update(data);
-  });
-  motion.start(33);
-  console.log('MotionClient started, polling', 'http://127.0.0.1:8080');
-}).catch(err => {
-  console.error('Failed to register device:', err);
+const motion = new MotionClient();
+motion.onData(data => {
+  console.log('motion:', data);
+  update(data);
 });
+motion.start(33);
+console.log('MotionClient started, polling', 'http://127.0.0.1:9876/sensors/motion');
 
 // Connection status heartbeat
 setInterval(async () => {
