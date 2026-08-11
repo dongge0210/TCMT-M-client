@@ -41,7 +41,9 @@ jobs:
       - name: Configure CMake
         # Debug build type: project adds /Zi /Od /RTC1 which are compatible
         # with the code-analysis action's flags (/RTC1 + /O2 would conflict).
-        run: cmake -B ${{ env.build }} -DCMAKE_BUILD_TYPE=Debug
+        # TCMT_MP=OFF: /MP makes each parallel cl.exe emit its own SARIF run,
+        # which upload-sarif rejects ("multiple SARIF runs with same category").
+        run: cmake -B ${{ env.build }} -DCMAKE_BUILD_TYPE=Debug -DTCMT_MP=OFF
 
       # Build is not required unless generated source files are used
       # - name: Build CMake
@@ -57,22 +59,6 @@ jobs:
           ruleset: NativeRecommendedRules.ruleset
 
       # Upload SARIF file to GitHub Code Scanning Alerts
-      - name: Normalize SARIF categories
-        shell: bash
-        env:
-          SARIF: ${{ steps.run-analysis.outputs.sarif }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const p = process.env.SARIF;
-            const sarif = JSON.parse(fs.readFileSync(p, "utf8"));
-            (sarif.runs || []).forEach((run, i) => {
-              run.category = (run.category || "msvc") + "-" + i;
-            });
-            fs.writeFileSync(p, JSON.stringify(sarif));
-            console.log("normalized " + (sarif.runs || []).length + " SARIF run(s)");
-          '
-
       - name: Upload SARIF to GitHub
         uses: github/codeql-action/upload-sarif@v4
         with:
