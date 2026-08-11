@@ -210,6 +210,10 @@ target_include_directories(TCMTCore PUBLIC
 
     # nlohmann/json (header-only) — single include
     ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/extern/json/single_include
+
+    # Third-party headers used on Windows (mirror TCMT.vcxproj include dirs)
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/USBMonitor-cpp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite-amalgamation
 )
 
 # Platform-specific defines
@@ -242,8 +246,10 @@ tcmt_set_output_directories(TCMTCore)
 if(TCMT_WINDOWS)
     # Windows: PDCurses - link with prebuilt or skip for now
     # target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARY})
-    # target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_PATH})
-    # For now, skip - will be added after PDCurses is built
+    target_include_directories(TCMTCore PRIVATE
+        ${CURSES_INCLUDE_PATH}
+        ${CURSES_INCLUDE_PATH}/wincon
+    )
     
 elseif(TCMT_MACOS)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
