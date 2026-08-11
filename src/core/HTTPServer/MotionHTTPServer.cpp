@@ -61,6 +61,12 @@ void MotionHTTPServer::AcceptLoop() {
         if (*p == ' ') p++;
         while (*p && *p != ' ') path += *p++;
 
+        // Normalize: strip query string and trailing slash so
+        // "/sensors/motion?x=1" and "/sensors/motion/" both match.
+        size_t q = path.find('?');
+        if (q != std::string::npos) path.resize(q);
+        while (path.size() > 1 && path.back() == '/') path.pop_back();
+
         // Handle CORS preflight (OPTIONS)
         if (method == "OPTIONS") {
             std::string r = "HTTP/1.1 204 No Content\r\n"
