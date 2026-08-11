@@ -8,7 +8,6 @@
 
 #import <CoreWLAN/CoreWLAN.h>
 #import <CoreLocation/CoreLocation.h>
-#import <AppKit/NSApplication.h>
 #include <nlohmann/json.hpp>
 #include <atomic>
 #include <mutex>
@@ -137,11 +136,14 @@ void WiFiInfo::Detect() {
         data_.bssid.clear();
 
         // --- CoreLocation authorization (needed for SSID on macOS 15+) ---
-        // Must run inside an NSApplication context (even minimal, via NSApplicationLoad())
-        // for requestWhenInUseAuthorization to actually present the dialog.
+        // NOTE: do NOT force an NSApplication context here. The previous
+        // [NSApplication sharedApplication] call SIGABRTs in sessions where
+        // LaunchServices cannot register the app bundle (e.g. degraded or
+        // background contexts). CoreLocation authorization status and the
+        // location manager work fine without it; the system_profiler fallback
+        // below still provides SSID when location is not granted.
         static dispatch_once_t s_onceToken;
         dispatch_once(&s_onceToken, ^{
-            [NSApplication sharedApplication];
             s_locMgr = [[CLLocationManager alloc] init];
             [s_locMgr requestWhenInUseAuthorization];
         });
@@ -165,7 +167,26 @@ void WiFiInfo::Detect() {
                 if (cwRssi != 0) data_.rssi = cwRssi;
                 data_.noise = static_cast<int>([iface noiseMeasurement]);
                 CWChannel* wlanChannel = [iface wlanChannel];
-                if (wlanChannel) data_.channel = static_cast<int>([wlanChannel channelNumber]);
+                if (wlanChannel) {
+                    data_.channel = static_cast<int>([wlanChannel channelNumber]);
+                    switch ([wlanChannel channelBand]) {
+                        case kCWChannelBand2GHz: data_.band = "2.4GHz"; break;
+                        case kCWChannelBand5GHz: data_.band = "5GHz"; break;
+                        case kCWChannelBand6GHz: data_.band = "6GHz"; break;
+                        default: break;
+                    }
+                }
+                switch ([iface activePHYMode]) {
+                    case kCWPHYMode11ax: data_.wifiGen = "WiFi 6"; break;
+                    case kCWPHYMode11ac: data_.wifiGen = "WiFi 5"; break;
+                    case kCWPHYMode11n:  data_.wifiGen = "WiFi 4"; break;
+                    case kCWPHYMode11g:
+                    case kCWPHYMode11a:  data_.wifiGen = "WiFi 3"; break;
+                    case kCWPHYMode11b:  data_.wifiGen = "WiFi 2"; break;
+                    default: break;
+                }
+                if (data_.band == "6GHz" && data_.wifiGen == "WiFi 6")
+                    data_.wifiGen = "WiFi 6E";
                 CWSecurity secType = [iface security];
                 std::string secStr = SecurityToString(secType);
                 if (secStr != "Unknown") data_.security = secStr;
