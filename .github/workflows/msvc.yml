@@ -35,6 +35,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Configure CMake
         # Debug build type: project adds /Zi /Od /RTC1 which are compatible

@@ -202,6 +202,7 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/accel
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils
 
     # CPP-parsers unified config interface
     ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/include
