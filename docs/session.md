@@ -16,6 +16,8 @@
 - **同进程 AppKit 日志窗口（`MacLogWindow.mm`，对应 Windows LogWindow）**：TUI 启动后同进程创建原生 “TCMT - Log” 窗口，读同一个内存 `LogBuffer`（新增 `Version()` 检测滚动/清空），0.5s 定时刷新。监控循环移到后台线程，主线程跑 `[NSApp run]` 事件循环，窗口完全可交互（滚动/选中/复制）；补齐最小主菜单（Edit → Copy/Select All）让 Cmd+C/Cmd+A 可用。无 WindowServer 会话（`CGMainDisplayID()==0`）自动回退 TUI 内日志页，不崩溃
 - **AppKit 注册 abort 修复**：退化/后台会话中 `[NSApplication sharedApplication]`（WiFiInfo 旧代码）与 `[NSScreen screens]`（DisplayInfo）会经 HIServices `_RegisterApplication` SIGABRT 杀死整个程序。WiFiInfo 改为不强制 NSApplication（CoreLocation 授权状态/请求无需它，system_profiler 兜底 SSID）；DisplayInfo 用 `CGMainDisplayID()` 探测后跳过
 - **功能差距审计**：macOS 已覆盖 topProcesses（PID 面板，CPU%/内存）、NVMe 健康（SSD 97% 33C 1713h）、per-core、IPC/MCP、HistoryLogger 等；`wifiBand/wifiGen` 已补齐（CoreWLAN channelBand + activePHYMode 推导，TUI 与 IPC 共享内存同步）；`cpuBaseFreq`/`gpuFans`/`tpmInfo` 在 macOS 无对应数据源（Apple Silicon 无 TPM/独立 GPU 风扇）
+- **电池健康修复**：Apple Silicon 上 `AppleSmartBattery` 的容量/温度字段在嵌套 `BatteryData` 子字典里，顶层读不到导致 Health 0%。改为优先读 `BatteryData`（顶层回退），`AppleRawMaxCapacity` 缺失时用 `FullChargeCapacity`——M2 Air 实测 252 循环 Health 82.4%
+- **SSID 定位授权流程（先判断后请求）**：去掉自动 `requestWhenInUseAuthorization`（会绕过用户直接授权并读取 SSID）。现在 TUI 先显示判断/引导（英文：Location not granted, SSID hidden / Press R to request / System Settings 路径），用户按 `R` 才触发一次性授权请求；授权前 CoreWLAN 与 system_profiler 的 SSID 读取全部禁用
 
 ### 验证
 - `cmake --build build -j8` 全绿；`TCMT-M.app` 正常生成（未 codesign）
@@ -23,6 +25,7 @@
 - TUI 双页面（dashboard / log Tab+l）正常，进程面板、磁盘健康（SSD 97% 33C 1713h）正常
 - `q` 退出干净：`Exiting` → `HistoryLogger stopped` 同秒完成，进程 2.6s 退出 code 0
 - 本机 exec 环境无 WindowServer（CGMainDisplayID=0）：日志窗口与显示信息自动降级，TUI 持续运行 12s+ 无崩溃，`q` 退出 code 0（AppKit 窗口本体需用户真实终端会话验证）
+- WindowServer 恢复后实测：启动时无 SSID + 引导显示；按 `R` 授权后 SSID 正常出现（Pattison B_5G）
 
 ### 待办/注意
 - 通用架构构建（`arm64;x86_64`）仍需 universal ncurses 或按机器覆盖架构
