@@ -127,6 +127,13 @@ if(TCMT_WINDOWS)
     list(APPEND TUI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/tui/LogWindow.cpp
     )
+elseif(TCMT_MACOS)
+    # In-process native log window (AppKit) — same-process mirror of LogWindow
+    list(APPEND TUI_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/tui/MacLogWindow.mm
+    )
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/tui/MacLogWindow.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 endif()
 
 # Curses library - platform specific

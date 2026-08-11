@@ -15,6 +15,7 @@ public:
     void Push(const std::string& line) {
         std::lock_guard<std::mutex> lock(mutex_);
         lines_.push_back(line);
+        ++version_;
         while (lines_.size() > MAX_LINES) {
             lines_.pop_front();
         }
@@ -35,9 +36,17 @@ public:
         return lines_.size();
     }
 
+    // Monotonic write counter — lets consumers detect content changes even
+    // when the ring buffer is full and Size() stops growing.
+    size_t Version() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return version_;
+    }
+
 private:
     mutable std::mutex mutex_;
     std::deque<std::string> lines_;
+    size_t version_ = 0;
 };
 
 } // namespace tcmt

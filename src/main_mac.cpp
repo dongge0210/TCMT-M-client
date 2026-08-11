@@ -16,6 +16,7 @@
 #include <csignal>
 #include <unistd.h>
 #include <sys/types.h>
+#include <cstdlib>
 #include <mach/mach_time.h>
 #include <mach/mach.h>
 #include <sys/sysctl.h>
@@ -50,6 +51,7 @@
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "tui/TuiApp.h"
+#include "tui/MacLogWindow.h"
 
 // Config management (wraps CPP-parsers / nlohmann/json internally)
 #include "core/Config/ConfigManager.h"
@@ -682,6 +684,18 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
     tuiApp.Start();
 
+    // In-process native log window (AppKit), mirroring the Windows LogWindow:
+    // dashboard in the terminal + log in its own window, same process, reading
+    // the same in-memory LogBuffer. Falls back to the in-TUI log page if the
+    // window cannot be created (e.g. headless session).
+    tcmt::mac::MacLogWindow logWindow;
+    bool wantLogWindow = (std::getenv("TCMT_NO_LOG_WINDOW") == nullptr);
+    if (wantLogWindow && logWindow.Create(&Logger::GetTuiBuffer())) {
+        Logger::Info("Log window opened (in-process AppKit)");
+    } else {
+        Logger::Warn("Log window unavailable, using in-TUI log page (Tab/l)");
+    }
+
     // SPU Sensor Manager — reads ALL AppleSPUHIDDevice sensors via
     // asynchronous IOHIDDevice input report callbacks (no root needed).
     // Includes: gravity/orientation vector, gyroscope, ALS, lid angle.
@@ -861,6 +875,8 @@ int main(int argc, char* argv[]) {
               data.wifiChannel = wd.channel;
               data.wifiSecurity = wd.security;
               data.wifiTxRate = wd.txRate;
+              data.wifiBand = wd.band;
+              data.wifiGen = wd.wifiGen;
               data.wifiLocationDenied = wd.locationDenied;
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
@@ -1307,6 +1323,10 @@ int main(int argc, char* argv[]) {
                     b->wifi.channel = wd2.channel;
                     std::strncpy(b->wifi.security, wd2.security.c_str(), 15);
                     b->wifi.security[15] = '\0';
+                    std::strncpy(b->wifi.band, wd2.band.c_str(), sizeof(b->wifi.band) - 1);
+                    b->wifi.band[sizeof(b->wifi.band) - 1] = '\0';
+                    std::strncpy(b->wifi.wifiGen, wd2.wifiGen.c_str(), sizeof(b->wifi.wifiGen) - 1);
+                    b->wifi.wifiGen[sizeof(b->wifi.wifiGen) - 1] = '\0';
                     b->wifi.powerOn = wd2.powerOn;
                     b->wifi.isConnected = wd2.isConnected;
                     // Bluetooth
@@ -1395,7 +1415,13 @@ int main(int argc, char* argv[]) {
             int sleepMs = std::max(33 - loopMs, 5);  // 30 Hz update
             // Sleep with responsive exit (check every 5ms)
             for (int s = 0; s < 7 && !g_shouldExit.load(); ++s) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                if (logWindow.IsActive()) {
+                    // Pump the AppKit run loop so the log window refreshes and
+                    // stays responsive while the monitoring loop runs.
+                    tcmt::mac::MacLogWindow::PumpRunLoop(0.005);
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
             }
             // Push sensor snapshots to history logger
             if (historyLogger.IsRunning()) {
@@ -1450,6 +1476,7 @@ int main(int argc, char* argv[]) {
     }
 
     Logger::Info("Exiting, cleaning up...");
+    logWindow.Stop();
     tuiApp.Stop();
     TemperatureWrapper::Cleanup();
     historyLogger.Shutdown();
