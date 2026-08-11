@@ -302,10 +302,17 @@ int main(int argc, char* argv[]) {
 
     // ======================== Flags ========================
     bool jsonMode = false, httpMode = false;
+    bool serverInsecure = false;
+    std::string serverUrl = "http://127.0.0.1:8080";
+    if (const char* env = std::getenv("TCMT_SERVER")) {
+        if (env[0] != '\0') serverUrl = env;
+    }
     for (int i = 1; i < argc; ++i) {
         std::string a(argv[i]);
         if (a == "--json") jsonMode = true;
         if (a == "--http") httpMode = true;
+        if (a == "--server" && i + 1 < argc) serverUrl = argv[++i];
+        if (a == "--server-insecure") serverInsecure = true;
     }
 
     if (jsonMode) {
@@ -745,8 +752,12 @@ int main(int argc, char* argv[]) {
     // ServerProbe: push data to tcmt-server (if available)
     static ServerProbe s_probe;
     if (httpMode) {
-        if (s_probe.Start("http://127.0.0.1:8080"))
-            Logger::Info("ServerProbe: connected to tcmt-server");
+        if (serverInsecure) s_probe.SetInsecure(true);
+        Logger::Info("ServerProbe: target " + serverUrl);
+        if (s_probe.Start(serverUrl))
+            Logger::Info("ServerProbe: upload started");
+        else
+            Logger::Warn("ServerProbe: cannot start (invalid URL or no TLS support)");
     }
 
     // Start history logger (SQLite)
@@ -1403,8 +1414,10 @@ int main(int argc, char* argv[]) {
 
             } // isHeavyFrame
 
-            // Push snapshot to tcmt-server
-            if (httpMode && s_probe.Token().size() > 0) {
+            // Push snapshot to tcmt-server. Heavy-frame only (~1Hz): cpu/mem/gpu
+            // values are only populated on heavy frames, so pushing every loop
+            // would upload mostly zeros.
+            if (httpMode && isHeavyFrame && s_probe.Token().size() > 0) {
                 char snap[1024];
                 snprintf(snap, sizeof(snap),
                     "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"
@@ -1430,8 +1443,8 @@ int main(int argc, char* argv[]) {
             for (int s = 0; s < 7 && !g_shouldExit.load(); ++s) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
-            // Push sensor snapshots to history logger
-            if (historyLogger.IsRunning()) {
+            // Push sensor snapshots to history logger (heavy-frame only, same reason)
+            if (isHeavyFrame && historyLogger.IsRunning()) {
                 auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
                 std::vector<SensorSnapshot> snapshots;

@@ -1,0 +1,14 @@
+{
+  "name": "tcmt-server",
+  "version": "0.2.0",
+  "description": "TCMT-M relay/organizer: ingests snapshots from TCMT-M clients, keeps recent history, serves REST + WebSocket, and hosts the pure-display viewer.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "GPL-3.0"
+}

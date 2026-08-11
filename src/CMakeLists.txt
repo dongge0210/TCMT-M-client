@@ -253,6 +253,29 @@ elseif(TCMT_LINUX)
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
 endif()
 
+# ── Optional TLS for ServerProbe (https upload to public internet) ──
+if(TCMT_MACOS OR TCMT_LINUX)
+    find_package(OpenSSL QUIET)
+    if(NOT OPENSSL_FOUND)
+        foreach(_openssl_hint
+                /opt/homebrew/opt/openssl@3
+                /usr/local/opt/openssl@3
+                /usr/local/opt/openssl)
+            if(EXISTS "${_openssl_hint}")
+                list(APPEND CMAKE_PREFIX_PATH "${_openssl_hint}")
+            endif()
+        endforeach()
+        find_package(OpenSSL QUIET)
+    endif()
+    if(OPENSSL_FOUND)
+        message(STATUS "OpenSSL ${OPENSSL_VERSION} found — ServerProbe https enabled")
+        target_compile_definitions(TCMTCore PRIVATE TCMT_USE_TLS)
+        target_link_libraries(TCMTCore PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    else()
+        message(WARNING "OpenSSL not found — ServerProbe https disabled (use http:// or install openssl)")
+    endif()
+endif()
+
 # SQLite3 — pre-generated amalgamation from the sqlite submodule.
 # Amalgamation files are committed directly (no CI-time generation needed).
 # To regenerate: cd src/third_party/sqlite && ./configure && make sqlite3.c

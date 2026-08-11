@@ -137,3 +137,6 @@ enc_temp_folder/
 
 # Avalonia build server artifacts
 **/BuildServices/
+
+# tcmt-server runtime state (device registry, snapshots)
+server/data/

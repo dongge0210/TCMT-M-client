@@ -15,6 +15,8 @@ TCMT-Windows-client/
 |-- LICENSE                                 -- GPL-3.0
 |-- README.md                               -- Project overview (zh)
 |-- README-WF.md                            -- Submodule licenses
+|-- server/                                 -- 中转/整理 server（Node 零依赖，REST+WS，托管 viewer）
+|-- viewer/                                 -- 纯展示网页仪表盘（多设备总览，原生 HTML/CSS/JS）
 |-- TCMT.sln                                -- Visual Studio solution
 |-- TCMT.vcxproj                            -- Visual Studio project (Win32 C++/CLI)
 |-- TCMT.vcxproj.filters                    -- VS project filters

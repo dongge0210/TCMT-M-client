@@ -1,5 +1,45 @@
 # Session State (2026-08-08)
 
+## 2026-08-11 追加 — server + viewer（跨设备，纯网络）
+
+### 目标
+- 角色划分：client（TCMT-M）负责采集 → **server** 中转/整理/托管页面 → **viewer** 纯展示
+- 跨设备、仅通过网络连接（client/server/viewer 可以在不同机器）
+
+### 新增（两个独立新文件夹）
+- `server/`（Node.js，零依赖）：兼容现有 `ServerProbe` 协议（`POST /api/register` +
+  `/api/ingest`，端口 8080），另加：
+  - 设备幂等注册（同主机名复用同一设备，重启不膨胀列表）
+  - 内存环形历史（每设备 1800 条 ≈1h @1Hz）、字段索引、派生 summary/temperatures
+  - REST：`/ping` `/api/devices` `/api/devices/:id[/latest|summary|fields|history|temperatures|任意字段]`
+  - WebSocket `/ws`：设备列表 0.5s 广播 + snapshot 实时推送（stdlib 实现 RFC-6455）
+  - 默认监听 `0.0.0.0`，启动打印 LAN URL；`--host`/`--port`/`--data-dir` 可配
+- `viewer/`（原生 HTML/CSS/JS，无构建）：多设备总览条（同屏所有设备：在线/CPU/内存/GPU/温度，
+  实时更新），点击卡片或下拉切换详情；详情含仪表盘、运动传感器、温度列表、字段索引、历史曲线
+
+### client 改动（macOS）
+- `ServerProbe` 不再硬编码 127.0.0.1:8080：解析 URL（支持 IP/主机名/base path），
+  `RawPost` 改用 `getaddrinfo` 支持主机名
+- `main_mac.cpp` 新增 `--server <url>` 参数（环境变量 `TCMT_SERVER` 兜底）
+- **修复推送全 0 bug**：`data` 每帧重建，CPU/内存/GPU 只在 heavy frame（1Hz）填充，
+  而 ServerProbe/HistoryLogger 每帧都推 → 大部分是 0；两处均改为 `isHeavyFrame` 时才推
+
+### 验证（本机）
+- 模拟两设备（MacBook/Desktop）注册+推送，REST/WS/静态页面全部通过；token 不入 latest
+- 真实链路：`./build/src/TCMT-M --http --server http://192.168.226.125:8080`
+  注册成功（复用 dev_06b876）、快照实时更新（CPU 31.7% / 内存 11.5/16GB / lid 112° / hb 206）
+- NAT/公网：server 支持 `--auth-token`（读接口+WS）、`--tls-cert/--tls-key`
+  （HTTPS/WSS）、`--public-url`；client 支持 `https://`（CMake 自动找 OpenSSL 3.6.2）、
+  `--server-insecure`、8s 超时、401 自动重注册、`~/.tcmt/client.json` 持久化身份
+  （clientKey，不依赖 IP/主机名）。实测：HTTPS 端到端 + wss 握手 + 重启复用同设备 id
+- 注意：读接口默认无鉴权，公网务必开 `--auth-token` + TLS
+
+### 待办/注意
+- Windows `main.cpp` 未接入 ServerProbe（需 Winsock 移植）
+- 历史目前仅在内存（重启清空）；需要长期落盘可加 JSONL/SQLite
+- TLS 仅在 macOS/Linux 客户端编译（`find_package(OpenSSL)` 未命中时退化为纯 http）
+- `--json`/MCP 等模式不受影响
+
 ## 2026-08-11 — macOS 适配（dev 拉取后恢复构建）
 
 ### 背景
