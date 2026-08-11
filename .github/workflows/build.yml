@@ -248,7 +248,9 @@ jobs:
           Artifacts:
           - TCMT-Windows-x64-alpha.zip
           - TCMT-macOS-arm64-alpha.zip
-        draft: false
+        # Immutable-release repos only allow asset uploads to drafts;
+        # publish the release manually afterwards to avoid upload errors.
+        draft: true
         prerelease: true
         files: |
           artifacts/TCMT-Windows-x64-alpha.zip
