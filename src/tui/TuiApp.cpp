@@ -1184,7 +1184,10 @@ void TuiApp::Run() {
                 if (avaloniaCount > 0) parts += "Avalonia x" + std::to_string(avaloniaCount) + " ";
                 if (mcpCount > 0) parts += "MCP x" + std::to_string(mcpCount) + " ";
                 if (unknownCount > 0) parts += "? x" + std::to_string(unknownCount) + " ";
-                auto connStr = "IPC: " + parts;
+                std::string connStr;
+                if (!parts.empty()) connStr += "IPC: " + parts;
+                if (data.httpClientCount > 0)
+                    connStr += "Web x" + std::to_string(data.httpClientCount) + " ";
                 if (!data.connectionSince.empty())
                     connStr += "since " + data.connectionSince;
                 int color = 2;

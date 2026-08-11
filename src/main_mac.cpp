@@ -733,9 +733,10 @@ int main(int argc, char* argv[]) {
                 s_ax, s_ay, s_az, s_gx, s_gy, s_gz, s_lidAngle, s_heartbeat, s_imut);
             return std::string(buf);
         }
-        extern int s_connCount;
         if (path == "/system/ping" && method == "GET") {
-            char buf[128]; snprintf(buf, sizeof(buf), "{\"status\":\"ok\",\"conns\":%d}", s_connCount); return std::string(buf);
+            char buf[128];
+            snprintf(buf, sizeof(buf), "{\"status\":\"ok\",\"conns\":%d}", s_http.OpenClients());
+            return std::string(buf);
         }
         return "{}";
     });
@@ -798,7 +799,9 @@ int main(int argc, char* argv[]) {
             tcmt::TuiData data;
             data.osVersion = os.GetVersion();
             data.hardwareModel = os.GetModel();
-            data.connectionCount = ipcServer.GetClientCount();
+            data.connectionCount = ipcServer.GetClientCount()
+                                 + (httpMode ? s_http.ActiveClients() : 0);
+            data.httpClientCount = httpMode ? s_http.ActiveClients() : 0;
             auto ct = ipcServer.GetClientTypes();
             data.clientTypes.clear();
             for (auto t : ct) data.clientTypes.push_back(static_cast<uint8_t>(t));

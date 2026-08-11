@@ -151,6 +151,7 @@ struct TuiData {
     int connectionCount = 0;
     std::string connectionSince;
     std::vector<uint8_t> clientTypes;  // ClientType values per connection
+    int httpClientCount = 0;           // local motion HTTP server clients (macOS)
 
     // TPM
     std::string tpmInfo;
