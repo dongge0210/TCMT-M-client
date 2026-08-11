@@ -75,7 +75,9 @@ jobs:
               const runs = sarif.runs || [];
               if (runs.length <= 1) { console.log("single run, nothing to merge"); process.exit(0); }
               const merged = runs[0];
-              const rules = Array.isArray(merged.rules) ? merged.rules.slice() : [];
+              merged.tool = merged.tool || {};
+              merged.tool.driver = merged.tool.driver || {};
+              const rules = Array.isArray(merged.tool.driver.rules) ? merged.tool.driver.rules.slice() : [];
               const ruleIndex = new Map();
               rules.forEach((r, i) => { if (r && r.id) ruleIndex.set(r.id, i); });
               merged.results = Array.isArray(merged.results) ? merged.results.slice() : [];
@@ -94,7 +96,7 @@ jobs:
                   merged.results.push(copy);
                 }
               }
-              merged.rules = rules;
+              merged.tool.driver.rules = rules;
               sarif.runs = [merged];
               fs.writeFileSync(p, JSON.stringify(sarif));
               console.log("merged " + runs.length + " SARIF runs into 1");
