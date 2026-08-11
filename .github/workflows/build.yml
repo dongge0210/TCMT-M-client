@@ -30,7 +30,7 @@ jobs:
 
     - name: Cache CUDA
       id: cache-cuda
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
         key: cuda-13.2.0
@@ -76,7 +76,7 @@ jobs:
 
     - name: Save CUDA cache
       if: steps.check-cuda.outputs.cuda_found != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
         key: cuda-13.2.0
@@ -237,7 +237,7 @@ jobs:
         echo "tag=$TAG" >> $GITHUB_OUTPUT
 
     - name: Create Alpha Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3.0.2
       with:
         tag_name: ${{ steps.tag.outputs.tag }}
         name: Alpha ${{ steps.tag.outputs.tag }}
