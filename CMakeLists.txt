@@ -2,6 +2,14 @@
 # Supports Windows and macOS platforms with conditional compilation
 
 cmake_minimum_required(VERSION 3.20)
+
+# macOS deployment target & architecture (must be set BEFORE project())
+# Supports macOS 15+ on arm64 (Apple Silicon) and x86_64 (Intel, until Apple drops support)
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS deployment target")
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+endif()
+
 project(TCMT-M
     VERSION 0.14.0
     DESCRIPTION "TCMT Windows Client - Cross-platform hardware monitoring tool"

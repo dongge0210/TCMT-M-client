@@ -114,7 +114,7 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
         Logger::Info(std::string("IntelOobmsm: first PMT entry at 0x") + std::to_string(entryBase));
 
     // TODO: full PMT telemetry enumeration
-    // Reference: Intel PMT spec, LHM IntelOobmsm.cs
+    // Reference: Intel PMT spec
 
     return result;
 }

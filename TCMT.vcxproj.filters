@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -81,6 +81,9 @@
     <ClInclude Include="src\tui\LogBuffer.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\tui\LogWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\tui\TuiApp.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -115,6 +118,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\core\power\PowerMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\process\ProcessMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\temperature\BoardTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -194,6 +203,9 @@
     <ClCompile Include="src\tui\TuiApp.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\tui\LogWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\usb\UsbInfo.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -239,10 +251,19 @@
     <ClCompile Include="src\core\power\PowerMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\process\ProcessMonitor.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\etw\EtwMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\disk\SmartReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\third_party\sqlite-amalgamation\sqlite3.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\temperature\BoardTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

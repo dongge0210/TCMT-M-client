@@ -31,6 +31,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isConnected;
 
     [ObservableProperty]
+    private string _appVersion = "0.14.0";
+
+    [ObservableProperty]
     private ObservableObject? _currentPage;
 
     public ObservableCollection<NavigationItem> NavigationItems { get; } = new();
@@ -47,6 +50,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         MemoryViewModel memoryVm,
         NetworkViewModel networkVm,
         StorageViewModel storageVm,
+        GpuViewModel gpuVm,
+        TemperaturesViewModel temperaturesVm,
         SettingsViewModel settingsVm)
     {
         _hardwareService = hardwareService;
@@ -54,12 +59,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _themeService = themeService;
 
         // Setup navigation items
-        NavigationItems.Add(new NavigationItem("概览", "📊", dashboardVm));
-        NavigationItems.Add(new NavigationItem("CPU", "🖥️", cpuVm));
-        NavigationItems.Add(new NavigationItem("内存", "🧠", memoryVm));
-        NavigationItems.Add(new NavigationItem("网络", "🌐", networkVm));
-        NavigationItems.Add(new NavigationItem("存储", "💾", storageVm));
-        NavigationItems.Add(new NavigationItem("设置", "⚙️", settingsVm));
+        NavigationItems.Add(new NavigationItem("概览", "dashboard", dashboardVm));
+        NavigationItems.Add(new NavigationItem("CPU", "cpu", cpuVm));
+        NavigationItems.Add(new NavigationItem("内存", "memory", memoryVm));
+        NavigationItems.Add(new NavigationItem("GPU", "gpu", gpuVm));
+        NavigationItems.Add(new NavigationItem("温度", "temperature", temperaturesVm));
+        NavigationItems.Add(new NavigationItem("网络", "network", networkVm));
+        NavigationItems.Add(new NavigationItem("存储", "storage", storageVm));
+        NavigationItems.Add(new NavigationItem("设置", "settings", settingsVm));
 
         // Wire up navigation
         _navigationService.Navigated += (_, vm) => CurrentPage = vm;
@@ -90,6 +97,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedNavigationItemChanged(NavigationItem? value)
     {
+        // Update IsSelected on all items
+        foreach (var item in NavigationItems)
+        {
+            item.IsSelected = item == value;
+        }
+
         if (value?.ViewModel != null)
         {
             _navigationService.NavigateTo(value.ViewModel);
@@ -98,6 +111,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnHardwareDataReceived(object? sender, SystemInfo info)
     {
+        // Update app version from IPC
+        if (!string.IsNullOrEmpty(info.Version))
+            AppVersion = info.Version;
+
         // Broadcast to all view models
         foreach (var item in NavigationItems)
         {
@@ -168,11 +185,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 }
 
-public class NavigationItem
+public class NavigationItem : ObservableObject
 {
     public string Title { get; }
     public string Icon { get; }
     public ViewModelBase ViewModel { get; }
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
 
     public NavigationItem(string title, string icon, ViewModelBase viewModel)
     {

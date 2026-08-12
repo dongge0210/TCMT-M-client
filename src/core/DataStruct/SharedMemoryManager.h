@@ -1,5 +1,6 @@
 #pragma once
 #include "DataStruct.h"
+#include "../IPC/IPCData.h"
 #include <string>
 
 // Shared memory management class to avoid multiple definitions
@@ -12,7 +13,7 @@ private:
     static void* shmPtr;    // POSIX: pointer to shared memory object info
     #endif
 
-    static SharedMemoryBlock* pBuffer;
+    static tcmt::ipc::IPCDataBlock* pBuffer;
     static std::string lastError; // Store last error message
     static void* interprocessMutex; // Platform-specific interprocess mutex
 
@@ -27,7 +28,7 @@ public:
     static void CleanupSharedMemory();
 
     // Get buffer pointer (if needed)
-    static SharedMemoryBlock* GetBuffer() { return pBuffer; }
+    static tcmt::ipc::IPCDataBlock* GetBuffer() { return pBuffer; }
 
     // Get last error message
     static std::string GetLastError();
