@@ -17,7 +17,7 @@
     <RootNamespace>TCMT</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
-    <WindowsTargetPlatformMinVersion>10.0.26100.0</WindowsTargetPlatformMinVersion>
+    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -81,7 +81,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <CompileAsManaged>false</CompileAsManaged>
       <CompileAsWinRT>false</CompileAsWinRT>
       <MultiProcessorCompilation>false</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;$(ProjectDir)src\core\Utils;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)\GeneratedFiles;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;$(ProjectDir)src\third_party\USBMonitor-cpp\include;$(ProjectDir)src\third_party\websocketpp;$(ProjectDir)src\third_party\sqlite-amalgamation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalUsingDirectories>$(WindowsSDK_MetadataPath);$(FrameworkPathOverride);$(DOTNET_ReferenceAssemblyPath_472);C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -96,6 +96,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <EnableUAC>false</EnableUAC>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -115,16 +116,16 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
 NOMINMAX;
 _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <ExceptionHandling>Async</ExceptionHandling>
       <AdditionalOptions>/Zc:__cplusplus /wd4005 /wd4244 /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <CLRSupport>false</CLRSupport>
-      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src\core\Utils;$(ProjectDir)src\core\Platform;$(WindowsSDK_MetadataPath);$(ProjectDir)src\core;$(ProjectDir)src;$(CUDA_PATH)\include;$(ProjectDir)src\third_party\PDCurses;$(ProjectDir)src\third_party\PDCurses\wincon;$(ProjectDir)src\CPP-parsers\include;$(ProjectDir)src\CPP-parsers\src;$(ProjectDir)src\CPP-parsers\extern\json\single_include;$(ProjectDir)src\third_party\USBMonitor-cpp\include;$(ProjectDir)src\third_party\websocketpp;$(ProjectDir)src\third_party\sqlite-amalgamation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <EnableUAC>false</EnableUAC>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -150,6 +151,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\network\NetworkAdapter.h" />
     <ClInclude Include="src\core\power\PowerInfo.h" />
     <ClInclude Include="src\core\power\PowerMonitor.h" />
+    <ClInclude Include="src\core\process\ProcessMonitor.h" />
     <ClInclude Include="src\core\os\OSInfo.h" />
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
     <ClInclude Include="src\core\Utils\Logger.h" />
@@ -168,6 +170,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\etw\EtwMonitor.h" />
     <ClInclude Include="src\tui\TuiApp.h" />
     <ClInclude Include="src\tui\LogBuffer.h" />
+    <ClInclude Include="src\tui\LogWindow.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Config\ConfigManager.cpp" />
@@ -179,6 +182,12 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\disk\SmartReader.cpp" />
     <ClCompile Include="src\core\gpu\GpuInfo.cpp" />
     <ClCompile Include="src\core\history\HistoryLogger.cpp" />
+    <ClCompile Include="src\third_party\sqlite-amalgamation\sqlite3.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>SQLITE_ENABLE_DBSTAT_VTAB;SQLITE_ENABLE_FTS5;SQLITE_ENABLE_JSON1;SQLITE_ENABLE_RTREE;SQLITE_THREADSAFE=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="src\core\IPC\IPCClient.cpp" />
     <ClCompile Include="src\core\IPC\IPCServer.cpp" />
     <ClCompile Include="src\core\MCP\MCPServer.cpp" />
@@ -194,6 +203,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\network\NetworkAdapter.cpp" />
     <ClCompile Include="src\core\power\PowerInfo.cpp" />
     <ClCompile Include="src\core\power\PowerMonitor.cpp" />
+    <ClCompile Include="src\core\process\ProcessMonitor.cpp" />
     <ClCompile Include="src\core\os\OSInfo.cpp" />
     <ClCompile Include="src\core\Platform\Platform_Windows.cpp" />
     <ClCompile Include="src\core\bluetooth\BluetoothInfo.cpp" />
@@ -214,7 +224,11 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\Utils\TpmBridge.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\tui\TuiApp.cpp" />
+    <ClCompile Include="src\tui\LogWindow.cpp" />
     <ClCompile Include="src\core\etw\EtwMonitor.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="src\tcmt.manifest" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib">

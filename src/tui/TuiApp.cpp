@@ -62,9 +62,13 @@ namespace tcmt {
 // TuiApp
 // ============================================================================
 
+#ifndef TCMT_WINDOWS
 TuiApp::TuiApp() {
     logBuf_ = &defaultBuffer_;
 }
+#else
+TuiApp::TuiApp() {}
+#endif
 
 TuiApp::~TuiApp() {
     Stop();
@@ -77,7 +81,9 @@ void TuiApp::Start() {
 }
 
 void TuiApp::Stop() {
-    if (!running_.load()) return;
+    // Always join if a thread exists. The TUI thread sets running_ = false
+    // itself when quitting via 'q', so an early return here would leave
+    // thread_ joinable and std::terminate() in ~thread at scope exit.
     running_ = false;
     if (thread_.joinable()) {
         thread_.join();
@@ -95,13 +101,11 @@ void TuiApp::UpdateData(const TuiData& data) {
     data_ = data;
 }
 
-LogBuffer& TuiApp::GetLogBuffer() {
-    return defaultBuffer_;
-}
-
+#ifndef TCMT_WINDOWS
 void TuiApp::SetLogBuffer(LogBuffer* buf) {
     logBuf_ = buf ? buf : &defaultBuffer_;
 }
+#endif
 
 void TuiApp::InitColors() {
     if (!has_colors()) return;
@@ -365,6 +369,13 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
             mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
         lines++;
     }
+    for (const auto& gf : data.gpuFans) {
+        if (gf.isRpm)
+            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d RPM", gf.index, gf.speedRpm);
+        else
+            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d%%", gf.index, gf.speedRpm);
+        lines++;
+    }
     return lines;
 }
 
@@ -445,8 +456,8 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     if (data.hasWiFi) {
         bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
         std::string wifiStr;
-        if (data.wifiLocationDenied) {
-            wifiStr = "On  SSID unavailable (Location Services)";
+        if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+            wifiStr = "On  SSID unavailable (Location Services denied)";
         } else {
             wifiStr = hasData ? "On" : "Disconnected";
             if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
@@ -464,6 +475,24 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattroff(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
         lines++;
+
+        // Location Services guidance — show the user where to grant SSID
+        // access BEFORE expecting the SSID field (macOS 15+).
+        if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+            mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "> Location Services, allow TCMT-M");
+            lines++;
+        } else if (data.wifiLocationStatus == 0) {
+            mvwprintw(win, y + lines, x0 + 2, "Location not granted, SSID hidden");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "Press R to request Location Services");
+            lines++;
+            mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+            lines++;
+        }
     } else {
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
@@ -528,9 +557,26 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
 
     for (const auto& pd : data.physicalDisks) {
         if (y + lines >= LINES - 5) break;
+        // Show model + type, then whatever health data is available.
+        // Pool disks may have health% from WMI but no direct SMART access,
+        // so we display partial data instead of a blank line.
         std::string line = pd.model;
         if (!pd.diskType.empty()) line += " " + pd.diskType;
-        if (pd.smartSupported) { char b[8]; snprintf(b, sizeof(b), " %d%%", pd.healthPct); line += b; }
+        {
+            char buf[128];
+            int off = 0;
+            if (pd.smartSupported && pd.healthPct > 0)
+                off += snprintf(buf + off, sizeof(buf) - off, " %d%%", pd.healthPct);
+            else
+                off += snprintf(buf + off, sizeof(buf) - off, " N/A");
+            if (pd.temperature > 0)
+                off += snprintf(buf + off, sizeof(buf) - off, " %.0fC", pd.temperature);
+            if (pd.smartSupported && pd.powerOnHours > 0)
+                off += snprintf(buf + off, sizeof(buf) - off, " %lluh", pd.powerOnHours);
+            if (pd.smartSupported && pd.wearLeveling > 0 && pd.wearLeveling <= 1.0)
+                off += snprintf(buf + off, sizeof(buf) - off, " WL%.0f%%", pd.wearLeveling * 100.0);
+            line += buf;
+        }
         line = TrimRight(line, maxW - 2);
         mvwprintw(win, y + lines++, x0, "%.*s", maxW, line.c_str());
     }
@@ -729,11 +775,107 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     return lines;
 }
 
+// ─── Per-Core Sensor Panel ───
+int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 20 || data.perCoreCount == 0) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Per-Core Sensors");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    int count = std::min((int)data.perCoreCount, 16);
+    // Compact header: Core#0  Core#1  Core#2 ...
+    for (int i = 0; i < count; i++) {
+        int offset = x0 + 2 + i * 8;
+        if (offset + 7 > maxW) break;
+        mvwprintw(win, y + lines, offset, "C%02d", i);
+    }
+    lines++;
+    // Temperature row
+    for (int i = 0; i < count; i++) {
+        int offset = x0 + 2 + i * 8;
+        if (offset + 7 > maxW) break;
+        int t = static_cast<int>(data.perCoreTemp[i]);
+        int color = (t >= 80) ? 4 : (t >= 60) ? 3 : 2;
+        wattron(win, COLOR_PAIR(color));
+        mvwprintw(win, y + lines, offset, "%4d°", t);
+        wattroff(win, COLOR_PAIR(color));
+    }
+    lines++;
+    // Frequency row
+    for (int i = 0; i < count; i++) {
+        int offset = x0 + 2 + i * 8;
+        if (offset + 7 > maxW) break;
+        int f = static_cast<int>(data.perCoreFreq[i]);
+        if (f > 0)
+            mvwprintw(win, y + lines, offset, "%4dM", f);
+        else
+            mvwprintw(win, y + lines, offset, "    -");
+    }
+    lines++;
+    return lines + 1;
+}
+
+// ─── Network Traffic Sparkline ───
+// Unicode block characters: ▁▂▃▄▅▆▇█ (U+2581 through U+2588)
+static const char* SPARK_CHARS = " ▁▂▃▄▅▆▇█";
+
+int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 20 || data.dlHistoryLen < 2) return 0;
+
+    int graphW = std::min(maxW - 14, data.dlHistoryLen);
+    if (graphW < 4) return 0;
+
+    wattron(win, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(win, y, x0, "%.*s", maxW, "Traffic");
+    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    int lines = 1;
+
+    // Find max for scaling
+    uint64_t maxVal = 1;
+    for (int i = 0; i < data.dlHistoryLen; i++) {
+        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        uint64_t v = data.dlHistory[idx];
+        if (v > maxVal) maxVal = v;
+        v = data.ulHistory[idx];
+        if (v > maxVal) maxVal = v;
+    }
+
+    // "D:" + sparkline (blue)
+    std::string dlSpark;
+    for (int i = graphW - 1; i >= 0; i--) {
+        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        int level = (maxVal > 0) ? (int)(data.dlHistory[idx] * 7 / maxVal) : 0;
+        if (level < 0) level = 0; if (level > 7) level = 7;
+        dlSpark += SPARK_CHARS[level];
+    }
+    wattron(win, COLOR_PAIR(6));
+    mvwprintw(win, y + lines, x0 + 2, "D:%s", dlSpark.c_str());
+    wattroff(win, COLOR_PAIR(6));
+    lines++;
+
+    // "U:" + sparkline (green) using pair 2
+    std::string ulSpark;
+    for (int i = graphW - 1; i >= 0; i--) {
+        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        int level = (maxVal > 0) ? (int)(data.ulHistory[idx] * 7 / maxVal) : 0;
+        if (level < 0) level = 0; if (level > 7) level = 7;
+        ulSpark += SPARK_CHARS[level];
+    }
+    wattron(win, COLOR_PAIR(2));
+    mvwprintw(win, y + lines, x0 + 2, "U:%s", ulSpark.c_str());
+    wattroff(win, COLOR_PAIR(2));
+    lines++;
+
+    return lines + 1;
+}
+
 int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 15 || data.topProcesses.empty()) return 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Processes (Top by Memory)");
+    mvwprintw(win, y, x0, "%.*s", maxW, "Processes (PID Monitor)");
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
@@ -772,6 +914,77 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 
     return lines + 1;  // +1 bottom padding
 }
+
+#ifndef TCMT_WINDOWS
+// ────────────────────────────────────────────────────────────────────────────
+// Log page — full-screen scrolling log view inside the main TUI (macOS/Linux).
+// Data comes from the in-process Logger log buffer (no IPC, no files).
+// Windows uses the standalone Win32 LogWindow instead (dashboard-only console).
+// ────────────────────────────────────────────────────────────────────────────
+void TuiApp::RenderLogPage(int rows, int cols, int ch) {
+    if (ch == KEY_UP) { logScrollOffset_++; logFollow_ = false; }
+    else if (ch == KEY_DOWN) {
+        if (logScrollOffset_ > 0) logScrollOffset_--;
+        else logFollow_ = true;
+    }
+    else if (ch == KEY_PPAGE) { logScrollOffset_ += 10; logFollow_ = false; }
+    else if (ch == KEY_NPAGE) {
+        logScrollOffset_ = (std::max)(0, logScrollOffset_ - 10);
+        if (logScrollOffset_ == 0) logFollow_ = true;
+    }
+    else if (ch == KEY_HOME) { logFollow_ = true; logScrollOffset_ = 0; }
+    else if (ch == KEY_END)  { logFollow_ = true; logScrollOffset_ = 0; }
+    else if (ch == 'f' || ch == 'F') {
+        logFollow_ = !logFollow_;
+        if (logFollow_) logScrollOffset_ = 0;
+    }
+
+    std::vector<std::string> lines;
+    if (logBuf_)
+        lines = logBuf_->GetRecent(LogBuffer::MAX_LINES);
+
+    erase();
+
+    std::string topBot(cols, '-');
+    mvwprintw(stdscr, 0, 0, "%s", topBot.c_str());
+    mvwprintw(stdscr, rows - 1, 0, "%s", topBot.c_str());
+
+    std::string header = " TCMT Log    lines: " + std::to_string(lines.size()) +
+                         "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]") +
+                         "    q=quit l=dashboard f=follow";
+    wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+    mvwprintw(stdscr, 1, 1, "%.*s", cols - 2, header.c_str());
+    wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+
+    int contentRows = rows - 3;
+    int total = static_cast<int>(lines.size());
+    int start = 0;
+    if (logFollow_) {
+        start = (std::max)(0, total - contentRows);
+    } else {
+        start = (std::max)(0, total - logScrollOffset_ - contentRows);
+    }
+
+    if (total == 0) {
+        mvwprintw(stdscr, 2, 2, "暂无日志... (l 返回 dashboard)");
+    }
+
+    for (int r = 0; r < contentRows; ++r) {
+        int idx = start + r;
+        if (idx >= total) break;
+        const std::string& entry = lines[idx];
+        int color = 2;
+        if (entry.find("[ERROR]") != std::string::npos) color = 4;
+        else if (entry.find("[WARN]") != std::string::npos) color = 3;
+        else if (entry.find("[DEBUG]") != std::string::npos) color = 6;
+
+        std::string disp = utf8_truncate(entry, cols - 3);
+        wattron(stdscr, COLOR_PAIR(color));
+        mvwprintw(stdscr, 2 + r, 1, "%.*s", cols - 2, disp.c_str());
+        wattroff(stdscr, COLOR_PAIR(color));
+    }
+}
+#endif
 
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
@@ -812,7 +1025,15 @@ void TuiApp::Run() {
             running_ = false;
             break;
         }
-
+        if ((ch == 'r' || ch == 'R') && locationRequestHandler_) {
+            locationRequestHandler_();
+        }
+#ifndef TCMT_WINDOWS
+        if (ch == 'l' || ch == 'L' || ch == '\t') {
+            logPage_ = !logPage_;
+            clear();
+        }
+#endif
         if (rows < 24 || cols < 80) {
             clear();
             mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
@@ -820,6 +1041,18 @@ void TuiApp::Run() {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
+
+#ifndef TCMT_WINDOWS
+        // Log page — in-process full-screen log view (Tab / L to switch back)
+        if (logPage_) {
+            RenderLogPage(rows, cols, ch);
+            refresh();
+            for (int i = 0; i < 3 && running_.load(); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            continue;
+        }
+#endif
 
         TuiData data;
         {
@@ -882,6 +1115,9 @@ void TuiApp::Run() {
             if (ly < maxY) {
                 ly += DrawProcessPanel(stdscr, data, ly, lx, leftW);
             }
+            if (ly < maxY) {
+                ly += DrawCorePanel(stdscr, data, ly, lx, leftW);
+            }
         }
         if (ly > maxY) ly = maxY;
 
@@ -894,6 +1130,9 @@ void TuiApp::Run() {
             }
             if (ry < maxY) {
                 ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawNetGraphPanel(stdscr, data, ry, rx, rightW);
             }
             // WiFi & Bluetooth supplementary info after Network
             if (ry < maxY) {
@@ -945,7 +1184,10 @@ void TuiApp::Run() {
                 if (avaloniaCount > 0) parts += "Avalonia x" + std::to_string(avaloniaCount) + " ";
                 if (mcpCount > 0) parts += "MCP x" + std::to_string(mcpCount) + " ";
                 if (unknownCount > 0) parts += "? x" + std::to_string(unknownCount) + " ";
-                auto connStr = "IPC: " + parts;
+                std::string connStr;
+                if (!parts.empty()) connStr += "IPC: " + parts;
+                if (data.httpClientCount > 0)
+                    connStr += "Web x" + std::to_string(data.httpClientCount) + " ";
                 if (!data.connectionSince.empty())
                     connStr += "since " + data.connectionSince;
                 int color = 2;
@@ -954,30 +1196,6 @@ void TuiApp::Run() {
                 wattroff(stdscr, COLOR_PAIR(color));
             } else {
                 mvwprintw(stdscr, connTop, 14, "no clients connected");
-            }
-        }
-
-        int logEnd = showConn ? connTop - 1 : sysTop;
-        int logSpace = logEnd - contentEnd - 2;
-        // === Log panel (sacrificial) ===
-        if (logSpace > 1) {
-            int logTop = contentEnd + 1;
-            mvwprintw(stdscr, logTop - 1, 1, "%.*s", cols - 2, logSep.c_str());
-            mvwprintw(stdscr, logTop, 1, "Log");
-            int logLinesAvail = std::max(0, logEnd - logTop - 1);
-            if (logLinesAvail > 0) {
-                auto logEntries = logBuf_->GetRecent(logLinesAvail);
-                for (size_t i = 0; i < logEntries.size() && static_cast<int>(i) < logLinesAvail; ++i) {
-                    const auto& entry = logEntries[i];
-                    int color = 2;
-                    if (entry.find("[ERROR]") != std::string::npos) color = 4;
-                    else if (entry.find("[WARN]") != std::string::npos) color = 3;
-                    else if (entry.find("[DEBUG]") != std::string::npos) color = 6;
-                    wattron(stdscr, COLOR_PAIR(color));
-                    mvwprintw(stdscr, logTop + 1 + static_cast<int>(i), 2, "%.*s",
-                              cols - 4, entry.c_str());
-                    wattroff(stdscr, COLOR_PAIR(color));
-                }
             }
         }
 

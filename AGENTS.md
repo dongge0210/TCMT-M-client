@@ -14,7 +14,6 @@ dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 # ─── Windows (x64, VS 2022/VS 2026 ) ───
 # Build order is critical (sln dependencies)
 git submodule update --init --recursive
-dotnet build src/third_party/LibreHardwareMonitor/LibreHardwareMonitorLib/LibreHardwareMonitorLib.csproj -c Release -f net472
 msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 cd AvaloniaUI && dotnet build AvaloniaUI.csproj -c Release
@@ -39,7 +38,7 @@ cd AvaloniaUI && dotnet build AvaloniaUI.csproj -c Release
 
 ## Submodules
 
-8 submodules in `src/third_party/` plus `src/CPP-parsers/`. CPP-parsers (dongge0210 fork) has **5 nested extern submodules** (inih, json, tinyxml2, tomlplusplus, yaml-cpp). Always use `--recursive`:
+10 submodules in `src/third_party/` plus `src/CPP-parsers/`. CPP-parsers (dongge0210 fork) has **5 nested extern submodules** (inih, json, tinyxml2, tomlplusplus, yaml-cpp). Always use `--recursive`:
 ```bash
 git submodule update --init --recursive
 ```

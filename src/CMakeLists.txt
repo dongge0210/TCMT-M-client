@@ -46,9 +46,12 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/display/DisplayInfo.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/battery/BatteryHealth.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/fan/FanSpeed.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessTop.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/als/ALSensor.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/accel/SpsManager.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/HTTPServer/MotionHTTPServer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/ServerProbe.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
     )
@@ -59,6 +62,7 @@ if(TCMT_WINDOWS)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/etw/EtwMonitor.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessMonitor.cpp
     )
 endif()
 
@@ -99,9 +103,7 @@ set(TEMP_SOURCES "")
 set(TEMP_SOURCES_WINDOWS "")
 if(TCMT_WINDOWS)
     list(APPEND TEMP_SOURCES_WINDOWS
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/TemperatureWrapper.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/WMIManager.cpp
     )
     list(APPEND TEMP_SOURCES ${TEMP_SOURCES_WINDOWS})
@@ -119,6 +121,19 @@ if(TCMT_WINDOWS OR TCMT_MACOS OR TCMT_LINUX)
     list(APPEND TUI_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/tui/TuiApp.cpp
     )
+endif()
+if(TCMT_WINDOWS)
+    # Standalone log window is Win32-only
+    list(APPEND TUI_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/tui/LogWindow.cpp
+    )
+elseif(TCMT_MACOS)
+    # In-process native log window (AppKit) — same-process mirror of LogWindow
+    list(APPEND TUI_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/tui/MacLogWindow.mm
+    )
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/tui/MacLogWindow.mm
+        PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 endif()
 
 # Curses library - platform specific
@@ -181,11 +196,13 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi
     ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth
     ${CMAKE_CURRENT_SOURCE_DIR}/core/battery
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/fan
     ${CMAKE_CURRENT_SOURCE_DIR}/core/process
     ${CMAKE_CURRENT_SOURCE_DIR}/core/als
     ${CMAKE_CURRENT_SOURCE_DIR}/core/accel
     ${CMAKE_CURRENT_SOURCE_DIR}/core/history
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils
 
     # CPP-parsers unified config interface
     ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/include
@@ -193,6 +210,10 @@ target_include_directories(TCMTCore PUBLIC
 
     # nlohmann/json (header-only) — single include
     ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/extern/json/single_include
+
+    # Third-party headers used on Windows (mirror TCMT.vcxproj include dirs)
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/USBMonitor-cpp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite-amalgamation
 )
 
 # Platform-specific defines
@@ -225,8 +246,10 @@ tcmt_set_output_directories(TCMTCore)
 if(TCMT_WINDOWS)
     # Windows: PDCurses - link with prebuilt or skip for now
     # target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARY})
-    # target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_PATH})
-    # For now, skip - will be added after PDCurses is built
+    target_include_directories(TCMTCore PRIVATE
+        ${CURSES_INCLUDE_PATH}
+        ${CURSES_INCLUDE_PATH}/wincon
+    )
     
 elseif(TCMT_MACOS)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
@@ -237,25 +260,37 @@ elseif(TCMT_LINUX)
     target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
 endif()
 
-# SQLite3 — built from src/third_party/sqlite submodule.
-# Uses the amalgamation (single-file build) for hermetic, version-pinned builds.
-set(SQLITE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
-set(SQLITE3_C "${SQLITE_DIR}/sqlite3.c")
-set(SQLITE3_H "${SQLITE_DIR}/sqlite3.h")
-
-# Generate amalgamation on first configure (requires jimsh/tclsh from submodule)
-if(NOT EXISTS "${SQLITE3_C}" OR NOT EXISTS "${SQLITE3_H}")
-    message(STATUS "Generating SQLite amalgamation...")
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E chdir "${SQLITE_DIR}"
-                sh -c "./configure > /dev/null 2>&1 && make sqlite3.c > /dev/null 2>&1"
-        RESULT_VARIABLE _sqlite_gen_rc
-        TIMEOUT 120
-    )
-    if(NOT _sqlite_gen_rc EQUAL 0)
-        message(FATAL_ERROR "SQLite amalgamation generation failed")
+# ── Optional TLS for ServerProbe (https upload to public internet) ──
+if(TCMT_MACOS OR TCMT_LINUX)
+    find_package(OpenSSL QUIET)
+    if(NOT OPENSSL_FOUND)
+        foreach(_openssl_hint
+                /opt/homebrew/opt/openssl@3
+                /usr/local/opt/openssl@3
+                /usr/local/opt/openssl)
+            if(EXISTS "${_openssl_hint}")
+                list(APPEND CMAKE_PREFIX_PATH "${_openssl_hint}")
+            endif()
+        endforeach()
+        find_package(OpenSSL QUIET)
+    endif()
+    if(OPENSSL_FOUND)
+        message(STATUS "OpenSSL ${OPENSSL_VERSION} found — ServerProbe https enabled")
+        target_compile_definitions(TCMTCore PRIVATE TCMT_USE_TLS)
+        target_link_libraries(TCMTCore PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    else()
+        message(WARNING "OpenSSL not found — ServerProbe https disabled (use http:// or install openssl)")
     endif()
 endif()
+
+# SQLite3 — pre-generated amalgamation from the sqlite submodule.
+# Amalgamation files are committed directly (no CI-time generation needed).
+# To regenerate: cd src/third_party/sqlite && ./configure && make sqlite3.c
+#                 then copy sqlite3.c sqlite3.h sqlite3ext.h to sqlite-amalgamation/
+set(SQLITE_AMALG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite-amalgamation")
+set(SQLITE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite")
+set(SQLITE3_C "${SQLITE_AMALG_DIR}/sqlite3.c")
+set(SQLITE3_H "${SQLITE_AMALG_DIR}/sqlite3.h")
 
 # Stage sqlite3.h to a clean include dir (source dir has files like 'version' that
 # break C++ compilation when exposed via PUBLIC include paths)
@@ -271,7 +306,7 @@ add_library(sqlite3 STATIC "${SQLITE3_C}")
 add_dependencies(sqlite3 sqlite3_header)
 target_include_directories(sqlite3
     PUBLIC  "${SQLITE_BIN_DIR}"       # sqlite3.h
-    PRIVATE "${SQLITE_DIR}"           # sqlite_cfg.h, sqlite3ext.h
+    PRIVATE "${SQLITE_SRC_DIR}"        # sqlite_cfg.h, sqlite3ext.h
 )
 target_compile_definitions(sqlite3 PRIVATE
     SQLITE_ENABLE_DBSTAT_VTAB
@@ -362,19 +397,7 @@ if(TCMT_WINDOWS)
     # Windows: use main.cpp (with TUI support via #ifdef)
     add_executable(TCMT-M
         ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-        # Windows-specific GPU bridge (C++/CLI)
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
     )
-
-    # C++/CLI support for Windows
-    if(MSVC)
-        set_source_files_properties(
-            ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/LibreHardwareMonitorBridge.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/LibreHardwareMonitorBridge.cpp
-            PROPERTIES
-            COMPILE_FLAGS "/clr"
-        )
-    endif()
 
 elseif(TCMT_MACOS)
     # macOS: use main_mac.cpp
@@ -389,6 +412,8 @@ elseif(TCMT_LINUX)
     )
 endif()
 
+target_compile_definitions(TCMTCore PUBLIC TCMT_VERSION_STR="${PROJECT_VERSION}")
+target_compile_definitions(TCMT-M PRIVATE APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
 
 set_target_properties(TCMT-M PROPERTIES
@@ -399,6 +424,10 @@ set_target_properties(TCMT-M PROPERTIES
 
 # Platform-specific exe settings
 if(TCMT_WINDOWS)
+    # Embed UAC requireAdministrator manifest (fixes double console window)
+    target_link_options(TCMT-M PRIVATE
+        /MANIFEST:EMBED /MANIFESTUAC:NO /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/tcmt.manifest
+    )
     if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         target_link_options(TCMT-M PRIVATE
             /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup
