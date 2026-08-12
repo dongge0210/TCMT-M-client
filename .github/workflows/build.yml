@@ -53,7 +53,7 @@ jobs:
 
     - name: Setup CUDA 13.2
       if: steps.check-cuda.outputs.cuda_found != 'true'
-      uses: Jimver/cuda-toolkit@v0.2.35
+      uses: Jimver/cuda-toolkit@v0.2.36
       with:
         cuda: '13.2.0'
 
