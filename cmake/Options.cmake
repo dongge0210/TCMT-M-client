@@ -1,14 +1,20 @@
 # Compilation options configuration for TCMT Client
 # 编译选项配置模块
 
+# MSVC /MP (multi-processor compilation). Disable for static-analysis jobs:
+# parallel cl.exe processes each emit a SARIF run, which upload-sarif rejects.
+option(TCMT_MP "Enable MSVC multi-processor compilation (/MP)" ON)
+
 function(tcmt_set_compile_options)
     message(STATUS "Setting compilation options...")
 
     # 全局编译选项
     if(MSVC)
         # MSVC编译器选项
+        if(TCMT_MP)
+            add_compile_options(/MP)   # 多处理器编译
+        endif()
         add_compile_options(
-            /MP           # 多处理器编译
             /EHsc         # C++异常处理
             /Zc:__cplusplus  # 启用正确的__cplusplus宏
             /permissive-  # 标准一致性模式
@@ -57,7 +63,7 @@ function(tcmt_set_compile_options)
         # 平台特定选项
         if(TCMT_MACOS)
             add_compile_options(
-                -mmacosx-version-min=11.0  # 最低macOS版本
+                -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}
             )
             # -stdlib=libc++ is C++-only; applying it to C files triggers
             # "unused during compilation" warning. Set via CXX flags only.
@@ -96,7 +102,7 @@ function(tcmt_set_compile_options)
     else()
         message(STATUS "  GCC/Clang options: -fvisibility=hidden -fstack-protector-strong")
         if(TCMT_MACOS)
-            message(STATUS "  macOS options: -mmacosx-version-min=11.0 -stdlib=libc++")
+            message(STATUS "  macOS options: -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET} -stdlib=libc++")
         elseif(TCMT_LINUX)
             message(STATUS "  Linux options: -pipe")
         endif()

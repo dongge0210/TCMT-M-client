@@ -17,6 +17,15 @@
 void DisplayInfo::Detect() {
     Clear();
 
+    // [NSScreen screens] aborts (SIGABRT via HIServices _RegisterApplication)
+    // in sessions without a WindowServer connection (degraded/background
+    // contexts). CGMainDisplayID() returns 0 there, so probe first and report
+    // no displays instead of crashing the whole monitor.
+    if (CGMainDisplayID() == 0) {
+        Logger::Debug("DisplayInfo: no WindowServer connection, skipping");
+        return;
+    }
+
     @autoreleasepool {
         NSArray<NSScreen*>* screens = [NSScreen screens];
         if (!screens || screens.count == 0) {

@@ -20,7 +20,7 @@ static std::vector<uint8_t> LoadRes(const wchar_t* name) {
     return std::vector<uint8_t>(data, data + size);
 }
 
-// PM table sensor descriptor — ported from LHM's SmuSensorType
+// PM table sensor descriptor
 // Type: 0=temp, 1=power, 2=current, 3=voltage, 4=clock
 struct SmuSensorDef {
     const char* name;
@@ -37,7 +37,6 @@ static float PmEntry(const uint64_t* raw, uint32_t index) {
 }
 
 // PM table sensor definitions for known Zen platforms (key = PM table version)
-// Source: LibreHardwareMonitor.LibreHardwareMonitorLib.Hardware.RyzenSMU
 static const std::map<uint32_t, std::map<uint32_t, SmuSensorDef>> kPmSensorMap = {
     // Zen 2 (Matisse)
     {0x00240903, {
@@ -95,7 +94,7 @@ static const std::map<uint32_t, std::map<uint32_t, SmuSensorDef>> kPmSensorMap =
 // PM table sizes by codename + version
 // Returns size in bytes, or 0 if unknown.
 static uint32_t GetPmTableSize(int64_t codeName, uint32_t pmVersion) {
-    // Codename values from LHM's CpuCodeName enum (GetCodeName returns these)
+    // Codename values (GetCodeName returns these)
     // Matisse=402, Vermeer=410, Raphael=415, Cezanne=412, Renoir=400
     // RavenRidge=405, RavenRidge2=406, Picasso=401
     switch (codeName) {

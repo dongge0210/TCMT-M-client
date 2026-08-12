@@ -9,82 +9,113 @@
              x:DataType="vm:StorageViewModel">
 
   <Design.DataContext>
-    <vm:StorageViewModel Title="Storage" />
+    <vm:StorageViewModel Title="存储" />
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*">
-    <!-- Header -->
-    <StackPanel Grid.Row="0" Margin="32,28,32,0">
-      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="存储与 SMART 信息" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-    </StackPanel>
+    <!-- TopBar matching pen design -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="磁盘" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="{Binding Disks.Count, StringFormat='{}{0} 驱动器'}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+    </Border>
 
-    <!-- Content -->
-    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
-      <StackPanel Spacing="20">
-        
-        <!-- Logical Disks -->
-        <Border Theme="{StaticResource CardBorder}">
-          <StackPanel Spacing="12">
-            <TextBlock Text="逻辑磁盘" Theme="{StaticResource SectionHeader}"/>
-            <ItemsControl ItemsSource="{Binding Disks}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="models:DiskData">
-                  <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
-                    <StackPanel Spacing="8">
-                      <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding UsageDisplay}" Foreground="{StaticResource PrimaryBrush}" FontSize="14" FontWeight="Bold"/>
-                      </Grid>
-                      <ProgressBar Value="{Binding UsagePercent}" Maximum="100" Height="6" Foreground="{StaticResource PrimaryBrush}" Background="{StaticResource BackgroundBrush}"/>
-                      <Grid ColumnDefinitions="*,*,*">
-                        <TextBlock Text="{Binding TotalSizeDisplay}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding UsedSpaceDisplay} 已用" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center"/>
-                        <TextBlock Grid.Column="2" Text="{Binding FreeSpaceDisplay} 可用" FontSize="11" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Right"/>
-                      </Grid>
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
+    <!-- DiskContent matching pen design -->
+    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
+      <StackPanel Spacing="14">
+
+        <!-- Drive cards matching pen design -->
+        <ItemsControl ItemsSource="{Binding Disks}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:DiskData">
+              <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                  <!-- Left: path + desc -->
+                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding FileSystem}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                  </StackPanel>
+                  <!-- Right: size + bar -->
+                  <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding UsedSpaceDisplay, StringFormat='{}{0} / '}" FontSize="13" Foreground="#238636" HorizontalAlignment="Right">
+                      <Run Text="{Binding TotalSizeDisplay}"/>
+                    </TextBlock>
+                    <Border Background="#0D1117" CornerRadius="2" Height="6" Width="160">
+                      <Border Background="#238636" CornerRadius="2" HorizontalAlignment="Left" Width="{Binding UsagePercent, Converter={StaticResource PercentToWidthConverter}}" Height="6"/>
+                    </Border>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Divider -->
+        <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+
+        <!-- Filtered note matching pen design -->
+        <Border Background="#161B2226" CornerRadius="6" Padding="12,8">
+          <TextBlock Text="已过滤: 系统卷、恢复分区、Preboot（隐藏系统卷）" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
         </Border>
 
-        <!-- Physical Disks / SMART -->
-        <Border Theme="{StaticResource CardBorder}">
-          <StackPanel Spacing="12">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="物理磁盘与 SMART" Theme="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
-              <Button Grid.Column="1" Content="切换详情" Command="{Binding ToggleSmartDetailCommand}" FontSize="11" Padding="8,4"/>
-            </Grid>
-            
+        <!-- SMART section matching pen design -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" IsVisible="{Binding PhysicalDisks.Count, Converter={StaticResource GreaterThanZeroToBoolConverter}}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="SMART" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+
             <ItemsControl ItemsSource="{Binding PhysicalDisks}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="models:PhysicalDiskView">
-                  <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
-                    <StackPanel Spacing="8">
-                      <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                      <Grid ColumnDefinitions="*,*,*">
-                        <StackPanel Spacing="2">
-                          <TextBlock Text="温度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
-                          <TextBlock Text="{Binding Disk.Temperature, StringFormat={}{0:F1}°C}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="2">
-                          <TextBlock Text="健康度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
-                          <TextBlock Text="{Binding Disk.HealthPercentage}%" FontSize="13" Foreground="{StaticResource PrimaryBrush}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="2">
-                          <TextBlock Text="通电时长" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
-                          <TextBlock Text="{Binding Disk.PowerOnHours}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"/>
-                        </StackPanel>
-                      </Grid>
-                    </StackPanel>
-                  </Border>
+                  <StackPanel Spacing="8" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="温度" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Disk.Temperature, StringFormat='{}{0:F0}°C'}" FontSize="12" Foreground="#238636"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="健康度" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Disk.HealthPercentage, StringFormat='{}{0}%'}" FontSize="12" Foreground="#238636"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="通电时长" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Disk.PowerOnHours, StringFormat='{}{0} h'}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="数据写入" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Disk.TotalBytesWritten, Converter={StaticResource BytesToHumanReadableConverter}}" FontSize="12" Foreground="{StaticResource WarningBrush}"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="磨损均衡" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                      <TextBlock Grid.Column="1" Text="{Binding Disk.WearLeveling, StringFormat='{}{0}%'}" FontSize="12" Foreground="#238636"/>
+                    </Grid>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </StackPanel>
         </Border>
+
+        <!-- DiskTabs matching pen design -->
+        <StackPanel Orientation="Horizontal" Margin="0,4,0,24">
+          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="6,6,0,0" Padding="12,6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,1,1,0">
+            <TextBlock Text="SSD 1" FontSize="11" Foreground="{StaticResource SecondaryBrush}"/>
+          </Border>
+          <Border Background="#0D1117" CornerRadius="6,6,0,0" Padding="12,6" Margin="2,0,0,0">
+            <TextBlock Text="SSD 2" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+          <Border Background="#0D1117" CornerRadius="6,6,0,0" Padding="12,6" Margin="2,0,0,0">
+            <TextBlock Text="HDD 1" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+          <Border Background="#0D1117" CornerRadius="6,6,0,0" Padding="12,6" Margin="2,0,0,0">
+            <TextBlock Text="NVMe" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </Border>
+        </StackPanel>
 
       </StackPanel>
     </ScrollViewer>

@@ -15,7 +15,7 @@ public:
 
     // Start the IPC server
     //   macOS: UDS listener + POSIX shm + schema broadcast
-    //   Windows: NamedPipe listener + schema broadcast (reuses SharedMemoryBlock)
+    //   Windows: NamedPipe listener + schema broadcast (reuses IPCDataBlock SHM)
     bool Start();
     void Stop();
     bool IsRunning() const { return running_.load(); }

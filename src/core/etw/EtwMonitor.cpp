@@ -18,7 +18,7 @@
 #pragma comment(lib, "tdh.lib")
 #pragma comment(lib, "advapi32.lib")
 
-namespace tcmt { namespace etw {
+namespace tcmt::etw {
 
 // ====================================================================
 // Provider GUIDs
@@ -228,7 +228,6 @@ std::string EtwMonitor::FormatProviderName(const void* pEvent) {
     return oss.str();
 }
 
-} // namespace etw
-} // namespace tcmt
+} // namespace tcmt::etw
 
 #endif // TCMT_WINDOWS
