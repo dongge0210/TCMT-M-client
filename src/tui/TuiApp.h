@@ -18,6 +18,7 @@
 #pragma once
 
 #include "LogBuffer.h"
+#include <functional>
 #include <string>
 // pid_t: POSIX on macOS/Linux, need explicit definition on Windows
 #ifdef _WIN32
@@ -53,6 +54,8 @@ struct TuiData {
     double gpuFreq = 0.0;
     double gpuMaxFreq = 0.0;
     double cpuTemp = 0.0;
+    double cpuPcoreTemp = 0.0;
+    double cpuEcoreTemp = 0.0;
 
     // Memory
     uint64_t totalMemory = 0;
@@ -70,6 +73,13 @@ struct TuiData {
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
+    int gpuFanSpeed = -1;            // kept for compat, see gpuFans
+    struct GpuFanInfo {
+        unsigned int index = 0;
+        int speedRpm = 0;
+        bool isRpm = false;
+    };
+    std::vector<GpuFanInfo> gpuFans;
 
     // Disk
     struct DiskInfo {
@@ -141,6 +151,7 @@ struct TuiData {
     int connectionCount = 0;
     std::string connectionSince;
     std::vector<uint8_t> clientTypes;  // ClientType values per connection
+    int httpClientCount = 0;           // local motion HTTP server clients (macOS)
 
     // TPM
     std::string tpmInfo;
@@ -159,6 +170,7 @@ struct TuiData {
     std::string wifiGen;
     double wifiTxRate = 0;
     bool wifiLocationDenied = false; // macOS 15+: SSID blocked by Location Services
+    int wifiLocationStatus = 0;      // 0=not determined, 1=denied, 2=authorized
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
@@ -250,6 +262,18 @@ struct TuiData {
     };
     std::vector<ProcessTopEntry> topProcesses;
 
+    // Per-core sensor data (up to 16 cores)
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    uint8_t perCoreCount = 0;
+
+    // Network traffic sparkline history (last 40 samples)
+    static constexpr int NET_HISTORY_MAX = 40;
+    uint64_t dlHistory[NET_HISTORY_MAX] = {};
+    uint64_t ulHistory[NET_HISTORY_MAX] = {};
+    int dlHistoryPos = 0;
+    int dlHistoryLen = 0;
+
     // Timestamp
     std::string timestamp;
 };
@@ -267,14 +291,23 @@ public:
     // Update data from main thread (thread-safe)
     void UpdateData(const TuiData& data);
 
-    // Get the log buffer for Logger to write into
-    LogBuffer& GetLogBuffer();
+    // Optional handler invoked when the user presses R on the dashboard
+    // (e.g. request macOS Location Services for WiFi SSID).
+    void SetLocationRequestHandler(std::function<void()> handler) {
+        locationRequestHandler_ = std::move(handler);
+    }
 
-    // Inject external log buffer (e.g. from Logger)
+#ifndef TCMT_WINDOWS
+    // Inject external log buffer (e.g. from Logger) — used by the in-TUI
+    // log page on macOS/Linux (Windows uses the standalone Win32 LogWindow).
     void SetLogBuffer(LogBuffer* buf);
+#endif
 
 private:
     void Run();
+#ifndef TCMT_WINDOWS
+    void RenderLogPage(int rows, int cols, int ch);
+#endif
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -291,6 +324,8 @@ private:
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);
@@ -301,13 +336,22 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
 
-    TuiData data_;
-    mutable std::mutex dataMutex_;
+#ifndef TCMT_WINDOWS
+    // Page state: Dashboard (hardware panels) or Log (scrolling log page)
+    bool logPage_ = false;
+    int logScrollOffset_ = 0;   // lines scrolled up from bottom
+    bool logFollow_ = true;     // auto-follow newest lines
 
     // Internal buffer (fallback), or use external via SetLogBuffer()
     LogBuffer defaultBuffer_;
     // Points to either &defaultBuffer_ or an external buffer
     LogBuffer* logBuf_ = nullptr;
+#endif
+
+    TuiData data_;
+    mutable std::mutex dataMutex_;
+
+    std::function<void()> locationRequestHandler_;
 
     // Window dimensions
     int termRows_ = 0;

@@ -9,65 +9,117 @@
              x:DataType="vm:NetworkViewModel">
 
   <Design.DataContext>
-    <vm:NetworkViewModel Title="Network" />
+    <vm:NetworkViewModel Title="网络" />
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*">
-    <!-- Header -->
-    <StackPanel Grid.Row="0" Margin="32,28,32,0">
-      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="网络适配器与 WiFi" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
-    </StackPanel>
+    <!-- TopBar matching pen design -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="网络" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="{Binding Adapters.Count, StringFormat='{}{0} 适配器'}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+        </StackPanel>
+      </Grid>
+    </Border>
 
-    <!-- Content -->
-    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
-      <StackPanel Spacing="20">
-        
-        <!-- WiFi Status -->
-        <Border Theme="{StaticResource CardBorder}" IsVisible="{Binding HasWiFi}">
-          <StackPanel Spacing="12">
-            <TextBlock Text="WiFi 状态" Theme="{StaticResource SectionHeader}"/>
-            <TextBlock Text="{Binding WifiDisplay}" FontSize="16" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+    <!-- Content matching pen design -->
+    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
+      <StackPanel Spacing="16">
+
+        <!-- AdapterCard -->
+        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="8">
+            <!-- AdapterHeader -->
+            <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}">
+              <Run Text="{Binding SelectedAdapter.Name}"/><Run Text=" · "/><Run Text="{Binding SelectedAdapter.AdapterType}"/>
+            </TextBlock>
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+
+            <!-- IP Row -->
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="IP" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding SelectedAdapter.IpAddress}" FontSize="14" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="Normal"/>
+            </Grid>
+
+            <!-- MAC Row -->
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="MAC" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding SelectedAdapter.Mac}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </Grid>
+
+            <!-- WiFi rows (only when WiFi is available) -->
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}" IsVisible="{Binding HasWiFi}"/>
+
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
+              <TextBlock Text="SSID" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding WifiSSID}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
+              <TextBlock Text="频道" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding WifiChannel}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
+              <TextBlock Text="RSSI" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1">
+                <TextBlock Text="{Binding WifiRSSI, StringFormat='{}{0} dBm'}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </TextBlock>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
+              <TextBlock Text="频段" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding WifiBand}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
+              <TextBlock Text="协议" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding WifiGen}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
+              <TextBlock Text="链接速度" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding SelectedAdapter.SpeedDisplay}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
           </StackPanel>
         </Border>
 
-        <!-- Bluetooth Status -->
-        <Border Theme="{StaticResource CardBorder}" IsVisible="{Binding HasBluetooth}">
-          <StackPanel Spacing="12">
-            <TextBlock Text="蓝牙" Theme="{StaticResource SectionHeader}"/>
-            <TextBlock Text="{Binding BtDisplay}" FontSize="16" Foreground="{StaticResource TextPrimaryBrush}"/>
-          </StackPanel>
-        </Border>
+        <!-- TrafficRow matching pen design -->
+        <Grid ColumnDefinitions="*,*" Grid.ColumnSpan="2">
+          <!-- Download Card -->
+          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
+            <StackPanel Spacing="4">
+              <TextBlock Text="下载" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock FontSize="18" FontWeight="Bold" Foreground="#238636">
+                <Run Text="↓ "/><Run Text="{Binding SelectedAdapter.DownloadDisplay}"/>
+              </TextBlock>
+            </StackPanel>
+          </Border>
+          <!-- Upload Card -->
+          <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14" Margin="12,0,0,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="上传" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock FontSize="18" FontWeight="Bold" Foreground="#3B82F6">
+                <Run Text="↑ "/><Run Text="{Binding SelectedAdapter.UploadDisplay}"/>
+              </TextBlock>
+            </StackPanel>
+          </Border>
+        </Grid>
 
-        <!-- Network Adapters -->
-        <Border Theme="{StaticResource CardBorder}">
-          <StackPanel Spacing="12">
-            <TextBlock Text="网络适配器" Theme="{StaticResource SectionHeader}"/>
-            <ItemsControl ItemsSource="{Binding Adapters}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="models:NetworkAdapterData">
-                  <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
-                    <Grid ColumnDefinitions="*,Auto,Auto">
-                      <StackPanel Grid.Column="0" Spacing="4">
-                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding IpAddress}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                        <TextBlock Text="{Binding Mac}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
-                      </StackPanel>
-                      <StackPanel Grid.Column="1" Spacing="4" Margin="16,0">
-                        <TextBlock Text="下载" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBlock Text="{Binding DownloadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
-                      </StackPanel>
-                      <StackPanel Grid.Column="2" Spacing="4">
-                        <TextBlock Text="上传" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
-                        <TextBlock Text="{Binding UploadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
-                      </StackPanel>
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </Border>
+        <!-- NetTabs matching pen design -->
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+          <ItemsControl ItemsSource="{Binding Adapters}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:NetworkAdapterData">
+                <Border Background="{StaticResource SurfaceBrush}" CornerRadius="6,6,0,0" Padding="12,6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,1,1,0" Margin="0,0,2,0">
+                  <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource SecondaryBrush}"/>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
 
       </StackPanel>
     </ScrollViewer>
