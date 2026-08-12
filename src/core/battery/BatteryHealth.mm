@@ -20,36 +20,51 @@ void BatteryHealth::Detect() {
         if (kr == KERN_SUCCESS && properties) {
             NSDictionary* dict = (__bridge NSDictionary*)properties;
 
+            // On Apple Silicon the capacity/cycle/temperature fields live in
+            // the nested "BatteryData" dictionary (top-level only has a few,
+            // like CycleCount). Prefer BatteryData, fall back to top level.
+            NSDictionary* bd = dict[@"BatteryData"];
+            if (![bd isKindOfClass:[NSDictionary class]]) bd = nil;
+            auto readInt = [&](NSString* key) -> int {
+                if (bd) {
+                    id v = bd[key];
+                    if ([v respondsToSelector:@selector(intValue)]) return [v intValue];
+                }
+                id v = dict[key];
+                return [v respondsToSelector:@selector(intValue)] ? [v intValue] : 0;
+            };
+
             // Design capacity (mAh) — original factory spec
-            data_.designCapacity = [dict[@"DesignCapacity"] intValue];
+            data_.designCapacity = readInt(@"DesignCapacity");
 
             // Current max capacity (mAh) — may have degraded
-            data_.maxCapacity = [dict[@"AppleRawMaxCapacity"] intValue];
+            data_.maxCapacity = readInt(@"AppleRawMaxCapacity");
+            if (data_.maxCapacity <= 0)
+                data_.maxCapacity = readInt(@"FullChargeCapacity");
 
             // Cycle count
-            data_.cycleCount = [dict[@"CycleCount"] intValue];
+            data_.cycleCount = readInt(@"CycleCount");
 
             // Health percentage
             if (data_.designCapacity > 0 && data_.maxCapacity > 0) {
                 data_.healthPercent = 100.0 * data_.maxCapacity / data_.designCapacity;
             } else if (data_.designCapacity > 0) {
-                // Fallback: MaxCapacity is 0-100 percentage, design is mAh
-                // Use NominalChargeCapacity if available
-                int nominal = [dict[@"NominalChargeCapacity"] intValue];
+                // Fallback: raw max absent — use NominalChargeCapacity
+                int nominal = readInt(@"NominalChargeCapacity");
                 if (nominal > 0)
                     data_.healthPercent = 100.0 * nominal / data_.designCapacity;
             }
 
             // Temperature in decikelvin (0.1 K) → Celsius
-            int tempDK = [dict[@"Temperature"] intValue];
+            int tempDK = readInt(@"Temperature");
             if (tempDK > 0)
                 data_.temperature = (double)tempDK / 10.0 - 273.15;
 
             // Amperage (mA) — positive = charging, negative = discharging
-            data_.amperage = [dict[@"Amperage"] intValue];
+            data_.amperage = readInt(@"Amperage");
 
             // Voltage (mV)
-            data_.voltage = [dict[@"Voltage"] intValue];
+            data_.voltage = readInt(@"Voltage");
 
             // Charger details (adapter rated wattage)
             NSDictionary* adapter = dict[@"AdapterDetails"];

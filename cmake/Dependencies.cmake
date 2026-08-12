@@ -172,11 +172,6 @@ function(tcmt_check_third_party_libs)
     if(EXISTS "${CMAKE_SOURCE_DIR}/src/third_party")
         message(STATUS "    Third-party directory exists")
 
-        # 检查LibreHardwareMonitor（仅Windows）
-        if(TCMT_WINDOWS AND EXISTS "${CMAKE_SOURCE_DIR}/src/third_party/LibreHardwareMonitor")
-            message(STATUS "    LibreHardwareMonitor found")
-        endif()
-
         # Check other third-party libraries
         if(EXISTS "${CMAKE_SOURCE_DIR}/src/third_party/curl")
             message(STATUS "    curl found")

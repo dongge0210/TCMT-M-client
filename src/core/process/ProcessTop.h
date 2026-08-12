@@ -5,6 +5,10 @@
 #include <chrono>
 #include <unordered_map>
 
+#ifdef _WIN32
+typedef int pid_t;
+#endif
+
 struct ProcessTopEntry {
     pid_t pid = 0;
     std::string name;

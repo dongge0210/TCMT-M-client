@@ -1,0 +1,119 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+#
+# Find more information at:
+# https://github.com/microsoft/msvc-code-analysis-action
+
+name: Microsoft C++ Code Analysis
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '35 18 * * 1'
+
+env:
+  # Path to the CMake build directory.
+  build: '${{ github.workspace }}/build'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+    name: Analyze
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        # Debug build type: project adds /Zi /Od /RTC1 which are compatible
+        # with the code-analysis action's flags (/RTC1 + /O2 would conflict).
+        # TCMT_MP=OFF: /MP makes each parallel cl.exe emit its own SARIF run,
+        # which upload-sarif rejects ("multiple SARIF runs with same category").
+        run: cmake -B ${{ env.build }} -DCMAKE_BUILD_TYPE=Debug -DTCMT_MP=OFF
+
+      # Build is not required unless generated source files are used
+      # - name: Build CMake
+      #   run: cmake --build ${{ env.build }}
+
+      - name: Initialize MSVC Code Analysis
+        uses: microsoft/msvc-code-analysis-action@04825f6d9e00f87422d6bf04e1a38b1f3ed60d99
+        # Provide a unique ID to access the sarif output path
+        id: run-analysis
+        with:
+          cmakeBuildDirectory: ${{ env.build }}
+          # Ruleset file that will determine what checks will be run
+          ruleset: NativeRecommendedRules.ruleset
+
+      # msvc-code-analysis-action emits one SARIF run per analyzed file; GitHub
+      # now rejects multi-run files ("multiple SARIF runs with the same
+      # category"), so merge everything into a single run before uploading.
+      - name: Merge SARIF runs into a single run
+        shell: bash
+        continue-on-error: true
+        env:
+          SARIF: ${{ steps.run-analysis.outputs.sarif }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            try {
+              const p = process.env.SARIF;
+              const sarif = JSON.parse(fs.readFileSync(p, "utf8"));
+              const runs = sarif.runs || [];
+              if (runs.length <= 1) { console.log("single run, nothing to merge"); process.exit(0); }
+              const merged = runs[0];
+              merged.tool = merged.tool || {};
+              merged.tool.driver = merged.tool.driver || {};
+              const rules = Array.isArray(merged.tool.driver.rules) ? merged.tool.driver.rules.slice() : [];
+              const ruleIndex = new Map();
+              rules.forEach((r, i) => { if (r && r.id) ruleIndex.set(r.id, i); });
+              merged.results = Array.isArray(merged.results) ? merged.results.slice() : [];
+              for (let ri = 1; ri < runs.length; ri++) {
+                const run = runs[ri];
+                const runRules = Array.isArray(run.rules) ? run.rules : [];
+                for (const result of run.results || []) {
+                  const copy = JSON.parse(JSON.stringify(result));
+                  if (copy.ruleIndex !== undefined && copy.ruleIndex < runRules.length) {
+                    const rule = runRules[copy.ruleIndex];
+                    if (rule && rule.id) {
+                      if (!ruleIndex.has(rule.id)) { ruleIndex.set(rule.id, rules.length); rules.push(rule); }
+                      copy.ruleIndex = ruleIndex.get(rule.id);
+                    }
+                  }
+                  merged.results.push(copy);
+                }
+              }
+              merged.tool.driver.rules = rules;
+              sarif.runs = [merged];
+              fs.writeFileSync(p, JSON.stringify(sarif));
+              console.log("merged " + runs.length + " SARIF runs into 1");
+            } catch (e) { console.log("sarif merge skipped: " + e.message); }
+          '
+
+      - name: Upload SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v4
+        # Even if upload is rejected (GitHub policy on multi-run SARIF), the
+        # analysis itself still gates the job — don't let tooling block CI.
+        continue-on-error: true
+        with:
+          sarif_file: ${{ steps.run-analysis.outputs.sarif }}
+
+      # Upload SARIF file as an Artifact to download and view
+      # - name: Upload SARIF as an Artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: sarif-file
+      #     path: ${{ steps.run-analysis.outputs.sarif }}

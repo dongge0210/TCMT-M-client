@@ -15,6 +15,8 @@ TCMT-Windows-client/
 |-- LICENSE                                 -- GPL-3.0
 |-- README.md                               -- Project overview (zh)
 |-- README-WF.md                            -- Submodule licenses
+|-- server/                                 -- 中转/整理 server（Node 零依赖，REST+WS）
+|   `-- viewer/                             -- 展示端：纯前端仪表盘（多设备总览，原生 HTML/CSS/JS）
 |-- TCMT.sln                                -- Visual Studio solution
 |-- TCMT.vcxproj                            -- Visual Studio project (Win32 C++/CLI)
 |-- TCMT.vcxproj.filters                    -- VS project filters
@@ -35,7 +37,6 @@ TCMT-Windows-client/
 |   |-- adr/
 |   |   |-- 0001-schema-driven-ipc.md       -- ADR: Schema-driven IPC protocol
 |   |   |-- 0002-mcp-pure-client-no-ipcserver.md -- ADR: MCP pure client architecture
-|   |   |-- 0003-cpp-cli-bridge-librehardwaremonitor.md -- ADR: C++/CLI LHM bridge
 |   |   |-- 0004-nvml-dynamic-loading.md    -- ADR: NVML dynamic loading
 |   |   |-- 0005-unified-ipcserver-with-ifdef.md -- ADR: Unified IPCServer with #ifdef
 |   |
@@ -99,8 +100,6 @@ TCMT-Windows-client/
 |   |   |-- Utils/
 |   |   |   |-- ComInitializationHelper.cpp -- CoInitializeEx wrapper
 |   |   |   |-- JThreadCompat.h             -- jthread compatibility shim for older C++ std
-|   |   |   |-- LibreHardwareMonitorBridge.h -- C++/CLI bridge header
-|   |   |   |-- LibreHardwareMonitorBridge.cpp -- HW sensor + SMART bridge
 |   |   |   |-- Logger.h                    -- 7-level thread-safe logger
 |   |   |   |-- Logger.cpp                  -- File + console + TUI buffer output
 |   |   |   |-- TimeUtils.h                 -- Boot time, uptime, timestamps
@@ -150,10 +149,8 @@ TCMT-Windows-client/
 |   |   |   |-- PowerInfo.cpp               -- WMI battery + IOKit AppleSmartBattery
 |   |   |
 |   |   |-- temperature/
-|   |   |   |-- LibreHardwareMonitorBridge.h -- Temperature bridge header
-|   |   |   |-- LibreHardwareMonitorBridge.cpp -- LHM thermal sensor enumeration
 |   |   |   |-- TemperatureWrapper.h        -- Cross-platform temperature facade
-|   |   |   |-- TemperatureWrapper.cpp      -- LHM (Win) / SMC+IOKit (macOS)
+|   |   |   |-- TemperatureWrapper.cpp      -- PawnIO+NVML (Win) / SMC+IOKit (macOS)
 |   |   |
 |   |   |-- usb/
 |   |   |   |-- UsbInfo.h                   -- USB device header
@@ -167,7 +164,6 @@ TCMT-Windows-client/
 |   |       |-- WiFiInfo_wlan.c             -- WLAN callback + scan helper
 |   |
 |   |-- third_party/
-|   |   |-- LibreHardwareMonitor/           -- [submodule] .NET HW monitor lib
 |   |   |-- PDCurses/                       -- [submodule] Windows console curses
 |   |   |-- TC/                             -- [submodule] Terminal control
 |   |   |-- USBMonitor-cpp/                 -- [submodule] USB hotplug monitor

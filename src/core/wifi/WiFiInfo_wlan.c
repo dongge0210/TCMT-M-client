@@ -11,6 +11,7 @@
 #include <wlanapi.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #pragma comment(lib, "wlanapi.lib")
 

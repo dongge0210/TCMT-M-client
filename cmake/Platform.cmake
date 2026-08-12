@@ -27,13 +27,17 @@ function(tcmt_detect_platform)
         set(TCMT_PLATFORM "macos" CACHE STRING "Platform identifier")
         add_definitions(-DTCMT_MACOS)
 
+        # macOS deployment target & architectures set in root CMakeLists.txt (before project())
+        message(STATUS "  Minimum deployment target: macOS ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        message(STATUS "  Architectures: ${CMAKE_OSX_ARCHITECTURES}")
+
         # macOS version detection
         execute_process(
             COMMAND sw_vers -productVersion
             OUTPUT_VARIABLE MACOS_VERSION
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        message(STATUS "  Target: macOS ${MACOS_VERSION}")
+        message(STATUS "  Build host: macOS ${MACOS_VERSION}")
 
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         set(TCMT_LINUX ON CACHE BOOL "Building for Linux platform")
