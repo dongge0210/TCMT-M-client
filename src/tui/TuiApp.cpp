@@ -1052,9 +1052,13 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     // Status + hints
     {
         std::lock_guard<std::mutex> lock(dataMutex_);
-        mvwprintw(stdscr, y0 + 7, x0 + 2, " Status : %s",
-                  serverSettings_.status.empty() ? (serverSettings_.enabled ? "starting..." : "disabled")
-                                                 : serverSettings_.status.c_str());
+        // Prefer the live status from the monitor loop (data_ is refreshed
+        // every frame); fall back to the last-saved settings value.
+        const std::string st = !data_.serverStatus.empty() ? data_.serverStatus
+            : (serverSettings_.status.empty()
+                ? (serverSettings_.enabled ? "starting..." : "disabled")
+                : serverSettings_.status);
+        mvwprintw(stdscr, y0 + 7, x0 + 2, " Status : %s", st.c_str());
     }
     mvwprintw(stdscr, y0 + 9, x0 + 2, " Enter save+apply   Esc cancel   Up/Down or Tab focus");
     mvwprintw(stdscr, y0 + 10, x0 + 2, " Space toggles   type edits URL   digits edit interval");
