@@ -923,7 +923,6 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     return lines + 1;  // +1 bottom padding
 }
 
-#ifndef TCMT_WINDOWS
 // ────────────────────────────────────────────────────────────────────────────
 // Settings page — framed interactive form for the server push settings.
 // Up/Down (or Tab) moves focus; Space toggles ON/OFF fields; typing edits
@@ -1073,6 +1072,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     }
 }
 
+#ifndef TCMT_WINDOWS
 // Log page — full-screen scrolling log view inside the main TUI (macOS/Linux).
 // Data comes from the in-process Logger log buffer (no IPC, no files).
 // Windows uses the standalone Win32 LogWindow instead (dashboard-only console).
