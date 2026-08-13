@@ -1186,7 +1186,9 @@ void TuiApp::Run() {
             continue;
         }
 
-        if (ch == 'q' || ch == 'Q' || ch == 27) {
+        // Ctrl+C arrives as a key (0x03) under PDCurses raw mode instead of
+        // firing CTRL_C_EVENT — treat it as quit so the TUI exits cleanly.
+        if (ch == 'q' || ch == 'Q' || ch == 27 || ch == 3) {
             running_ = false;
             break;
         }

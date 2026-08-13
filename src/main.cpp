@@ -1181,7 +1181,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
     ModuleCoordinator coordinator;
     coordinator.Start();
 
-    while (!g_shouldExit.load()) {
+    // Exit when Ctrl+C is received OR the TUI itself quit ('q' / Esc): on
+    // Windows the TUI runs in-process, so its shutdown must stop the loop.
+    while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
         static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
         static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
