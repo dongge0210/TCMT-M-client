@@ -1238,7 +1238,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 g_push.enabled = pending.enabled;
                 g_push.insecure = pending.insecure;
                 if (pending.enabled) {
-                    if (pending.insecure) g_push.probe.SetInsecure(true);
+                    g_push.probe.SetInsecure(pending.insecure);
                     g_push.active = g_push.probe.Start(pending.url);
                     g_push.status = g_push.active ? "connecting..." : "error: cannot start";
                     if (g_push.active) Logger::Info("ServerProbe restarted: " + pending.url);
@@ -2139,7 +2139,7 @@ int main(int argc, char* argv[]) {
             g_push.intervalMs = (int64_t)g_push.intervalSec * 1000;
             g_push.active = g_push.enabled;
             if (g_push.enabled) {
-                if (g_push.insecure) g_push.probe.SetInsecure(true);
+                g_push.probe.SetInsecure(g_push.insecure);
                 if (g_push.probe.Start(g_push.url)) {
                     g_push.status = "connecting...";
                 } else {

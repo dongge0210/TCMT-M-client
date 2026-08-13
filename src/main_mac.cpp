@@ -798,7 +798,7 @@ int main(int argc, char* argv[]) {
     // ServerProbe: push data to tcmt-server (enable/URL from TUI settings)
     static ServerProbe s_probe;
     if (serverEnabled) {
-        if (serverInsecure) s_probe.SetInsecure(true);
+        s_probe.SetInsecure(serverInsecure);
         Logger::Info("ServerProbe: target " + serverUrl);
         if (s_probe.Start(serverUrl)) {
             Logger::Info("ServerProbe: upload started");
@@ -875,7 +875,7 @@ int main(int argc, char* argv[]) {
                     intervalMs = (int64_t)intervalSec * 1000;
                     s_probe.Stop();
                     if (pending.enabled) {
-                        if (pending.insecure) s_probe.SetInsecure(true);
+                        s_probe.SetInsecure(pending.insecure);
                         if (s_probe.Start(pending.url)) {
                             probeStatus = "running";
                             probeActive = true;
