@@ -1,3 +1,8 @@
+// MSVC deprecation noise suppression (must come before any includes)
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "ServerProbe.h"
 #include "Utils/Logger.h"
 #include "nlohmann/json.hpp"
