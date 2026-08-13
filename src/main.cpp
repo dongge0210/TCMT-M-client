@@ -73,6 +73,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "tui/TuiApp.h"
 #include "tui/LogWindow.h"
 #include "core/Config/ConfigManager.h"
+#include "core/ServerProbe.h"
 #include <fstream>
 #include <cstdio>
 
@@ -80,6 +81,39 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #pragma comment(lib, "user32.lib")
 
 std::atomic<bool> g_shouldExit{false};
+
+// ── Server push (tcmt-server) — settings edited in the TUI (press S), ──
+// ── persisted to <exe-dir>\system_monitor.json (server.*).              ──
+static ConfigManager& GetServerCfg() {
+    static ConfigManager cfg(WinUtils::GetExecutableDirectory() + "\\system_monitor.json");
+    static const bool loaded = cfg.Load();
+    (void)loaded;
+    return cfg;
+}
+
+struct ServerPushState {
+    ServerProbe probe;
+    bool enabled = false;
+    std::string url = "http://127.0.0.1:8080";
+    bool insecure = false;
+    int intervalSec = 2;        // hard bounds 1..60
+    int64_t intervalMs = 2000;
+    bool active = false;
+    std::string status = "disabled";
+    int64_t lastPushMs = 0;
+    std::mutex mutex;
+    tcmt::ServerSettings pending;
+    bool pendingReady = false;
+};
+static ServerPushState g_push;
+
+static std::string JsonSafeStr(const std::string& s) {
+    std::string out = s;
+    for (char& c : out) {
+        if (c == '"' || c == '\\') c = '_';
+    }
+    return out;
+}
 static std::atomic<bool> g_monitoringStarted{false};
 static std::atomic<bool> g_comInitialized{false};
 
@@ -1184,6 +1218,40 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
     // Exit when Ctrl+C is received OR the TUI itself quit ('q' / Esc): on
     // Windows the TUI runs in-process, so its shutdown must stop the loop.
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
+        // Apply server settings saved from the TUI settings page.
+        {
+            tcmt::ServerSettings pending;
+            bool havePending = false;
+            {
+                std::lock_guard<std::mutex> lock(g_push.mutex);
+                if (g_push.pendingReady) {
+                    pending = g_push.pending;
+                    g_push.pendingReady = false;
+                    havePending = true;
+                }
+            }
+            if (havePending) {
+                g_push.probe.Stop();
+                g_push.url = pending.url;
+                g_push.intervalSec = (std::max)(1, (std::min)(pending.intervalSec, 60));
+                g_push.intervalMs = (int64_t)g_push.intervalSec * 1000;
+                g_push.enabled = pending.enabled;
+                g_push.insecure = pending.insecure;
+                if (pending.enabled) {
+                    if (pending.insecure) g_push.probe.SetInsecure(true);
+                    g_push.active = g_push.probe.Start(pending.url);
+                    g_push.status = g_push.active ? "connecting..." : "error: cannot start";
+                    if (g_push.active) Logger::Info("ServerProbe restarted: " + pending.url);
+                    else Logger::Warn("ServerProbe restart failed: " + pending.url);
+                } else {
+                    g_push.active = false;
+                    g_push.status = "disabled";
+                    Logger::Info("ServerProbe stopped (disabled in settings)");
+                }
+                tuiApp.SetServerSettings(
+                    {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec, g_push.status});
+            }
+        }
         static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
         static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
         static DeviceChangeNotifier s_btNotify(DeviceChangeNotifier::Bluetooth);
@@ -1795,6 +1863,53 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
 
                 tuiApp.UpdateData(tuiData);
 
+                // Live push status for the TUI (handshake visibility).
+                if (g_push.active) {
+                    g_push.status = g_push.probe.Token().empty()
+                        ? "connecting..."
+                        : ("uploading (" + g_push.probe.DeviceId() + ")");
+                }
+
+                // Time-based upload gate (configurable 1..60 s via TUI).
+                {
+                    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    const bool due = g_push.lastPushMs == 0 ||
+                        nowMs - g_push.lastPushMs >= g_push.intervalMs;
+                    if (g_push.active && due && g_push.probe.Token().size() > 0) {
+                        std::string body = "{";
+                        char buf[512];
+                        snprintf(buf, sizeof(buf),
+                            "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"
+                            "\"memory_used\":%llu,\"memory_total\":%llu,"
+                            "\"gpu_usage\":%.1f,\"gpu_temp\":%.1f,"
+                            "\"cpu_name\":\"%s\",\"gpu_name\":\"%s\","
+                            "\"os_version\":\"%s\",\"uptime\":%llu",
+                            tuiData.cpuUsage, tuiData.cpuTemp,
+                            (unsigned long long)tuiData.usedMemory,
+                            (unsigned long long)tuiData.totalMemory,
+                            tuiData.gpuUsage, tuiData.gpuTemp,
+                            JsonSafeStr(tuiData.cpuName).c_str(),
+                            JsonSafeStr(tuiData.gpuName).c_str(),
+                            JsonSafeStr(tuiData.osVersion).c_str(),
+                            (unsigned long long)tuiData.uptimeSeconds);
+                        body += buf;
+                        auto temps = TemperatureWrapper::GetTemperatures();
+                        body += ",\"temperatures\":[";
+                        for (size_t ti = 0; ti < temps.size(); ++ti) {
+                            if (ti) body += ",";
+                            char tb[192];
+                            snprintf(tb, sizeof(tb),
+                                     "{\"name\":\"%s\",\"value\":%.1f,\"unit\":\"C\"}",
+                                     JsonSafeStr(temps[ti].first).c_str(), temps[ti].second);
+                            body += tb;
+                        }
+                        body += "]}";
+                        g_push.probe.PostSnapshot(std::move(body));
+                        g_push.lastPushMs = nowMs;
+                    }
+                }
+
                 // Write to shared memory (after WiFi/BT data populated)
                 try {
                     if (SharedMemoryManager::GetBuffer()) {
@@ -2013,6 +2128,41 @@ int main(int argc, char* argv[]) {
         // Start TUI (Windows version)
         tcmt::TuiApp tuiApp;
         tuiApp.Start();
+
+        // Server push settings (TUI settings page, press S).
+        {
+            auto& cfg = GetServerCfg();
+            g_push.enabled = cfg.GetBool("server.enabled", false);
+            g_push.url = cfg.GetString("server.url", "http://127.0.0.1:8080");
+            g_push.insecure = cfg.GetBool("server.insecure", false);
+            g_push.intervalSec = (std::max)(1, (std::min)(cfg.GetInt("server.intervalSec", 2), 60));
+            g_push.intervalMs = (int64_t)g_push.intervalSec * 1000;
+            g_push.active = g_push.enabled;
+            if (g_push.enabled) {
+                if (g_push.insecure) g_push.probe.SetInsecure(true);
+                if (g_push.probe.Start(g_push.url)) {
+                    g_push.status = "connecting...";
+                } else {
+                    g_push.status = "error: cannot start";
+                    g_push.active = false;
+                }
+            }
+        }
+        tuiApp.SetServerSettings(
+            {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec, g_push.status});
+        tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
+            auto& cfg = GetServerCfg();
+            cfg.SetBool("server.enabled", s.enabled);
+            cfg.SetString("server.url", s.url);
+            cfg.SetBool("server.insecure", s.insecure);
+            cfg.SetInt("server.intervalSec", s.intervalSec);
+            cfg.Save();
+            std::lock_guard<std::mutex> lock(g_push.mutex);
+            g_push.pending = s;
+            g_push.pendingReady = true;
+            Logger::Info("Server settings saved: enabled=" +
+                         std::string(s.enabled ? "true" : "false") + " url=" + s.url);
+        });
         Logger::Info("TUI started");
 
         // Standalone log window (Win32, same process): shows the in-process

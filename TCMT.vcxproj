@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -99,7 +99,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <EnableUAC>false</EnableUAC>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrtd.lib;ucrtd.lib;vcruntimed.lib;tbs.lib;wlanapi.lib;tdh.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -130,7 +130,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(WindowsSdkDir)\Lib\$(UCRTVersion)\ucrt\x64;$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\x64;$(CUDA_PATH)/lib/x64;$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrt.lib;ucrt.lib;vcruntime.lib;tbs.lib;wlanapi.lib;tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib;dxgi.lib;wbemuuid.lib;pdcurses.lib;setupapi.lib;cfgmgr32.lib;msvcrt.lib;ucrt.lib;vcruntime.lib;tbs.lib;wlanapi.lib;tdh.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -154,6 +154,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\process\ProcessMonitor.h" />
     <ClInclude Include="src\core\os\OSInfo.h" />
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h" />
+    <ClInclude Include="src\core\ServerProbe.h" />
     <ClInclude Include="src\core\Utils\Logger.h" />
     <ClInclude Include="src\core\Utils\stdafx.h" />
     <ClInclude Include="src\core\Utils\TimeUtils.h" />
@@ -216,6 +217,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\coordinator\ModuleCoordinator_cpu.cpp" />
     <ClCompile Include="src\core\coordinator\ModuleCoordinator_io.cpp" />
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp" />
+    <ClCompile Include="src\core\ServerProbe.cpp" />
     <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp" />
     <ClCompile Include="src\core\Utils\Logger.cpp" />
     <ClCompile Include="src\core\Utils\TimeUtils.cpp" />

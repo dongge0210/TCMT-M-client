@@ -2,12 +2,18 @@
 #include "Utils/Logger.h"
 #include "nlohmann/json.hpp"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <direct.h>
+#else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#endif
 #include <fcntl.h>
 #include <cstring>
 #include <cstdlib>
@@ -23,6 +29,15 @@
 #endif
 
 using json = nlohmann::json;
+
+// Small platform shims: winsock on Windows, POSIX sockets elsewhere.
+#ifdef _WIN32
+static int CloseFd(int fd) { return closesocket(fd); }
+static int MakeDir(const std::string& p) { return _mkdir(p.c_str()); }
+#else
+static int CloseFd(int fd) { return close(fd); }
+static int MakeDir(const std::string& p) { return mkdir(p.c_str(), 0755); }
+#endif
 
 #ifdef TCMT_USE_TLS
 // One shared client SSL_CTX (verify peer against system roots by default).
@@ -55,14 +70,20 @@ static int RawPost(const std::string& host, int port, const std::string& path,
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) { freeaddrinfo(res); return 0; }
     if (connect(fd, res->ai_addr, res->ai_addrlen) < 0) {
-        close(fd); freeaddrinfo(res); return 0;
+        CloseFd(fd); freeaddrinfo(res); return 0;
     }
     freeaddrinfo(res);
 
     // NAT / public-internet hygiene: never hang forever on a dead peer.
+#ifdef _WIN32
+    DWORD tv = 8000; // SO_RCVTIMEO/SO_SNDTIMEO take milliseconds on winsock
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+#else
     timeval tv{8, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
 
 #ifdef TCMT_USE_TLS
     SSL* ssl = nullptr;
@@ -76,7 +97,7 @@ static int RawPost(const std::string& host, int port, const std::string& path,
         if (SSL_connect(ssl) != 1) {
             ERR_clear_error();
             SSL_free(ssl);
-            close(fd);
+            CloseFd(fd);
             return 0;
         }
     }
@@ -114,7 +135,7 @@ static int RawPost(const std::string& host, int port, const std::string& path,
 #ifdef TCMT_USE_TLS
         if (ssl) { SSL_free(ssl); }
 #endif
-        close(fd);
+        CloseFd(fd);
         return 0;
     }
 
@@ -144,7 +165,7 @@ static int RawPost(const std::string& host, int port, const std::string& path,
         SSL_free(ssl);
     }
 #endif
-    close(fd);
+    CloseFd(fd);
     return status;
 }
 
@@ -180,8 +201,13 @@ static bool ParseServerUrl(const std::string& url, std::string& host, int& port,
 // changes, and NAT rebinds. Identity is a random clientKey, not a hostname,
 // so different machines never collide on a shared/public server.
 static std::string ClientConfigPath() {
+#ifdef _WIN32
+    const char* home = std::getenv("USERPROFILE");
+    return home ? std::string(home) + "\\.tcmt\\client.json" : "C:\\tcmt_client.json";
+#else
     const char* home = std::getenv("HOME");
     return home ? std::string(home) + "/.tcmt/client.json" : "/tmp/tcmt_client.json";
+#endif
 }
 
 static std::string GenClientKey() {
@@ -218,8 +244,8 @@ static void SaveClientIdentity(const std::string& serverUrl,
         }
         cfg["clientKey"] = clientKey;
         cfg["servers"][serverUrl] = {{"id", id}, {"token", token}};
-        const std::string dir = ClientConfigPath().substr(0, ClientConfigPath().find_last_of('/'));
-        mkdir(dir.c_str(), 0755);
+        const std::string dir = ClientConfigPath().substr(0, ClientConfigPath().find_last_of("/\\"));
+        MakeDir(dir);
         std::ofstream f(ClientConfigPath());
         if (f) f << cfg.dump(2);
     } catch (...) { /* non-fatal */ }
@@ -228,6 +254,17 @@ static void SaveClientIdentity(const std::string& serverUrl,
 // ── ServerProbe ─────────────────────────────────────────────────────
 
 bool ServerProbe::Start(const std::string& serverUrl) {
+#ifdef _WIN32
+    // Winsock init (once per process).
+    static const bool s_wsaReady = [] {
+        WSADATA wsa;
+        return WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    if (!s_wsaReady) {
+        Logger::Error("ServerProbe: WSAStartup failed");
+        return false;
+    }
+#endif
     serverUrl_ = serverUrl;
     if (!ParseServerUrl(serverUrl, serverHost_, serverPort_, basePath_, useTls_)) {
         Logger::Warn("ServerProbe: invalid server URL: " + serverUrl);
@@ -250,7 +287,11 @@ bool ServerProbe::Start(const std::string& serverUrl) {
         if (gethostname(h, sizeof(h)) == 0) return std::string(h);
         return std::string("unknown");
     }();
+#ifdef _WIN32
+    os_ = "Windows";
+#else
     os_ = "macOS";
+#endif
     model_ = "TCMT-M";
 
     running_ = true;
