@@ -262,6 +262,25 @@ static std::string FormatSize(uint64_t bytes) {
     return ss.str();
 }
 
+// Sanitize strings embedded in the hand-built snapshot JSON (strip quotes).
+static std::string JsonSafe(const std::string& s) {
+    std::string out = s;
+    for (char& c : out) {
+        if (c == '"' || c == '\\') c = '_';
+    }
+    return out;
+}
+
+// ======================== Server push settings ========================
+// No CLI flags: the server connection (enable / URL / TLS verify) is edited
+// on the TUI settings page (press S) and persisted to system_monitor.json
+// (server.*). The TUI handler stores a pending copy here; the monitor loop
+// applies it (restart the probe) on its own thread.
+static ConfigManager g_cfg("system_monitor.json");
+static std::mutex s_settingsMutex;
+static bool s_settingsPending = false;
+static tcmt::ServerSettings s_pendingSettings;
+
 // ======================== Main ========================
 int main(int argc, char* argv[]) {
 
@@ -282,17 +301,16 @@ int main(int argc, char* argv[]) {
 
     // Load application config (config.json)
     {
-        ConfigManager cfg("system_monitor.json");
-        if (cfg.Load()) {
-            Logger::Info("Config loaded: " + cfg.GetPath());
+        if (g_cfg.Load()) {
+            Logger::Info("Config loaded: " + g_cfg.GetPath());
             // Apply config-driven settings
-            std::string logLevel = cfg.GetString("logging.level", "info");
+            std::string logLevel = g_cfg.GetString("logging.level", "info");
             if (logLevel == "debug")
                 Logger::SetLogLevel(LOG_DEBUG);
             else if (logLevel == "warning")
                 Logger::SetLogLevel(LOG_WARNING);
 
-            int refreshRate = cfg.GetInt("display.refreshRate", 500);
+            int refreshRate = g_cfg.GetInt("display.refreshRate", 500);
             // (used later for sleep interval)
             (void)refreshRate;
         } else {
@@ -300,20 +318,30 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ======================== Flags ========================
-    bool jsonMode = false, httpMode = false;
-    bool serverInsecure = false;
-    std::string serverUrl = "http://127.0.0.1:8080";
-    if (const char* env = std::getenv("TCMT_SERVER")) {
-        if (env[0] != '\0') serverUrl = env;
-    }
+    // ======================== Flags / server settings ========================
+    // Server push has no CLI flags — see the settings block above. The URL
+    // defaults to TCMT_SERVER env (if set), otherwise localhost:8080.
+    bool jsonMode = false;
     for (int i = 1; i < argc; ++i) {
-        std::string a(argv[i]);
-        if (a == "--json") jsonMode = true;
-        if (a == "--http") httpMode = true;
-        if (a == "--server" && i + 1 < argc) serverUrl = argv[++i];
-        if (a == "--server-insecure") serverInsecure = true;
+        if (std::string(argv[i]) == "--json") jsonMode = true;
     }
+
+    std::string serverUrl = g_cfg.GetString("server.url", "");
+    if (serverUrl.empty()) {
+        const char* env = std::getenv("TCMT_SERVER");
+        serverUrl = (env && env[0] != '\0') ? env : "http://127.0.0.1:8080";
+    }
+    const bool serverEnabled = g_cfg.GetBool("server.enabled", false);
+    const bool serverInsecure = g_cfg.GetBool("server.insecure", false);
+    const bool motionHttpEnabled = g_cfg.GetBool("motion_http.enabled", false);
+    // Upload cadence — hard bounds 1..60 s (config + TUI settings page).
+    int intervalSec = g_cfg.GetInt("server.intervalSec", 2);
+    if (intervalSec < 1) intervalSec = 1;
+    if (intervalSec > 60) intervalSec = 60;
+    int64_t intervalMs = (int64_t)intervalSec * 1000;  // runtime (TUI can change)
+    bool probeActive = serverEnabled;   // runtime state (TUI can toggle)
+    std::string probeStatus = "disabled";  // shown on the TUI settings page
+    int64_t lastPushMs = 0;                // last successful snapshot post
 
     if (jsonMode) {
         // One-shot JSON output for scripting
@@ -694,6 +722,20 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLocationRequestHandler([] {
         WiFiInfo::RequestLocationAuthorization();
     });
+    // Server push settings (TUI settings page, press S) -> persist + apply.
+    tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec, probeStatus});
+    tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
+        g_cfg.SetBool("server.enabled", s.enabled);
+        g_cfg.SetString("server.url", s.url);
+        g_cfg.SetBool("server.insecure", s.insecure);
+        g_cfg.SetInt("server.intervalSec", s.intervalSec);
+        g_cfg.Save();
+        std::lock_guard<std::mutex> lock(s_settingsMutex);
+        s_pendingSettings = s;
+        s_settingsPending = true;
+        Logger::Info("Server settings saved: enabled=" +
+                     std::string(s.enabled ? "true" : "false") + " url=" + s.url);
+    });
     tuiApp.Start();
 
     // In-process native log window (AppKit), mirroring the Windows LogWindow:
@@ -707,6 +749,10 @@ int main(int argc, char* argv[]) {
     } else {
         Logger::Warn("Log window unavailable, using in-TUI log page (Tab/l)");
     }
+
+    // Temperature sensors (SMC/PawnIO) — sampled on heavy frames for the
+    // tcmt-server snapshot and available to the MCP tools.
+    TemperatureWrapper::Initialize();
 
     // SPU Sensor Manager — reads ALL AppleSPUHIDDevice sensors via
     // asynchronous IOHIDDevice input report callbacks (no root needed).
@@ -728,9 +774,9 @@ int main(int argc, char* argv[]) {
             Logger::Info("  " + s->name);
     }
 
-    // Motion HTTP server (--http flag only)
+    // Motion HTTP server (enable via motion_http.enabled in config)
     static MotionHTTPServer s_http;
-    if (httpMode) {
+    if (motionHttpEnabled) {
         s_http.Start(9876, [](const std::string& method, const std::string& path) -> std::string {
         if (path == "/sensors/motion" && method == "GET") {
             std::lock_guard<std::mutex> lk(s_motionMutex);
@@ -747,17 +793,22 @@ int main(int argc, char* argv[]) {
         }
         return "{}";
     });
-    } // if (httpMode)
+    } // if (motionHttpEnabled)
 
-    // ServerProbe: push data to tcmt-server (if available)
+    // ServerProbe: push data to tcmt-server (enable/URL from TUI settings)
     static ServerProbe s_probe;
-    if (httpMode) {
+    if (serverEnabled) {
         if (serverInsecure) s_probe.SetInsecure(true);
         Logger::Info("ServerProbe: target " + serverUrl);
-        if (s_probe.Start(serverUrl))
+        if (s_probe.Start(serverUrl)) {
             Logger::Info("ServerProbe: upload started");
-        else
+            probeStatus = "running";
+            probeActive = true;
+        } else {
             Logger::Warn("ServerProbe: cannot start (invalid URL or no TLS support)");
+            probeStatus = "error: cannot start";
+            probeActive = false;
+        }
     }
 
     // Start history logger (SQLite)
@@ -806,13 +857,62 @@ int main(int argc, char* argv[]) {
         try {
             auto loopStart = std::chrono::high_resolution_clock::now();
 
+            // Apply server settings saved from the TUI settings page.
+            {
+                tcmt::ServerSettings pending;
+                bool havePending = false;
+                {
+                    std::lock_guard<std::mutex> lock(s_settingsMutex);
+                    if (s_settingsPending) {
+                        pending = s_pendingSettings;
+                        s_settingsPending = false;
+                        havePending = true;
+                    }
+                }
+                if (havePending) {
+                    serverUrl = pending.url;
+                    intervalSec = (std::max)(1, (std::min)(pending.intervalSec, 60));
+                    intervalMs = (int64_t)intervalSec * 1000;
+                    s_probe.Stop();
+                    if (pending.enabled) {
+                        if (pending.insecure) s_probe.SetInsecure(true);
+                        if (s_probe.Start(pending.url)) {
+                            probeStatus = "running";
+                            probeActive = true;
+                            Logger::Info("ServerProbe restarted: " + pending.url);
+                        } else {
+                            probeStatus = "error: cannot start";
+                            probeActive = false;
+                            Logger::Warn("ServerProbe restart failed: " + pending.url);
+                        }
+                    } else {
+                        probeStatus = "disabled";
+                        probeActive = false;
+                        Logger::Info("ServerProbe stopped (disabled in settings)");
+                    }
+                    tuiApp.SetServerSettings(
+                        {pending.enabled, pending.url, pending.insecure, intervalSec, probeStatus});
+                }
+            }
+
             // === Build TuiData snapshot ===
             tcmt::TuiData data;
+            // Handshake state, visible in the TUI: connecting until the
+            // server assigns an id, then uploading with that id attached.
+            if (probeActive) {
+                probeStatus = s_probe.Token().empty()
+                    ? "connecting..."
+                    : ("uploading (" + s_probe.DeviceId() + ")");
+            }
+            data.serverPushEnabled = probeActive;
+            data.serverUrl = serverUrl;
+            data.serverStatus = probeStatus;
+            data.lastPushMs = lastPushMs;
             data.osVersion = os.GetVersion();
             data.hardwareModel = os.GetModel();
             data.connectionCount = ipcServer.GetClientCount()
-                                 + (httpMode ? s_http.ActiveClients() : 0);
-            data.httpClientCount = httpMode ? s_http.ActiveClients() : 0;
+                                 + (motionHttpEnabled ? s_http.ActiveClients() : 0);
+            data.httpClientCount = motionHttpEnabled ? s_http.ActiveClients() : 0;
             auto ct = ipcServer.GetClientTypes();
             data.clientTypes.clear();
             for (auto t : ct) data.clientTypes.push_back(static_cast<uint8_t>(t));
@@ -1417,7 +1517,11 @@ int main(int argc, char* argv[]) {
             // Push snapshot to tcmt-server. Heavy-frame only (~1Hz): cpu/mem/gpu
             // values are only populated on heavy frames, so pushing every loop
             // would upload mostly zeros.
-            if (httpMode && isHeavyFrame && s_probe.Token().size() > 0) {
+            // Time-based upload gate (configurable 1..60 s via TUI settings).
+            const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            const bool pushDue = lastPushMs == 0 || nowMs - lastPushMs >= intervalMs;
+            if (probeActive && isHeavyFrame && pushDue && s_probe.Token().size() > 0) {
                 char snap[1024];
                 snprintf(snap, sizeof(snap),
                     "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"
@@ -1425,13 +1529,33 @@ int main(int argc, char* argv[]) {
                     "\"gpu_usage\":%.1f,\"gpu_temp\":%.1f,"
                     "\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
                     "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f,"
-                    "\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f",
+                    "\"lidAngle\":%.1f,\"hb\":%d,\"imut\":%.1f,"
+                    "\"cpu_name\":\"%s\",\"gpu_name\":\"%s\","
+                    "\"os_version\":\"%s\",\"uptime\":%llu",
                     data.cpuUsage, data.cpuTemp,
                     (unsigned long long)data.usedMemory, (unsigned long long)data.totalMemory,
                     data.gpuUsage, data.gpuTemp,
                     s_ax, s_ay, s_az, s_gx, s_gy, s_gz,
-                    s_lidAngle, s_heartbeat, s_imut);
-                s_probe.PostSnapshot(std::string("{") + snap + "}");
+                    s_lidAngle, s_heartbeat, s_imut,
+                    JsonSafe(cachedCpuName).c_str(), JsonSafe(data.gpuName).c_str(),
+                    JsonSafe(data.osVersion).c_str(),
+                    (unsigned long long)data.uptimeSeconds);
+                std::string body = "{";
+                body += snap;
+                // Full temperature sensor list (SMC etc.) — the viewer shows
+                // everything here, not just CPU/GPU.
+                auto temps = TemperatureWrapper::GetTemperatures();
+                body += ",\"temperatures\":[";
+                for (size_t ti = 0; ti < temps.size(); ++ti) {
+                    if (ti) body += ",";
+                    char tb[192];
+                    snprintf(tb, sizeof(tb), "{\"name\":\"%s\",\"value\":%.1f,\"unit\":\"C\"}",
+                             temps[ti].first.c_str(), temps[ti].second);
+                    body += tb;
+                }
+                body += "]}";
+                s_probe.PostSnapshot(std::move(body));
+                lastPushMs = nowMs;
             }
 
             // Sleep

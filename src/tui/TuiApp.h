@@ -38,6 +38,18 @@ typedef struct _win_st WINDOW;
 
 namespace tcmt {
 
+// Server push settings, editable from the TUI settings page (press S).
+// The TUI renders these; on save it invokes the handler with the edited
+// values, and main applies them (persist + restart the probe) and reports
+// the resulting state back via `status`.
+struct ServerSettings {
+    bool enabled = false;
+    std::string url = "http://127.0.0.1:8080";
+    bool insecure = false;
+    int intervalSec = 2;       // upload cadence, hard bounds 1..60
+    std::string status = "";   // probe state reported by main ("running" etc.)
+};
+
 // Data snapshot for TUI rendering (filled by main thread)
 struct TuiData {
     // CPU
@@ -152,6 +164,12 @@ struct TuiData {
     std::string connectionSince;
     std::vector<uint8_t> clientTypes;  // ClientType values per connection
     int httpClientCount = 0;           // local motion HTTP server clients (macOS)
+
+    // Server push (tcmt-server upload; filled by the monitor loop)
+    bool serverPushEnabled = false;
+    std::string serverUrl;
+    std::string serverStatus;   // "running" / "disabled" / "error: ..."
+    int64_t lastPushMs = 0;     // last successful snapshot post (0 = never)
 
     // TPM
     std::string tpmInfo;
@@ -297,6 +315,16 @@ public:
         locationRequestHandler_ = std::move(handler);
     }
 
+    // Server push settings shown on the settings page (press S).
+    void SetServerSettings(const ServerSettings& s) {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        serverSettings_ = s;
+    }
+    // Invoked on the TUI thread when the user saves the settings page.
+    void SetServerSettingsHandler(std::function<void(const ServerSettings&)> h) {
+        settingsHandler_ = std::move(h);
+    }
+
 #ifndef TCMT_WINDOWS
     // Inject external log buffer (e.g. from Logger) — used by the in-TUI
     // log page on macOS/Linux (Windows uses the standalone Win32 LogWindow).
@@ -305,6 +333,7 @@ public:
 
 private:
     void Run();
+    void RenderSettingsPage(int rows, int cols, int ch);
 #ifndef TCMT_WINDOWS
     void RenderLogPage(int rows, int cols, int ch);
 #endif
@@ -352,6 +381,14 @@ private:
     mutable std::mutex dataMutex_;
 
     std::function<void()> locationRequestHandler_;
+
+    // Settings page state (press S): framed interactive form.
+    ServerSettings serverSettings_;        // current values (from main)
+    ServerSettings draftSettings_;         // edits in progress
+    std::function<void(const ServerSettings&)> settingsHandler_;
+    bool settingsPage_ = false;
+    int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure
+    int urlCursor_ = 0;                    // cursor position inside URL field
 
     // Window dimensions
     int termRows_ = 0;

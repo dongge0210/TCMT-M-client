@@ -263,7 +263,11 @@ bool ServerProbe::Start(const std::string& serverUrl) {
 
 void ServerProbe::Stop() {
     running_ = false;
-    if (thread_.joinable()) thread_.join();
+    // Do NOT join: ProbeThread may be blocked inside a network call (TCP
+    // connect to an unreachable host can take minutes on macOS). Joining
+    // here would freeze the monitor loop that calls Stop(). The thread
+    // checks running_ every 2s and exits on its own.
+    if (thread_.joinable()) thread_.detach();
 }
 
 std::string ServerProbe::Token() const {

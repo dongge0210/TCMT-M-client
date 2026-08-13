@@ -35,6 +35,12 @@ public:
     // Returns the probe's device token (empty if not started).
     std::string Token() const;
 
+    // Device id assigned by the server after registration (empty until then).
+    std::string DeviceId() const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return deviceId_;
+    }
+
     // Queue a JSON snapshot for upload. Non-blocking.
     void PostSnapshot(const std::string& jsonData);
 

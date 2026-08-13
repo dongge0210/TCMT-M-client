@@ -230,6 +230,14 @@ void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     int x = (cols - static_cast<int>(title.size())) / 2;
     mvwprintw(win, 0, std::max(0, x), "%s", title.c_str());
     wattroff(win, COLOR_PAIR(1) | A_BOLD);
+
+    // Key hints (right-aligned) — discoverability for S / L / Q.
+    const std::string hint = "S:Settings L:Log Q:Quit";
+    if (cols >= static_cast<int>(title.size()) + static_cast<int>(hint.size()) + 6) {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, 0, cols - static_cast<int>(hint.size()) - 1, "%s", hint.c_str());
+        wattroff(win, COLOR_PAIR(5));
+    }
 }
 
 int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
@@ -917,6 +925,154 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 
 #ifndef TCMT_WINDOWS
 // ────────────────────────────────────────────────────────────────────────────
+// Settings page — framed interactive form for the server push settings.
+// Up/Down (or Tab) moves focus; Space toggles ON/OFF fields; typing edits
+// the URL field (Left/Right/Home/End/Backspace); Enter saves + applies via
+// the settings handler; Esc cancels without applying.
+void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
+    const int FIELD_COUNT = 4;
+    auto insertUrlChar = [&](char c) {
+        draftSettings_.url.insert(draftSettings_.url.begin() + urlCursor_, c);
+        urlCursor_ += 1;
+    };
+    auto deleteUrlChar = [&]() {
+        if (urlCursor_ > 0) {
+            draftSettings_.url.erase(draftSettings_.url.begin() + urlCursor_ - 1);
+            urlCursor_ -= 1;
+        }
+    };
+
+    // ---- key handling ----
+    switch (ch) {
+        case 27: // Esc — cancel without saving
+            settingsPage_ = false;
+            curs_set(0);
+            clear();
+            return;
+        case '\t':
+        case KEY_DOWN:
+            settingsFocus_ = (settingsFocus_ + 1) % FIELD_COUNT;
+            urlCursor_ = (int)draftSettings_.url.size();
+            break;
+        case KEY_UP:
+            settingsFocus_ = (settingsFocus_ + FIELD_COUNT - 1) % FIELD_COUNT;
+            urlCursor_ = (int)draftSettings_.url.size();
+            break;
+        case ' ':
+            if (settingsFocus_ == 0) draftSettings_.enabled = !draftSettings_.enabled;
+            else if (settingsFocus_ == 2) draftSettings_.insecure = !draftSettings_.insecure;
+            else if (settingsFocus_ == 1) insertUrlChar(' ');
+            break;
+        case '\n':
+        case '\r':
+#ifdef KEY_ENTER
+        case KEY_ENTER:
+#endif
+            // Hard bounds for the upload interval (1..60 s).
+            if (draftSettings_.intervalSec < 1) draftSettings_.intervalSec = 1;
+            if (draftSettings_.intervalSec > 60) draftSettings_.intervalSec = 60;
+            if (settingsHandler_) settingsHandler_(draftSettings_);
+            {
+                std::lock_guard<std::mutex> lock(dataMutex_);
+                serverSettings_ = draftSettings_;
+            }
+            settingsPage_ = false;
+            curs_set(0);
+            clear();
+            return;
+        default:
+            if (settingsFocus_ == 1 && ch >= 32 && ch < 127) {
+                insertUrlChar((char)ch);
+            } else if (settingsFocus_ == 1 && (ch == KEY_BACKSPACE || ch == 127 || ch == 8)) {
+                deleteUrlChar();
+            } else if (settingsFocus_ == 1 && ch == KEY_LEFT && urlCursor_ > 0) {
+                urlCursor_ -= 1;
+            } else if (settingsFocus_ == 1 && ch == KEY_RIGHT &&
+                       urlCursor_ < (int)draftSettings_.url.size()) {
+                urlCursor_ += 1;
+            } else if (settingsFocus_ == 1 && ch == KEY_HOME) {
+                urlCursor_ = 0;
+            } else if (settingsFocus_ == 1 && ch == KEY_END) {
+                urlCursor_ = (int)draftSettings_.url.size();
+            } else if (settingsFocus_ == 3 && ch >= '0' && ch <= '9') {
+                const int next = draftSettings_.intervalSec * 10 + (ch - '0');
+                draftSettings_.intervalSec = (next > 60) ? 60 : next;
+            } else if (settingsFocus_ == 3 && (ch == KEY_BACKSPACE || ch == 127 || ch == 8)) {
+                draftSettings_.intervalSec /= 10;
+            }
+            break;
+    }
+
+    // ---- draw framed dialog ----
+    const int W = std::min(72, cols - 8);
+    const int H = 15;
+    const int x0 = std::max(1, (cols - W) / 2);
+    const int y0 = std::max(1, (rows - H) / 2);
+
+    erase();
+    // Outer frame (ASCII-safe for both curses and PDCurses)
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Server Upload Settings ");
+
+    // Field rows: [n] label : [ value ] — focused row renders reversed.
+    auto drawField = [&](int idx, int row, const std::string& label, const std::string& value) {
+        const int lx = x0 + 2;
+        const bool focused = (settingsFocus_ == idx);
+        char buf[160];
+        snprintf(buf, sizeof(buf), "[%d] %-16s : [ %s ]", idx + 1, label.c_str(), value.c_str());
+        if (focused) attron(A_REVERSE);
+        mvprintw(row, lx, "%s", buf);
+        if (focused) attroff(A_REVERSE);
+    };
+
+    const bool on = draftSettings_.enabled;
+    drawField(0, y0 + 2, "Data upload", on ? " ON " : " OFF ");
+
+    // URL field: fixed-width window that follows the cursor.
+    const int URL_BOX = 40;
+    std::string shown = draftSettings_.url;
+    int winStart = 0;
+    if ((int)shown.size() > URL_BOX) {
+        winStart = std::max(0, std::min(urlCursor_ - URL_BOX / 2,
+                                       (int)shown.size() - URL_BOX));
+    }
+    std::string window = shown.substr(winStart, URL_BOX);
+    window.resize(URL_BOX, ' ');
+    drawField(1, y0 + 3, "Server URL", window);
+
+    drawField(2, y0 + 4, "Skip TLS verify", draftSettings_.insecure ? " ON " : " OFF ");
+    drawField(3, y0 + 5, "Upload interval",
+              std::to_string(draftSettings_.intervalSec) + " s  (bounds 1-60)");
+
+    // Status + hints
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        mvwprintw(stdscr, y0 + 7, x0 + 2, " Status : %s",
+                  serverSettings_.status.empty() ? (serverSettings_.enabled ? "starting..." : "disabled")
+                                                 : serverSettings_.status.c_str());
+    }
+    mvwprintw(stdscr, y0 + 9, x0 + 2, " Enter save+apply   Esc cancel   Up/Down or Tab focus");
+    mvwprintw(stdscr, y0 + 10, x0 + 2, " Space toggles   type edits URL   digits edit interval");
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Settings persist to system_monitor.json (server.*)");
+
+    // Place the cursor inside the URL box when it is focused. Never move the
+    // cursor to the screen corners — ncurses treats the bottom-right cell as
+    // a wrap trigger and can loop forever trying to reposition (classic
+    // freeze: wrefresh -> TransformLine -> _nc_mvcur_sp).
+    if (settingsFocus_ == 1) {
+        const int labelW = 3 + 2 + 16 + 3;   // "[1] " + label + " : "
+        const int valuePad = 2;              // "[ "
+        const int cursorInBox = std::max(0, std::min(urlCursor_ - winStart, URL_BOX - 1));
+        move(y0 + 3, x0 + 2 + labelW + valuePad + cursorInBox);
+    }
+}
+
 // Log page — full-screen scrolling log view inside the main TUI (macOS/Linux).
 // Data comes from the in-process Logger log buffer (no IPC, no files).
 // Windows uses the standalone Win32 LogWindow instead (dashboard-only console).
@@ -1021,9 +1177,31 @@ void TuiApp::Run() {
 #endif
 
         int ch = getch();
+
+        // Settings page is modal: Esc cancels, Enter saves — never quits.
+        if (settingsPage_) {
+            RenderSettingsPage(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+
         if (ch == 'q' || ch == 'Q' || ch == 27) {
             running_ = false;
             break;
+        }
+        if (ch == 's' || ch == 'S') {
+            // Open the settings page with a fresh draft of the current values.
+            {
+                std::lock_guard<std::mutex> lock(dataMutex_);
+                draftSettings_ = serverSettings_;
+            }
+            settingsFocus_ = 0;
+            urlCursor_ = (int)draftSettings_.url.size();
+            settingsPage_ = true;
+            logPage_ = false;   // settings overlays whatever page was shown
+            curs_set(1);
+            clear();
         }
         if ((ch == 'r' || ch == 'R') && locationRequestHandler_) {
             locationRequestHandler_();
@@ -1160,7 +1338,7 @@ void TuiApp::Run() {
         // System(3 rows) + Connections(2 rows) are reserved at bottom.
         // Content must not overflow into them.
         int sysTop = rows - 3;
-        int connTop = sysTop - 2;
+        int connTop = sysTop - 3;  // 2 content rows: IPC clients + server push
         int contentEnd = ly > ry ? ly : ry;
         // Clip content to not overwrite reserved panels
         if (contentEnd >= connTop) contentEnd = connTop - 1;
@@ -1196,6 +1374,29 @@ void TuiApp::Run() {
                 wattroff(stdscr, COLOR_PAIR(color));
             } else {
                 mvwprintw(stdscr, connTop, 14, "no clients connected");
+            }
+
+            // Row 2: tcmt-server push status (live, from the monitor loop).
+            if (!data.serverPushEnabled) {
+                mvwprintw(stdscr, connTop + 1, 14, "Push: disabled (press S to configure)");
+            } else {
+                std::string age = "never";
+                if (data.lastPushMs > 0) {
+                    int64_t sec = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count()
+                        - data.lastPushMs / 1000;
+                    age = std::to_string((std::max)(int64_t(0), sec)) + "s ago";
+                }
+                // Green while uploading, yellow while connecting, red only
+                // on error ("error: ..."). Status strings are
+                // "connecting..." / "uploading (dev_xxx)" / "error: ...".
+                const bool err = data.serverStatus.rfind("error", 0) == 0;
+                const bool connecting = data.serverStatus.rfind("connecting", 0) == 0;
+                const int pushColor = err ? 4 : (connecting ? 3 : 2);
+                wattron(stdscr, COLOR_PAIR(pushColor));
+                mvwprintw(stdscr, connTop + 1, 14, "Push: %s -> %s (last %s)",
+                          data.serverStatus.c_str(), data.serverUrl.c_str(), age.c_str());
+                wattroff(stdscr, COLOR_PAIR(pushColor));
             }
         }
 
