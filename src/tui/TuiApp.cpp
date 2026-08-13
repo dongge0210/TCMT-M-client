@@ -1199,7 +1199,9 @@ void TuiApp::Run() {
             settingsFocus_ = 0;
             urlCursor_ = (int)draftSettings_.url.size();
             settingsPage_ = true;
+#ifndef TCMT_WINDOWS
             logPage_ = false;   // settings overlays whatever page was shown
+#endif
             curs_set(1);
             clear();
         }
