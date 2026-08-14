@@ -162,5 +162,13 @@ void MacLogWindow::StopApp() {
     });
 }
 
+void MacLogWindow::DisableAppNap() {
+    static id napActivity = nil;
+    if (napActivity) return;  // already opted out
+    napActivity = [[NSProcessInfo processInfo] beginActivityWithOptions:
+        (NSActivityLatencyCritical | NSActivityUserInitiatedAllowingIdleSystemSleep)
+        reason:@"Real-time hardware monitoring — keep sampling while backgrounded"];
+}
+
 } // namespace mac
 } // namespace tcmt

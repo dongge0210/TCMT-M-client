@@ -32,6 +32,12 @@ public:
 
     bool IsActive() const { return controller_ != nullptr; }
 
+    // Opt out of App Nap: a hardware monitor must keep its sampling timers
+    // responsive while the window is occluded or the app is backgrounded
+    // (otherwise macOS coalesces nanosleep and the monitor loop stalls).
+    // Call once at startup. Safe in headless sessions (no-op).
+    static void DisableAppNap();
+
 private:
     // TCMTLogWindowController* (kept opaque so the header stays C++).
     void* controller_ = nullptr;

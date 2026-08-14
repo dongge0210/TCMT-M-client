@@ -304,6 +304,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Keep sampling timers responsive while the window is occluded or the
+    // app is backgrounded (App Nap would otherwise coalesce nanosleep and
+    // the monitor loop appears to stall).
+    tcmt::mac::MacLogWindow::DisableAppNap();
+
     // Load application config (config.json)
     {
         if (g_cfg.Load()) {
