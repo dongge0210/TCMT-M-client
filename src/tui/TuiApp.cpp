@@ -1448,6 +1448,13 @@ void TuiApp::Run() {
             mvwprintw(stdscr, sysTop + 1, cols - 18, "Procs: %d", data.processCount);
         }
 
+        // Never park the cursor on the bottom-right corner: the bottom
+        // border writes there every frame, terminals treat that cell as a
+        // wrap trigger, and ncurses can loop forever re-positioning the
+        // cursor (_nc_mvcur_sp) — a probabilistic UI freeze. Move away
+        // from the corner before refresh.
+        move(rows - 2, 0);
+
         refresh();
 
         // Check resize more frequently during sleep
