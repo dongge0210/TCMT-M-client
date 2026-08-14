@@ -683,12 +683,11 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         wattroff(win, COLOR_PAIR(pair) | A_BOLD);
     }
 
-    // Power consumption
+    // Power consumption — always render all rows; 0 means no data (yet),
+    // hiding rows made the panel look broken when sampling is unavailable.
     double totalPower = 0.0;
-    if (data.cpuPower > 0)
-        mvwprintw(win, y + lines++, x0 + 2, "CPU:   %.2f W", data.cpuPower / 1000.0);
-    if (data.gpuPower > 0)
-        mvwprintw(win, y + lines++, x0 + 2, "GPU:   %.2f W", data.gpuPower / 1000.0);
+    mvwprintw(win, y + lines++, x0 + 2, "CPU:   %.2f W", data.cpuPower / 1000.0);
+    mvwprintw(win, y + lines++, x0 + 2, "GPU:   %.2f W", data.gpuPower / 1000.0);
     mvwprintw(win, y + lines++, x0 + 2, "ANE:   %.2f W", data.anePower / 1000.0);
     totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
     mvwprintw(win, y + lines++, x0 + 4, "Total: %.2f W", totalPower);
