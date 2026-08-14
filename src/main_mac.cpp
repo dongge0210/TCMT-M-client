@@ -271,6 +271,11 @@ static std::string JsonSafe(const std::string& s) {
     return out;
 }
 
+// Loop stall diagnostics: the stage marker is set before each major block of
+// the monitor loop so a hung sensor call can be located after the fact
+// (slow-iteration warning + `sample` while frozen).
+static std::atomic<int> g_loopStage{0};
+
 // ======================== Server push settings ========================
 // No CLI flags: the server connection (enable / URL / TLS verify) is edited
 // on the TUI settings page (press S) and persisted to system_monitor.json
@@ -896,6 +901,7 @@ int main(int argc, char* argv[]) {
             }
 
             // === Build TuiData snapshot ===
+            g_loopStage = 1;  // apply-settings + base snapshot fields
             tcmt::TuiData data;
             // Handshake state, visible in the TUI: connecting until the
             // server assigns an id, then uploading with that id attached.
@@ -935,6 +941,7 @@ int main(int argc, char* argv[]) {
             data.efficiencyCores = cachedECores;
 
             bool isHeavyFrame = (loopCounter % HEAVY_SENSOR_SKIP == 1);
+            g_loopStage = 2;  // heavy-frame sensor sampling
 
             // Coordinator snapshot — 2Hz only
             if (isHeavyFrame) {
@@ -1281,6 +1288,7 @@ int main(int argc, char* argv[]) {
                 }
 
             // Update TUI
+            g_loopStage = 3;  // UpdateData + IPC write
             tuiApp.UpdateData(data);
 
             // Write to IPC shared memory (schema-driven, for C# Avalonia)
@@ -1517,6 +1525,7 @@ int main(int argc, char* argv[]) {
             // Push snapshot to tcmt-server. Heavy-frame only (~1Hz): cpu/mem/gpu
             // values are only populated on heavy frames, so pushing every loop
             // would upload mostly zeros.
+            g_loopStage = 4;  // snapshot push
             // Time-based upload gate (configurable 1..60 s via TUI settings).
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
@@ -1562,6 +1571,12 @@ int main(int argc, char* argv[]) {
             auto loopEnd = std::chrono::high_resolution_clock::now();
             int loopMs = (int)std::chrono::duration_cast<std::chrono::milliseconds>(
                 loopEnd - loopStart).count();
+            // Stall diagnostics: if a sensor call hung, the stage marker
+            // tells us where. (Then `sample TCMT-M 2` while frozen nails it.)
+            if (loopMs > 2000) {
+                Logger::Warn("loop iteration slow: " + std::to_string(loopMs) +
+                             "ms at stage " + std::to_string(g_loopStage.load()));
+            }
             int sleepMs = std::max(33 - loopMs, 5);  // 30 Hz update
             // Sleep with responsive exit (check every 5ms)
             for (int s = 0; s < 7 && !g_shouldExit.load(); ++s) {
