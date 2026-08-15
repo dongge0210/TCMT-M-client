@@ -74,6 +74,10 @@
     <ClCompile>
       <WarningLevel>Level2</WarningLevel>
       <SDLCheck>true</SDLCheck>
+      <!-- LinkIncremental=false conflicts with Debug's default /ZI — the
+           linker warns LNK4075. Keep the project's non-incremental linking
+           and drop EditAndContinue. -->
+      <EditAndContinue>false</EditAndContinue>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;WIN32_LEAN_AND_MEAN;TCMT_WINDOWS;
 NOMINMAX;
 _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
