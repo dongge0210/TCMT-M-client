@@ -55,6 +55,7 @@
 
 // Config management (wraps CPP-parsers / nlohmann/json internally)
 #include "core/Config/ConfigManager.h"
+#include "core/Updater.h"
 #include "core/HTTPServer/MotionHTTPServer.h"
 #include "core/ServerProbe.h"
 #include <fstream>
@@ -275,6 +276,7 @@ static std::string JsonSafe(const std::string& s) {
 // the monitor loop so a hung sensor call can be located after the fact
 // (slow-iteration warning + `sample` while frozen).
 static std::atomic<int> g_loopStage{0};
+static Updater s_updater;
 
 // ======================== Server push settings ========================
 // No CLI flags: the server connection (enable / URL / TLS verify) is edited
@@ -734,6 +736,11 @@ int main(int argc, char* argv[]) {
     });
     // Server push settings (TUI settings page, press S) -> persist + apply.
     tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec, probeStatus});
+    // Self-update: startup check + U-key download.
+    s_updater.SetExePath(argv[0]);
+    s_updater.CheckForUpdate();
+    tuiApp.SetUpdateRequestHandler([] { s_updater.StartDownload(); });
+
     tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
         g_cfg.SetBool("server.enabled", s.enabled);
         g_cfg.SetString("server.url", s.url);
@@ -919,6 +926,8 @@ int main(int argc, char* argv[]) {
             data.serverUrl = serverUrl;
             data.serverStatus = probeStatus;
             data.lastPushMs = lastPushMs;
+            data.updateStatus = s_updater.StatusText();
+            data.updateState = static_cast<int>(s_updater.GetState());
             data.osVersion = os.GetVersion();
             data.hardwareModel = os.GetModel();
             data.connectionCount = ipcServer.GetClientCount()

@@ -171,6 +171,10 @@ struct TuiData {
     std::string serverStatus;   // "running" / "disabled" / "error: ..."
     int64_t lastPushMs = 0;     // last successful snapshot post (0 = never)
 
+    // Self-update (filled by the monitor loop)
+    std::string updateStatus;
+    int updateState = 0;   // 0 idle 1 checking 2 available 3 downloading 4 verifying 5 ready 6 failed
+
     // TPM
     std::string tpmInfo;
 
@@ -315,6 +319,12 @@ public:
         locationRequestHandler_ = std::move(handler);
     }
 
+    // Optional handler invoked when the user presses U (start the update
+    // download) — main wires this to the Updater.
+    void SetUpdateRequestHandler(std::function<void()> h) {
+        updateRequestHandler_ = std::move(h);
+    }
+
     // Server push settings shown on the settings page (press S).
     void SetServerSettings(const ServerSettings& s) {
         std::lock_guard<std::mutex> lock(dataMutex_);
@@ -381,6 +391,7 @@ private:
     mutable std::mutex dataMutex_;
 
     std::function<void()> locationRequestHandler_;
+    std::function<void()> updateRequestHandler_;
 
     // Settings page state (press S): framed interactive form.
     ServerSettings serverSettings_;        // current values (from main)

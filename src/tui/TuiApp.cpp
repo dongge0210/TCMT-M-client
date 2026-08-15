@@ -1222,6 +1222,9 @@ void TuiApp::Run() {
         if ((ch == 'r' || ch == 'R') && locationRequestHandler_) {
             locationRequestHandler_();
         }
+        if ((ch == 'u' || ch == 'U') && updateRequestHandler_) {
+            updateRequestHandler_();
+        }
 #ifndef TCMT_WINDOWS
         if (ch == 'l' || ch == 'L' || ch == '\t') {
             logPage_ = !logPage_;
@@ -1290,6 +1293,17 @@ void TuiApp::Run() {
 
         // === Header ===
         DrawHeader(stdscr, data);
+
+        // Update banner — drawn on the header separator row (row 1).
+        if (!data.updateStatus.empty()) {
+            const int color = data.updateState == 6 ? 4
+                : (data.updateState == 5 ? 2 : 3);
+            wattron(stdscr, COLOR_PAIR(color) | A_BOLD);
+            std::string banner = " " + data.updateStatus + " ";
+            int bx = (std::max)(1, (cols - (int)banner.size()) / 2);
+            mvwprintw(stdscr, 1, bx, "%.*s", cols - 2, banner.c_str());
+            wattroff(stdscr, COLOR_PAIR(color) | A_BOLD);
+        }
 
         // === Left panels (CPU + GPU + Memory) ===
         int maxY = rows - 5;

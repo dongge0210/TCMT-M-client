@@ -66,6 +66,9 @@
     <ClInclude Include="src\core\Utils\stdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\Updater.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\ServerProbe.h">
       <Filter>Source Files</Filter>
     </ClInclude>
@@ -181,6 +184,9 @@
     </ClCompile>
     <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\Updater.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\core\ServerProbe.cpp">
       <Filter>Source Files</Filter>
