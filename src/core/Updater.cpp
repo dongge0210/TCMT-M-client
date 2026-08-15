@@ -165,6 +165,11 @@ bool Updater::HttpsGet(const std::string& url, std::string& out) {
 
     const char* bodyStart = strstr(raw.c_str(), "\r\n\r\n");
     if (!bodyStart) return false;
+    // Only accept 2xx responses (404 = no releases yet → caller treats as idle).
+    if (strncmp(raw.c_str(), "HTTP/1.1 2", 11) != 0 &&
+        strncmp(raw.c_str(), "HTTP/1.0 2", 11) != 0) {
+        return false;
+    }
     out = std::string(bodyStart + 4);
     return !out.empty();
 }
@@ -212,7 +217,9 @@ void Updater::CheckThread() {
     std::string url = std::string("https://api.github.com/repos/") +
         kRepoOwner + "/" + kRepoName + "/releases/latest";
     if (!HttpsGet(url, releaseJson)) {
-        SetStatus(State::Failed, "检查更新失败（网络）", &state_, &mutex_, &status_);
+        // No releases yet (404) or network trouble — stay silent until a
+        // release actually exists; don't nag with a red banner.
+        SetStatus(State::Idle, "", &state_, &mutex_, &status_);
         running_.store(false);
         return;
     }
