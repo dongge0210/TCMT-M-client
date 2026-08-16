@@ -1894,6 +1894,43 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                             JsonSafeStr(tuiData.osVersion).c_str(),
                             (unsigned long long)tuiData.uptimeSeconds);
                         body += buf;
+                        // Disks (volumes): name + used/total bytes.
+                        body += ",\"disks\":[";
+                        for (size_t di = 0; di < tuiData.disks.size(); ++di) {
+                            if (di) body += ",";
+                            const auto& dsk = tuiData.disks[di];
+                            std::string dname = !dsk.label.empty() ? dsk.label
+                                : (dsk.letter ? std::string(1, dsk.letter) : std::string("?"));
+                            char db[256];
+                            snprintf(db, sizeof(db), "{\"name\":\"%s\",\"used\":%llu,\"total\":%llu}",
+                                     JsonSafeStr(dname).c_str(),
+                                     (unsigned long long)dsk.usedSpace,
+                                     (unsigned long long)dsk.totalSize);
+                            body += db;
+                        }
+                        body += "]";
+                        // Network adapters: name + down/up speeds (bytes/s).
+                        body += ",\"net\":[";
+                        for (size_t ni = 0; ni < tuiData.adapters.size(); ++ni) {
+                            if (ni) body += ",";
+                            char nb[256];
+                            snprintf(nb, sizeof(nb), "{\"name\":\"%s\",\"down\":%llu,\"up\":%llu}",
+                                     JsonSafeStr(tuiData.adapters[ni].name).c_str(),
+                                     (unsigned long long)tuiData.adapters[ni].downloadSpeed,
+                                     (unsigned long long)tuiData.adapters[ni].uploadSpeed);
+                            body += nb;
+                        }
+                        body += "]";
+                        // Battery (optional — -1 means no battery).
+                        if (tuiData.batteryPercent >= 0) {
+                            char bb[96];
+                            snprintf(bb, sizeof(bb),
+                                     ",\"battery\":{\"percent\":%d,\"charging\":%s,\"health\":%.1f}",
+                                     tuiData.batteryPercent,
+                                     tuiData.acOnline ? "true" : "false",
+                                     tuiData.batteryHealthPercent);
+                            body += bb;
+                        }
                         auto temps = TemperatureWrapper::GetTemperatures();
                         body += ",\"temperatures\":[";
                         for (size_t ti = 0; ti < temps.size(); ++ti) {

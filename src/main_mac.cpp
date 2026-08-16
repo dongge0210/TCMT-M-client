@@ -1565,6 +1565,43 @@ int main(int argc, char* argv[]) {
                     (unsigned long long)data.uptimeSeconds);
                 std::string body = "{";
                 body += snap;
+                // Disks (volumes): name + used/total bytes.
+                body += ",\"disks\":[";
+                for (size_t di = 0; di < data.disks.size(); ++di) {
+                    if (di) body += ",";
+                    const auto& dsk = data.disks[di];
+                    std::string dname = !dsk.label.empty() ? dsk.label
+                        : (dsk.letter ? std::string(1, dsk.letter) : std::string("?"));
+                    char db[256];
+                    snprintf(db, sizeof(db), "{\"name\":\"%s\",\"used\":%llu,\"total\":%llu}",
+                             JsonSafe(dname).c_str(),
+                             (unsigned long long)dsk.usedSpace,
+                             (unsigned long long)dsk.totalSize);
+                    body += db;
+                }
+                body += "]";
+                // Network adapters: name + down/up speeds (bytes/s).
+                body += ",\"net\":[";
+                for (size_t ni = 0; ni < data.adapters.size(); ++ni) {
+                    if (ni) body += ",";
+                    char nb[256];
+                    snprintf(nb, sizeof(nb), "{\"name\":\"%s\",\"down\":%llu,\"up\":%llu}",
+                             JsonSafe(data.adapters[ni].name).c_str(),
+                             (unsigned long long)data.adapters[ni].downloadSpeed,
+                             (unsigned long long)data.adapters[ni].uploadSpeed);
+                    body += nb;
+                }
+                body += "]";
+                // Battery (optional — -1 means no battery).
+                if (data.batteryPercent >= 0) {
+                    char bb[96];
+                    snprintf(bb, sizeof(bb),
+                             ",\"battery\":{\"percent\":%d,\"charging\":%s,\"health\":%.1f}",
+                             data.batteryPercent,
+                             data.acOnline ? "true" : "false",
+                             data.batteryHealthPercent);
+                    body += bb;
+                }
                 // Full temperature sensor list (SMC etc.) — the viewer shows
                 // everything here, not just CPU/GPU.
                 auto temps = TemperatureWrapper::GetTemperatures();
