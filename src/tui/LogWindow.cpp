@@ -139,16 +139,28 @@ LogWindow::LogView LogWindow::ComputeView(HWND hwnd) {
 }
 
 bool LogWindow::HitTest(const LogView& view, int x, int y, int& line, int& col) const {
-    const int disp = y / view.rowHeight - (view.visibleRows - view.count);
-    if (disp < 0 || disp >= view.count) {
+    const int topPad = (view.count < view.visibleRows) ? 0 : (view.visibleRows - view.count);
+    const int disp = y / view.rowHeight - topPad;
+    if (disp < 0) {
         return false;
     }
-    line = view.start + disp;
-    const std::wstring wline = Utf8ToWide(view.lines[line]);
-    col = (std::max)(0, (x - 2) / view.charWidth);
-    col = (std::min)(col, static_cast<int>(wline.size()));
-    col = (std::min)(col, view.maxChars);
-    return true;
+    // Walk wrapped display rows to find the logical line + column.
+    int row = 0;
+    for (int i = 0; i < view.count; ++i) {
+        const int lineIdx = view.start + i;
+        const std::wstring wline = Utf8ToWide(view.lines[lineIdx]);
+        const int len = static_cast<int>(wline.size());
+        const int rows = (std::max)(1, (len + view.maxChars - 1) / (std::max)(1, view.maxChars));
+        if (disp < row + rows) {
+            line = lineIdx;
+            const int rInLine = disp - row;
+            col = (std::max)(0, (x - 2) / view.charWidth) + rInLine * view.maxChars;
+            col = (std::min)(col, len);
+            return true;
+        }
+        row += rows;
+    }
+    return false;
 }
 
 std::wstring LogWindow::BuildSelectionText(const LogView& view) const {
@@ -401,39 +413,36 @@ void LogWindow::OnPaint(HWND hwnd) {
     const bool hasSel = selAnchorLine_ >= 0 && selActiveLine_ >= 0;
     const int selL1 = (std::min)(selAnchorLine_, selActiveLine_);
     const int selL2 = (std::max)(selAnchorLine_, selActiveLine_);
-    const int selC1 = (selL1 == selAnchorLine_) ? selAnchorCol_ : selActiveCol_;
-    const int selC2 = (selL2 == selActiveLine_) ? selActiveCol_ : selAnchorCol_;
 
-    for (int i = 0; i < view.count; ++i) {
+    // Wrapped rendering: long lines flow onto the next display row instead
+    // of truncating; when content is shorter than the viewport, rows are
+    // top-aligned instead of hugging the bottom.
+    const int topPad = (view.count < view.visibleRows) ? 0 : (view.visibleRows - view.count);
+    for (int i = 0, row = 0; i < view.count && row < view.visibleRows; ++i) {
         const int lineIdx = view.start + i;
         const std::wstring wline = Utf8ToWide(view.lines[lineIdx]);
-        const int y = (view.visibleRows - view.count + i) * view.rowHeight;
-        const int lineLen = (std::min)(static_cast<int>(wline.size()), view.maxChars);
-        SetTextColor(memDC, SeverityColor(view.lines[lineIdx]));
-
-        int x = 2;
-        if (hasSel && lineIdx >= selL1 && lineIdx <= selL2) {
-            const int selStart = (std::min)((lineIdx == selL1) ? selC1 : 0, lineLen);
-            const int selEnd = (std::min)((lineIdx == selL2) ? selC2 : lineLen, lineLen);
-
-            if (selStart > 0) {
-                TextOutW(memDC, x, y, wline.c_str(), selStart);
-                x += selStart * view.charWidth;
-            }
-            if (selEnd > selStart) {
+        const bool selLine = hasSel && lineIdx >= selL1 && lineIdx <= selL2;
+        const COLORREF lineColor = SeverityColor(view.lines[lineIdx]);
+        const int len = static_cast<int>(wline.size());
+        if (len == 0) {
+            ++row; // blank line occupies one row
+            continue;
+        }
+        for (int off = 0; off < len && row < view.visibleRows; off += view.maxChars) {
+            const int y = (topPad + row) * view.rowHeight;
+            const int chunk = (std::min)(view.maxChars, len - off);
+            if (selLine) {
                 SetBkMode(memDC, OPAQUE);
                 SetBkColor(memDC, RGB(38, 79, 120));
                 SetTextColor(memDC, RGB(255, 255, 255));
-                TextOutW(memDC, x, y, wline.c_str() + selStart, selEnd - selStart);
-                x += (selEnd - selStart) * view.charWidth;
+                TextOutW(memDC, 2, y, wline.c_str() + off, chunk);
                 SetBkMode(memDC, TRANSPARENT);
-                SetTextColor(memDC, SeverityColor(view.lines[lineIdx]));
+                SetTextColor(memDC, lineColor);
+            } else {
+                SetTextColor(memDC, lineColor);
+                TextOutW(memDC, 2, y, wline.c_str() + off, chunk);
             }
-            if (selEnd < lineLen) {
-                TextOutW(memDC, x, y, wline.c_str() + selEnd, lineLen - selEnd);
-            }
-        } else {
-            TextOutW(memDC, x, y, wline.c_str(), lineLen);
+            ++row;
         }
     }
 

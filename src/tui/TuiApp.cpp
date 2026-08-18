@@ -487,6 +487,8 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         // Location Services guidance — show the user where to grant SSID
         // access BEFORE expecting the SSID field (macOS 15+). Rendered in
         // blue so the actionable hint stands out from the sensor data.
+        // macOS-only: Windows reads SSID via the WLAN API without it.
+#ifndef TCMT_WINDOWS
         if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
@@ -506,6 +508,7 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             lines++;
             wattroff(win, COLOR_PAIR(6));
         }
+#endif
     } else {
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
