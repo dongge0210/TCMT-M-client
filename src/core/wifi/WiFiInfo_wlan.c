@@ -44,6 +44,33 @@ bool WlanDetect(WlanData* out) {
 
     out->powerOn = (pIfInfo->isState != wlan_interface_state_not_ready);
 
+    // Radio state is the authoritative "off" signal. Docs: a PHY's radio
+    // is off if EITHER its software or hardware radio state is off —
+    // hardware switch / airplane mode leave isState at not_ready, while a
+    // powered-but-unassociated radio must NOT read as off.
+    {
+        PWLAN_RADIO_STATE pRadio = NULL;
+        WLAN_OPCODE_VALUE_TYPE radioType = wlan_opcode_value_type_query_only;
+        DWORD radioSize = 0;
+        dwResult = WlanQueryInterface(
+            hClient, pGuid,
+            wlan_intf_opcode_radio_state,
+            NULL, &radioSize,
+            (PVOID*)&pRadio, &radioType);
+        if (dwResult == ERROR_SUCCESS && pRadio && pRadio->dwNumberOfPhys > 0) {
+            BOOL anyOff = FALSE;
+            for (DWORD i = 0; i < pRadio->dwNumberOfPhys; i++) {
+                if (pRadio->PhyRadioState[i].dot11SoftwareRadioState == dot11_radio_state_off ||
+                    pRadio->PhyRadioState[i].dot11HardwareRadioState == dot11_radio_state_off) {
+                    anyOff = TRUE;
+                    break;
+                }
+            }
+            if (anyOff) out->powerOn = FALSE;
+        }
+        if (pRadio) WlanFreeMemory(pRadio);
+    }
+
     // --- Current connection (SSID, BSSID, security, tx rate) ---
     PWLAN_CONNECTION_ATTRIBUTES pConn = NULL;
     WLAN_OPCODE_VALUE_TYPE opCode = wlan_opcode_value_type_query_only;
