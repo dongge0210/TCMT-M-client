@@ -1833,6 +1833,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                   }
                   const auto& wd = s_wifi.GetData();
                   tuiData.hasWiFi = wd.powerOn;
+                  tuiData.wifiConnected = wd.isConnected;
                   tuiData.wifiSSID = wd.ssid;
                   tuiData.wifiRSSI = wd.rssi;
                   tuiData.wifiChannel = wd.channel;

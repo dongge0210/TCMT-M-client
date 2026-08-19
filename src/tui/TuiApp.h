@@ -183,6 +183,7 @@ struct TuiData {
 
     // WiFi (optional — only if WiFiInfo::Detect() was called)
     bool hasWiFi = false;
+    bool wifiConnected = false;   // adapter on + associated (vs. merely present)
     std::string wifiSSID;
     std::string wifiBSSID;
     int wifiRSSI = 0;

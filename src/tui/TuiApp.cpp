@@ -461,13 +461,27 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     if (maxW < 10) return 0;
     int lines = 0;
 
-    if (data.hasWiFi) {
-        bool hasData = !data.wifiSSID.empty() || data.wifiRSSI < 0 || data.wifiChannel > 0;
-        std::string wifiStr;
+    // Three explicit states: Off (no interface) / Disconnected (adapter on,
+    // no association) / Connected (SSID + details).
+    if (!data.hasWiFi) {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Off");
+        lines++;
+    } else if (!data.wifiConnected) {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        wattron(win, COLOR_PAIR(3));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Disconnected");
+        wattroff(win, COLOR_PAIR(3));
+        lines++;
+    } else {
+        std::string wifiStr = "Connected";
         if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-            wifiStr = "On  SSID unavailable (Location Services denied)";
+            wifiStr += "  SSID unavailable (Location Services denied)";
         } else {
-            wifiStr = hasData ? "On" : "Disconnected";
             if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
             if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
             if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
@@ -481,7 +495,9 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
+        wattron(win, COLOR_PAIR(2));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
+        wattroff(win, COLOR_PAIR(2));
         lines++;
 
         // Location Services guidance — show the user where to grant SSID
@@ -509,12 +525,6 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             wattroff(win, COLOR_PAIR(6));
         }
 #endif
-    } else {
-        wattron(win, COLOR_PAIR(5));
-        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
-        wattroff(win, COLOR_PAIR(5));
-        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Off");
-        lines++;
     }
 
     if (data.hasBluetooth) {
