@@ -25,7 +25,7 @@ void TemperatureWrapper::Cleanup() {
     initialized = false;
 }
 
-std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesImpl() {
     std::vector<std::pair<std::string, double>> temps;
     if (!initialized) return temps;
 
@@ -119,6 +119,8 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 #include <chrono>
 #include <vector>
 #include <string>
+#include <mutex>
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -1261,7 +1263,7 @@ void TemperatureWrapper::Cleanup() {
     initialized = false;
 }
 
-std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesImpl() {
     std::vector<std::pair<std::string, double>> temps;
 
     if (!initialized) return temps;
@@ -1364,7 +1366,7 @@ static std::string ReadLine(const std::string& path) {
     return val;
 }
 
-std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesImpl() {
     std::vector<std::pair<std::string, double>> temps;
     if (!initialized) return temps;
 
@@ -1474,3 +1476,22 @@ double GetPmAnePower() { return 0.0; }
 #else
 #error "Unsupported platform"
 #endif
+
+// Shared throttling cache: hardware temperature reads are slow and the
+// PawnIO/SMC paths are not thread-safe — multiple callers (TUI sampling
+// loop, snapshot upload) must share ONE read cadence. Serializes on a
+// mutex and refreshes at most once per TTL window.
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+    static std::mutex m;
+    static std::vector<std::pair<std::string, double>> cache;
+    static std::chrono::steady_clock::time_point last = {};
+    static bool first = true;
+    std::lock_guard<std::mutex> lk(m);
+    const auto now = std::chrono::steady_clock::now();
+    if (first || now - last > std::chrono::seconds(2)) {
+        cache = GetTemperaturesImpl();
+        last = now;
+        first = false;
+    }
+    return cache;
+}
