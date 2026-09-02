@@ -87,20 +87,20 @@ static NvapiState& GetNvapi() {
     static bool tried = false;
     if (!tried) { tried = true;
         ns.module = LoadLibraryW(L"nvapi64.dll");
-        if (!ns.module) { Logger::Info("GPU_FAN: nvapi64.dll not found"); return ns; }
+        if (!ns.module) { Logger::Debug("GPU_FAN: nvapi64.dll not found"); return ns; }
         ns.query = (NvapiQueryFn)GetProcAddress(ns.module, "nvapi_QueryInterface");
-        if (!ns.query) { Logger::Info("GPU_FAN: nvapi_QueryInterface not found"); return ns; }
+        if (!ns.query) { Logger::Debug("GPU_FAN: nvapi_QueryInterface not found"); return ns; }
         auto initFn = (NvAPI_Status(*)())ns.query(NVAPI_Initialize_ID);
-        if (!initFn || initFn() != NVAPI_OK) { Logger::Info("GPU_FAN: NVAPI Init failed"); return ns; }
+        if (!initFn || initFn() != NVAPI_OK) { Logger::Debug("GPU_FAN: NVAPI Init failed"); return ns; }
         ns.gpuCount = NV_MAX_PHYSICAL_GPUS;
         auto enumFn = (NvAPI_Status(*)(NvPhysicalGpuHandle*,unsigned int*))ns.query(NVAPI_EnumPhysicalGPUs_ID);
         NvAPI_Status rc = enumFn ? enumFn(ns.gpus, &ns.gpuCount) : -1;
         if (rc != NVAPI_OK || ns.gpuCount == 0) {
-            Logger::Info("GPU_FAN: NVAPI EnumPhysicalGPUs rc=" + std::to_string(rc) + " count=" + std::to_string(ns.gpuCount));
+            Logger::Debug("GPU_FAN: NVAPI EnumPhysicalGPUs rc=" + std::to_string(rc) + " count=" + std::to_string(ns.gpuCount));
             return ns;
         }
         ns.ready = true;
-        Logger::Info("NVAPI: " + std::to_string(ns.gpuCount) + " GPU(s)");
+        Logger::Debug("NVAPI: " + std::to_string(ns.gpuCount) + " GPU(s)");
     }
     return ns;
 }
@@ -147,7 +147,7 @@ static NvmlApi& GetNvmlApi() {
         attempted = true;
         api.module = LoadLibraryW(L"nvml.dll");
         if (!api.module) {
-            Logger::Info("NVML not available (nvml.dll not found) -- skipping NVIDIA GPU details");
+            Logger::Debug("NVML not available (nvml.dll not found) -- skipping NVIDIA GPU details");
             return api;
         }
 
@@ -191,7 +191,7 @@ static NvmlApi& GetNvmlApi() {
 
         // Validate mandatory functions -- if any are missing, treat as unavailable
         if (!api.init || !api.shutdown || !api.getHandleByIndex) {
-            Logger::Warn("NVML loaded but missing required functions -- disabling NVML");
+            Logger::Debug("NVML loaded but missing required functions -- disabling NVML");
             FreeLibrary(api.module);
             api = NvmlApi{};
         }
@@ -214,7 +214,7 @@ struct NvmlSession {
         r = api->getHandleByIndex(0, &device);
         if (NVML_SUCCESS != r) { api->shutdown(); Logger::Debug("NVML: getHandleByIndex failed"); return; }
         ok = true;
-        Logger::Info("NVML: persistent session initialized");
+        Logger::Debug("NVML: persistent session initialized");
     }
 
     ~NvmlSession() {
@@ -446,9 +446,9 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
             }
         }
     } else if (napi.ready && napi.gpuCount == 0) {
-        Logger::Info("GPU fans: NVAPI initialized but 0 GPUs enumerated");
+        Logger::Debug("GPU fans: NVAPI initialized but 0 GPUs enumerated");
     } else if (!napi.ready) {
-        Logger::Info("GPU fans: NVAPI not available, using NVML duty% only");
+        Logger::Debug("GPU fans: NVAPI not available, using NVML duty% only");
     }
 
     // ── Fallback: NVML only (percentage) ──

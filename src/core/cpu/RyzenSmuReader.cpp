@@ -156,9 +156,9 @@ std::vector<RyzenSensor> RyzenSmuReader::ReadAll() {
         s_probed = true;
         if (!s_pa.Open()) { Logger::Debug("RyzenSmu: PawnIO not available"); return result; }
         auto data = LoadRes(RYZEN_SMU_RES);
-        if (data.empty()) { Logger::Info("RyzenSmu: resource not found"); return result; }
+        if (data.empty()) { Logger::Debug("RyzenSmu: resource not found"); return result; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "RyzenSMU")) {
-            Logger::Info("RyzenSmu: module load failed"); return result;
+            Logger::Debug("RyzenSmu: module load failed"); return result;
         }
 
         uint64_t verOut[1] = {0};

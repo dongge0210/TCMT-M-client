@@ -95,7 +95,7 @@ static bool ParseDiskPartition(const std::wstring& text, int& diskIndexOut) {
 // SMART per disk separately.
 void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
     IWbemServices* svc = wmi.GetWmiService();
-    if (!svc) { Logger::Warn("WMI service invalid, skipping physical disk enumeration"); return; }
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
 
     std::map<int, PhysicalDiskSmartData> tempDisks;
     IEnumWbemClassObject* pEnum = nullptr;
@@ -169,7 +169,7 @@ void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
 void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
                                     SystemInfo& sysInfo, bool readSmart) {
     IWbemServices* svc = wmi.GetWmiService();
-    if (!svc) { Logger::Warn("WMI service invalid, skipping physical disk enumeration"); return; }
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
     std::map<int, std::vector<char>> physicalIndexToLetters;
     IEnumWbemClassObject* pEnum = nullptr;
 

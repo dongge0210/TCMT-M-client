@@ -18,7 +18,7 @@ void TemperatureWrapper::Initialize() {
     if (MemoryTempReader::IsAvailable())
         Logger::Info("PawnIO: installed, DIMM/SMBus temperature reading enabled");
     else
-        Logger::Info("PawnIO: not installed, DIMM temperature unavailable");
+        Logger::Debug("PawnIO: not installed, DIMM temperature unavailable");
 }
 
 void TemperatureWrapper::Cleanup() {
@@ -296,7 +296,7 @@ static bool probe_smc(void) {
 
     kern_return_t kr = open_smc_service(&g_smc_conn);
     if (kr != kIOReturnSuccess) {
-        Logger::Info("TemperatureWrapper: AppleSMC not accessible (kr=0x"
+        Logger::Debug("TemperatureWrapper: AppleSMC not accessible (kr=0x"
                      + std::to_string(kr) + ")");
         return false;
     }
@@ -1046,7 +1046,7 @@ static void start_powermetrics_thread(void) {
         checked = true;
     }
     if (!available) {
-        Logger::Info("TemperatureWrapper: powermetrics not available (needs root)");
+        Logger::Debug("TemperatureWrapper: powermetrics not available (needs root)");
         return;
     }
 

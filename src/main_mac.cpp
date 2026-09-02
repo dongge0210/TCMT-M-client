@@ -299,7 +299,7 @@ int main(int argc, char* argv[]) {
     try {
         Logger::Initialize("system_monitor.log");
         Logger::EnableConsoleOutput(false);  // TUI takes over console
-        Logger::SetLogLevel(LOG_INFO);
+        Logger::SetLogLevel(LOG_WARNING);    // default: WARN+; --debug/--verbose lower it
         Logger::Info("TCMT macOS Client starting (TUI mode)...");
     } catch (const std::exception& e) {
         std::cerr << "Logger init failed: " << e.what() << std::endl;
@@ -336,6 +336,8 @@ int main(int argc, char* argv[]) {
     bool jsonMode = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--json") jsonMode = true;
+        else if (std::string(argv[i]) == "--debug") Logger::SetLogLevel(LOG_DEBUG);
+        else if (std::string(argv[i]) == "--verbose") Logger::SetLogLevel(LOG_INFO);
     }
 
     std::string serverUrl = g_cfg.GetString("server.url", "");
@@ -755,16 +757,19 @@ int main(int argc, char* argv[]) {
     });
     tuiApp.Start();
 
-    // In-process native log window (AppKit), mirroring the Windows LogWindow:
-    // dashboard in the terminal + log in its own window, same process, reading
-    // the same in-memory LogBuffer. Falls back to the in-TUI log page if the
-    // window cannot be created (e.g. headless session).
+    // In-process native log window (AppKit). The default is single-terminal:
+    // logs are viewed in the in-TUI log page (press L) — no native window.
+    // Set TCMT_LOG_WINDOW=1 to opt into the separate AppKit window instead.
     tcmt::mac::MacLogWindow logWindow;
-    bool wantLogWindow = (std::getenv("TCMT_NO_LOG_WINDOW") == nullptr);
-    if (wantLogWindow && logWindow.Create(&Logger::GetTuiBuffer())) {
-        Logger::Info("Log window opened (in-process AppKit)");
+    const bool wantLogWindow = (std::getenv("TCMT_LOG_WINDOW") != nullptr);
+    if (wantLogWindow) {
+        if (logWindow.Create(&Logger::GetTuiBuffer())) {
+            Logger::Info("Log window opened (in-process AppKit)");
+        } else {
+            Logger::Warn("TCMT_LOG_WINDOW=1 but window creation failed — using in-TUI log page (L)");
+        }
     } else {
-        Logger::Warn("Log window unavailable, using in-TUI log page (Tab/l)");
+        Logger::Info("Single-terminal log: in-TUI log page (press L)");
     }
 
     // Temperature sensors (SMC/PawnIO) — sampled on heavy frames for the

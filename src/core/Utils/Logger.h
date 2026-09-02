@@ -18,7 +18,23 @@
 #include "../tui/LogBuffer.h"
 #endif
 
-// Log level enumeration
+// Log level enumeration.
+//
+// Level semantics (keep every call site aligned with this table):
+//   FATAL    process is about to die / unrecoverable (top-level exception,
+//            out of memory)
+//   ERROR    a feature is actually broken and has not recovered; unexpected
+//   WARN     transient runtime condition, degraded but still working
+//   INFO     process lifecycle events / user-visible state changes only
+//            (low frequency — never inside sampling or per-tick loops)
+//   DEBUG    probing and capability-absence detail, per-tick/per-round detail
+//   TRACE    reserved for future per-tick spam (never on by default)
+//
+// Messages that describe detection of missing optional capabilities
+// ("not found" / "not installed" / "not available" / "not supported" /
+// "needs root" / "expected" / "skipping") are DEBUG, not INFO/WARN/ERROR —
+// unless the absence disables the core feature entirely, in which case WARN.
+// Default runtime level is LOG_WARNING; pass --debug or --verbose to lower it.
 enum LogLevel {
     LOG_TRACE = 0,
     LOG_DEBUG = 1,

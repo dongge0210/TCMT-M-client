@@ -20,30 +20,6 @@ tcmt::ipc::IPCDataBlock* SharedMemoryManager::pBuffer = nullptr;
 std::string SharedMemoryManager::lastError = "";
 void* SharedMemoryManager::interprocessMutex = nullptr;
 
-// Helper function: safely copy wide string (WCHAR = char16_t on macOS)
-static void SafeCopyWideString(WCHAR* dest, size_t destSize, const std::u16string& src) {
-    try {
-        if (dest == nullptr || destSize == 0) return;
-        memset(dest, 0, destSize * sizeof(WCHAR));
-        if (src.empty()) { dest[0] = u'\0'; return; }
-        size_t copyLen = std::min(src.length(), destSize - 1);
-        for (size_t i = 0; i < copyLen; ++i) dest[i] = src[i];
-        dest[copyLen] = u'\0';
-    } catch (...) { if (dest && destSize > 0) dest[0] = u'\0'; }
-}
-
-// Helper function: safely copy from wide character array
-static void SafeCopyFromWideArray(WCHAR* dest, size_t destSize, const WCHAR* src, size_t srcCapacity) {
-    if (!dest || destSize == 0) return;
-    memset(dest, 0, destSize * sizeof(WCHAR));
-    if (!src) return;
-    size_t len = 0;
-    while (len < srcCapacity && src[len] != u'\0') ++len;
-    if (len >= destSize) len = destSize - 1;
-    for (size_t i = 0; i < len; ++i) dest[i] = src[i];
-    dest[len] = u'\0';
-}
-
 bool SharedMemoryManager::InitSharedMemory() {
     // Clear previous errors
     lastError.clear();

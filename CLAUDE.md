@@ -165,6 +165,14 @@ git submodule update --init --recursive
 - **AvaloniaUI**: Avalonia 12.0.1, CommunityToolkit.Mvvm 8.2.2, Serilog 3.1.1
 - **Config**: nlohmann/json (header-only, bundled in CPP-parsers submodule)
 
+## Logging Conventions
+
+- **Default runtime level is `LOG_WARNING`** in all three entry points (`main.cpp` / `main_mac.cpp` / `main_linux.cpp`). Lower it per run with `--debug` (LOG_DEBUG) or `--verbose` (LOG_INFO); explicit `logging.level` in config still overrides the default, CLI flags win over config.
+- Level semantics: FATAL = unrecoverable / process dying; ERROR = feature actually broken, not recovered; WARN = transient, degraded but working; INFO = lifecycle / user-visible state changes only (never in sampling or per-tick loops); DEBUG = probing, capability absence, per-tick detail. See `src/core/Utils/Logger.h`.
+- Detection of missing optional capabilities ("not found / not installed / not available / not supported / needs root / expected / skipping") is DEBUG — one of these in an INFO/WARN/ERROR message is a bug to fix.
+- Defensive try/catch inside small formatting/util helpers logs DEBUG; the owning collector reports the real error at its own level.
+- Never call `Logger::` from hot loops at INFO+; loop-body failures repeat every tick and flood the 2000-line ring buffer and log file.
+
 ## User addition notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
 - **sessions**: change `docs/session.md` when current status changed also you see current status from that file.

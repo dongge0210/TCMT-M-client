@@ -51,7 +51,7 @@ static bool LoadIOReport() {
     if (g_lib) return true;
     g_lib = dlopen("/usr/lib/libIOReport.dylib", RTLD_LAZY | RTLD_LOCAL);
     if (!g_lib) {
-        Logger::Warn("PowerMonitor: /usr/lib/libIOReport.dylib not found");
+        Logger::Debug("PowerMonitor: /usr/lib/libIOReport.dylib not found");
         return false;
     }
 #define DLSYM_OR_FAIL(name_) do { \

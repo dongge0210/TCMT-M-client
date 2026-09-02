@@ -373,17 +373,17 @@ std::string FormatDateTime(const std::chrono::system_clock::time_point& tp) {
             if (result.length() >= 19 && result.length() <= 25) {  // Basic length check
                 return result;
             } else {
-                Logger::Warn("Time format result length abnormal: " + std::to_string(result.length()));
+                Logger::Debug("Time format result length abnormal: " + std::to_string(result.length()));
             }
         } else {
-            Logger::Error("localtime_s call failed");
+            Logger::Debug("localtime_s call failed");
         }
     }
     catch (const std::exception& e) {
-        Logger::Error("Exception during time formatting: " + std::string(e.what()));
+        Logger::Debug("Exception during time formatting: " + std::string(e.what()));
     }
     catch (...) {
-        Logger::Error("Exception during time formatting - unknown exception");
+        Logger::Debug("Exception during time formatting - unknown exception");
     }
     return "Time Formatting Failed";
 }
@@ -392,18 +392,18 @@ std::string FormatFrequency(double value) {
     try {
         // Parameter validation
         if (std::isnan(value) || std::isinf(value)) {
-            Logger::Warn("Invalid frequency value: " + std::to_string(value));
+            Logger::Debug("Invalid frequency value: " + std::to_string(value));
             return "N/A";
         }
-        
+
         if (value < 0) {
-            Logger::Warn("Frequency value is negative: " + std::to_string(value));
+            Logger::Debug("Frequency value is negative: " + std::to_string(value));
             return "N/A";
         }
-        
+
         // Reasonableness check - frequency typically not exceeding 10GHz
         if (value > 10000) {
-            Logger::Warn("Frequency value abnormal: " + std::to_string(value) + "MHz");
+            Logger::Debug("Frequency value abnormal: " + std::to_string(value) + "MHz");
             return "Abnormal Value";
         }
         
@@ -419,11 +419,11 @@ std::string FormatFrequency(double value) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("Exception during frequency formatting: " + std::string(e.what()));
+        Logger::Debug("Exception during frequency formatting: " + std::string(e.what()));
         return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("Exception during frequency formatting - unknown exception");
+        Logger::Debug("Exception during frequency formatting - unknown exception");
         return "Formatting Failed";
     }
 }
@@ -432,13 +432,13 @@ std::string FormatPercentage(double value) {
     try {
         // Parameter validation
         if (std::isnan(value) || std::isinf(value)) {
-            Logger::Warn("Percentage value invalid: " + std::to_string(value));
+            Logger::Debug("Percentage value invalid: " + std::to_string(value));
             return "N/A";
         }
-        
+
         // Reasonableness check - percentage typically between 0-100
         if (value < -1.0 || value > 105.0) {
-            Logger::Warn("Percentage value abnormal: " + std::to_string(value));
+            Logger::Debug("Percentage value abnormal: " + std::to_string(value));
         }
         
         // Limit to reasonable range
@@ -450,11 +450,11 @@ std::string FormatPercentage(double value) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("Exception during percentage formatting: " + std::string(e.what()));
+        Logger::Debug("Exception during percentage formatting: " + std::string(e.what()));
         return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("Exception during percentage formatting - unknown exception");
+        Logger::Debug("Exception during percentage formatting - unknown exception");
         return "Formatting Failed";
     }
 }
@@ -463,13 +463,13 @@ std::string FormatTemperature(double value) {
     try {
         // Parameter validation
         if (std::isnan(value) || std::isinf(value)) {
-            Logger::Warn("Temperature value invalid: " + std::to_string(value));
+            Logger::Debug("Temperature value invalid: " + std::to_string(value));
             return "N/A";
         }
-        
+
         // Reasonableness check - temperature typically between -50C to 150C
         if (value < -50.0 || value > 150.0) {
-            Logger::Warn("Temperature value abnormal: " + std::to_string(value) + "°C");
+            Logger::Debug("Temperature value abnormal: " + std::to_string(value) + "°C");
             if (value < -50.0) return "Too Low";
             if (value > 150.0) return "Too High";
         }
@@ -479,11 +479,11 @@ std::string FormatTemperature(double value) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("Exception during temperature formatting: " + std::string(e.what()));
+        Logger::Debug("Exception during temperature formatting: " + std::string(e.what()));
         return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("Exception during temperature formatting - unknown exception");
+        Logger::Debug("Exception during temperature formatting - unknown exception");
         return "Formatting Failed";
     }
 }
@@ -497,7 +497,7 @@ std::string FormatSize(uint64_t bytes, bool useBinary = true) {
 
         // Parameter validation - check if at maximum value (usually indicates error)
         if (bytes == UINT64_MAX) {
-            Logger::Warn("Bytes at maximum value, may indicate error");
+            Logger::Debug("Bytes at maximum value, may indicate error");
             return "N/A";
         }
 
@@ -513,11 +513,11 @@ std::string FormatSize(uint64_t bytes, bool useBinary = true) {
         return ss.str();
     }
     catch (const std::exception& e) {
-        Logger::Error("Exception during size formatting: " + std::string(e.what()));
+        Logger::Debug("Exception during size formatting: " + std::string(e.what()));
         return "Formatting Failed";
     }
     catch (...) {
-        Logger::Error("Exception during size formatting - unknown exception");
+        Logger::Debug("Exception during size formatting - unknown exception");
         return "Formatting Failed";
     }
 }
@@ -2135,12 +2135,19 @@ int main(int argc, char* argv[]) {
             // (ShellExecuteEx runas) which changes the working directory, so a
             // relative "system_monitor.log" would land in System32 or elsewhere.
             Logger::Initialize(WinUtils::GetExecutableDirectory() + "\\system_monitor.log");
-            Logger::SetLogLevel(LOG_INFO);
+            Logger::SetLogLevel(LOG_WARNING);   // default: WARN+; --debug/--verbose lower it
             Logger::Info("Program started");
         }
         catch (const std::exception& e) {
             printf("Logging system initialization failed: %s\n", e.what());
             return 1;
+        }
+
+        // --debug / --verbose: lower the log threshold below the WARNING default
+        // (scan any argv position; --json/--mcp keep their argv[1] matching below).
+        for (int i = 1; i < argc; ++i) {
+            if (std::string(argv[i]) == "--debug") Logger::SetLogLevel(LOG_DEBUG);
+            else if (std::string(argv[i]) == "--verbose") Logger::SetLogLevel(LOG_INFO);
         }
 
         // ======================== --json Mode ========================
