@@ -1221,10 +1221,12 @@ void TuiApp::Run() {
         int ch = getch();
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
+        // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
+        // repainting the same dialog.
         if (settingsPage_) {
             RenderSettingsPage(rows, cols, ch);
             refresh();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
         }
 
@@ -1280,10 +1282,21 @@ void TuiApp::Run() {
         }
 
 #ifndef TCMT_WINDOWS
-        // Log page — in-process full-screen log view (Tab / L to switch back)
+        // Log page — in-process full-screen log view (Tab / L to switch back).
+        // Skip the repaint when nothing changed: no key, same buffer version
+        // (LogBuffer::Version()) and same terminal size. New lines repaint
+        // immediately because the version counter moves; an idle scrolled
+        // view stops burning CPU on erase + full redraw every frame.
         if (logPage_) {
-            RenderLogPage(rows, cols, ch);
-            refresh();
+            const bool needRedraw = (ch != ERR) || rows != lastLogRows_ || cols != lastLogCols_ ||
+                                    (logBuf_ && logBuf_->Version() != lastLogVer_);
+            if (needRedraw) {
+                RenderLogPage(rows, cols, ch);
+                lastLogVer_ = logBuf_ ? logBuf_->Version() : 0;
+                lastLogRows_ = rows;
+                lastLogCols_ = cols;
+                refresh();
+            }
             for (int i = 0; i < 3 && running_.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
