@@ -31,4 +31,4 @@
 	url = https://github.com/dongge0210/websocketpp.git
 [submodule "src/third_party/json"]
 	path = src/third_party/json
-	url = https://github.com/nlohmann/json.git
+	url = https://github.com/dongge0210/json.git
