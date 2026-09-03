@@ -73,7 +73,7 @@ set(DATASTRUCT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/DataStruct/SharedMemoryManager.cpp
 )
 
-# Application config (CPP-parsers + nlohmann/json wrapper)
+# Application config (nlohmann/json wrapper)
 set(CONFIG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Config/ConfigManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Config/ConfigManager.cpp
@@ -205,12 +205,8 @@ target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/MCP
     ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils
 
-    # CPP-parsers unified config interface
-    ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/src
-
     # nlohmann/json (header-only) — single include
-    ${CMAKE_CURRENT_SOURCE_DIR}/CPP-parsers/extern/json/single_include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/json/single_include
 
     # Third-party headers used on Windows (mirror TCMT.vcxproj include dirs)
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/USBMonitor-cpp/include

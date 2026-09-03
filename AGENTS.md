@@ -12,9 +12,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 
 # ─── Windows (x64, VS 2022/VS 2026 ) ───
-# Build order is critical (sln dependencies)
 git submodule update --init --recursive
-msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 cd AvaloniaUI && dotnet build AvaloniaUI.csproj -c Release
 ```
@@ -38,19 +36,15 @@ cd AvaloniaUI && dotnet build AvaloniaUI.csproj -c Release
 
 ## Submodules
 
-10 submodules in `src/third_party/` plus `src/CPP-parsers/`. CPP-parsers (dongge0210 fork) has **5 nested extern submodules** (inih, json, tinyxml2, tomlplusplus, yaml-cpp). Always use `--recursive`:
+11 submodules in `src/third_party/` (nlohmann/json added when CPP-parsers was removed). Always use `--recursive`:
 ```bash
 git submodule update --init --recursive
 ```
 AGENTS.md previously claimed 9 submodules — FFmpeg is listed in `.gitmodules` history but does not exist in the current checkout.
 
-## CPP-parsers
-
-Unified config parser (JSON/YAML/XML/TOML/INI) via `IConfigParser` interface + `ConfigParserFactory`. On macOS only JSON is available (via nlohmann/json header-only lib in `extern/json/single_include/`). The factory (`ConfigParserFactory.h`) includes ALL parser backends — do NOT include it on macOS unless all 5 extern libs are built first.
-
 ## ConfigManager
 
-Located at `src/core/Config/ConfigManager.h`. Uses nlohmann/json directly (not through IConfigParser). Loaded on macOS startup from `system_monitor.json` in project root. Currently NOT wired into Windows `main.cpp`.
+Located at `src/core/Config/ConfigManager.h`. Uses nlohmann/json directly (header-only via `src/third_party/json/single_include/`). Loaded on macOS startup from `system_monitor.json` in project root. Currently NOT wired into Windows `main.cpp`.
 
 ## Output Paths
 

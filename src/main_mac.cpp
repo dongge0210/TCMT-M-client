@@ -53,7 +53,7 @@
 #include "tui/TuiApp.h"
 #include "tui/MacLogWindow.h"
 
-// Config management (wraps CPP-parsers / nlohmann/json internally)
+// Config management (JSON config via nlohmann/json)
 #include "core/Config/ConfigManager.h"
 #include "core/Updater.h"
 #include "core/HTTPServer/MotionHTTPServer.h"

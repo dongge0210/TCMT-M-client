@@ -53,7 +53,7 @@ TCMT-Windows-client/
 |   |-- CMakeLists.txt                      -- Core library + executable build
 |   |-- main.cpp                            -- Windows entry (C++/CLI, SEH, WMI/PDH/NVML, Bluetooth/WiFi)
 |   |-- main_mac.cpp                        -- macOS entry (ncurses TUI, mach/sysctl/IOKit, Bluetooth/WiFi)
-|   |-- CPP-parsers/                        -- [submodule] Multi-format config parsers
+|   |-- third_party/json/                  -- [submodule] nlohmann/json (header-only)
 |   |
 |   |-- core/
 |   |   |-- ModuleCoordinator.h             -- Module lifecycle coordinator header

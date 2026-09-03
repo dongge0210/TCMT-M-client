@@ -114,17 +114,12 @@ jobs:
       with:
         path: |
           x64/${{ env.BUILD_CONFIGURATION }}/
-          src/CPP-parsers/CPP-parsers/x64/${{ env.BUILD_CONFIGURATION }}/
         key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
         restore-keys: |
           msbuild-obj-${{ runner.os }}-
 
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
-
-    - name: Build CPP-parsers
-      run: |
-        msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
     - name: Build AvaloniaUI
       run: |
@@ -141,7 +136,6 @@ jobs:
       with:
         path: |
           x64/${{ env.BUILD_CONFIGURATION }}/
-          src/CPP-parsers/CPP-parsers/x64/${{ env.BUILD_CONFIGURATION }}/
         key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
 
     - name: Upload build artifacts
