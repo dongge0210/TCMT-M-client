@@ -166,6 +166,20 @@
 - ATA HDDs behind RAID/HBA controller on server fail SMART read → smartSupported stays false
 - Without admin rights, `\\.\PhysicalDriveN` GENERIC_WRITE access also fails
 
+## 2026-09-03 — TUI 评审修复（按优先级，7 commits on dev）
+
+评审来源：OpenDesign 会话对 `src/tui/TuiApp.cpp` 的完整设计评审（布局/配色/UX/可发现性/地板尺寸）。
+
+1. `fix(tui)` 2032efab — **80×24 地板越界覆盖**：面板画入保留底部带（Connections/System/底边框）的残留行被清除后再重绘保留带，底边框最后重绘；分隔线限定在内容区（rows 2..rows-8）；右列重排 Temps/Power 优先于 Displays/Accel/TPM。
+2. `fix(tui)` b2a88049 — **日志级别着色**：按固定位置解析 `[ts][LEVEL]` 级别标签（原来整行子串匹配，CRITICAL/FATAL 显示为绿色）；INFO 恢复默认前景色。
+3. `fix(tui)` bbfac28f — **Esc 语义**：Log 页 Esc 返回 dashboard（不再退出整个程序），dashboard Esc 惰性；Home=最旧条目、End=最新跟随。
+4. `perf(tui)` 06e89338 — **Log 页脏检查**：用 `LogBuffer::Version()`（原未被 TUI 使用）+ 终端尺寸 + 按键门控重绘；设置页 10ms→30ms。
+5. `fix(tui)` baea3c58 — **按键提示平台化**：Windows 不再提示死键 L；U/R 有 handler 才提示；标题去掉 `[WxH]` 调试残留。
+6. `fix(tui)` b532eb45 — **Temps 网格自适应**：行数随可用空间（上限 8 行），够高不翻页；翻页索引 shrink guard。
+7. `style(tui)` b1c5a336 — 删顶部双横线；进程行只染 CPU% 单元格；WiFi 无适配器显示 `n/a`；`Processes (PID Monitor)` → `Top Processes`；日志空状态文案统一英文。
+
+验证：macOS `cmake --build build --target TCMT-M` 全量通过（仅 openssl 版本无关警告）。未做：Windows PDCurses 构建验证（改动均用通用 curses API）、`?` 帮助页、NO_COLOR/ASCII 开关、per-core 宽度问题（待后续）。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
