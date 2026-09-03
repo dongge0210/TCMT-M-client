@@ -1109,7 +1109,9 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
         logScrollOffset_ = (std::max)(0, logScrollOffset_ - 10);
         if (logScrollOffset_ == 0) logFollow_ = true;
     }
-    else if (ch == KEY_HOME) { logFollow_ = true; logScrollOffset_ = 0; }
+    // Home = oldest entry (top of the buffer); End = newest (follow).
+    // Home is deferred until the buffer size is known below.
+    else if (ch == KEY_HOME) { logFollow_ = false; logHomePending_ = true; }
     else if (ch == KEY_END)  { logFollow_ = true; logScrollOffset_ = 0; }
     else if (ch == 'f' || ch == 'F') {
         logFollow_ = !logFollow_;
@@ -1128,13 +1130,20 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
 
     std::string header = " TCMT Log    lines: " + std::to_string(lines.size()) +
                          "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]") +
-                         "    q=quit l=dashboard f=follow";
+                         "    Esc/l=dashboard f=follow q=quit";
     wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(stdscr, 1, 1, "%.*s", cols - 2, header.c_str());
     wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
 
     int contentRows = rows - 3;
     int total = static_cast<int>(lines.size());
+
+    // HOME parks at the oldest line once the buffer size is known.
+    if (logHomePending_) {
+        logHomePending_ = false;
+        logScrollOffset_ = (std::max)(0, total - contentRows);
+    }
+
     int start = 0;
     if (logFollow_) {
         start = (std::max)(0, total - contentRows);
@@ -1219,9 +1228,11 @@ void TuiApp::Run() {
             continue;
         }
 
+        // Esc is "back": from the log page it returns to the dashboard; on
+        // the dashboard it is inert. q is the only quit key.
         // Ctrl+C may arrive as a key (0x03, or KEY_BREAK on PDCurses) instead
-        // of firing CTRL_C_EVENT — treat both as quit so the TUI exits cleanly.
-        if (ch == 'q' || ch == 'Q' || ch == 27 || ch == 3
+        // of firing CTRL_C_EVENT — treat it as quit so the TUI exits cleanly.
+        if (ch == 'q' || ch == 'Q' || ch == 3
 #ifdef KEY_BREAK
             || ch == KEY_BREAK
 #endif
@@ -1253,6 +1264,10 @@ void TuiApp::Run() {
 #ifndef TCMT_WINDOWS
         if (ch == 'l' || ch == 'L' || ch == '\t') {
             logPage_ = !logPage_;
+            clear();
+        }
+        if (ch == 27 && logPage_) {  // Esc = back to dashboard (not quit)
+            logPage_ = false;
             clear();
         }
 #endif

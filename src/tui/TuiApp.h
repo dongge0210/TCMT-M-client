@@ -381,6 +381,10 @@ private:
     bool logPage_ = false;
     int logScrollOffset_ = 0;   // lines scrolled up from bottom
     bool logFollow_ = true;     // auto-follow newest lines
+    bool logHomePending_ = false;  // HOME pressed; park at oldest on next draw
+    uint64_t lastLogVer_ = 0;      // LogBuffer version at last log-page paint
+    int lastLogRows_ = 0;          // terminal size at last log-page paint
+    int lastLogCols_ = 0;
 
     // Internal buffer (fallback), or use external via SetLogBuffer()
     LogBuffer defaultBuffer_;
