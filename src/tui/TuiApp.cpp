@@ -224,15 +224,23 @@ static std::string utf8_truncate(const std::string& s, int maxW) {
 void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     int rows, cols;
     getmaxyx(win, rows, cols);
+    (void)rows;  // only the width matters: the title is centered on row 0
     wattron(win, COLOR_PAIR(1) | A_BOLD);
-    std::string res = "[" + std::to_string(cols) + "x" + std::to_string(rows) + "]";
-    std::string title = "TCMT Monitor  " + data.timestamp + "  " + res;
+    std::string title = "TCMT Monitor  " + data.timestamp;
     int x = (cols - static_cast<int>(title.size())) / 2;
     mvwprintw(win, 0, std::max(0, x), "%s", title.c_str());
     wattroff(win, COLOR_PAIR(1) | A_BOLD);
 
-    // Key hints (right-aligned) — discoverability for S / L / Q.
-    const std::string hint = "S:Settings L:Log Q:Quit";
+    // Key hints (right-aligned) — built from what is actually compiled and
+    // wired on this platform, so no dead keys are advertised. (Windows has
+    // no in-TUI log page; U/R appear only when a handler exists.)
+    std::string hint = "S:Settings";
+#ifndef TCMT_WINDOWS
+    hint += " L:Log";
+#endif
+    if (updateRequestHandler_) hint += " U:Update";
+    if (locationRequestHandler_) hint += " R:Location";
+    hint += " Q:Quit";
     if (cols >= static_cast<int>(title.size()) + static_cast<int>(hint.size()) + 6) {
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, 0, cols - static_cast<int>(hint.size()) - 1, "%s", hint.c_str());
