@@ -1150,15 +1150,27 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
         int idx = start + r;
         if (idx >= total) break;
         const std::string& entry = lines[idx];
-        int color = 2;
-        if (entry.find("[ERROR]") != std::string::npos) color = 4;
-        else if (entry.find("[WARN]") != std::string::npos) color = 3;
-        else if (entry.find("[DEBUG]") != std::string::npos) color = 6;
+
+        // Severity comes from the level tag parsed at its fixed position
+        // ("[ts][LEVEL] msg"), never from substring search over the whole
+        // line: CRITICAL/FATAL must read as errors, INFO stays in the
+        // default foreground, and message text quoting a level word cannot
+        // recolor an entry.
+        std::string lvl;
+        size_t c1 = entry.find(']');
+        size_t o2 = (c1 != std::string::npos) ? entry.find('[', c1 + 1) : std::string::npos;
+        size_t c2 = (o2 != std::string::npos) ? entry.find(']', o2 + 1) : std::string::npos;
+        if (c2 != std::string::npos) lvl = entry.substr(o2 + 1, c2 - o2 - 1);
+
+        int color = -1;
+        if (lvl == "ERROR" || lvl == "CRITICAL" || lvl == "FATAL") color = 4;
+        else if (lvl == "WARN" || lvl == "WARNING") color = 3;
+        else if (lvl == "DEBUG" || lvl == "TRACE") color = 6;
 
         std::string disp = utf8_truncate(entry, cols - 3);
-        wattron(stdscr, COLOR_PAIR(color));
+        if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
         mvwprintw(stdscr, 2 + r, 1, "%.*s", cols - 2, disp.c_str());
-        wattroff(stdscr, COLOR_PAIR(color));
+        if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
     }
 }
 #endif
