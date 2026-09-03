@@ -1298,8 +1298,9 @@ void TuiApp::Run() {
         std::string headerSep(cols - 2, '-');
         mvwprintw(stdscr, 1, 1, "%s", headerSep.c_str());
 
-        // Vertical divider (only in content area, not log area)
-        int maxContentRow = rows - 5;
+        // Vertical divider — confined to the panel content area; the rows
+        // below (Connections/System/bottom border) are reserved bands.
+        int maxContentRow = rows - 8;
         for (int r = 2; r <= maxContentRow; r++) {
             mvwprintw(stdscr, r, divCol, "|");
         }
@@ -1342,7 +1343,7 @@ void TuiApp::Run() {
         }
         if (ly > maxY) ly = maxY;
 
-        // === Right panels (Disk, Net, TPM, Temp) ===
+        // === Right panels (storage / network / thermal first) ===
         int ry = 2;
         if (ry < maxY) {
             ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
@@ -1359,6 +1360,15 @@ void TuiApp::Run() {
             if (ry < maxY) {
                 ry += DrawWifiBluetoothPanel(stdscr, data, ry, rx, rightW);
             }
+            // Temps and Power rank above the informational extras: on a short
+            // terminal it is Displays/Accel/TPM that silently drop, not the
+            // thermal state.
+            if (ry < maxY) {
+                ry += DrawTempPanel(stdscr, data, ry, rx, rightW);
+            }
+            if (ry < maxY) {
+                ry += DrawPowerPanel(stdscr, data, ry, rx, rightW);
+            }
             if (ry < maxY) {
                 ry += DrawDisplayPanel(stdscr, data, ry, rx, rightW);
             }
@@ -1367,12 +1377,6 @@ void TuiApp::Run() {
             }
             if (ry < maxY) {
                 ry += DrawTpmPanel(stdscr, data, ry, rx, rightW);
-            }
-            if (ry < maxY) {
-                ry += DrawTempPanel(stdscr, data, ry, rx, rightW);
-            }
-            if (ry < maxY) {
-                ry += DrawPowerPanel(stdscr, data, ry, rx, rightW);
             }
         }
         if (ry > maxY) ry = maxY;
@@ -1386,6 +1390,13 @@ void TuiApp::Run() {
         // Clip content to not overwrite reserved panels
         if (contentEnd >= connTop) contentEnd = connTop - 1;
         std::string logSep(cols - 2, '-');
+
+        // Panels draw without internal row limits, so anything they painted
+        // into the reserved bands (Connections / System / bottom border) is
+        // discarded here; the bands repaint on top and always stay clean.
+        for (int r = connTop - 1; r < rows; ++r) {
+            mvhline(r, 0, ' ', cols);
+        }
 
         // === Connections panel ===
         bool showConn = (connTop > contentEnd + 1) && data.connectionCount >= 0;
@@ -1478,6 +1489,12 @@ void TuiApp::Run() {
         if (data.processCount > 0) {
             mvwprintw(stdscr, sysTop + 1, cols - 18, "Procs: %d", data.processCount);
         }
+
+        // Bottom border — repainted last so panel overflow can never leave
+        // stray cells on it after the band wipe above.
+        mvwprintw(stdscr, rows - 1, 0, "%s", topBot.c_str());
+        mvwprintw(stdscr, rows - 1, 0, "+");
+        mvwprintw(stdscr, rows - 1, cols - 1, "+");
 
         // Never park the cursor on the bottom-right corner: the bottom
         // border writes there every frame, terminals treat that cell as a
