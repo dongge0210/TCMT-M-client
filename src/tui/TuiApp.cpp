@@ -625,14 +625,19 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int lines = 1;
 
     int halfW = maxW / 2;
-    const int CONTENT_ROWS = 3;      // 6 sensors per page (2 per row)
+    // Grow the grid with the space actually available below the title
+    // (content may run down to row LINES-8, see Run), capped at 8 rows:
+    // with room, every sensor is visible at once and no paging happens;
+    // the 3-second auto-rotate only kicks in when the panel truly overflows.
+    const int availRows = (LINES - 8) - (y + 1);
+    const int contentRows = (std::max)(1, (std::min)(availRows, 8));
 
     // All sensors are pre-filtered upstream; display everything
     std::vector<std::pair<std::string, double>> displayTemps;
     for (const auto& [name, temp] : data.temperatures)
         displayTemps.push_back({name, temp});
 
-    int perPage = CONTENT_ROWS * 2;
+    int perPage = contentRows * 2;
     int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
     bool needPaging = totalPages > 1;
 
@@ -640,6 +645,7 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     static auto lastPageFlip = std::chrono::steady_clock::now();
     if (needPaging) {
         auto tNow = std::chrono::steady_clock::now();
+        if (currentPage >= totalPages) currentPage = 0;  // shrink guard
         if (std::chrono::duration_cast<std::chrono::seconds>(tNow - lastPageFlip).count() >= 3) {
             currentPage = (currentPage + 1) % totalPages;
             lastPageFlip = tNow;
@@ -649,8 +655,8 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     }
 
     int actualRows = 0;
-    int startIdx = currentPage * CONTENT_ROWS * 2;
-    int limit = needPaging ? CONTENT_ROWS : static_cast<int>(displayTemps.size());
+    int startIdx = currentPage * contentRows * 2;
+    int limit = needPaging ? contentRows : static_cast<int>(displayTemps.size());
     for (int p = 0; p < limit; p++) {
         int leftIdx = startIdx + p * 2;
         if (leftIdx >= static_cast<int>(displayTemps.size())) break;
@@ -677,12 +683,12 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 
     if (needPaging) {
         // Fill remaining content rows
-        while (lines < 1 + CONTENT_ROWS)
+        while (lines < 1 + contentRows)
             lines++;
         // Page indicator
         mvwprintw(win, y + lines++, x0 + 2, "%.*s", maxW - 2,
                   ("[" + std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "]").c_str());
-        return 1 + CONTENT_ROWS + 1; // header + 3 content + 1 page row
+        return 1 + contentRows + 1; // header + content rows + 1 page row
     } else {
         return 1 + actualRows; // header + actual sensor rows only
     }
