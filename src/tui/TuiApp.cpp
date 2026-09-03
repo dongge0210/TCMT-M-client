@@ -469,13 +469,13 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     if (maxW < 10) return 0;
     int lines = 0;
 
-    // Three explicit states: Off (no interface) / Disconnected (adapter on,
-    // no association) / Connected (SSID + details).
+    // Three explicit states: n/a (no adapter present) / Disconnected
+    // (adapter on, no association) / Connected (SSID + details).
     if (!data.hasWiFi) {
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
-        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Off");
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "n/a");
         lines++;
     } else if (!data.wifiConnected) {
         wattron(win, COLOR_PAIR(5));
@@ -914,7 +914,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     if (maxW < 15 || data.topProcesses.empty()) return 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Processes (PID Monitor)");
+    mvwprintw(win, y, x0, "%.*s", maxW, "Top Processes");
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
@@ -941,13 +941,20 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         else
             memStr = std::to_string(p.memoryBytes / (1024 * 1024)) + "M";
 
-        // Format CPU%
+        // Name / pid / memory stay in the default foreground; only the CPU
+        // cell carries the severity color — coloring the whole row turns
+        // every row into a colored field and the signal disappears.
+        char headBuf[160];
+        snprintf(headBuf, sizeof(headBuf), "%s %6s %4s ",
+                 name.c_str(), pidStr.c_str(), memStr.c_str());
+        mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
+
+        // Column of "%5.1f%%": name (padded to nameW) + " %6s %4s " above.
         int cpuColor = (p.cpuPercent > 50) ? 4 : (p.cpuPercent > 20) ? 3 : 2;
-        wattron(win, COLOR_PAIR(cpuColor));
-        mvwprintw(win, y + lines, x0 + 2,
-                  "%s %6s %4s %5.1f%%",
-                  name.c_str(), pidStr.c_str(), memStr.c_str(), p.cpuPercent);
-        wattroff(win, COLOR_PAIR(cpuColor));
+        const int cpuCol = x0 + 2 + nameW + 13;
+        if (cpuColor != 2) wattron(win, COLOR_PAIR(cpuColor));
+        mvwprintw(win, y + lines, cpuCol, "%5.1f%%", p.cpuPercent);
+        if (cpuColor != 2) wattroff(win, COLOR_PAIR(cpuColor));
         lines++;
     }
 
@@ -1166,7 +1173,7 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     }
 
     if (total == 0) {
-        mvwprintw(stdscr, 2, 2, "暂无日志... (l 返回 dashboard)");
+        mvwprintw(stdscr, 2, 2, "No log entries yet (l/Esc to dashboard)");
     }
 
     for (int r = 0; r < contentRows; ++r) {
@@ -1348,9 +1355,9 @@ void TuiApp::Run() {
         mvwprintw(stdscr, rows - 1, 0, "+");
         mvwprintw(stdscr, rows - 1, cols - 1, "+");
 
-        // Header separator
-        std::string headerSep(cols - 2, '-');
-        mvwprintw(stdscr, 1, 1, "%s", headerSep.c_str());
+        // (No separator under the header: the title row + one blank row
+        // separate header from content; a second full-width rule stacked
+        // under the top border just doubled the chrome.)
 
         // Vertical divider — confined to the panel content area; the rows
         // below (Connections/System/bottom border) are reserved bands.
