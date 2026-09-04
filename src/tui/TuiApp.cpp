@@ -79,6 +79,7 @@ static int LowIsWorsePair(double value, double warnBelow, double critBelow) {
 // "paint everything" policy changed).
 static constexpr double kTempWarn = 60.0, kTempCrit = 80.0;      // sensor temps, °C
 static constexpr double kProcCpuWarn = 20.0, kProcCpuCrit = 50.0; // per-process cpu %
+static constexpr double kUsageWarn = 70.0, kUsageCrit = 90.0;    // cpu/ram/gpu usage % (bar rows)
 static constexpr double kHealthWarn = 80.0, kHealthCrit = 60.0;  // battery health % (low is worse)
 static constexpr double kBattWarn = 50.0, kBattCrit = 20.0;      // battery charge % (low is worse)
 
@@ -217,15 +218,68 @@ std::string TuiApp::FormatRate(uint64_t bytesPerSec) {
     return ss.str();
 }
 
-std::string TuiApp::FormatBar(double pct, int width) {
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    int filled = static_cast<int>(pct * width / 100.0);
-    std::string bar;
-    for (int i = 0; i < width; ++i) {
-        bar += (i < filled) ? '=' : '-';
+// Draw one "label + usage bar + right-aligned value" row. The fill is
+// colored — blue while the value is normal, warning/critical when it
+// crosses the usage thresholds (#5 table) — and the empty track renders
+// dim in the terminal's default foreground, so the bar reads as a
+// skeleton rather than a second colored field. All value lines on the
+// panel share the same right edge (value column), which is what makes
+// the dashboard scannable.
+void TuiApp::DrawUsageBarRow(WINDOW* win, int y, int x0, int maxW,
+                             const char* label, double pct,
+                             const std::string& value) {
+    const int valueX = x0 + maxW - 2;                       // shared right edge
+    const int vw = std::min(static_cast<int>(value.size()),
+                            (std::max)(4, maxW - 8));       // truncation guard
+    const int valueStart = valueX - vw + 1;
+    const int barEnd = valueStart - 2;                      // 1-col gap before value
+    int barStart = x0 + 2 + static_cast<int>(std::strlen(label)) + 1;
+    if (barEnd - barStart + 1 < 4) barStart = barEnd - 3;   // keep a minimal bar
+    if (barStart < x0 + 2) barStart = x0 + 2;
+
+    mvwprintw(win, y, x0 + 2, "%s", label);
+
+    double p = pct;
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+    const int barW = barEnd - barStart + 1;
+    const int nFill = static_cast<int>(p * barW / 100.0);
+
+    const int sev = HighIsWorsePair(pct, kUsageWarn, kUsageCrit);
+    const int fillPair = (sev >= 0) ? sev : 6;
+    int x = barStart;
+    wattron(win, COLOR_PAIR(fillPair));
+    for (int i = 0; i < nFill && x <= barEnd; ++i) mvwaddch(win, y, x++, '=');
+    wattroff(win, COLOR_PAIR(fillPair));
+    if (x <= barEnd) {
+        wattron(win, A_DIM);
+        while (x <= barEnd) mvwaddch(win, y, x++, '-');
+        wattroff(win, A_DIM);
     }
-    return bar;
+    if (sev >= 0) wattron(win, COLOR_PAIR(sev));
+    mvwprintw(win, y, valueStart, "%.*s", vw, value.c_str());
+    if (sev >= 0) wattroff(win, COLOR_PAIR(sev));
+}
+
+// "label left, value right-aligned at the panel edge" — the plain-data
+// variant of DrawUsageBarRow. Optional pair colors the value (severity).
+void TuiApp::DrawLabeledValue(WINDOW* win, int y, int x0, int maxW,
+                              const char* label, const std::string& value, int pair) {
+    const int valueX = x0 + maxW - 2;
+    const int vw = std::min(static_cast<int>(value.size()),
+                            (std::max)(4, maxW - 6));
+    const int valueStart = valueX - vw + 1;
+    const int labelMax = valueStart - (x0 + 2) - 1;   // 1-col gap before value
+    if (labelMax < 3) {   // too tight for a label: value alone, right-aligned
+        if (pair >= 0) wattron(win, COLOR_PAIR(pair));
+        mvwprintw(win, y, valueStart, "%.*s", vw, value.c_str());
+        if (pair >= 0) wattroff(win, COLOR_PAIR(pair));
+        return;
+    }
+    mvwprintw(win, y, x0 + 2, "%.*s", labelMax, label);
+    if (pair >= 0) wattron(win, COLOR_PAIR(pair));
+    mvwprintw(win, y, valueStart, "%.*s", vw, value.c_str());
+    if (pair >= 0) wattroff(win, COLOR_PAIR(pair));
 }
 
 std::string TuiApp::TrimRight(const std::string& s, size_t maxLen) {
@@ -305,8 +359,6 @@ void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
 
 int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 14, 30);
-    bw = std::max(bw, 4);
     int lines = 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -318,11 +370,11 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, name.c_str());
     lines++;
 
-    mvwprintw(win, y + lines, x0 + 2, "Use:");
-    wattron(win, COLOR_PAIR(6));
-    mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 8, FormatBar(data.cpuUsage, bw).c_str());
-    wattroff(win, COLOR_PAIR(6));
-    mvwprintw(win, y + lines, x0 + 9 + bw, "%.1f%%", data.cpuUsage);
+    {
+        char val[32];
+        snprintf(val, sizeof(val), "%.1f%%", data.cpuUsage);
+        DrawUsageBarRow(win, y + lines, x0, maxW, "Use:", data.cpuUsage, val);
+    }
     lines++;
 
     if (data.performanceCores > 0 || data.efficiencyCores > 0) {
@@ -341,9 +393,11 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
                 ss << "/" << static_cast<int>(data.eCoreMaxFreq);
             ss << "M)";
         }
+        // Composite P:/E: line stays left-aligned — it carries two values.
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, ss.str().c_str());
     } else if (data.physicalCores > 0) {
-        mvwprintw(win, y + lines, x0 + 2, "Cores: %d", data.physicalCores);
+        DrawLabeledValue(win, y + lines, x0, maxW, "Cores:",
+                         std::to_string(data.physicalCores));
     }
     lines++;
 
@@ -352,8 +406,6 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
 
 int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 16, 30);
-    bw = std::max(bw, 4);
     int lines = 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -362,31 +414,25 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     lines++;
 
     double upct = (data.totalMemory > 0) ? 100.0 * data.usedMemory / data.totalMemory : 0;
-    mvwprintw(win, y + lines, x0 + 2, "Used:");
-    wattron(win, COLOR_PAIR(6));
-    mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 8, FormatBar(upct, bw).c_str());
-    wattroff(win, COLOR_PAIR(6));
-    auto usedStr = FormatSize(data.usedMemory);
-    auto totalStr = FormatSize(data.totalMemory);
-    mvwprintw(win, y + lines, x0 + 9 + bw, "%.*s / %.*s",
-              maxW - 9 - bw, usedStr.c_str(),
-              maxW - 10 - bw - static_cast<int>(usedStr.size()), totalStr.c_str());
+    {
+        auto usedStr = FormatSize(data.usedMemory);
+        auto totalStr = FormatSize(data.totalMemory);
+        DrawUsageBarRow(win, y + lines, x0, maxW, "Used:", upct,
+                        usedStr + " / " + totalStr);
+    }
     lines++;
 
-    auto availStr = FormatSize(data.availableMemory);
-    mvwprintw(win, y + lines, x0 + 2, "Avail: %.*s", maxW - 8, availStr.c_str());
+    DrawLabeledValue(win, y + lines, x0, maxW, "Avail:", FormatSize(data.availableMemory));
     lines++;
 
     if (data.compressedMemory > 0) {
-        auto compStr = FormatSize(data.compressedMemory);
-        mvwprintw(win, y + lines, x0 + 2, "Compressed: %.*s", maxW - 12, compStr.c_str());
+        DrawLabeledValue(win, y + lines, x0, maxW, "Compressed:",
+                         FormatSize(data.compressedMemory));
         lines++;
     }
     if (data.swapTotal > 0) {
-        auto usedStr = FormatSize(data.swapUsed);
-        auto totalStr = FormatSize(data.swapTotal);
-        mvwprintw(win, y + lines, x0 + 2, "Swap: %.*s / %.*s",
-            maxW - 14, usedStr.c_str(), maxW - 18, totalStr.c_str());
+        DrawLabeledValue(win, y + lines, x0, maxW, "Swap:",
+                         FormatSize(data.swapUsed) + " / " + FormatSize(data.swapTotal));
         lines++;
     }
     if (data.ramSpeed > 0) {
@@ -400,8 +446,6 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
 
 int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    int bw = std::min(maxW - 16, 30);
-    bw = std::max(bw, 4);
     int lines = 0;
 
     wattron(win, COLOR_PAIR(5) | A_BOLD);
@@ -415,36 +459,43 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     lines++;
 #endif
 
-    mvwprintw(win, y + lines, x0 + 2, "Use:");
-    wattron(win, COLOR_PAIR(6));
-    mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 8, FormatBar(data.gpuUsage, bw).c_str());
-    wattroff(win, COLOR_PAIR(6));
-    mvwprintw(win, y + lines, x0 + 9 + bw, "%.1f%%", data.gpuUsage);
+    {
+        char val[32];
+        snprintf(val, sizeof(val), "%.1f%%", data.gpuUsage);
+        DrawUsageBarRow(win, y + lines, x0, maxW, "Use:", data.gpuUsage, val);
+    }
     lines++;
 
 #ifndef TCMT_MACOS
     if (data.gpuMemoryPercent > 1 && data.gpuMemory > 0) {
         uint64_t used = (uint64_t)(data.gpuMemory * data.gpuMemoryPercent / 100.0);
-        auto usedStr = FormatSize(used);
-        auto totalStr = FormatSize(data.gpuMemory);
-        mvwprintw(win, y + lines, x0 + 2, "VRAM: %.*s / %.*s",
-            maxW - 8, usedStr.c_str(), maxW - 14, totalStr.c_str());
+        DrawLabeledValue(win, y + lines, x0, maxW, "VRAM:",
+                         FormatSize(used) + " / " + FormatSize(data.gpuMemory));
         lines++;
     }
 #endif
 
     if (data.gpuFreq > 0) {
-        if (data.gpuMaxFreq > 0 && static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq))
-            mvwprintw(win, y + lines, x0 + 2, "Freq: %d/%d MHz", static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
-        else
-            mvwprintw(win, y + lines, x0 + 2, "Freq: %d MHz", static_cast<int>(data.gpuFreq));
+        std::string freqStr;
+        if (data.gpuMaxFreq > 0 && static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq)) {
+            char buf[48];
+            snprintf(buf, sizeof(buf), "%d/%d MHz", static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
+            freqStr = buf;
+        } else {
+            freqStr = std::to_string(static_cast<int>(data.gpuFreq)) + " MHz";
+        }
+        DrawLabeledValue(win, y + lines, x0, maxW, "Freq:", freqStr);
         lines++;
     }
     for (const auto& gf : data.gpuFans) {
+        char val[32];
         if (gf.isRpm)
-            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d RPM", gf.index, gf.speedRpm);
+            snprintf(val, sizeof(val), "%d RPM", gf.speedRpm);
         else
-            mvwprintw(win, y + lines, x0 + 2, "Fan#%u: %d%%", gf.index, gf.speedRpm);
+            snprintf(val, sizeof(val), "%d%%", gf.speedRpm);
+        char label[32];
+        snprintf(label, sizeof(label), "Fan#%u:", gf.index);
+        DrawLabeledValue(win, y + lines, x0, maxW, label, val);
         lines++;
     }
     return lines;
@@ -718,19 +769,21 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         if (leftIdx >= static_cast<int>(displayTemps.size())) break;
 
         auto& [nameL, tempL] = displayTemps[leftIdx];
-        auto labelL = TrimRight(nameL, halfW - 9);
+        auto labelL = TrimRight(nameL, halfW - 10);
         const int tcL = HighIsWorsePair(tempL, kTempWarn, kTempCrit);
         if (tcL >= 0) wattron(win, COLOR_PAIR(tcL));
-        mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
+        // Labels pad into a fixed field so every temperature value in the
+        // column shares one left edge (#6); sensor names are ASCII.
+        mvwprintw(win, y + lines, x0 + 2, "%-*s %.1f C", halfW - 10, labelL.c_str(), tempL);
         if (tcL >= 0) wattroff(win, COLOR_PAIR(tcL));
 
         int rightIdx = leftIdx + 1;
         if (rightIdx < static_cast<int>(displayTemps.size())) {
             auto& [nameR, tempR] = displayTemps[rightIdx];
-            auto labelR = TrimRight(nameR, halfW - 9);
+            auto labelR = TrimRight(nameR, halfW - 10);
             const int tcR = HighIsWorsePair(tempR, kTempWarn, kTempCrit);
             if (tcR >= 0) wattron(win, COLOR_PAIR(tcR));
-            mvwprintw(win, y + lines, x0 + 2 + halfW, "%.*s %.1f C", halfW - 9, labelR.c_str(), tempR);
+            mvwprintw(win, y + lines, x0 + 2 + halfW, "%-*s %.1f C", halfW - 10, labelR.c_str(), tempR);
             if (tcR >= 0) wattroff(win, COLOR_PAIR(tcR));
         }
         lines++;
@@ -761,48 +814,64 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     wattroff(win, COLOR_PAIR(5) | A_BOLD);
     int lines = 1;
 
-    // Thermal state
+    // Thermal state — value carries the severity pair.
     if (data.thermalState > 0) {
         static const char* labels[] = {"", "Fairly Serious", "Critical"};
         const char* label = (data.thermalState < 3) ? labels[data.thermalState] : "Unknown";
-        int pair = (data.thermalState >= 2) ? 4 : 3;
-        wattron(win, COLOR_PAIR(pair) | A_BOLD);
-        mvwprintw(win, y + lines++, x0 + 2, "Thermal: %s", label);
-        wattroff(win, COLOR_PAIR(pair) | A_BOLD);
+        const int pair = (data.thermalState >= 2) ? 4 : 3;
+        DrawLabeledValue(win, y + lines, x0, maxW, "Thermal:", label, pair);
+        lines++;
     }
 
     // Power consumption — always render all rows; 0 means no data (yet),
     // hiding rows made the panel look broken when sampling is unavailable.
-    double totalPower = 0.0;
-    mvwprintw(win, y + lines++, x0 + 2, "CPU:   %.2f W", data.cpuPower / 1000.0);
-    mvwprintw(win, y + lines++, x0 + 2, "GPU:   %.2f W", data.gpuPower / 1000.0);
-    mvwprintw(win, y + lines++, x0 + 2, "ANE:   %.2f W", data.anePower / 1000.0);
-    totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
-    mvwprintw(win, y + lines++, x0 + 4, "Total: %.2f W", totalPower);
+    {
+        char val[32];
+        double totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
+        snprintf(val, sizeof(val), "%.2f W", data.cpuPower / 1000.0);
+        DrawLabeledValue(win, y + lines, x0, maxW, "CPU:", val);
+        lines++;
+        snprintf(val, sizeof(val), "%.2f W", data.gpuPower / 1000.0);
+        DrawLabeledValue(win, y + lines, x0, maxW, "GPU:", val);
+        lines++;
+        snprintf(val, sizeof(val), "%.2f W", data.anePower / 1000.0);
+        DrawLabeledValue(win, y + lines, x0, maxW, "ANE:", val);
+        lines++;
+        snprintf(val, sizeof(val), "%.2f W", totalPower);
+        DrawLabeledValue(win, y + lines, x0, maxW, "Total:", val);
+        lines++;
+    }
 
     // Battery health
     if (hasBattery) {
         if (lines > 1) lines++;  // blank line separator
-        mvwprintw(win, y + lines++, x0 + 2, "Cycles: %d", data.batteryCycleCount);
+        DrawLabeledValue(win, y + lines, x0, maxW, "Cycles:",
+                         std::to_string(data.batteryCycleCount));
+        lines++;
         // Health % (low is worse): normal health no longer painted green
         // — only a drop below the warning band gets a color.
         int hp = (int)(data.batteryHealthPercent + 0.5);
         const int hpColor = LowIsWorsePair(hp, kHealthWarn, kHealthCrit);
-        if (hpColor >= 0) wattron(win, COLOR_PAIR(hpColor));
-        mvwprintw(win, y + lines++, x0 + 2, "Health: %d%%", hp);
-        if (hpColor >= 0) wattroff(win, COLOR_PAIR(hpColor));
+        DrawLabeledValue(win, y + lines, x0, maxW, "Health:",
+                         std::to_string(hp) + "%", hpColor);
+        lines++;
         // Charge/discharge power
         if (data.batteryAmperage != 0 && data.batteryVoltage > 0) {
             int64_t powerMw = (int64_t)std::abs(data.batteryAmperage) * (int64_t)data.batteryVoltage / 1000;
             if (powerMw > 0) {
                 const char* dir = (data.batteryAmperage > 0) ? "Chg" : "Dchg";
-                mvwprintw(win, y + lines++, x0 + 2, "Power: %s %.2f W",
-                          dir, powerMw / 1000.0);
+                char val[48];
+                snprintf(val, sizeof(val), "%s %.2f W", dir, powerMw / 1000.0);
+                DrawLabeledValue(win, y + lines, x0, maxW, "Power:", val);
+                lines++;
             }
         }
         // Charger rated wattage
         if (data.chargerWatts > 0) {
-            mvwprintw(win, y + lines++, x0 + 2, "Charger: %.0f W", data.chargerWatts);
+            char val[32];
+            snprintf(val, sizeof(val), "%.0f W", data.chargerWatts);
+            DrawLabeledValue(win, y + lines, x0, maxW, "Charger:", val);
+            lines++;
         }
         // Battery temp — shown in Temperature panel (from TemperatureWrapper/iokit_battery_temp)
     }
