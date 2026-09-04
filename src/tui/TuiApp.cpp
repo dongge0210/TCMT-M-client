@@ -957,17 +957,23 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         // Name / pid / memory stay in the default foreground; only the CPU
         // cell carries the severity color — coloring the whole row turns
         // every row into a colored field and the signal disappears.
+        const bool selected = (p.pid == selPid_);
+        if (selected) wattron(win, A_REVERSE);
+
         char headBuf[160];
         snprintf(headBuf, sizeof(headBuf), "%s %6s %4s ",
                  name.c_str(), pidStr.c_str(), memStr.c_str());
         mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
 
         // Column of "%5.1f%%": name (padded to nameW) + " %6s %4s " above.
+        // The selected row flips to plain reverse (no per-cell color) so the
+        // highlight stays unambiguous.
         int cpuColor = (p.cpuPercent > 50) ? 4 : (p.cpuPercent > 20) ? 3 : 2;
         const int cpuCol = x0 + 2 + nameW + 13;
-        if (cpuColor != 2) wattron(win, COLOR_PAIR(cpuColor));
+        if (cpuColor != 2 && !selected) wattron(win, COLOR_PAIR(cpuColor));
         mvwprintw(win, y + lines, cpuCol, "%5.1f%%", p.cpuPercent);
-        if (cpuColor != 2) wattroff(win, COLOR_PAIR(cpuColor));
+        if (cpuColor != 2 && !selected) wattroff(win, COLOR_PAIR(cpuColor));
+        if (selected) wattroff(win, A_REVERSE);
         lines++;
     }
 
@@ -1297,6 +1303,78 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     }
 }
 
+// Process-details overlay — Enter on a selected dashboard row. Shows what
+// the monitor loop already collects for that pid (same source as the row);
+// Esc / Enter / q close it, q does not quit the app.
+void TuiApp::RenderProcessDetails(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || isEnter) {
+        detailsPage_ = false;
+        clear();
+        return;
+    }
+
+    // Re-resolve the pid every frame against the freshest snapshot; if the
+    // process is gone the overlay dismisses itself.
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+    const TuiData::ProcessTopEntry* proc = nullptr;
+    for (const auto& p : data.topProcesses) {
+        if (p.pid == selPid_) { proc = &p; break; }
+    }
+    if (proc == nullptr) {
+        detailsPage_ = false;
+        clear();
+        return;
+    }
+
+    const int W = std::min(56, cols - 8);
+    const int H = 11;
+    const int x0 = std::max(1, (cols - W) / 2);
+    const int y0 = std::max(1, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Process Details ");
+
+    std::string memStr;
+    if (proc->memoryBytes >= (uint64_t)1024 * 1024 * 1024)
+        memStr = std::to_string(proc->memoryBytes / (1024 * 1024 * 1024)) + " GB";
+    else
+        memStr = std::to_string(proc->memoryBytes / (1024 * 1024)) + " MB";
+
+    char line[192];
+    int y = y0 + 2;
+    snprintf(line, sizeof(line), "Name:   %s", proc->name.c_str());
+    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+    snprintf(line, sizeof(line), "PID:    %d", (int)proc->pid);
+    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+
+    int cpuColor = (proc->cpuPercent > 50) ? 4 : (proc->cpuPercent > 20) ? 3 : 2;
+    snprintf(line, sizeof(line), "CPU:    %5.1f%%", proc->cpuPercent);
+    if (cpuColor != 2) wattron(stdscr, COLOR_PAIR(cpuColor));
+    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+    if (cpuColor != 2) wattroff(stdscr, COLOR_PAIR(cpuColor));
+
+    snprintf(line, sizeof(line), "Memory: %s", memStr.c_str());
+    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Enter/Esc/q close ");
+}
+
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
 
@@ -1367,6 +1445,16 @@ void TuiApp::Run() {
         // global quit handler so q inside help closes the page, not the app.
         if (helpPage_) {
             RenderHelpPage(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
+        // Process-details overlay (Enter on a selected dashboard row). Modal
+        // like the others: Esc / Enter / q close it — q here closes the
+        // overlay, not the app.
+        if (detailsPage_) {
+            RenderProcessDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -1452,6 +1540,43 @@ void TuiApp::Run() {
         {
             std::lock_guard<std::mutex> lock(dataMutex_);
             data = data_;
+        }
+
+        // Dashboard-local keys need the current snapshot, so they are
+        // handled here: ↑/↓ move the process selection (the first focusable
+        // surface of the dashboard), Enter opens the details overlay. The
+        // top list re-sorts every refresh, so the selection tracks the pid —
+        // if the process leaves the list the highlight clears.
+        int selIdx = -1;
+        if (selPid_ >= 0) {
+            for (size_t i = 0; i < data.topProcesses.size(); ++i) {
+                if (data.topProcesses[i].pid == selPid_) { selIdx = static_cast<int>(i); break; }
+            }
+            if (selIdx < 0) selPid_ = -1;   // selected process left the top list
+        }
+        if (!data.topProcesses.empty()) {
+            const int last = static_cast<int>(data.topProcesses.size()) - 1;
+            int nextIdx = selIdx;
+            if (ch == KEY_UP) {
+                if (selIdx > 0) nextIdx = selIdx - 1;
+                else if (selIdx < 0) nextIdx = last;   // arrows enter the list from the bottom
+            } else if (ch == KEY_DOWN) {
+                if (selIdx >= 0 && selIdx < last) nextIdx = selIdx + 1;
+                else if (selIdx < 0) nextIdx = 0;
+            }
+            if (nextIdx != selIdx) {
+                selPid_ = data.topProcesses[nextIdx].pid;
+                selIdx = nextIdx;
+            }
+            const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+                || ch == KEY_ENTER
+#endif
+            );
+            if (isEnter && selIdx >= 0) {
+                detailsPage_ = true;
+                clear();
+            }
         }
 
         erase();
