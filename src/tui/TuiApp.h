@@ -301,6 +301,18 @@ struct TuiData {
     std::string timestamp;
 };
 
+// Capability report — the single place the TUI answers "what does this
+// build actually support", so key bindings, page availability and guidance
+// text are runtime data instead of #ifdefs sprinkled through the render
+// code. Each platform builds its report once (DetectPlatformCaps in
+// TuiApp.cpp); everything else reads these flags.
+struct PlatformCaps {
+    bool inlineLogPage = false;        // in-TUI log page (L/Tab). Windows pairs the dashboard with its own window instead.
+    bool nativeLogWindow = false;      // OS-native log window exists (Win32 LogWindow / AppKit MacLogWindow).
+    bool resizableTerminal = false;    // terminal reports live resize events (PDCurses is_termresized).
+    bool wifiLocationServices = false; // macOS Location Services SSID flow (R key + guidance text).
+};
+
 class TuiApp {
 public:
     TuiApp();
@@ -336,18 +348,14 @@ public:
         settingsHandler_ = std::move(h);
     }
 
-#ifndef TCMT_WINDOWS
-    // Inject external log buffer (e.g. from Logger) — used by the in-TUI
-    // log page on macOS/Linux (Windows uses the standalone Win32 LogWindow).
+    // Inject external log buffer (e.g. from Logger) for the in-TUI log page.
+    // Inert on platforms without the inline page (caps_.inlineLogPage).
     void SetLogBuffer(LogBuffer* buf);
-#endif
 
 private:
     void Run();
     void RenderSettingsPage(int rows, int cols, int ch);
-#ifndef TCMT_WINDOWS
     void RenderLogPage(int rows, int cols, int ch);
-#endif
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -376,7 +384,9 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
 
-#ifndef TCMT_WINDOWS
+    // Capabilities of this platform/build (see DetectPlatformCaps).
+    PlatformCaps caps_;
+
     // Page state: Dashboard (hardware panels) or Log (scrolling log page)
     bool logPage_ = false;
     int logScrollOffset_ = 0;   // lines scrolled up from bottom
@@ -390,7 +400,6 @@ private:
     LogBuffer defaultBuffer_;
     // Points to either &defaultBuffer_ or an external buffer
     LogBuffer* logBuf_ = nullptr;
-#endif
 
     TuiData data_;
     mutable std::mutex dataMutex_;

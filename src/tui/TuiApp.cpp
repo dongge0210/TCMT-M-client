@@ -62,13 +62,33 @@ namespace tcmt {
 // TuiApp
 // ============================================================================
 
-#ifndef TCMT_WINDOWS
-TuiApp::TuiApp() {
+// Platform capability probe — the ONLY #ifdef switch point in this file for
+// "which UI pieces exist here". Everything below (key bindings, page state,
+// hints, guidance text) reads caps_ at runtime, so the three platforms no
+// longer drift apart in behavior by accident.
+static PlatformCaps DetectPlatformCaps() {
+    PlatformCaps c;
+#ifdef TCMT_WINDOWS
+    // Windows console pairs the dashboard with the standalone Win32 log
+    // window (LogWindow); there is no in-TUI log page.
+    c.nativeLogWindow = true;
+#else
+    // macOS/Linux keep the in-TUI log page for headless/SSH sessions.
+    c.inlineLogPage = true;
+#endif
+#ifdef __PDCURSES__
+    c.resizableTerminal = true;   // is_termresized() reports live resizes
+#endif
+#ifdef TCMT_MACOS
+    c.nativeLogWindow = true;     // AppKit MacLogWindow
+    c.wifiLocationServices = true; // macOS 15+ Location Services SSID flow
+#endif
+    return c;
+}
+
+TuiApp::TuiApp() : caps_(DetectPlatformCaps()) {
     logBuf_ = &defaultBuffer_;
 }
-#else
-TuiApp::TuiApp() {}
-#endif
 
 TuiApp::~TuiApp() {
     Stop();
@@ -101,11 +121,9 @@ void TuiApp::UpdateData(const TuiData& data) {
     data_ = data;
 }
 
-#ifndef TCMT_WINDOWS
 void TuiApp::SetLogBuffer(LogBuffer* buf) {
     logBuf_ = buf ? buf : &defaultBuffer_;
 }
-#endif
 
 void TuiApp::InitColors() {
     if (!has_colors()) return;
@@ -231,13 +249,12 @@ void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     mvwprintw(win, 0, std::max(0, x), "%s", title.c_str());
     wattroff(win, COLOR_PAIR(1) | A_BOLD);
 
-    // Key hints (right-aligned) — built from what is actually compiled and
-    // wired on this platform, so no dead keys are advertised. (Windows has
-    // no in-TUI log page; U/R appear only when a handler exists.)
+    // Key hints (right-aligned) — built from what this platform actually
+    // supports (caps_) and what is wired up (handlers), so no dead keys are
+    // advertised. (Windows has no in-TUI log page; U/R appear only when a
+    // handler exists.)
     std::string hint = "S:Settings";
-#ifndef TCMT_WINDOWS
-    hint += " L:Log";
-#endif
+    if (caps_.inlineLogPage) hint += " L:Log";
     if (updateRequestHandler_) hint += " U:Update";
     if (locationRequestHandler_) hint += " R:Location";
     hint += " Q:Quit";
@@ -511,9 +528,9 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         // Location Services guidance — show the user where to grant SSID
         // access BEFORE expecting the SSID field (macOS 15+). Rendered in
         // blue so the actionable hint stands out from the sensor data.
-        // macOS-only: Windows reads SSID via the WLAN API without it.
-#ifndef TCMT_WINDOWS
-        if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+        // A platform capability: only macOS fills wifiLocationStatus, so
+        // Windows (WLAN API) and Linux must never see this macOS flow.
+        if (caps_.wifiLocationServices && (data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
             lines++;
@@ -532,7 +549,6 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             lines++;
             wattroff(win, COLOR_PAIR(6));
         }
-#endif
     }
 
     if (data.hasBluetooth) {
@@ -1114,10 +1130,11 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     }
 }
 
-#ifndef TCMT_WINDOWS
-// Log page — full-screen scrolling log view inside the main TUI (macOS/Linux).
-// Data comes from the in-process Logger log buffer (no IPC, no files).
-// Windows uses the standalone Win32 LogWindow instead (dashboard-only console).
+// Log page — full-screen scrolling log view inside the main TUI. Compiled on
+// every platform but only reachable where caps_.inlineLogPage is set: Windows
+// uses the standalone Win32 LogWindow instead (dashboard-only console), and
+// the page stays dormant there. Data comes from the in-process Logger log
+// buffer (no IPC, no files).
 // ────────────────────────────────────────────────────────────────────────────
 void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     if (ch == KEY_UP) { logScrollOffset_++; logFollow_ = false; }
@@ -1203,7 +1220,6 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
         if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
     }
 }
-#endif
 
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
@@ -1272,9 +1288,7 @@ void TuiApp::Run() {
             settingsFocus_ = 0;
             urlCursor_ = (int)draftSettings_.url.size();
             settingsPage_ = true;
-#ifndef TCMT_WINDOWS
             logPage_ = false;   // settings overlays whatever page was shown
-#endif
             curs_set(1);
             clear();
         }
@@ -1284,16 +1298,16 @@ void TuiApp::Run() {
         if ((ch == 'u' || ch == 'U') && updateRequestHandler_) {
             updateRequestHandler_();
         }
-#ifndef TCMT_WINDOWS
-        if (ch == 'l' || ch == 'L' || ch == '\t') {
+        // The in-TUI log page is a capability: on Windows the dashboard
+        // pairs with the standalone Win32 log window, so L/Tab stay inert.
+        if (caps_.inlineLogPage && (ch == 'l' || ch == 'L' || ch == '\t')) {
             logPage_ = !logPage_;
             clear();
         }
-        if (ch == 27 && logPage_) {  // Esc = back to dashboard (not quit)
+        if (ch == 27 && caps_.inlineLogPage && logPage_) {  // Esc = back to dashboard (not quit)
             logPage_ = false;
             clear();
         }
-#endif
         if (rows < 24 || cols < 80) {
             clear();
             mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
@@ -1302,8 +1316,9 @@ void TuiApp::Run() {
             continue;
         }
 
-#ifndef TCMT_WINDOWS
         // Log page — in-process full-screen log view (Tab / L to switch back).
+        // logPage_ can only become true where caps_.inlineLogPage is set, so
+        // this branch is naturally dormant on Windows (native log window).
         // Skip the repaint when nothing changed: no key, same buffer version
         // (LogBuffer::Version()) and same terminal size. New lines repaint
         // immediately because the version counter moves; an idle scrolled
@@ -1323,7 +1338,6 @@ void TuiApp::Run() {
             }
             continue;
         }
-#endif
 
         TuiData data;
         {
