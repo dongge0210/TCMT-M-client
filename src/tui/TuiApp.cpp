@@ -249,29 +249,17 @@ static std::string utf8_truncate(const std::string& s, int maxW) {
 // ─────────────────────────────────────────────────────────────────────
 
 void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
+    // Title only. Key hints, the update banner and the stale chip live on
+    // the status row and are laid out together in Run() so they can never
+    // collide on narrow terminals.
     int rows, cols;
     getmaxyx(win, rows, cols);
-    (void)rows;  // only the width matters: the title is centered on row 0
+    (void)rows;
     wattron(win, COLOR_PAIR(1) | A_BOLD);
     std::string title = "TCMT Monitor  " + data.timestamp;
     int x = (cols - static_cast<int>(title.size())) / 2;
     mvwprintw(win, 0, std::max(0, x), "%s", title.c_str());
     wattroff(win, COLOR_PAIR(1) | A_BOLD);
-
-    // Key hints (right-aligned) — built from what this platform actually
-    // supports (caps_) and what is wired up (handlers), so no dead keys are
-    // advertised. (Windows has no in-TUI log page; U/R appear only when a
-    // handler exists.)
-    std::string hint = "S:Settings";
-    if (caps_.inlineLogPage) hint += " L:Log";
-    if (updateRequestHandler_) hint += " U:Update";
-    if (locationRequestHandler_) hint += " R:Location";
-    hint += " Q:Quit";
-    if (cols >= static_cast<int>(title.size()) + static_cast<int>(hint.size()) + 6) {
-        wattron(win, COLOR_PAIR(5));
-        mvwprintw(win, 0, cols - static_cast<int>(hint.size()) - 1, "%s", hint.c_str());
-        wattroff(win, COLOR_PAIR(5));
-    }
 }
 
 int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
@@ -1177,7 +1165,9 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
 
     std::string header = " TCMT Log    lines: " + std::to_string(lines.size()) +
                          "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]") +
-                         "    Esc/l=dashboard f=follow q=quit";
+                         "    " + upArrow_ + "/" + downArrow_ + " scroll  Home/End  f=follow  ?=help";
+    // (Esc/l back to dashboard and q=quit are listed in the ? help page;
+    // they are deliberately not repeated on every log line of the header.)
     wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
     mvwprintw(stdscr, 1, 1, "%.*s", cols - 2, header.c_str());
     wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
@@ -1230,6 +1220,83 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     }
 }
 
+// Help page — full-screen key reference (press ?). Every key listed here is
+// gated exactly like the header hints (caps_ + wired handlers), so the page
+// never advertises a dead key. It is a modal like Settings: Esc, q or ?
+// close it — q inside help does NOT quit the app.
+void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
+    if (ch == 27 || ch == 'q' || ch == 'Q' || ch == '?') {
+        helpPage_ = false;
+        clear();
+        return;
+    }
+
+    const int W = std::min(74, cols - 6);
+    const int H = rows - 4;
+    const int x0 = std::max(1, (cols - W) / 2);
+    const int y0 = 2;
+
+    erase();
+    std::string hlineStr(W, '-');  // NB: not 'hline' — that is a curses function
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Key Bindings ");
+
+    int y = y0 + 1;
+    auto group = [&](const std::string& heading,
+                     const std::vector<std::pair<std::string, std::string>>& items) {
+        if (y >= y0 + H - 2) return;
+        wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+        mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, heading.c_str());
+        wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+        for (const auto& item : items) {
+            if (y >= y0 + H - 2) return;
+            char line[160];
+            snprintf(line, sizeof(line), "%-17s %s", item.first.c_str(), item.second.c_str());
+            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+        }
+    };
+
+    // Same gating as the header hints: only list what this build supports.
+    std::vector<std::pair<std::string, std::string>> common, dash, logpage;
+    common.push_back({"S", "server push settings"});
+    if (caps_.inlineLogPage)
+        common.push_back({"L / Tab", "switch to log page"});
+    if (updateRequestHandler_)
+        common.push_back({"U", "check for update"});
+    if (locationRequestHandler_)
+        common.push_back({"R", "request Location Services (WiFi SSID)"});
+    common.push_back({"Esc", "go back one level"});
+    common.push_back({"?", "close this help"});
+    common.push_back({"q", "quit TCMT Monitor"});
+
+    dash.push_back({upArrow_ + " / " + downArrow_, "select a process row"});
+    dash.push_back({"Enter", "process details (PID, CPU, memory)"});
+
+    if (caps_.inlineLogPage) {
+        logpage.push_back({upArrow_ + " / " + downArrow_, "scroll one line"});
+        logpage.push_back({"PgUp / PgDn", "scroll one page"});
+        logpage.push_back({"Home", "oldest entry"});
+        logpage.push_back({"End", "newest entry"});
+        logpage.push_back({"f", "follow newest lines"});
+        logpage.push_back({"Esc / L / Tab", "back to dashboard"});
+    }
+
+    group("Common", common);
+    group("Dashboard", dash);
+    if (!logpage.empty()) group("Log page", logpage);
+
+    // Settings keys are hinted inline on that page; one summary line here.
+    if (y < y0 + H - 2) {
+        mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4,
+                  "Settings page: Enter save, Esc cancel, Tab or arrows move focus, Space toggles");
+    }
+}
+
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
 
@@ -1249,6 +1316,8 @@ void TuiApp::Run() {
         sparkChars_ = " .:-=+*#";    // 8 ink-ascending levels, index 0 = empty
         degSuffixTemp_ = "C";
         degSuffixAngle_ = "deg";
+        upArrow_ = "^";
+        downArrow_ = "v";
     }
 
     initscr();
@@ -1294,6 +1363,15 @@ void TuiApp::Run() {
             continue;
         }
 
+        // Help page is a modal overlay like Settings. Checked before the
+        // global quit handler so q inside help closes the page, not the app.
+        if (helpPage_) {
+            RenderHelpPage(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
         // Esc is "back": from the log page it returns to the dashboard; on
         // the dashboard it is inert. q is the only quit key.
         // Ctrl+C may arrive as a key (0x03, or KEY_BREAK on PDCurses) instead
@@ -1333,6 +1411,10 @@ void TuiApp::Run() {
         }
         if (ch == 27 && caps_.inlineLogPage && logPage_) {  // Esc = back to dashboard (not quit)
             logPage_ = false;
+            clear();
+        }
+        if (ch == '?') {   // key reference — reachable from dashboard and log page
+            helpPage_ = true;
             clear();
         }
         if (rows < 24 || cols < 80) {
@@ -1410,21 +1492,30 @@ void TuiApp::Run() {
         // === Header ===
         DrawHeader(stdscr, data);
 
-        // Update banner — drawn on the header separator row (row 1).
-        if (!data.updateStatus.empty()) {
-            const int color = data.updateState == 6 ? 4
-                : (data.updateState == 5 ? 2 : 3);
-            wattron(stdscr, COLOR_PAIR(color) | A_BOLD);
-            std::string banner = " " + data.updateStatus + " ";
-            int bx = (std::max)(1, (cols - (int)banner.size()) / 2);
-            mvwprintw(stdscr, 1, bx, "%.*s", cols - 2, banner.c_str());
-            wattroff(stdscr, COLOR_PAIR(color) | A_BOLD);
-        }
+        // Status row: three occupants share row 0/1 without ever colliding —
+        // key hints sit right-aligned on the title row and fall back to the
+        // right end of row 1 on narrow terminals; the stale chip anchors the
+        // row-1 left edge; the update banner centers in whatever row-1 space
+        // is left between them. Hints are built from caps_ + handlers so no
+        // dead keys are advertised.
+        std::string hint = "S:Settings";
+        if (caps_.inlineLogPage) hint += " L:Log";
+        if (updateRequestHandler_) hint += " U:Update";
+        if (locationRequestHandler_) hint += " R:Location";
+        hint += " ?:Help Q:Quit";
+        const int hintW = static_cast<int>(hint.size());
 
-        // Data freshness watchdog (#3): the monitor loop feeds UpdateData at
-        // its loop rate (~30 Hz); when it falls silent the picture freezes
-        // while the UI keeps looking alive. Flag the age instead of letting
-        // a stale dashboard pass as current. Yellow (pair 3) = warning class.
+        std::string title = "TCMT Monitor  " + data.timestamp;
+        const int titleEnd = (cols - static_cast<int>(title.size())) / 2
+                           + static_cast<int>(title.size());
+        const bool hintRow1 = (cols - hintW - 1) < titleEnd + 2;
+        wattron(stdscr, COLOR_PAIR(5));
+        mvwprintw(stdscr, hintRow1 ? 1 : 0, cols - hintW - 1, "%s", hint.c_str());
+        wattroff(stdscr, COLOR_PAIR(5));
+
+        // Row-1 left reservation: the stale chip when the monitor loop is
+        // silent (yellow = warning class); nothing otherwise.
+        int row1Left = 1;   // first column still free after left occupants
         const int64_t lastUs = lastUpdateUs_.load();
         const int64_t staleUs = (lastUs == 0) ? 0
             : std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1434,6 +1525,26 @@ void TuiApp::Run() {
             wattron(stdscr, COLOR_PAIR(3));
             mvwprintw(stdscr, 1, 1, "%.*s", cols - 3, chip.c_str());
             wattroff(stdscr, COLOR_PAIR(3));
+            row1Left += static_cast<int>(chip.size());
+        }
+
+        // Update banner — centered in the free row-1 span (clipped on the
+        // right so it never overwrites the row-1 key hints).
+        if (!data.updateStatus.empty()) {
+            const int color = data.updateState == 6 ? 4
+                : (data.updateState == 5 ? 2 : 3);
+            wattron(stdscr, COLOR_PAIR(color) | A_BOLD);
+            std::string banner = " " + data.updateStatus + " ";
+            const int rightReserve = hintRow1 ? hintW + 1 : 0;
+            const int zoneL = row1Left + 1;
+            const int zoneR = cols - 2 - rightReserve;
+            if (zoneR >= zoneL) {
+                const int zoneW = zoneR - zoneL + 1;
+                int bx = zoneL + (zoneW - static_cast<int>(banner.size())) / 2;
+                bx = (std::max)(zoneL, bx);
+                mvwprintw(stdscr, 1, bx, "%.*s", zoneR - bx + 1, banner.c_str());
+            }
+            wattroff(stdscr, COLOR_PAIR(color) | A_BOLD);
         }
 
         // === Left panels (CPU + GPU + Memory) ===

@@ -355,6 +355,7 @@ private:
     void Run();
     void RenderSettingsPage(int rows, int cols, int ch);
     void RenderLogPage(int rows, int cols, int ch);
+    void RenderHelpPage(int rows, int cols, int ch);
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -409,6 +410,8 @@ private:
                               "\xe2\x96\x85\xe2\x96\x86\xe2\x96\x87\xe2\x96\x88"; // ▁..█, index 0 = empty
     std::string degSuffixTemp_ = "\xc2\xb0";  // suffix after a core-temp value (° / C)
     std::string degSuffixAngle_ = "\xc2\xb0"; // suffix after the lid angle (° / deg)
+    std::string upArrow_ = "\xe2\x86\x91";    // ↑ (^ in ASCII mode)
+    std::string downArrow_ = "\xe2\x86\x93";  // ↓ (v)
 
     TuiData data_;
     mutable std::mutex dataMutex_;
@@ -425,6 +428,7 @@ private:
     ServerSettings draftSettings_;         // edits in progress
     std::function<void(const ServerSettings&)> settingsHandler_;
     bool settingsPage_ = false;
+    bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure
     int urlCursor_ = 0;                    // cursor position inside URL field
 
