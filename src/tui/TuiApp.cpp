@@ -58,6 +58,10 @@ static int portable_wcswidth(const wchar_t* wcs, size_t n) {
 
 namespace tcmt {
 
+// A snapshot this old means the monitor loop has stopped feeding the TUI;
+// the dashboard then shows a "stale Ns" chip on the status row.
+static constexpr int64_t kStaleAfterUs = 3000000;  // 3 s
+
 // ============================================================================
 // TuiApp
 // ============================================================================
@@ -119,6 +123,8 @@ bool TuiApp::IsRunning() const {
 void TuiApp::UpdateData(const TuiData& data) {
     std::lock_guard<std::mutex> lock(dataMutex_);
     data_ = data;
+    lastUpdateUs_.store(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 void TuiApp::SetLogBuffer(LogBuffer* buf) {
@@ -1413,6 +1419,21 @@ void TuiApp::Run() {
             int bx = (std::max)(1, (cols - (int)banner.size()) / 2);
             mvwprintw(stdscr, 1, bx, "%.*s", cols - 2, banner.c_str());
             wattroff(stdscr, COLOR_PAIR(color) | A_BOLD);
+        }
+
+        // Data freshness watchdog (#3): the monitor loop feeds UpdateData at
+        // its loop rate (~30 Hz); when it falls silent the picture freezes
+        // while the UI keeps looking alive. Flag the age instead of letting
+        // a stale dashboard pass as current. Yellow (pair 3) = warning class.
+        const int64_t lastUs = lastUpdateUs_.load();
+        const int64_t staleUs = (lastUs == 0) ? 0
+            : std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count() - lastUs;
+        if (staleUs > kStaleAfterUs) {
+            std::string chip = " stale " + std::to_string(staleUs / 1000000) + "s ";
+            wattron(stdscr, COLOR_PAIR(3));
+            mvwprintw(stdscr, 1, 1, "%.*s", cols - 3, chip.c_str());
+            wattroff(stdscr, COLOR_PAIR(3));
         }
 
         // === Left panels (CPU + GPU + Memory) ===

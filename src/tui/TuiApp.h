@@ -28,7 +28,6 @@ typedef int pid_t;
 #include <mutex>
 #include <atomic>
 #include <thread>
-#include <chrono>
 
 // Forward declarations for ncurses (skip if PDCurses already included)
 #ifndef __PDCURSES__
@@ -416,6 +415,10 @@ private:
 
     std::function<void()> locationRequestHandler_;
     std::function<void()> updateRequestHandler_;
+
+    // Freshness watchdog: microseconds (steady clock) of the last UpdateData
+    // snapshot; the dashboard flags stale Ns when it stops advancing.
+    std::atomic<int64_t> lastUpdateUs_{0};
 
     // Settings page state (press S): framed interactive form.
     ServerSettings serverSettings_;        // current values (from main)
