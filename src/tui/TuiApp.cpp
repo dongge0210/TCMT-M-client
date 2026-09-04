@@ -62,6 +62,26 @@ namespace tcmt {
 // the dashboard then shows a "stale Ns" chip on the status row.
 static constexpr int64_t kStaleAfterUs = 3000000;  // 3 s
 
+// ── Severity color policy (#5) ─────────────────────────────────────────────
+// One table of thresholds, one pair of helpers — no more scattered integer
+// literals (temps 60/80 in three places, battery, health…). Curses pair
+// roles are fixed in InitColors: 3 = warning (yellow), 4 = critical (red).
+// Normal values render in the DEFAULT foreground: painting every normal row
+// green made the whole dashboard a colored field, so no value was actually
+// highlighted (the log page got the same fix earlier).
+static int HighIsWorsePair(double value, double warnAt, double critAt) {
+    return (value >= critAt) ? 4 : (value >= warnAt) ? 3 : -1;  // -1 = leave default fg
+}
+static int LowIsWorsePair(double value, double warnBelow, double critBelow) {
+    return (value <= critBelow) ? 4 : (value <= warnBelow) ? 3 : -1;
+}
+// Thresholds by metric (values unchanged from the pre-#5 rules; only the
+// "paint everything" policy changed).
+static constexpr double kTempWarn = 60.0, kTempCrit = 80.0;      // sensor temps, °C
+static constexpr double kProcCpuWarn = 20.0, kProcCpuCrit = 50.0; // per-process cpu %
+static constexpr double kHealthWarn = 80.0, kHealthCrit = 60.0;  // battery health % (low is worse)
+static constexpr double kBattWarn = 50.0, kBattCrit = 20.0;      // battery charge % (low is worse)
+
 // ============================================================================
 // TuiApp
 // ============================================================================
@@ -139,12 +159,15 @@ void TuiApp::InitColors() {
     start_color();
     use_default_colors();
 
+    // Pair roles (semantic; severity helpers above map to 3/4):
+    //   1 header cyan · 2 ok green (upload sparkline, update done) ·
+    //   3 warning yellow · 4 critical red · 5 labels white · 6 blue (bars)
     init_pair(1, COLOR_CYAN, -1);    // Header
-    init_pair(2, COLOR_GREEN, -1);  // Normal
-    init_pair(3, COLOR_YELLOW, -1); // Warning
-    init_pair(4, COLOR_RED, -1);   // Error/Critical
-    init_pair(5, COLOR_WHITE, -1); // Label
-    init_pair(6, COLOR_BLUE, -1);  // Bar
+    init_pair(2, COLOR_GREEN, -1);   // OK / normal-as-good (sparkline U:, update done)
+    init_pair(3, COLOR_YELLOW, -1);  // Warning
+    init_pair(4, COLOR_RED, -1);     // Critical
+    init_pair(5, COLOR_WHITE, -1);   // Label / titles
+    init_pair(6, COLOR_BLUE, -1);    // Usage bars, traffic download
 }
 
 std::string TuiApp::FormatSize(uint64_t bytes) {
@@ -173,6 +196,24 @@ std::string TuiApp::FormatSpeed(uint64_t bps) {
     else if (bps >= (uint64_t)MB) ss << (bps / MB) << " Mbps";
     else if (bps >= (uint64_t)KB) ss << (bps / KB) << " Kbps";
     else ss << bps << " bps";
+    return ss.str();
+}
+
+// Throughput in bytes/second, decimal (1000) — the same base as FormatSpeed
+// so "MB/s" on this screen never silently means MiB/s. Mixing the binary
+// FormatSize (used for storage capacities above) into rate lines made one
+// "MB" glyph carry two bases on the same screen.
+std::string TuiApp::FormatRate(uint64_t bytesPerSec) {
+    const double GB = 1000.0 * 1000.0 * 1000.0;
+    const double MB = 1000.0 * 1000.0;
+    const double KB = 1000.0;
+
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(1);
+    if (bytesPerSec >= (uint64_t)GB) ss << (bytesPerSec / GB) << " GB/s";
+    else if (bytesPerSec >= (uint64_t)MB) ss << (bytesPerSec / MB) << " MB/s";
+    else if (bytesPerSec >= (uint64_t)KB) ss << (bytesPerSec / KB) << " KB/s";
+    else ss << bytesPerSec << " B/s";
     return ss.str();
 }
 
@@ -468,11 +509,13 @@ int TuiApp::DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, in
             lines++;
         }
         if (!n.ip.empty()) {
-            auto d = n.downloadSpeed > 0 ? FormatSize(n.downloadSpeed) : "0 B";
-            mvwprintw(win, y + lines, x0 + 4, "D: %.*s/s", maxW - 8, d.c_str());
+            // Rates are decimal bytes/s (FormatRate), not binary storage
+            // sizes — see FormatRate for why the bases must not mix.
+            mvwprintw(win, y + lines, x0 + 4, "D: %.*s", maxW - 8,
+                      FormatRate(n.downloadSpeed).c_str());
             lines++;
-            auto u = n.uploadSpeed > 0 ? FormatSize(n.uploadSpeed) : "0 B";
-            mvwprintw(win, y + lines, x0 + 4, "U: %.*s/s", maxW - 8, u.c_str());
+            mvwprintw(win, y + lines, x0 + 4, "U: %.*s", maxW - 8,
+                      FormatRate(n.uploadSpeed).c_str());
             lines++;
         }
     }
@@ -676,19 +719,19 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 
         auto& [nameL, tempL] = displayTemps[leftIdx];
         auto labelL = TrimRight(nameL, halfW - 9);
-        int tcL = (tempL > 80) ? 4 : (tempL > 60) ? 3 : 2;
-        wattron(win, COLOR_PAIR(tcL));
+        const int tcL = HighIsWorsePair(tempL, kTempWarn, kTempCrit);
+        if (tcL >= 0) wattron(win, COLOR_PAIR(tcL));
         mvwprintw(win, y + lines, x0 + 2, "%.*s %.1f C", halfW - 9, labelL.c_str(), tempL);
-        wattroff(win, COLOR_PAIR(tcL));
+        if (tcL >= 0) wattroff(win, COLOR_PAIR(tcL));
 
         int rightIdx = leftIdx + 1;
         if (rightIdx < static_cast<int>(displayTemps.size())) {
             auto& [nameR, tempR] = displayTemps[rightIdx];
             auto labelR = TrimRight(nameR, halfW - 9);
-            int tcR = (tempR > 80) ? 4 : (tempR > 60) ? 3 : 2;
-            wattron(win, COLOR_PAIR(tcR));
+            const int tcR = HighIsWorsePair(tempR, kTempWarn, kTempCrit);
+            if (tcR >= 0) wattron(win, COLOR_PAIR(tcR));
             mvwprintw(win, y + lines, x0 + 2 + halfW, "%.*s %.1f C", halfW - 9, labelR.c_str(), tempR);
-            wattroff(win, COLOR_PAIR(tcR));
+            if (tcR >= 0) wattroff(win, COLOR_PAIR(tcR));
         }
         lines++;
         actualRows = p + 1;
@@ -741,12 +784,13 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     if (hasBattery) {
         if (lines > 1) lines++;  // blank line separator
         mvwprintw(win, y + lines++, x0 + 2, "Cycles: %d", data.batteryCycleCount);
-        // Health %
+        // Health % (low is worse): normal health no longer painted green
+        // — only a drop below the warning band gets a color.
         int hp = (int)(data.batteryHealthPercent + 0.5);
-        int hpColor = (hp < 60) ? 4 : (hp < 80) ? 3 : 2;
-        wattron(win, COLOR_PAIR(hpColor));
+        const int hpColor = LowIsWorsePair(hp, kHealthWarn, kHealthCrit);
+        if (hpColor >= 0) wattron(win, COLOR_PAIR(hpColor));
         mvwprintw(win, y + lines++, x0 + 2, "Health: %d%%", hp);
-        wattroff(win, COLOR_PAIR(hpColor));
+        if (hpColor >= 0) wattroff(win, COLOR_PAIR(hpColor));
         // Charge/discharge power
         if (data.batteryAmperage != 0 && data.batteryVoltage > 0) {
             int64_t powerMw = (int64_t)std::abs(data.batteryAmperage) * (int64_t)data.batteryVoltage / 1000;
@@ -849,10 +893,10 @@ int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         int offset = x0 + 2 + i * 8;
         if (offset + 7 > maxW) break;
         int t = static_cast<int>(data.perCoreTemp[i]);
-        int color = (t >= 80) ? 4 : (t >= 60) ? 3 : 2;
-        wattron(win, COLOR_PAIR(color));
+        const int color = HighIsWorsePair(static_cast<double>(t), kTempWarn, kTempCrit);
+        if (color >= 0) wattron(win, COLOR_PAIR(color));
         mvwprintw(win, y + lines, offset, "%4d%s", t, degSuffixTemp_.c_str());
-        wattroff(win, COLOR_PAIR(color));
+        if (color >= 0) wattroff(win, COLOR_PAIR(color));
     }
     lines++;
     // Frequency row
@@ -966,13 +1010,14 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
 
         // Column of "%5.1f%%": name (padded to nameW) + " %6s %4s " above.
-        // The selected row flips to plain reverse (no per-cell color) so the
+        // Only out-of-range CPU% gets a color (severity table, #5); the
+        // selected row flips to plain reverse (no per-cell color) so the
         // highlight stays unambiguous.
-        int cpuColor = (p.cpuPercent > 50) ? 4 : (p.cpuPercent > 20) ? 3 : 2;
+        const int cpuColor = HighIsWorsePair(p.cpuPercent, kProcCpuWarn, kProcCpuCrit);
         const int cpuCol = x0 + 2 + nameW + 13;
-        if (cpuColor != 2 && !selected) wattron(win, COLOR_PAIR(cpuColor));
+        if (cpuColor >= 0 && !selected) wattron(win, COLOR_PAIR(cpuColor));
         mvwprintw(win, y + lines, cpuCol, "%5.1f%%", p.cpuPercent);
-        if (cpuColor != 2 && !selected) wattroff(win, COLOR_PAIR(cpuColor));
+        if (cpuColor >= 0 && !selected) wattroff(win, COLOR_PAIR(cpuColor));
         if (selected) wattroff(win, A_REVERSE);
         lines++;
     }
@@ -1363,11 +1408,11 @@ void TuiApp::RenderProcessDetails(int rows, int cols, int ch) {
     snprintf(line, sizeof(line), "PID:    %d", (int)proc->pid);
     mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
 
-    int cpuColor = (proc->cpuPercent > 50) ? 4 : (proc->cpuPercent > 20) ? 3 : 2;
+    const int cpuColor = HighIsWorsePair(proc->cpuPercent, kProcCpuWarn, kProcCpuCrit);
     snprintf(line, sizeof(line), "CPU:    %5.1f%%", proc->cpuPercent);
-    if (cpuColor != 2) wattron(stdscr, COLOR_PAIR(cpuColor));
+    if (cpuColor >= 0) wattron(stdscr, COLOR_PAIR(cpuColor));
     mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
-    if (cpuColor != 2) wattroff(stdscr, COLOR_PAIR(cpuColor));
+    if (cpuColor >= 0) wattroff(stdscr, COLOR_PAIR(cpuColor));
 
     snprintf(line, sizeof(line), "Memory: %s", memStr.c_str());
     mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
@@ -1819,10 +1864,10 @@ void TuiApp::Run() {
         }
         if (data.batteryPercent >= 0 && data.batteryPercent <= 100) {
             auto batStr = (data.acOnline ? "AC" : "BAT") + std::string(" ") + std::to_string(data.batteryPercent) + "%";
-            int color = data.batteryPercent < 20 ? 4 : (data.batteryPercent < 50 ? 3 : 2);
-            wattron(stdscr, COLOR_PAIR(color));
+            const int color = LowIsWorsePair(data.batteryPercent, kBattWarn, kBattCrit);
+            if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
             mvwprintw(stdscr, sysTop, cols - static_cast<int>(batStr.size()) - 2, "%s", batStr.c_str());
-            wattroff(stdscr, COLOR_PAIR(color));
+            if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
         }
 
         // System line 2: uptime | load | processes
