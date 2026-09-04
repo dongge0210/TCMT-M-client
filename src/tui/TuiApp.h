@@ -401,6 +401,16 @@ private:
     // Points to either &defaultBuffer_ or an external buffer
     LogBuffer* logBuf_ = nullptr;
 
+    // Downgrade switches (detected once in Run, then fixed for the session):
+    // NO_COLOR skips color initialization entirely; TCMT_ASCII=1 (or a
+    // non-UTF-8 locale) swaps Unicode glyphs for ASCII ones.
+    bool noColor_ = false;
+    bool asciiMode_ = false;
+    std::string sparkChars_ = " \xe2\x96\x81\xe2\x96\x82\xe2\x96\x83\xe2\x96\x84"
+                              "\xe2\x96\x85\xe2\x96\x86\xe2\x96\x87\xe2\x96\x88"; // ▁..█, index 0 = empty
+    std::string degSuffixTemp_ = "\xc2\xb0";  // suffix after a core-temp value (° / C)
+    std::string degSuffixAngle_ = "\xc2\xb0"; // suffix after the lid angle (° / deg)
+
     TuiData data_;
     mutable std::mutex dataMutex_;
 

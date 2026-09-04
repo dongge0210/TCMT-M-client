@@ -126,7 +126,10 @@ void TuiApp::SetLogBuffer(LogBuffer* buf) {
 }
 
 void TuiApp::InitColors() {
-    if (!has_colors()) return;
+    // NO_COLOR: never start colors. With color support uninitialized curses
+    // treats every COLOR_PAIR() as inert, so the UI renders purely in the
+    // terminal's default foreground — no palette probing, no color codes.
+    if (!has_colors() || noColor_) return;
     start_color();
     use_default_colors();
 
@@ -813,7 +816,7 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
 
     // Lid angle (0x0020/138)
     if (data.lidAngle.valid) {
-        mvwprintw(win, y + lines++, x0 + 2, "Lid:     %.1f\xc2\xb0", data.lidAngle.angle);
+        mvwprintw(win, y + lines++, x0 + 2, "Lid:     %.1f%s", data.lidAngle.angle, degSuffixAngle_.c_str());
     }
 
     // Motion heartbeat (0xFF0C/1 — SPU fusion liveliness indicator)
@@ -854,7 +857,7 @@ int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         int t = static_cast<int>(data.perCoreTemp[i]);
         int color = (t >= 80) ? 4 : (t >= 60) ? 3 : 2;
         wattron(win, COLOR_PAIR(color));
-        mvwprintw(win, y + lines, offset, "%4d°", t);
+        mvwprintw(win, y + lines, offset, "%4d%s", t, degSuffixTemp_.c_str());
         wattroff(win, COLOR_PAIR(color));
     }
     lines++;
@@ -873,8 +876,8 @@ int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 }
 
 // ─── Network Traffic Sparkline ───
-// Unicode block characters: ▁▂▃▄▅▆▇█ (U+2581 through U+2588)
-static const char* SPARK_CHARS = " ▁▂▃▄▅▆▇█";
+// Unicode block characters ▁▂▃▄▅▆▇█ (U+2581..U+2588); sparkChars_ holds the
+// ASCII fallback set when TCMT_ASCII is set (see Run).
 
 int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 20 || data.dlHistoryLen < 2) return 0;
@@ -903,7 +906,7 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
         int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
         int level = (maxVal > 0) ? (int)(data.dlHistory[idx] * 7 / maxVal) : 0;
         if (level < 0) level = 0; if (level > 7) level = 7;
-        dlSpark += SPARK_CHARS[level];
+        dlSpark += sparkChars_[level];
     }
     wattron(win, COLOR_PAIR(6));
     mvwprintw(win, y + lines, x0 + 2, "D:%s", dlSpark.c_str());
@@ -916,7 +919,7 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
         int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
         int level = (maxVal > 0) ? (int)(data.ulHistory[idx] * 7 / maxVal) : 0;
         if (level < 0) level = 0; if (level > 7) level = 7;
-        ulSpark += SPARK_CHARS[level];
+        ulSpark += sparkChars_[level];
     }
     wattron(win, COLOR_PAIR(2));
     mvwprintw(win, y + lines, x0 + 2, "U:%s", ulSpark.c_str());
@@ -1223,6 +1226,24 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
 
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
+
+    // Downgrade switches (#11), read once at startup:
+    //   NO_COLOR      — any non-empty value disables color output.
+    //   TCMT_ASCII=1  — ASCII glyphs (sparkline levels, degree signs). Also
+    //                   forced when the active locale is not UTF-8, where
+    //                   multibyte glyphs cannot be trusted to render.
+    const char* noColorEnv = std::getenv("NO_COLOR");
+    noColor_ = (noColorEnv != nullptr) && (*noColorEnv != '\0');
+    const char* asciiEnv = std::getenv("TCMT_ASCII");
+    const char* curLocale = std::setlocale(LC_ALL, nullptr);
+    const bool utf8Locale = curLocale &&
+        (std::strstr(curLocale, "UTF-8") != nullptr || std::strstr(curLocale, "utf-8") != nullptr);
+    asciiMode_ = (asciiEnv != nullptr && std::strcmp(asciiEnv, "0") != 0) || !utf8Locale;
+    if (asciiMode_) {
+        sparkChars_ = " .:-=+*#";    // 8 ink-ascending levels, index 0 = empty
+        degSuffixTemp_ = "C";
+        degSuffixAngle_ = "deg";
+    }
 
     initscr();
     cursesActive_ = true;
