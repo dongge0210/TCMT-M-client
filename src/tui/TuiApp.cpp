@@ -1712,7 +1712,9 @@ void TuiApp::Run() {
 
         // Vertical divider — confined to the panel content area; the rows
         // below (Connections/System/bottom border) are reserved bands.
-        int maxContentRow = rows - 8;
+        // Divider runs alongside the content area, which now extends two
+        // rows deeper (the bottom status rows are compact, tier-1 chrome).
+        int maxContentRow = rows - 6;
         for (int r = 2; r <= maxContentRow; r++) {
             mvwprintw(stdscr, r, divCol, "|");
         }
@@ -1776,7 +1778,11 @@ void TuiApp::Run() {
         }
 
         // === Left panels (CPU + GPU + Memory) ===
-        int maxY = rows - 5;
+        // Panels may start one row deeper than before: the bottom status
+        // rows (rows-4..rows-2) are the only reserved band now, and content
+        // reaching rows-5 is safe — anything below rows-4 gets wiped and
+        // repainted by the status rows.
+        int maxY = rows - 4;
         int ly = 2;
         if (ly < maxY) {
             int cpuLines = DrawCpuPanel(stdscr, data, ly, lx, leftW);
@@ -1837,30 +1843,50 @@ void TuiApp::Run() {
         }
         if (ry > maxY) ry = maxY;
 
-        // === Bottom panels: Connections → Log → System ===
-        // System(3 rows) + Connections(2 rows) are reserved at bottom.
-        // Content must not overflow into them.
-        int sysTop = rows - 3;
-        int connTop = sysTop - 3;  // 2 content rows: IPC clients + server push
+        // === Bottom status rows (GUI tier-1) ===
+        // The old framed Connections + System bands (6 rows incl. two
+        // separators) collapse into three compact rows, giving the panels
+        // two extra rows while keeping every piece of information:
+        //   rows-4  uptime | load | procs        (plain)
+        //   rows-3  [Connections] clients · push (single severity color)
+        //   rows-2  [System] OS ······ battery   (battery keeps its color)
+        // Content may run down to rows-5; anything below is wiped and
+        // these rows repaint on top, so panel overrun can never corrupt them.
         int contentEnd = ly > ry ? ly : ry;
-        // Clip content to not overwrite reserved panels
-        if (contentEnd >= connTop) contentEnd = connTop - 1;
-        std::string logSep(cols - 2, '-');
-
-        // Panels draw without internal row limits, so anything they painted
-        // into the reserved bands (Connections / System / bottom border) is
-        // discarded here; the bands repaint on top and always stay clean.
-        for (int r = connTop - 1; r < rows; ++r) {
+        if (contentEnd >= rows - 4) contentEnd = rows - 5;
+        for (int r = rows - 4; r <= rows - 2; ++r) {
             mvhline(r, 0, ' ', cols);
         }
 
-        // === Connections panel ===
-        bool showConn = (connTop > contentEnd + 1) && data.connectionCount >= 0;
-        if (showConn) {
-            mvwprintw(stdscr, connTop - 1, 1, "%.*s", cols - 2, logSep.c_str());
-            wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
-            mvwprintw(stdscr, connTop, 1, "Connections");
-            wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+        // Row rows-4: uptime | load | processes (was System line 2).
+        if (data.uptimeSeconds > 0 || data.loadAvg1 > 0 || data.processCount > 0) {
+            std::string sysStr;
+            if (data.uptimeSeconds > 0) {
+                uint64_t days = data.uptimeSeconds / 86400;
+                uint64_t hours = (data.uptimeSeconds % 86400) / 3600;
+                uint64_t mins = (data.uptimeSeconds % 3600) / 60;
+                sysStr += "Uptime: ";
+                if (days > 0) sysStr += std::to_string(days) + "d ";
+                sysStr += std::to_string(hours) + "h " + std::to_string(mins) + "m";
+            }
+            if (data.loadAvg1 > 0) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "   Load: %.2f %.2f %.2f",
+                         data.loadAvg1, data.loadAvg5, data.loadAvg15);
+                sysStr += buf;
+            }
+            if (data.processCount > 0) {
+                sysStr += "   Procs: " + std::to_string(data.processCount);
+            }
+            mvwprintw(stdscr, rows - 4, 2, "%.*s", cols - 4,
+                      TrimRight(sysStr, cols - 4).c_str());
+        }
+
+        // Row rows-3: Connections + server push on one line. One severity
+        // color for the whole row: red on push error, yellow while
+        // connecting, green when clients are attached or uploading.
+        if (data.connectionCount >= 0) {
+            std::string line;
             if (data.connectionCount > 0) {
                 int avaloniaCount = 0, mcpCount = 0, unknownCount = 0;
                 for (auto t : data.clientTypes) {
@@ -1868,27 +1894,20 @@ void TuiApp::Run() {
                     else if (t == 2) mcpCount++;
                     else unknownCount++;
                 }
-                std::string parts;
-                if (avaloniaCount > 0) parts += "Avalonia x" + std::to_string(avaloniaCount) + " ";
-                if (mcpCount > 0) parts += "MCP x" + std::to_string(mcpCount) + " ";
-                if (unknownCount > 0) parts += "? x" + std::to_string(unknownCount) + " ";
-                std::string connStr;
-                if (!parts.empty()) connStr += "IPC: " + parts;
+                if (avaloniaCount > 0) line += "Avalonia x" + std::to_string(avaloniaCount) + " ";
+                if (mcpCount > 0) line += "MCP x" + std::to_string(mcpCount) + " ";
+                if (unknownCount > 0) line += "? x" + std::to_string(unknownCount) + " ";
                 if (data.httpClientCount > 0)
-                    connStr += "Web x" + std::to_string(data.httpClientCount) + " ";
+                    line += "Web x" + std::to_string(data.httpClientCount) + " ";
                 if (!data.connectionSince.empty())
-                    connStr += "since " + data.connectionSince;
-                int color = 2;
-                wattron(stdscr, COLOR_PAIR(color));
-                mvwprintw(stdscr, connTop, 14, "%.*s", cols - 16, connStr.c_str());
-                wattroff(stdscr, COLOR_PAIR(color));
+                    line += "since " + data.connectionSince;
             } else {
-                mvwprintw(stdscr, connTop, 14, "no clients connected");
+                line = "no clients";
             }
-
-            // Row 2: tcmt-server push status (live, from the monitor loop).
+            std::string pushStr;
+            int color = (data.connectionCount > 0) ? 2 : -1;
             if (!data.serverPushEnabled) {
-                mvwprintw(stdscr, connTop + 1, 14, "Push: disabled (press S to configure)");
+                pushStr = "Push: disabled (press S to configure)";
             } else {
                 std::string age = "never";
                 if (data.lastPushMs > 0) {
@@ -1897,53 +1916,39 @@ void TuiApp::Run() {
                         - data.lastPushMs / 1000;
                     age = std::to_string((std::max)(int64_t(0), sec)) + "s ago";
                 }
-                // Green while uploading, yellow while connecting, red only
-                // on error ("error: ..."). Status strings are
                 // "connecting..." / "uploading (dev_xxx)" / "error: ...".
                 const bool err = data.serverStatus.rfind("error", 0) == 0;
                 const bool connecting = data.serverStatus.rfind("connecting", 0) == 0;
-                const int pushColor = err ? 4 : (connecting ? 3 : 2);
-                wattron(stdscr, COLOR_PAIR(pushColor));
-                mvwprintw(stdscr, connTop + 1, 14, "Push: %s -> %s (last %s)",
-                          data.serverStatus.c_str(), data.serverUrl.c_str(), age.c_str());
-                wattroff(stdscr, COLOR_PAIR(pushColor));
+                color = err ? 4 : (connecting ? 3 : 2);
+                pushStr = "Push: " + data.serverStatus + " (last " + age + ")";
             }
+            if (!pushStr.empty()) line += "   " + pushStr;
+            wattron(stdscr, A_REVERSE);
+            mvwprintw(stdscr, rows - 3, 1, " Connections ");
+            wattroff(stdscr, A_REVERSE);
+            const int availW = cols - 17;
+            if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
+            mvwprintw(stdscr, rows - 3, 16, "%.*s", availW,
+                      TrimRight(line, availW).c_str());
+            if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
         }
 
-        // === OS / System frame ===
-        mvwprintw(stdscr, sysTop - 1, 1, "%.*s", cols - 2, logSep.c_str());
-        wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
-        mvwprintw(stdscr, sysTop, 1, "System");
-        wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+        // Row rows-2: [System] OS · battery (battery keeps its severity color).
+        wattron(stdscr, A_REVERSE);
+        mvwprintw(stdscr, rows - 2, 1, " System ");
+        wattroff(stdscr, A_REVERSE);
         if (!data.osVersion.empty()) {
-            mvwprintw(stdscr, sysTop, 10, "%.*s", cols - 30, data.osVersion.c_str());
+            const std::string os = TrimRight(data.osVersion, (cols > 46) ? cols - 42 : 12);
+            mvwprintw(stdscr, rows - 2, 10, "%s", os.c_str());
         } else {
-            mvwprintw(stdscr, sysTop, 10, "Unknown OS");
+            mvwprintw(stdscr, rows - 2, 10, "Unknown OS");
         }
         if (data.batteryPercent >= 0 && data.batteryPercent <= 100) {
             auto batStr = (data.acOnline ? "AC" : "BAT") + std::string(" ") + std::to_string(data.batteryPercent) + "%";
             const int color = LowIsWorsePair(data.batteryPercent, kBattWarn, kBattCrit);
             if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
-            mvwprintw(stdscr, sysTop, cols - static_cast<int>(batStr.size()) - 2, "%s", batStr.c_str());
+            mvwprintw(stdscr, rows - 2, cols - static_cast<int>(batStr.size()) - 2, "%s", batStr.c_str());
             if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
-        }
-
-        // System line 2: uptime | load | processes
-        if (data.uptimeSeconds > 0) {
-            std::string uptimeStr;
-            uint64_t days = data.uptimeSeconds / 86400;
-            uint64_t hours = (data.uptimeSeconds % 86400) / 3600;
-            uint64_t mins = (data.uptimeSeconds % 3600) / 60;
-            if (days > 0) uptimeStr = std::to_string(days) + "d ";
-            uptimeStr += std::to_string(hours) + "h " + std::to_string(mins) + "m";
-            mvwprintw(stdscr, sysTop + 1, 2, "Uptime: %s", uptimeStr.c_str());
-        }
-        if (data.loadAvg1 > 0) {
-            mvwprintw(stdscr, sysTop + 1, 2 + 18, "Load: %.2f %.2f %.2f",
-                      data.loadAvg1, data.loadAvg5, data.loadAvg15);
-        }
-        if (data.processCount > 0) {
-            mvwprintw(stdscr, sysTop + 1, cols - 18, "Procs: %d", data.processCount);
         }
 
         // Bottom border — repainted last so panel overflow can never leave
