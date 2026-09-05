@@ -180,6 +180,20 @@
 
 验证：macOS `cmake --build build --target TCMT-M` 全量通过（仅 openssl 版本无关警告）。未做：Windows PDCurses 构建验证（改动均用通用 curses API）、`?` 帮助页、NO_COLOR/ASCII 开关、per-core 宽度问题（待后续）。
 
+## 2026-09-05 — TUI UX 升级（7 commits on dev，8ec00460..2efda975）
+
+评审三波方案中用户选定 10→11→3→2→1→5→6 逐条落地，每项独立提交、逐项增量编译通过，最后 PTY 冒烟验证。
+
+1. `refactor(tui)` 6d0d8441 — **#10 平台能力层 PlatformCaps**：native/inline 日志窗口、resize、WiFi Location Services 等能力集中一处 `DetectPlatformCaps()`（本文件唯一 #ifdef 决策点），键位/页面/提示文案全部改读运行时 caps_；内嵌日志页全平台编译、按 `caps_.inlineLogPage` 门控。顺带修复 Linux WiFi 已连接时误显示 macOS "Location not granted / Press R" 引导的真实 bug。
+2. `feat(tui)` af31d04d — **#11 NO_COLOR / ASCII 降级**：`NO_COLOR`（非空）跳过 `start_color`/`init_pair`，curses 视 COLOR_PAIR 为惰性，全 UI 零色码；`TCMT_ASCII=1` 或非 UTF-8 locale 时 sparkline `▁..█`→`. :-=+*#`、核心温度 `°`→`C`、合页角 `°`→`deg`。两者在 Run() 启动时读一次。
+3. `feat(tui)` 5f54e457 — **#3 stale 指示器**：`UpdateData` 打 steady 时钟时间戳，3 s 无新快照 → 状态行左侧黄色 `stale Ns` 芯片（监控停摆不再静默冻结画面）。冒烟中数据源被环境卡死时正确点亮。
+4. `feat(tui)` 76e2ce6a — **#2 `?` 帮助页**：按 Common/Dashboard/Log page 分组列全键位，Esc/q/? 关闭（帮助内 q 不退出程序）；键列表与提示行同一套 caps_+handler 门控。同时修复 80 列下提示行与居中标题相撞而整体消失的问题：提示行右对齐 row 0，窄终端回退 row 1 右侧，更新横幅在 row1 剩余区间居中、stale 芯片锚定左侧，三者互不重叠。
+5. `feat(tui)` b686878d — **#1 进程列表焦点**：↑↓ 选中（按 pid 跟踪，列表重排/进程退出自动清理），选中行纯 reverse video（抑制单元格色），Enter 弹进程详情（PID/名称/CPU/内存，Esc/Enter/q 关闭）。
+6. `feat(tui)` 48781bdd — **#5 语义色 + 单位口径**：阈值集中成表（HighIsWorsePair/LowIsWorsePair + 命名阈值常量），正常值回默认前景（不再满屏绿），只染越界值（温度/健康/电量/进程 CPU）；新增十进制 `FormatRate`（1000 进制 B/s）替换网络 D:/U: 行的二进制 FormatSize——同一屏 "MB" 不再双基数。
+7. `feat(tui)` 2efda975 — **#6 数据栏 + 数值列**：usage bar 彩色填充（正常蓝、越 70/90 黄/红）+ `A_DIM` 空轨（主题默认前景的骨架感）；`DrawUsageBarRow`/`DrawLabeledValue` 让面板内 label 左、值右对齐共一条右边线；Temps 标签定宽补齐。
+
+PTY 冒烟（`script` 驱动，120×40）：默认色模式色码正常（黄/红越界、蓝 bar、dim 轨）；`NO_COLOR=1` 只剩 bold/dim、零色码；C locale 自动 ASCII（`^/v`、`deg`）；`LANG=en_US.UTF-8` 恢复 ↑↓；`?`→Esc→↓→Esc→q 全程无崩溃、退出码 0。未做：Windows PDCurses 构建验证（改动均用通用 curses API + 既有宏）。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
