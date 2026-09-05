@@ -357,6 +357,7 @@ private:
     void RenderLogPage(int rows, int cols, int ch);
     void RenderHelpPage(int rows, int cols, int ch);
     void RenderProcessDetails(int rows, int cols, int ch);
+    void RenderConnectionsList(int rows, int cols, int ch);
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -445,6 +446,7 @@ private:
     bool settingsPage_ = false;
     bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
     bool detailsPage_ = false;             // process-details overlay (Enter on a selected row)
+    bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure
     int urlCursor_ = 0;                    // cursor position inside URL field

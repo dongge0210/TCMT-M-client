@@ -1385,6 +1385,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
 
     dash.push_back({upArrow_ + " / " + downArrow_, "select a process row"});
     dash.push_back({"Enter", "process details (PID, CPU, memory)"});
+    dash.push_back({"c", "connections list (expand the status chip)"});
 
     if (caps_.inlineLogPage) {
         logpage.push_back({upArrow_ + " / " + downArrow_, "scroll one line"});
@@ -1478,6 +1479,94 @@ void TuiApp::RenderProcessDetails(int rows, int cols, int ch) {
     mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Enter/Esc/q close ");
 }
 
+// Connections list overlay — 'c' on the dashboard. The compact bottom chip
+// shows the aggregate; this expands into one row per live client. Client
+// rows come from the per-connection type vector the monitor loop fills;
+// per-client connect times are not collected yet (see docs/session.md).
+void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || isEnter) {
+        connListPage_ = false;
+        clear();
+        return;
+    }
+
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    const int W = std::min(64, cols - 8);
+    const int H = 16;
+    const int x0 = std::max(1, (cols - W) / 2);
+    const int y0 = std::max(1, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Connections ");
+
+    char line[192];
+    int y = y0 + 2;
+    if (data.connectionCount <= 0) {
+        mvwprintw(stdscr, y++, x0 + 2, "  no clients connected");
+    } else {
+        snprintf(line, sizeof(line), "  %d client%s",
+                 data.connectionCount, data.connectionCount == 1 ? "" : "s");
+        mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+        int n = 1;
+        for (uint8_t t : data.clientTypes) {
+            const char* name = (t == 1) ? "Avalonia" : (t == 2) ? "MCP" : "unknown";
+            snprintf(line, sizeof(line), "  #%-3d %s", n++, name);
+            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+            if (y >= y0 + H - 4) break;   // keep room for the push line
+        }
+        if (data.httpClientCount > 0) {
+            snprintf(line, sizeof(line), "  #%-3d Web (local HTTP) x%d", n, data.httpClientCount);
+            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+        }
+        if (!data.connectionSince.empty()) {
+            snprintf(line, sizeof(line), "  Since: %s", data.connectionSince.c_str());
+            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+        }
+        if (y < y0 + H - 3) y++;
+    }
+
+    // Server push line — same severity coloring as the bottom status row.
+    std::string pushStr;
+    int color = -1;
+    if (!data.serverPushEnabled) {
+        pushStr = "Push: disabled (press S to configure)";
+    } else {
+        std::string age = "never";
+        if (data.lastPushMs > 0) {
+            int64_t sec = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()
+                - data.lastPushMs / 1000;
+            age = std::to_string((std::max)(int64_t(0), sec)) + "s ago";
+        }
+        const bool err = data.serverStatus.rfind("error", 0) == 0;
+        const bool connecting = data.serverStatus.rfind("connecting", 0) == 0;
+        color = err ? 4 : (connecting ? 3 : 2);
+        pushStr = "Push: " + data.serverStatus + " (last " + age + ")";
+    }
+    if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
+    mvwprintw(stdscr, y, x0 + 2, "%.*s", W - 4, pushStr.c_str());
+    if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Enter/Esc/q close ");
+}
+
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
 
@@ -1563,6 +1652,15 @@ void TuiApp::Run() {
             continue;
         }
 
+        // Connections list overlay ('c') — the compact bottom chip expands
+        // into one row per live client. Same modal semantics.
+        if (connListPage_) {
+            RenderConnectionsList(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
         // Esc is "back": from the log page it returns to the dashboard; on
         // the dashboard it is inert. q is the only quit key.
         // Ctrl+C may arrive as a key (0x03, or KEY_BREAK on PDCurses) instead
@@ -1606,6 +1704,10 @@ void TuiApp::Run() {
         }
         if (ch == '?') {   // key reference — reachable from dashboard and log page
             helpPage_ = true;
+            clear();
+        }
+        if (ch == 'c' || ch == 'C') {   // expand the Connections chip into a client list
+            connListPage_ = true;
             clear();
         }
         if (rows < 24 || cols < 80) {
@@ -1923,6 +2025,7 @@ void TuiApp::Run() {
                 pushStr = "Push: " + data.serverStatus + " (last " + age + ")";
             }
             if (!pushStr.empty()) line += "   " + pushStr;
+            line += "   [c=list]";   // 'c' expands this chip into the client list
             wattron(stdscr, A_REVERSE);
             mvwprintw(stdscr, rows - 3, 1, " Connections ");
             wattroff(stdscr, A_REVERSE);
