@@ -619,28 +619,33 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattroff(win, COLOR_PAIR(2));
         lines++;
 
-        // Location Services guidance — show the user where to grant SSID
-        // access BEFORE expecting the SSID field (macOS 15+). Rendered in
-        // blue so the actionable hint stands out from the sensor data.
+        // Location Services guidance — the R affordance stays visible in
+        // every non-authorized state so the user can tell where they stand
+        // by pressing it: an authorization prompt appears while the decision
+        // is still open; nothing happens when it was denied (and the SSID
+        // stays hidden) — the settings path below is then the only way in.
         // A platform capability: only macOS fills wifiLocationStatus, so
         // Windows (WLAN API) and Linux must never see this macOS flow.
-        if (caps_.wifiLocationServices && (data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
+        if (caps_.wifiLocationServices &&
+            (data.wifiLocationStatus == 0 || data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
             wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
-            lines++;
-            mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
-            lines++;
-            mvwprintw(win, y + lines, x0 + 2, "> Location Services, allow TCMT-M");
-            lines++;
-            wattroff(win, COLOR_PAIR(6));
-        } else if (data.wifiLocationStatus == 0) {
-            wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, x0 + 2, "Location not granted, SSID hidden");
+            if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+                mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
+            } else {
+                mvwprintw(win, y + lines, x0 + 2, "Location not granted, SSID hidden");
+            }
             lines++;
             mvwprintw(win, y + lines, x0 + 2, "Press R to request Location Services");
             lines++;
-            mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
-            lines++;
+            if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+                mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+                lines++;
+                mvwprintw(win, y + lines, x0 + 2, "> Location Services, allow TCMT-M");
+                lines++;
+            } else {
+                mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+                lines++;
+            }
             wattroff(win, COLOR_PAIR(6));
         }
     }
