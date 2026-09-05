@@ -390,6 +390,12 @@ private:
     void DrawLabeledValue(WINDOW* win, int y, int x0, int maxW,
                           const char* label, const std::string& value, int pair = -1);
 
+    // GUI-style panel title strip: full-width reverse bar (works on any
+    // terminal theme and under NO_COLOR). `focused` adds bold so the
+    // active panel reads at a glance (design doc, tier-1 chrome).
+    void DrawPanelTitle(WINDOW* win, int y, int x0, int maxW,
+                        const char* title, bool focused = false);
+
     std::thread thread_;
     std::atomic<bool> running_{false};
 

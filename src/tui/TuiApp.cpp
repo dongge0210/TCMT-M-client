@@ -261,6 +261,19 @@ void TuiApp::DrawUsageBarRow(WINDOW* win, int y, int x0, int maxW,
     if (sev >= 0) wattroff(win, COLOR_PAIR(sev));
 }
 
+// Panel title strip — the strongest single "GUI chrome" cue available in
+// curses: a full-width reverse bar across the panel, instead of bold text
+// on an empty row. Reverse (not a color pair) so it renders correctly on
+// light and dark terminal themes and under NO_COLOR. The title row already
+// existed in every panel — this fills its background, zero row-budget cost.
+void TuiApp::DrawPanelTitle(WINDOW* win, int y, int x0, int maxW,
+                            const char* title, bool focused) {
+    if (maxW < 3) return;
+    wattron(win, A_REVERSE | (focused ? A_BOLD : A_NORMAL));
+    mvwprintw(win, y, x0, "%-*s", maxW, title);   // pads to panel width
+    wattroff(win, A_REVERSE | (focused ? A_BOLD : A_NORMAL));
+}
+
 // "label left, value right-aligned at the panel edge" — the plain-data
 // variant of DrawUsageBarRow. Optional pair colors the value (severity).
 void TuiApp::DrawLabeledValue(WINDOW* win, int y, int x0, int maxW,
@@ -361,9 +374,7 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     if (maxW < 10) return 0;
     int lines = 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y + lines, x0, "%.*s", maxW, "CPU");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y + lines, x0, maxW, "CPU");
     lines++;
 
     auto name = TrimRight(data.cpuName, maxW - 4);
@@ -408,9 +419,7 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     if (maxW < 10) return 0;
     int lines = 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y + lines, x0, "%.*s", maxW, "RAM");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y + lines, x0, maxW, "RAM");
     lines++;
 
     double upct = (data.totalMemory > 0) ? 100.0 * data.usedMemory / data.totalMemory : 0;
@@ -448,9 +457,7 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     if (maxW < 10) return 0;
     int lines = 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y + lines, x0, "%.*s", maxW, "GPU");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y + lines, x0, maxW, "GPU");
     lines++;
 
 #ifndef TCMT_MACOS
@@ -504,9 +511,7 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Disks");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Disks");
     int lines = 1;
 
     for (const auto& d : data.disks) {
@@ -533,9 +538,7 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 
 int TuiApp::DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Network");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Network");
     int lines = 1;
 
     for (const auto& n : data.adapters) {
@@ -659,9 +662,7 @@ int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     if (data.displays.empty()) return 0;
     int lines = 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y + lines, x0, "%.*s", maxW, "Displays");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y + lines, x0, maxW, "Displays");
     lines++;
 
     for (const auto& d : data.displays) {
@@ -685,9 +686,7 @@ int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     if (data.tpmInfo.empty() || data.tpmInfo == "No TPM") return 0;
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "TPM");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "TPM");
     mvwprintw(win, y + 1, x0 + 2, "%.*s", maxW - 2, data.tpmInfo.c_str());
     return 2;
 }
@@ -726,9 +725,7 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
 
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Temps");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Temps");
     int lines = 1;
 
     int halfW = maxW / 2;
@@ -809,9 +806,7 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     bool hasBattery = (data.batteryCycleCount > 0 || data.batteryHealthPercent > 0);
     if (!hasPower && !hasBattery && data.thermalState == 0) return 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Power");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Power");
     int lines = 1;
 
     // Thermal state — value carries the severity pair.
@@ -886,9 +881,7 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
                      data.motionHb.valid || data.deviceMotion.valid;
     if (!hasSensor) return 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Sensors");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Sensors");
     int lines = 1;
 
     // ALS (ambient light sensor) — lux + raw RGBC channels
@@ -944,9 +937,7 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
 int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 20 || data.perCoreCount == 0) return 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Per-Core Sensors");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Per-Core Sensors");
     int lines = 1;
 
     int count = std::min((int)data.perCoreCount, 16);
@@ -992,9 +983,7 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
     int graphW = std::min(maxW - 14, data.dlHistoryLen);
     if (graphW < 4) return 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Traffic");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    DrawPanelTitle(win, y, x0, maxW, "Traffic");
     int lines = 1;
 
     // Find max for scaling
@@ -1039,9 +1028,9 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
 int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 15 || data.topProcesses.empty()) return 0;
 
-    wattron(win, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(win, y, x0, "%.*s", maxW, "Top Processes");
-    wattroff(win, COLOR_PAIR(5) | A_BOLD);
+    // Focused strip (bold) while a process selection exists — the panel is
+    // then the active surface; reverse keeps it theme- and NO_COLOR-proof.
+    DrawPanelTitle(win, y, x0, maxW, "Top Processes", selPid_ >= 0);
     int lines = 1;
 
     int nameW = maxW - 30;  // room for pid(7) + mem(5) + cpu(7) + spaces
