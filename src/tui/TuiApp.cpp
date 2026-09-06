@@ -855,7 +855,10 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     if (maxW < 10) return 0;
     bool hasPower = (data.cpuPower > 0 || data.gpuPower > 0 || data.anePower > 0);
     bool hasBattery = (data.batteryCycleCount > 0 || data.batteryHealthPercent > 0);
-    if (!hasPower && !hasBattery && data.thermalState == 0) return 0;
+    // When power is unavailable there is still a status worth showing: the
+    // panel renders N/A rows plus an install hint instead of vanishing.
+    const bool powerUnavailable = !data.powerAvailable;
+    if (!powerUnavailable && !hasPower && !hasBattery && data.thermalState == 0) return 0;
 
     DrawPanelTitle(win, y, x0, maxW, "Power");
     int lines = 1;
@@ -869,9 +872,27 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         lines++;
     }
 
-    // Power consumption — always render all rows; 0 means no data (yet),
-    // hiding rows made the panel look broken when sampling is unavailable.
-    {
+    // Power consumption. Available: always render all rows — 0 means no
+    // data yet, hiding rows made the panel look broken. Unavailable:
+    // IOReport energy cannot be read (macOS 27 unprivileged, or the
+    // tcmt-powerd helper is not installed) — report N/A instead of a
+    // misleading "0.00 W" idle reading.
+    if (powerUnavailable) {
+        DrawLabeledValue(win, y + lines, x0, maxW, "CPU:", "N/A");
+        lines++;
+        DrawLabeledValue(win, y + lines, x0, maxW, "GPU:", "N/A");
+        lines++;
+        DrawLabeledValue(win, y + lines, x0, maxW, "ANE:", "N/A");
+        lines++;
+        DrawLabeledValue(win, y + lines, x0, maxW, "Total:", "N/A");
+        lines++;
+        const std::string hint = "Power unavailable — run tools/install-powerd.sh (sudo)";
+        wattron(win, A_DIM);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4,
+                  TrimRight(hint, (maxW - 4) > 0 ? maxW - 4 : 0).c_str());
+        wattroff(win, A_DIM);
+        lines++;
+    } else {
         char val[32];
         double totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
         snprintf(val, sizeof(val), "%.2f W", data.cpuPower / 1000.0);

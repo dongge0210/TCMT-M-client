@@ -157,6 +157,13 @@ struct TuiData {
     double cpuPower = 0.0;
     double gpuPower = 0.0;
     double anePower = 0.0;
+    // Power availability (IOReport energy). Unprivileged processes cannot
+    // read energy on macOS 27 (confirmed system limit); the root helper
+    // tcmt-powerd supplies it via shared memory when installed. Data-layer
+    // contract: PowerMonitor::IsPowerAvailable() -> Snapshot() fills this;
+    // when false, cpuPower/gpuPower/anePower stay 0 and the UI renders N/A.
+    // Default true keeps legacy behavior until the data layer merges.
+    bool powerAvailable = true;
 
     // Connections
     int connectionCount = 0;
