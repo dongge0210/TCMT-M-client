@@ -3,6 +3,24 @@
 #include <atomic>
 #include <string>
 
+// Power publication protocol between PowerMonitor (client, user process) and
+// tcmt-powerd (root LaunchDaemon, macOS 27+ where IOReport energy is
+// privileged-only). Delivered as a small root-owned file in /tmp (macOS PSHM
+// is not readable across uids regardless of mode — verified; /tmp is sticky,
+// so once the daemon creates the root-owned file other users cannot replace
+// it, and the client rejects any non-root owner anyway). Powers are
+// milliwatts; seq increments on each publish.
+struct TcmtPowerShm {
+    uint64_t magic;
+    uint64_t seq;
+    double cpuW;
+    double gpuW;
+    double aneW;
+};
+constexpr char     kTcmtPowerShmName[]  = "/tmp/tcmt-power";
+constexpr uint64_t kTcmtPowerShmMagic   = 0x54434D54504F5752ULL;  // "TCMTPOWR"
+constexpr size_t   kTcmtPowerShmSize    = sizeof(TcmtPowerShm);
+
 // PowerMonitor — direct Apple Silicon power/frequency sampling via IOReport + IOKit
 // No sudo required. Falls back to powermetrics subprocess on failure.
 class PowerMonitor {
@@ -30,11 +48,19 @@ public:
     double GetGpuPower() const   { return gpuPower_.load(); }
     double GetAnePower() const   { return anePower_.load(); }
 
+    // True when a power source is actually producing readings: direct IOReport
+    // energy (macOS <= 26, or root) or a live tcmt-powerd SHM feed (macOS 27+,
+    // non-root). False on macOS 27+ without the daemon — power is then 0 with
+    // no real data behind it.
+    bool IsPowerAvailable() const;
+
 private:
     void SampleLoop();  // Runs on background thread in direct mode
     void ParsePowerDelta(void* deltaDict);  // Parse IOReport delta for power
     int64_t ExtractChannelValue(void* channel);  // Get value from IOReport channel
     double EnergyToPower(void* channel, int64_t energyDelta);  // Convert energy delta to Watts
+    // macOS 27+ non-root client path: read powers published by tcmt-powerd.
+    void ReadShmPower();
 
     std::atomic<bool> running_{false};
     std::atomic<bool> directMode_{false};
@@ -53,6 +79,10 @@ private:
     void* subs_{nullptr};    // IOReportSubscriptionRef
     void* chan_{nullptr};    // CFMutableDictionaryRef
     void* thread_{nullptr};  // std::thread*
+
+    // tcmt-powerd client state (file-based feed)
+    uint64_t lastShmSeq_ = 0;
+    std::atomic<bool> shmValid_{false};
 
     // DVFS frequency lookup tables (state index → MHz)
     double pFreqTable_[32] = {};

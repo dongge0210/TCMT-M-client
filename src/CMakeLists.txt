@@ -388,6 +388,26 @@ if(TCMT_MACOS)
 endif()
 
 # ============================================================
+# tcmt-powerd privileged daemon (macOS 27+ power via /usr/bin/powermetrics
+# as root — IOReport energy is entitlement-gated on 27, powermetrics is
+# Apple-signed and works). Publishes CPU/GPU/ANE power (mW) to shared
+# memory "tcmt-power".
+# ============================================================
+if(TCMT_MACOS)
+    add_executable(tcmt-powerd
+        ${CMAKE_CURRENT_SOURCE_DIR}/helper/powerd/tcmt-powerd_main.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/Utils/Logger.cpp
+    )
+    target_include_directories(tcmt-powerd PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/core
+    )
+    set_target_properties(tcmt-powerd PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+endif()
+
+# ============================================================
 # Build executable
 # ============================================================
 if(TCMT_WINDOWS)

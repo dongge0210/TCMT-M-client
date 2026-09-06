@@ -277,14 +277,17 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     sysInfo.acOnline = data_.acOnline.load();
 
     // PowerMonitor (Apple Silicon — CPU/GPU/ANE power in mW)
+    const bool pwrAvail = powerMonitor_.IsPowerAvailable();
     tuiData.cpuPower = data_.cpuPower.load();
     tuiData.gpuPower = data_.gpuPower.load();
     tuiData.anePower = data_.anePower.load();
+    tuiData.powerAvailable = pwrAvail;
     tuiData.gpuFreq = data_.gpuFreq.load();
     tuiData.gpuMaxFreq = data_.gpuMaxFreq.load();
     sysInfo.cpuPower = data_.cpuPower.load();
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();
+    sysInfo.powerAvailable = pwrAvail;
     sysInfo.gpuFreq = data_.gpuFreq.load();
 
     // ─── 4. Fan speeds (extracted from temperature list by "Fan" name) ───

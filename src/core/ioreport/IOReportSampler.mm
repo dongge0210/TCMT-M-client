@@ -13,6 +13,10 @@
 #include <cstdint>
 #include <chrono>
 #include <sys/sysctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 static FILE* dbg_ = nullptr;
 
@@ -89,16 +93,25 @@ static const CFStringRef kChannelsKey      = CFSTR("IOReportChannels");
 static const CFStringRef kChannelUnitKey   = CFSTR("IOReportChannelUnit");
 static const CFStringRef kChannelValuesKey = CFSTR("IOReportChannelValues");
 
+// macOS 27+ returns zeroed Energy Model scalars to every process without an
+// Apple entitlement — root is not enough (verified: a root, unsigned process
+// reads 0 while /usr/bin/powermetrics works). Power extraction is therefore
+// gated to macOS 26 and earlier; on 27+ the client reads the tcmt-powerd
+// daemon's shared-memory feed instead (ReadShmPower). The sample thread
+// keeps running on newer systems for frequency sampling.
+static const bool kEnergyModelAllowed = [] {
+    int major = 0;
+    char buf[32] = {};
+    size_t len = sizeof(buf);
+    if (sysctlbyname("kern.osproductversion", buf, &len, nullptr, 0) == 0)
+        sscanf(buf, "%d", &major);
+    return major < 27;
+}();
+
 // Read DVFS frequency table from pmgr. Fills outFreqs[] with MHz values.
 // Returns count, 0 on failure. Each entry: uint32 pair [freq, voltage].
 static int ReadPmgrFreqTable(const char* propName, double* outFreqs, int maxCount) {
-    mach_port_t mainPort;
-    if (@available(macOS 12.0, *)) {
-        mainPort = kIOMainPortDefault;
-    } else {
-        mainPort = kIOMasterPortDefault;
-    }
-    io_service_t pmgr = IOServiceGetMatchingService(mainPort, IOServiceNameMatching("pmgr"));
+    io_service_t pmgr = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceNameMatching("pmgr"));
     if (pmgr == IO_OBJECT_NULL) return 0;
     CFMutableDictionaryRef props = nullptr;
     kern_return_t kr = IORegistryEntryCreateCFProperties(pmgr, &props, kCFAllocatorDefault, 0);
@@ -266,6 +279,7 @@ void PowerMonitor::Stop() {
     if (subs_) { CFRelease(static_cast<CFTypeRef>(subs_)); subs_ = nullptr; }
     if (chan_) { CFRelease(static_cast<CFDictionaryRef>(chan_)); chan_ = nullptr; }
     directMode_.store(false);
+    shmValid_.store(false);
     if (dbg_ && dbg_ != stderr) { fclose(dbg_); dbg_ = nullptr; }
 }
 
@@ -289,6 +303,10 @@ void PowerMonitor::SampleLoop() {
         if (!nextSample) break;
         CFDictionaryRef delta = g_CreateDelta(prevSample, nextSample, nullptr);
         if (delta) { ParsePowerDelta((void*)delta); CFRelease((CFTypeRef)delta); }
+        // macOS 27+ non-root: energy channels are zeroed, so power comes from
+        // the tcmt-powerd root daemon via shared memory instead. Must run
+        // after ParsePowerDelta (which resets the power atomics each round).
+        if (!kEnergyModelAllowed) ReadShmPower();
         CFRelease((CFTypeRef)prevSample);
         prevSample = nextSample;
     }
@@ -305,6 +323,9 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     cpuPower_.store(0.0);
     gpuPower_.store(0.0);
     anePower_.store(0.0);
+    if (!kEnergyModelAllowed && logCount == 0) {
+        Logger::Info("PowerMonitor: macOS 27+ restricts IOReport energy to privileged Apple-signed processes; power comes from tcmt-powerd when installed");
+    }
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
     double pCoreFreqSum = 0.0; int pCoreFreqN = 0;
     double eCoreFreqSum = 0.0; int eCoreFreqN = 0;
@@ -397,18 +418,20 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         int64_t value = ExtractChannelValue((void*)channel);
         if (value <= 0 || value == INT64_MIN) continue;
 
-        if (strcmp(group, "Energy Model") == 0) {
-            double power = EnergyToPower((void*)channel, value) * 1000.0;
-            if (power > 0.1 && power < 50000.0) {
-                if ((strncmp(name, "ECPU", 4) == 0 || strncmp(name, "PCPU", 4) == 0) && !strstr(name, "SRAM"))
-                    cpuPower_.store(cpuPower_.load() + power);
-                else if (strcmp(name, "GPU") == 0) gpuPower_.store(power);
-                else if (strcmp(name, "ANE") == 0) anePower_.store(power);
+        if (kEnergyModelAllowed) {
+            if (strcmp(group, "Energy Model") == 0) {
+                double power = EnergyToPower((void*)channel, value) * 1000.0;
+                if (power > 0.1 && power < 50000.0) {
+                    if ((strncmp(name, "ECPU", 4) == 0 || strncmp(name, "PCPU", 4) == 0) && !strstr(name, "SRAM"))
+                        cpuPower_.store(cpuPower_.load() + power);
+                    else if (strcmp(name, "GPU") == 0) gpuPower_.store(power);
+                    else if (strcmp(name, "ANE") == 0) anePower_.store(power);
+                }
             }
-        }
-        else if (strcmp(group, "ANE") == 0) {
-            double power = EnergyToPower((void*)channel, value) * 1000.0;
-            if (power >= 0.0 && power < 50000.0) anePower_.store(power);
+            else if (strcmp(group, "ANE") == 0) {
+                double power = EnergyToPower((void*)channel, value) * 1000.0;
+                if (power >= 0.0 && power < 50000.0) anePower_.store(power);
+            }
         }
     }
     if (logCount < 1) ++logCount;
@@ -463,4 +486,40 @@ double PowerMonitor::EnergyToPower(void* channelV, int64_t energyDelta) {
         else if (strcmp(u, "nJ") == 0) scale = 1e9;
     }
     return static_cast<double>(energyDelta) / scale;
+}
+
+// ====================================================================
+// tcmt-powerd shared-memory client (macOS 27+, non-root)
+// ====================================================================
+
+bool PowerMonitor::IsPowerAvailable() const {
+    if (kEnergyModelAllowed && directMode_.load()) return true;
+    return shmValid_.load();
+}
+
+void PowerMonitor::ReadShmPower() {
+    int fd = ::open(kTcmtPowerShmName, O_RDONLY);
+    if (fd < 0) return;  // daemon not installed — power stays 0
+    // Only trust a root-owned feed (tcmt-powerd); /tmp is sticky so a user
+    // cannot replace the daemon's file, but verify the owner anyway.
+    struct stat st {};
+    if (fstat(fd, &st) != 0 || st.st_uid != 0) {
+        close(fd);
+        return;
+    }
+    TcmtPowerShm s {};
+    ssize_t n = read(fd, &s, sizeof(s));
+    close(fd);
+    if (n != (ssize_t)sizeof(s) || s.magic != kTcmtPowerShmMagic) return;
+    uint64_t seq = s.seq;
+    if (seq == 0 || seq == lastShmSeq_) return;  // no new publish yet
+    lastShmSeq_ = seq;
+    __sync_synchronize();
+    cpuPower_.store(s.cpuW);
+    gpuPower_.store(s.gpuW);
+    anePower_.store(s.aneW);
+    if (!shmValid_.exchange(true)) {
+        Logger::Info("PowerMonitor: reading power from tcmt-powerd (cpu=" +
+                     std::to_string(s.cpuW) + "mW)");
+    }
 }

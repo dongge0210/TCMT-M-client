@@ -166,6 +166,7 @@ struct SystemInfo {
     double cpuPower = 0.0;          // CPU power in mW
     double gpuPower = 0.0;          // GPU power in mW
     double anePower = 0.0;          // ANE power in mW
+    bool powerAvailable = false;    // true when a live power source is present
     double gpuFreq = 0.0;           // GPU frequency in MHz
     std::string hardwareModel;      // Hardware model (e.g. "Mac14,2")
     std::string gpuName;            // Added
