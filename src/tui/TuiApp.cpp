@@ -245,15 +245,18 @@ void TuiApp::DrawUsageBarRow(WINDOW* win, int y, int x0, int maxW,
     const int barW = barEnd - barStart + 1;
     const int nFill = static_cast<int>(p * barW / 100.0);
 
+    // B · neutral usage bar: solid ▰ fill in the DEFAULT foreground (theme-
+    // aware, no dedicated bar color) over a dim ▱ track; crossing the usage
+    // thresholds moves the fill to the warning/critical pair. The green
+    // accent is reserved for focus/ok segments, per the B direction.
     const int sev = HighIsWorsePair(pct, kUsageWarn, kUsageCrit);
-    const int fillPair = (sev >= 0) ? sev : 6;
     int x = barStart;
-    wattron(win, COLOR_PAIR(fillPair));
-    for (int i = 0; i < nFill && x <= barEnd; ++i) mvwaddch(win, y, x++, '=');
-    wattroff(win, COLOR_PAIR(fillPair));
+    if (sev >= 0) wattron(win, COLOR_PAIR(sev));
+    for (int i = 0; i < nFill && x <= barEnd; ++i) mvwaddstr(win, y, x++, barFill_.c_str());
+    if (sev >= 0) wattroff(win, COLOR_PAIR(sev));
     if (x <= barEnd) {
         wattron(win, A_DIM);
-        while (x <= barEnd) mvwaddch(win, y, x++, '-');
+        while (x <= barEnd) mvwaddstr(win, y, x++, barTrack_.c_str());
         wattroff(win, A_DIM);
     }
     if (sev >= 0) wattron(win, COLOR_PAIR(sev));
