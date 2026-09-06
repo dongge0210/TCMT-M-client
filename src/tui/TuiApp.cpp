@@ -1077,12 +1077,21 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
 }
 
 int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
-    if (maxW < 15 || data.topProcesses.empty()) return 0;
+    if (maxW < 15 || data.topProcesses.empty()) {
+        procListY_ = -1;   // no list this frame — mouse hits nothing
+        procListCount_ = 0;
+        return 0;
+    }
 
     // Focused strip (bold) while a process selection exists — the panel is
     // then the active surface; reverse keeps it theme- and NO_COLOR-proof.
     DrawPanelTitle(win, y, x0, maxW, "Top Processes", selPid_ >= 0);
     int lines = 1;
+
+    // Cache the list geometry for the mouse shim (MapMouseEvent).
+    procListY_ = y;
+    procListX0_ = x0;
+    procListW_ = maxW;
 
     int nameW = maxW - 30;  // room for pid(7) + mem(5) + cpu(7) + spaces
     if (nameW < 6) nameW = 6;
@@ -1131,6 +1140,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         lines++;
     }
 
+    procListCount_ = lines - 1;   // rows below the title (mouse hit region)
     return lines + 1;  // +1 bottom padding
 }
 
@@ -1618,6 +1628,66 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
     mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Enter/Esc/q close ");
 }
 
+// Minimal mouse (B direction): translate one mouse event into the keyboard
+// action a user would have typed. Every existing handler stays the source
+// of truth — mouse is only an input shim:
+//   click a process row       -> select it (a second click on the same pid
+//                                 within 350 ms opens the details overlay)
+//   click the Connections row -> 'c' (client list)
+//   wheel up / down           -> KEY_UP / KEY_DOWN (moves the process
+//                                 selection on the dashboard, scrolls the
+//                                 log page)
+int TuiApp::MapMouseEvent(int rows, int cols) {
+#ifdef KEY_MOUSE
+    MEVENT mev;
+    if (getmouse(&mev) != OK) return ERR;
+    (void)cols;
+
+    const int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    if (mev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)) {
+        // Click inside the Top Processes list region (geometry cached by
+        // DrawProcessPanel every frame).
+        if (procListY_ >= 0 && mev.y > procListY_ &&
+            mev.y <= procListY_ + procListCount_ &&
+            mev.x >= procListX0_ && mev.x < procListX0_ + procListW_) {
+            const int idx = mev.y - procListY_ - 1;
+            {
+                std::lock_guard<std::mutex> lock(dataMutex_);
+                if (idx >= 0 && idx < static_cast<int>(data_.topProcesses.size())) {
+                    const int pid = data_.topProcesses[idx].pid;
+                    if (pid == lastClickPid_ && nowUs - lastClickUs_ < 350000) {
+                        detailsPage_ = true;   // double-click -> details
+                        clear();
+                    } else {
+                        selPid_ = pid;
+                    }
+                    lastClickPid_ = pid;
+                    lastClickUs_ = nowUs;
+                }
+            }
+            return ERR;   // handled — the next frame paints the selection
+        }
+        // Click on the bottom Connections status row -> client list ('c').
+        if (mev.y == rows - 3 && mev.x >= 1 && mev.x < cols - 1) {
+            connListPage_ = true;
+            clear();
+            return ERR;
+        }
+        return ERR;
+    }
+#ifdef BUTTON4_PRESSED
+    if (mev.bstate & BUTTON4_PRESSED) return KEY_UP;     // wheel up
+    if (mev.bstate & BUTTON5_PRESSED) return KEY_DOWN;   // wheel down
+#endif
+#else
+    (void)rows;
+    (void)cols;
+#endif
+    return ERR;
+}
+
 void TuiApp::Run() {
     setlocale(LC_ALL, "");
 
@@ -1655,6 +1725,12 @@ void TuiApp::Run() {
     curs_set(0);
     nodelay(stdscr, TRUE);
 
+    // Minimal mouse: terminals that report (iTerm2, Kitty, Alacritty, tmux,
+    // PDCurses console) get clicks and wheel; Apple Terminal sends nothing
+    // and simply stays keyboard-only. Enable always — no downside where the
+    // terminal does not report.
+    mousemask(ALL_MOUSE_EVENTS, nullptr);
+
     InitColors();
 
     getmaxyx(stdscr, termRows_, termCols_);
@@ -1676,6 +1752,12 @@ void TuiApp::Run() {
 #endif
 
         int ch = getch();
+
+#ifdef KEY_MOUSE
+        // Minimal mouse shim: translate the event into the keyboard action
+        // before any handler sees it (see MapMouseEvent for the mapping).
+        if (ch == KEY_MOUSE) ch = MapMouseEvent(rows, cols);
+#endif
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU

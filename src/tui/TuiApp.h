@@ -358,6 +358,9 @@ private:
     void RenderHelpPage(int rows, int cols, int ch);
     void RenderProcessDetails(int rows, int cols, int ch);
     void RenderConnectionsList(int rows, int cols, int ch);
+    // Minimal mouse support: translate clicks/wheel into the equivalent
+    // synthetic keys so every handler stays keyboard-driven (B direction).
+    int MapMouseEvent(int rows, int cols);
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -441,6 +444,16 @@ private:
     // Freshness watchdog: microseconds (steady clock) of the last UpdateData
     // snapshot; the dashboard flags stale Ns when it stops advancing.
     std::atomic<int64_t> lastUpdateUs_{0};
+
+    // Mouse hit-testing cache (filled by DrawProcessPanel each frame):
+    // screen region of the Top Processes list, plus last-click state for
+    // the double-click-to-details gesture.
+    int procListY_ = -1;        // row of the panel title (or -1 when hidden)
+    int procListCount_ = 0;     // visible process rows below the title
+    int procListX0_ = 0;
+    int procListW_ = 0;
+    int lastClickPid_ = -1;
+    int64_t lastClickUs_ = 0;   // steady-clock microseconds
 
     // Settings page state (press S): framed interactive form.
     ServerSettings serverSettings_;        // current values (from main)
