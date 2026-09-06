@@ -261,17 +261,38 @@ void TuiApp::DrawUsageBarRow(WINDOW* win, int y, int x0, int maxW,
     if (sev >= 0) wattroff(win, COLOR_PAIR(sev));
 }
 
-// Panel title strip — the strongest single "GUI chrome" cue available in
-// curses: a full-width reverse bar across the panel, instead of bold text
-// on an empty row. Reverse (not a color pair) so it renders correctly on
-// light and dark terminal themes and under NO_COLOR. The title row already
-// existed in every panel — this fills its background, zero row-budget cost.
+// Panel title strip — B (powerline) segmented form: a reverse "chip" with
+// the title, followed by a dim textured remainder to the panel edge. The
+// seam between chip and remainder is the segment edge — no border needed.
+// Reverse adapts to any terminal theme and survives NO_COLOR; the focused
+// chip switches to green bold text (pair 2), falling back to bold under
+// NO_COLOR where the pair is inert. Zero row-budget cost, as before.
 void TuiApp::DrawPanelTitle(WINDOW* win, int y, int x0, int maxW,
                             const char* title, bool focused) {
-    if (maxW < 3) return;
-    wattron(win, A_REVERSE | (focused ? A_BOLD : A_NORMAL));
-    mvwprintw(win, y, x0, "%-*s", maxW, title);   // pads to panel width
-    wattroff(win, A_REVERSE | (focused ? A_BOLD : A_NORMAL));
+    if (maxW < 5) return;
+    int tw = static_cast<int>(std::strlen(title));
+    if (tw > maxW - 2) tw = maxW - 2;
+
+    // Chip: ' title ' — reversed by default, green+bold when focused.
+    if (focused) {
+        wattron(win, COLOR_PAIR(2) | A_BOLD);
+        mvwprintw(win, y, x0, " %-*s ", tw, title);
+        wattroff(win, COLOR_PAIR(2) | A_BOLD);
+    } else {
+        wattron(win, A_REVERSE);
+        mvwprintw(win, y, x0, " %-*s ", tw, title);
+        wattroff(win, A_REVERSE);
+    }
+
+    // Remainder: dim shade texture up to the panel edge.
+    const int rest = maxW - (tw + 2);
+    if (rest > 0) {
+        wattron(win, A_DIM);
+        for (int x = x0 + tw + 2; x < x0 + maxW; ++x) {
+            mvwaddstr(win, y, x, segShade_.c_str());
+        }
+        wattroff(win, A_DIM);
+    }
 }
 
 // "label left, value right-aligned at the panel edge" — the plain-data
@@ -1593,6 +1614,9 @@ void TuiApp::Run() {
         degSuffixAngle_ = "deg";
         upArrow_ = "^";
         downArrow_ = "v";
+        segShade_ = "-";
+        barFill_ = "=";
+        barTrack_ = "-";
     }
 
     initscr();

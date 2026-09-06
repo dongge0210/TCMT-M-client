@@ -428,6 +428,9 @@ private:
     std::string degSuffixAngle_ = "\xc2\xb0"; // suffix after the lid angle (° / deg)
     std::string upArrow_ = "\xe2\x86\x91";    // ↑ (^ in ASCII mode)
     std::string downArrow_ = "\xe2\x86\x93";  // ↓ (v)
+    std::string segShade_ = "\xe2\x96\x91";   // ░ title-strip remainder (B · powerline; ASCII '-')
+    std::string barFill_ = "\xe2\x96\xb0";    // ▰ usage-bar fill (ASCII '=')
+    std::string barTrack_ = "\xe2\x96\xb1";   // ▱ usage-bar track (ASCII '-')
 
     TuiData data_;
     mutable std::mutex dataMutex_;
