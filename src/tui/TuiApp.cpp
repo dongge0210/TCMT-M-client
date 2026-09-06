@@ -616,10 +616,32 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
-        wattron(win, COLOR_PAIR(3));
-        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Disconnected");
-        wattroff(win, COLOR_PAIR(3));
-        lines++;
+        // macOS 15+: without a granted Location Services permission the
+        // system hides BOTH the SSID and the association state — so
+        // "Disconnected" would be a guess, not a reading. Say what is
+        // actually true and give the next step instead; "Disconnected" is
+        // only reported when Location is not standing in the way.
+        const bool locBlocked = caps_.wifiLocationServices &&
+            (data.wifiLocationStatus == 0 || data.wifiLocationStatus == 1 || data.wifiLocationDenied);
+        if (locBlocked) {
+            const bool denied = (data.wifiLocationStatus == 1 || data.wifiLocationDenied);
+            wattron(win, COLOR_PAIR(6));
+            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10,
+                      denied ? "unknown (Location denied)" : "unknown (Location off)");
+            wattroff(win, COLOR_PAIR(6));
+            lines++;
+            wattron(win, COLOR_PAIR(6));
+            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10,
+                      denied ? "grant: System Settings > Privacy & Security"
+                              : "press R to request Location Services");
+            wattroff(win, COLOR_PAIR(6));
+            lines++;
+        } else {
+            wattron(win, COLOR_PAIR(3));
+            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Disconnected");
+            wattroff(win, COLOR_PAIR(3));
+            lines++;
+        }
     } else {
         std::string wifiStr = "Connected";
         if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
