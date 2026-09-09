@@ -601,6 +601,30 @@ int TuiApp::DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     return lines;
 }
 
+// Pack space-separated fields into lines no wider than `width`, wrapping to
+// the next line when a field does not fit. A single field wider than the line
+// is truncated (with ~) so the packing loop always terminates.
+static std::vector<std::string> WrapFields(const std::vector<std::string>& fields, int width) {
+    std::vector<std::string> out;
+    if (width < 4) width = 4;
+    std::string cur;
+    for (const std::string& f : fields) {
+        if (f.empty()) continue;
+        std::string field = (utf8_display_width(f) > width) ? utf8_truncate(f, width) : f;
+        if (cur.empty()) {
+            cur = field;
+        } else if (utf8_display_width(cur) + 2 + utf8_display_width(field) <= width) {
+            cur += "  " + field;
+        } else {
+            out.push_back(cur);
+            cur = field;
+        }
+    }
+    if (!cur.empty()) out.push_back(cur);
+    if (out.empty()) out.push_back(std::string());
+    return out;
+}
+
 int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     int lines = 0;
@@ -643,28 +667,33 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             lines++;
         }
     } else {
-        std::string wifiStr = Tr("wifi.connected");
+        std::vector<std::string> fields;
+        fields.push_back(Tr("wifi.connected"));
         if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-            wifiStr += "  ";
-            wifiStr += Tr("wifi.ssid_denied");
+            fields.push_back(Tr("wifi.ssid_denied"));
         } else {
-            if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
-            if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
-            if (data.wifiChannel > 0) wifiStr += "  Ch: " + std::to_string(data.wifiChannel);
-            if (data.wifiRSSI < 0) wifiStr += "  RSSI: " + std::to_string(data.wifiRSSI) + " dBm";
-            if (!data.wifiSecurity.empty()) wifiStr += "  " + data.wifiSecurity;
-            if (!data.wifiBand.empty()) wifiStr += "  " + data.wifiBand;
-            if (!data.wifiGen.empty()) wifiStr += "  " + data.wifiGen;
-            if (data.wifiTxRate > 0) wifiStr += "  Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps";
+            if (!data.wifiSSID.empty()) fields.push_back("SSID: " + data.wifiSSID);
+            if (!data.wifiBSSID.empty()) fields.push_back("BSSID: " + data.wifiBSSID);
+            if (data.wifiChannel > 0) fields.push_back("Ch: " + std::to_string(data.wifiChannel));
+            if (data.wifiRSSI < 0) fields.push_back("RSSI: " + std::to_string(data.wifiRSSI) + " dBm");
+            if (!data.wifiSecurity.empty()) fields.push_back(data.wifiSecurity);
+            if (!data.wifiBand.empty()) fields.push_back(data.wifiBand);
+            if (!data.wifiGen.empty()) fields.push_back(data.wifiGen);
+            if (data.wifiTxRate > 0) fields.push_back("Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps");
         }
-        wifiStr = TrimRight(wifiStr, maxW - 8);
+        // Wrap instead of truncating: a long SSID/BSSID must not push the
+        // rest of the detail (Ch/RSSI/Tx) off the panel.
+        const std::vector<std::string> wl = WrapFields(fields, maxW - 10);
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
         wattroff(win, COLOR_PAIR(5));
         wattron(win, COLOR_PAIR(2));
-        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, wifiStr.c_str());
+        for (size_t i = 0; i < wl.size(); ++i) {
+            mvwprintw(win, y + lines + static_cast<int>(i), x0 + 8,
+                      "%.*s", maxW - 10, wl[i].c_str());
+        }
         wattroff(win, COLOR_PAIR(2));
-        lines++;
+        lines += static_cast<int>(wl.size());
 
         // Location Services guidance — the R affordance stays visible in
         // every non-authorized state so the user can tell where they stand
