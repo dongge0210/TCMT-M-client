@@ -5,6 +5,7 @@
 
 #include <curses.h>
 #include "TuiApp.h"
+#include "core/I18n.h"
 #include <ctime>
 #include <cstring>
 #include <algorithm>
@@ -627,25 +628,25 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             const bool denied = (data.wifiLocationStatus == 1 || data.wifiLocationDenied);
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10,
-                      denied ? "unknown (Location denied)" : "unknown (Location off)");
+                      denied ? Tr("wifi.loc_denied") : Tr("wifi.loc_off"));
             wattroff(win, COLOR_PAIR(6));
             lines++;
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10,
-                      denied ? "grant: System Settings > Privacy & Security"
-                              : "press R to request Location Services");
+                      denied ? Tr("wifi.grant") : Tr("wifi.press_r"));
             wattroff(win, COLOR_PAIR(6));
             lines++;
         } else {
             wattron(win, COLOR_PAIR(3));
-            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "Disconnected");
+            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, Tr("wifi.disconnected"));
             wattroff(win, COLOR_PAIR(3));
             lines++;
         }
     } else {
-        std::string wifiStr = "Connected";
+        std::string wifiStr = Tr("wifi.connected");
         if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-            wifiStr += "  SSID unavailable (Location Services denied)";
+            wifiStr += "  ";
+            wifiStr += Tr("wifi.ssid_denied");
         } else {
             if (!data.wifiSSID.empty()) wifiStr += "  SSID: " + data.wifiSSID;
             if (!data.wifiBSSID.empty()) wifiStr += "  BSSID: " + data.wifiBSSID;
@@ -676,20 +677,20 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             (data.wifiLocationStatus == 0 || data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
             wattron(win, COLOR_PAIR(6));
             if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-                mvwprintw(win, y + lines, x0 + 2, "Location denied, SSID unavailable");
+                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.g1_denied"));
             } else {
-                mvwprintw(win, y + lines, x0 + 2, "Location not granted, SSID hidden");
+                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.g1_open"));
             }
             lines++;
-            mvwprintw(win, y + lines, x0 + 2, "Press R to request Location Services");
+            mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.g2"));
             lines++;
             if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-                mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.path1"));
                 lines++;
-                mvwprintw(win, y + lines, x0 + 2, "> Location Services, allow TCMT-M");
+                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.path2"));
                 lines++;
             } else {
-                mvwprintw(win, y + lines, x0 + 2, "System Settings > Privacy & Security");
+                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.path1"));
                 lines++;
             }
             wattroff(win, COLOR_PAIR(6));
@@ -697,9 +698,10 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     }
 
     if (data.hasBluetooth) {
-        std::string btStr = data.btPowerOn
-            ? "On (" + std::to_string(data.btDeviceCount) + " devices)"
-            : "Off";
+        char btBuf[64];
+        if (data.btPowerOn) snprintf(btBuf, sizeof(btBuf), Tr("bt.on"), data.btDeviceCount);
+        else snprintf(btBuf, sizeof(btBuf), "%s", Tr("bt.off"));
+        std::string btStr = btBuf;
         lines++;  // blank line between WiFi and BT
         mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
         lines++;
@@ -1259,21 +1261,27 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
         mvwprintw(stdscr, r, x0 + W - 1, "|");
     }
     mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
-    mvwprintw(stdscr, y0, x0 + 3, " Server Upload Settings ");
+    mvwprintw(stdscr, y0, x0 + 3, " %s ", Tr("settings.title"));
 
     // Field rows: [n] label : [ value ] — focused row renders reversed.
+    // The label column is padded by display width so CJK labels stay aligned
+    // (printf's %-16s counts bytes, which breaks on multi-byte text).
     auto drawField = [&](int idx, int row, const std::string& label, const std::string& value) {
         const int lx = x0 + 2;
         const bool focused = (settingsFocus_ == idx);
+        std::string lab = label;
+        const int lw = utf8_display_width(lab);
+        if (lw < 16) lab.append(16 - lw, ' ');
+        else lab = utf8_truncate(lab, 16);
         char buf[160];
-        snprintf(buf, sizeof(buf), "[%d] %-16s : [ %s ]", idx + 1, label.c_str(), value.c_str());
+        snprintf(buf, sizeof(buf), "[%d] %s : [ %s ]", idx + 1, lab.c_str(), value.c_str());
         if (focused) attron(A_REVERSE);
         mvprintw(row, lx, "%s", buf);
         if (focused) attroff(A_REVERSE);
     };
 
     const bool on = draftSettings_.enabled;
-    drawField(0, y0 + 2, "Data upload", on ? " ON " : " OFF ");
+    drawField(0, y0 + 2, Tr("settings.data_upload"), on ? " ON " : " OFF ");
 
     // URL field: fixed-width window that follows the cursor.
     const int URL_BOX = 40;
@@ -1285,11 +1293,11 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     }
     std::string window = shown.substr(winStart, URL_BOX);
     window.resize(URL_BOX, ' ');
-    drawField(1, y0 + 3, "Server URL", window);
+    drawField(1, y0 + 3, Tr("settings.server_url"), window);
 
-    drawField(2, y0 + 4, "Skip TLS verify", draftSettings_.insecure ? " ON " : " OFF ");
-    drawField(3, y0 + 5, "Upload interval",
-              std::to_string(draftSettings_.intervalSec) + " s  (bounds 1-60)");
+    drawField(2, y0 + 4, Tr("settings.skip_tls"), draftSettings_.insecure ? " ON " : " OFF ");
+    drawField(3, y0 + 5, Tr("settings.interval"),
+              std::to_string(draftSettings_.intervalSec) + Tr("settings.bounds"));
 
     // Status + hints
     {
@@ -1300,11 +1308,11 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             : (serverSettings_.status.empty()
                 ? (serverSettings_.enabled ? "starting..." : "disabled")
                 : serverSettings_.status);
-        mvwprintw(stdscr, y0 + 7, x0 + 2, " Status : %s", st.c_str());
+        mvwprintw(stdscr, y0 + 7, x0 + 2, " %s%s", Tr("settings.status"), st.c_str());
     }
-    mvwprintw(stdscr, y0 + 9, x0 + 2, " Enter save+apply   Esc cancel   Up/Down or Tab focus");
-    mvwprintw(stdscr, y0 + 10, x0 + 2, " Space toggles   type edits URL   digits edit interval");
-    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Settings persist to system_monitor.json (server.*)");
+    mvwprintw(stdscr, y0 + 9, x0 + 2, " %s", Tr("settings.hint1"));
+    mvwprintw(stdscr, y0 + 10, x0 + 2, " %s", Tr("settings.hint2"));
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s", Tr("settings.persist"));
 
     // Place the cursor inside the URL box when it is focused. Never move the
     // cursor to the screen corners — ncurses treats the bottom-right cell as
@@ -1354,9 +1362,10 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     mvwprintw(stdscr, 0, 0, "%s", topBot.c_str());
     mvwprintw(stdscr, rows - 1, 0, "%s", topBot.c_str());
 
-    std::string header = " TCMT Log    lines: " + std::to_string(lines.size()) +
-                         "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]") +
-                         "    " + upArrow_ + "/" + downArrow_ + " scroll  Home/End  f=follow  ?=help";
+    std::string header = std::string(" ") + Tr("log.title") + "    " + Tr("log.lines")
+                       + std::to_string(lines.size())
+                       + "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]")
+                       + "    " + upArrow_ + "/" + downArrow_ + " " + Tr("log.hint");
     // (Esc/l back to dashboard and q=quit are listed in the ? help page;
     // they are deliberately not repeated on every log line of the header.)
     wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
@@ -1380,7 +1389,7 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     }
 
     if (total == 0) {
-        mvwprintw(stdscr, 2, 2, "No log entries yet (l/Esc to dashboard)");
+        mvwprintw(stdscr, 2, 2, "%s", Tr("log.empty"));
     }
 
     for (int r = 0; r < contentRows; ++r) {
@@ -1454,38 +1463,38 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
 
     // Same gating as the header hints: only list what this build supports.
     std::vector<std::pair<std::string, std::string>> common, dash, logpage;
-    common.push_back({"S", "server push settings"});
+    common.push_back({"S", Tr("help.server_push")});
     if (caps_.inlineLogPage)
-        common.push_back({"L / Tab", "switch to log page"});
+        common.push_back({"L / Tab", Tr("help.switch_log")});
     if (updateRequestHandler_)
-        common.push_back({"U", "check for update"});
+        common.push_back({"U", Tr("help.check_update")});
     if (locationRequestHandler_)
-        common.push_back({"R", "request Location Services (WiFi SSID)"});
-    common.push_back({"Esc", "go back one level"});
-    common.push_back({"?", "close this help"});
-    common.push_back({"q", "quit TCMT Monitor"});
+        common.push_back({"R", Tr("help.request_loc")});
+    common.push_back({"Esc", Tr("help.back")});
+    common.push_back({"?", Tr("help.close")});
+    common.push_back({"q", Tr("help.quit")});
 
-    dash.push_back({upArrow_ + " / " + downArrow_, "select a process row"});
-    dash.push_back({"Enter", "process details (PID, CPU, memory)"});
-    dash.push_back({"c", "connections list (expand the status chip)"});
+    dash.push_back({upArrow_ + " / " + downArrow_, Tr("help.select_row")});
+    dash.push_back({"Enter", Tr("help.details")});
+    dash.push_back({"c", Tr("help.conn_list")});
 
     if (caps_.inlineLogPage) {
-        logpage.push_back({upArrow_ + " / " + downArrow_, "scroll one line"});
-        logpage.push_back({"PgUp / PgDn", "scroll one page"});
-        logpage.push_back({"Home", "oldest entry"});
-        logpage.push_back({"End", "newest entry"});
-        logpage.push_back({"f", "follow newest lines"});
-        logpage.push_back({"Esc / L / Tab", "back to dashboard"});
+        logpage.push_back({upArrow_ + " / " + downArrow_, Tr("help.scroll_line")});
+        logpage.push_back({"PgUp / PgDn", Tr("help.scroll_page")});
+        logpage.push_back({"Home", Tr("help.oldest")});
+        logpage.push_back({"End", Tr("help.newest")});
+        logpage.push_back({"f", Tr("help.follow")});
+        logpage.push_back({"Esc / L / Tab", Tr("help.back_dash")});
     }
 
-    group("Common", common);
-    group("Dashboard", dash);
-    if (!logpage.empty()) group("Log page", logpage);
+    group(Tr("help.group.common"), common);
+    group(Tr("help.group.dashboard"), dash);
+    if (!logpage.empty()) group(Tr("help.group.log"), logpage);
 
     // Settings keys are hinted inline on that page; one summary line here.
     if (y < y0 + H - 2) {
         mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4,
-                  "Settings page: Enter save, Esc cancel, Tab or arrows move focus, Space toggles");
+                  Tr("help.settings_hint"));
     }
 }
 
@@ -1534,7 +1543,7 @@ void TuiApp::RenderProcessDetails(int rows, int cols, int ch) {
         mvwprintw(stdscr, r, x0 + W - 1, "|");
     }
     mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
-    mvwprintw(stdscr, y0, x0 + 3, " Process Details ");
+    mvwprintw(stdscr, y0, x0 + 3, " %s ", Tr("details.title"));
 
     std::string memStr;
     if (proc->memoryBytes >= (uint64_t)1024 * 1024 * 1024)
@@ -1558,7 +1567,7 @@ void TuiApp::RenderProcessDetails(int rows, int cols, int ch) {
     snprintf(line, sizeof(line), "Memory: %s", memStr.c_str());
     mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
 
-    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Enter/Esc/q close ");
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s ", Tr("details.close"));
 }
 
 // Connections list overlay — 'c' on the dashboard. The compact bottom chip
@@ -1596,14 +1605,14 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
         mvwprintw(stdscr, r, x0 + W - 1, "|");
     }
     mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
-    mvwprintw(stdscr, y0, x0 + 3, " Connections ");
+    mvwprintw(stdscr, y0, x0 + 3, " %s ", Tr("conn.title"));
 
     char line[192];
     int y = y0 + 2;
     if (data.connectionCount <= 0) {
-        mvwprintw(stdscr, y++, x0 + 2, "  no clients connected");
+        mvwprintw(stdscr, y++, x0 + 2, "  %s", Tr("conn.empty"));
     } else {
-        snprintf(line, sizeof(line), "  %d client%s",
+        snprintf(line, sizeof(line), Tr("conn.count"),
                  data.connectionCount, data.connectionCount == 1 ? "" : "s");
         mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
         int n = 1;
@@ -1618,7 +1627,7 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
             mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
         }
         if (!data.connectionSince.empty()) {
-            snprintf(line, sizeof(line), "  Since: %s", data.connectionSince.c_str());
+            snprintf(line, sizeof(line), "%s%s", Tr("conn.since"), data.connectionSince.c_str());
             mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
         }
         if (y < y0 + H - 3) y++;
@@ -1628,25 +1637,25 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
     std::string pushStr;
     int color = -1;
     if (!data.serverPushEnabled) {
-        pushStr = "Push: disabled (press S to configure)";
+        pushStr = Tr("push.disabled");
     } else {
-        std::string age = "never";
+        std::string age = Tr("push.never");
         if (data.lastPushMs > 0) {
             int64_t sec = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count()
                 - data.lastPushMs / 1000;
-            age = std::to_string((std::max)(int64_t(0), sec)) + "s ago";
+            age = std::to_string((std::max)(int64_t(0), sec)) + Tr("push.ago");
         }
         const bool err = data.serverStatus.rfind("error", 0) == 0;
         const bool connecting = data.serverStatus.rfind("connecting", 0) == 0;
         color = err ? 4 : (connecting ? 3 : 2);
-        pushStr = "Push: " + data.serverStatus + " (last " + age + ")";
+        pushStr = Tr("push.prefix") + data.serverStatus + Tr("push.last") + age + Tr("push.last_close");
     }
     if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
     mvwprintw(stdscr, y, x0 + 2, "%.*s", W - 4, pushStr.c_str());
     if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
 
-    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " Enter/Esc/q close ");
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s ", Tr("conn.close"));
 }
 
 // Minimal mouse (B direction): translate one mouse event into the keyboard
@@ -1723,6 +1732,8 @@ void TuiApp::Run() {
     const char* curLocale = std::setlocale(LC_ALL, nullptr);
     const bool utf8Locale = curLocale &&
         (std::strstr(curLocale, "UTF-8") != nullptr || std::strstr(curLocale, "utf-8") != nullptr);
+    // i18n: TCMT_LANG > active locale > en; non-UTF-8 forces en.
+    I18nSelect(std::getenv("TCMT_LANG"), curLocale, utf8Locale);
     asciiMode_ = (asciiEnv != nullptr && std::strcmp(asciiEnv, "0") != 0) || !utf8Locale;
     if (asciiMode_) {
         sparkChars_ = " .:-=+*#";    // 8 ink-ascending levels, index 0 = empty
@@ -1869,7 +1880,7 @@ void TuiApp::Run() {
         }
         if (rows < 24 || cols < 80) {
             clear();
-            mvprintw(0, 0, "Terminal too small. Current: %dx%d", cols, rows);
+            mvprintw(0, 0, Tr("sys.toosmall"), cols, rows);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
@@ -1987,11 +1998,12 @@ void TuiApp::Run() {
         // row-1 left edge; the update banner centers in whatever row-1 space
         // is left between them. Hints are built from caps_ + handlers so no
         // dead keys are advertised.
-        std::string hint = "S:Settings";
-        if (caps_.inlineLogPage) hint += " L:Log";
-        if (updateRequestHandler_) hint += " U:Update";
-        if (locationRequestHandler_) hint += " R:Location";
-        hint += " ?:Help Q:Quit";
+        std::string hint = Tr("hint.settings");
+        if (caps_.inlineLogPage) { hint += " "; hint += Tr("hint.log"); }
+        if (updateRequestHandler_) { hint += " "; hint += Tr("hint.update"); }
+        if (locationRequestHandler_) { hint += " "; hint += Tr("hint.location"); }
+        hint += " "; hint += Tr("hint.help");
+        hint += " "; hint += Tr("hint.quit");
         const int hintW = static_cast<int>(hint.size());
 
         std::string title = "TCMT Monitor  " + data.timestamp;
@@ -2159,27 +2171,27 @@ void TuiApp::Run() {
                 if (data.httpClientCount > 0)
                     line += "Web x" + std::to_string(data.httpClientCount) + " ";
                 if (!data.connectionSince.empty())
-                    line += "since " + data.connectionSince;
+                    line += Tr("status.since") + data.connectionSince;
             } else {
-                line = "no clients";
+                line = Tr("status.noclients");
             }
             std::string pushStr;
             int color = (data.connectionCount > 0) ? 2 : -1;
             if (!data.serverPushEnabled) {
-                pushStr = "Push: disabled (press S to configure)";
+                pushStr = Tr("push.disabled");
             } else {
-                std::string age = "never";
+                std::string age = Tr("push.never");
                 if (data.lastPushMs > 0) {
                     int64_t sec = std::chrono::duration_cast<std::chrono::seconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count()
                         - data.lastPushMs / 1000;
-                    age = std::to_string((std::max)(int64_t(0), sec)) + "s ago";
+                    age = std::to_string((std::max)(int64_t(0), sec)) + Tr("push.ago");
                 }
                 // "connecting..." / "uploading (dev_xxx)" / "error: ...".
                 const bool err = data.serverStatus.rfind("error", 0) == 0;
                 const bool connecting = data.serverStatus.rfind("connecting", 0) == 0;
                 color = err ? 4 : (connecting ? 3 : 2);
-                pushStr = "Push: " + data.serverStatus + " (last " + age + ")";
+                pushStr = Tr("push.prefix") + data.serverStatus + Tr("push.last") + age + Tr("push.last_close");
             }
             if (!pushStr.empty()) line += "   " + pushStr;
             line += "   [c=list]";   // 'c' expands this chip into the client list
@@ -2201,7 +2213,7 @@ void TuiApp::Run() {
             const std::string os = TrimRight(data.osVersion, (cols > 46) ? cols - 42 : 12);
             mvwprintw(stdscr, rows - 2, 10, "%s", os.c_str());
         } else {
-            mvwprintw(stdscr, rows - 2, 10, "Unknown OS");
+            mvwprintw(stdscr, rows - 2, 10, "%s", Tr("sys.unknown_os"));
         }
         if (data.batteryPercent >= 0 && data.batteryPercent <= 100) {
             auto batStr = (data.acOnline ? "AC" : "BAT") + std::string(" ") + std::to_string(data.batteryPercent) + "%";

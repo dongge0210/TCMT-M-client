@@ -1,6 +1,7 @@
 // Updater — self-update via GitHub Releases with Ed25519 signature checks.
 // macOS-only for now (TCMT_USE_TLS); compiles to a no-op elsewhere.
 #include "Updater.h"
+#include "I18n.h"
 #include "Utils/Logger.h"
 #include "nlohmann/json.hpp"
 
@@ -90,7 +91,7 @@ void Updater::StartDownload() {
 #ifdef TCMT_USE_TLS
     if (state_.load() != StateInt(State::Available)) return;
     state_.store(StateInt(State::Downloading));
-    SetStatus(State::Downloading, "下载更新包…", &state_, &mutex_, &status_);
+    SetStatus(State::Downloading, tcmt::Tr("update.downloading"), &state_, &mutex_, &status_);
     thread_ = std::thread(&Updater::DownloadThread, this);
 #endif
 }
@@ -211,7 +212,7 @@ bool Updater::VerifyManifest(const std::string& manifestJson, const std::string&
 }
 
 void Updater::CheckThread() {
-    SetStatus(State::Checking, "检查更新…", &state_, &mutex_, &status_);
+    SetStatus(State::Checking, tcmt::Tr("update.checking"), &state_, &mutex_, &status_);
 
     std::string releaseJson;
     std::string url = std::string("https://api.github.com/repos/") +
@@ -238,7 +239,7 @@ void Updater::CheckThread() {
             else if (name == "manifest.json.sig") sigUrl = a.value("browser_download_url", "");
         }
         if (manifestUrl.empty() || sigUrl.empty()) {
-            SetStatus(State::Failed, "发布格式不完整", &state_, &mutex_, &status_);
+            SetStatus(State::Failed, tcmt::Tr("update.fail.manifest"), &state_, &mutex_, &status_);
             running_.store(false);
             return;
         }
@@ -246,7 +247,7 @@ void Updater::CheckThread() {
         std::string manifest, sigB64;
         if (!HttpsGet(manifestUrl, manifest) || !HttpsGet(sigUrl, sigB64) ||
             !VerifyManifest(manifest, sigB64)) {
-            SetStatus(State::Failed, "签名校验失败", &state_, &mutex_, &status_);
+            SetStatus(State::Failed, tcmt::Tr("update.fail.sig"), &state_, &mutex_, &status_);
             running_.store(false);
             return;
         }
@@ -266,29 +267,30 @@ void Updater::CheckThread() {
             }
         }
         if (assetUrl_.empty()) {
-            SetStatus(State::Failed, "发布格式不完整（缺少二进制）", &state_, &mutex_, &status_);
+            SetStatus(State::Failed, tcmt::Tr("update.fail.nobin"), &state_, &mutex_, &status_);
             running_.store(false);
             return;
         }
         manifestJson_ = manifest;
         latestVersion_ = version;
-        SetStatus(State::Available,
-                  "新版本 " + version + " 可用（当前 " TCMT_VERSION_STR "，按 U 更新）",
-                  &state_, &mutex_, &status_);
+        char verBuf[256];
+        snprintf(verBuf, sizeof(verBuf), tcmt::Tr("update.newver"),
+                 version.c_str(), TCMT_VERSION_STR);
+        SetStatus(State::Available, verBuf, &state_, &mutex_, &status_);
     } catch (...) {
-        SetStatus(State::Failed, "检查更新失败（解析）", &state_, &mutex_, &status_);
+        SetStatus(State::Failed, tcmt::Tr("update.fail.parse"), &state_, &mutex_, &status_);
     }
     running_.store(false);
 }
 
 void Updater::DownloadThread() {
     if (assetUrl_.empty() || exePath_.empty()) {
-        SetStatus(State::Failed, "更新地址无效", &state_, &mutex_, &status_);
+        SetStatus(State::Failed, tcmt::Tr("update.fail.url"), &state_, &mutex_, &status_);
         return;
     }
     std::string data;
     if (!HttpsGet(assetUrl_, data)) {
-        SetStatus(State::Failed, "下载失败", &state_, &mutex_, &status_);
+        SetStatus(State::Failed, tcmt::Tr("update.fail.dl"), &state_, &mutex_, &status_);
         return;
     }
 
@@ -309,7 +311,7 @@ void Updater::DownloadThread() {
             expect = json::parse(manifestJson_).value("sha256", "");
         } catch (...) {}
         if (expect.empty() || expect != std::string(hex)) {
-            SetStatus(State::Failed, "哈希校验失败", &state_, &mutex_, &status_);
+            SetStatus(State::Failed, tcmt::Tr("update.fail.hash"), &state_, &mutex_, &status_);
             return;
         }
     }
@@ -321,7 +323,7 @@ void Updater::DownloadThread() {
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         if (!f) {
-            SetStatus(State::Failed, "写入临时文件失败", &state_, &mutex_, &status_);
+            SetStatus(State::Failed, tcmt::Tr("update.fail.tmp"), &state_, &mutex_, &status_);
             return;
         }
         f.write(data.data(), (std::streamsize)data.size());
@@ -330,9 +332,9 @@ void Updater::DownloadThread() {
     }
     if (rename(tmp.c_str(), exePath_.c_str()) != 0) {
         unlink(tmp.c_str());
-        SetStatus(State::Failed, "替换二进制失败", &state_, &mutex_, &status_);
+        SetStatus(State::Failed, tcmt::Tr("update.fail.bin"), &state_, &mutex_, &status_);
         return;
     }
-    SetStatus(State::Ready, "更新完成，退出后重启生效（Q 退出）", &state_, &mutex_, &status_);
+    SetStatus(State::Ready, tcmt::Tr("update.ready"), &state_, &mutex_, &status_);
 }
 #endif // TCMT_USE_TLS
