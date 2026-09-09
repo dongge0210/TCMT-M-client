@@ -18,6 +18,7 @@
 #pragma once
 
 #include "LogBuffer.h"
+#include "core/I18n.h"
 #include <functional>
 #include <string>
 // pid_t: POSIX on macOS/Linux, need explicit definition on Windows
@@ -470,8 +471,10 @@ private:
     bool detailsPage_ = false;             // process-details overlay (Enter on a selected row)
     bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
-    int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure
+    int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=interval, 4=language
     int urlCursor_ = 0;                    // cursor position inside URL field
+    Lang draftLang_ = Lang::En;            // language draft in the settings form
+    Lang langOnOpen_ = Lang::En;           // language when the form opened (Esc restores)
 
     // Window dimensions
     int termRows_ = 0;

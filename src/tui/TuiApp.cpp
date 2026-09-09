@@ -1202,7 +1202,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 // the URL field (Left/Right/Home/End/Backspace); Enter saves + applies via
 // the settings handler; Esc cancels without applying.
 void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
-    const int FIELD_COUNT = 4;
+    const int FIELD_COUNT = 5;
     auto insertUrlChar = [&](char c) {
         draftSettings_.url.insert(draftSettings_.url.begin() + urlCursor_, c);
         urlCursor_ += 1;
@@ -1217,6 +1217,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     // ---- key handling ----
     switch (ch) {
         case 27: // Esc — cancel without saving
+            g_lang = langOnOpen_;   // revert a live language preview
             settingsPage_ = false;
             curs_set(0);
             clear();
@@ -1234,6 +1235,10 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             if (settingsFocus_ == 0) draftSettings_.enabled = !draftSettings_.enabled;
             else if (settingsFocus_ == 2) draftSettings_.insecure = !draftSettings_.insecure;
             else if (settingsFocus_ == 1) insertUrlChar(' ');
+            else if (settingsFocus_ == 4) {
+                draftLang_ = (draftLang_ == Lang::En) ? Lang::ZhHans : Lang::En;
+                g_lang = draftLang_;   // live preview; Esc restores, Enter keeps
+            }
             break;
         case '\n':
         case '\r':
@@ -1248,6 +1253,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
                 std::lock_guard<std::mutex> lock(dataMutex_);
                 serverSettings_ = draftSettings_;
             }
+            g_lang = draftLang_;   // keep the language chosen in this form
             settingsPage_ = false;
             curs_set(0);
             clear();
@@ -1277,7 +1283,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
 
     // ---- draw framed dialog ----
     const int W = std::min(72, cols - 8);
-    const int H = 15;
+    const int H = 16;
     const int x0 = std::max(1, (cols - W) / 2);
     const int y0 = std::max(1, (rows - H) / 2);
 
@@ -1327,6 +1333,11 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     drawField(2, y0 + 4, Tr("settings.skip_tls"), draftSettings_.insecure ? " ON " : " OFF ");
     drawField(3, y0 + 5, Tr("settings.interval"),
               std::to_string(draftSettings_.intervalSec) + Tr("settings.bounds"));
+    drawField(4, y0 + 6, Tr("settings.language"),
+              draftLang_ == Lang::ZhHans ? Tr("lang.name.zh") : Tr("lang.name.en"));
+    // TODO(i18n): persist the chosen language (e.g. ui.language in
+    // system_monitor.json) and read it at startup after TCMT_LANG; the
+    // in-form switch is session-only for now.
 
     // Status + hints
     {
@@ -1337,10 +1348,10 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             : (serverSettings_.status.empty()
                 ? (serverSettings_.enabled ? "starting..." : "disabled")
                 : serverSettings_.status);
-        mvwprintw(stdscr, y0 + 7, x0 + 2, " %s%s", Tr("settings.status"), st.c_str());
+        mvwprintw(stdscr, y0 + 8, x0 + 2, " %s%s", Tr("settings.status"), st.c_str());
     }
-    mvwprintw(stdscr, y0 + 9, x0 + 2, " %s", Tr("settings.hint1"));
-    mvwprintw(stdscr, y0 + 10, x0 + 2, " %s", Tr("settings.hint2"));
+    mvwprintw(stdscr, y0 + 10, x0 + 2, " %s", Tr("settings.hint1"));
+    mvwprintw(stdscr, y0 + 11, x0 + 2, " %s", Tr("settings.hint2"));
     mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s", Tr("settings.persist"));
 
     // Place the cursor inside the URL box when it is focused. Never move the
@@ -1878,6 +1889,8 @@ void TuiApp::Run() {
             }
             settingsFocus_ = 0;
             urlCursor_ = (int)draftSettings_.url.size();
+            langOnOpen_ = g_lang;
+            draftLang_ = g_lang;
             settingsPage_ = true;
             logPage_ = false;   // settings overlays whatever page was shown
             curs_set(1);

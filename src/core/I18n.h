@@ -92,6 +92,9 @@ inline const I18nEntry kI18nTable[] = {
                              "Space 切换   输入编辑 URL   数字键改间隔"},
     {"settings.persist",     "Settings persist to system_monitor.json (server.*)",
                              "设置保存到 system_monitor.json (server.*)"},
+    {"settings.language",    "Language",                                     "语言"},
+    {"lang.name.en",         "EN",                                           "EN"},
+    {"lang.name.zh",         "简体中文",                                       "简体中文"},
 
     // ── process details overlay ──────────────────────────────────────
     {"details.title",        "Process Details",                              "进程详情"},
