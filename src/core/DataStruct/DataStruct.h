@@ -1,7 +1,12 @@
-// DataStruct.h
+﻿// DataStruct.h
 #pragma once
 #include <string>
 #include <vector>
+
+// App version string (override via -DTCMT_VERSION_STR="x.y.z" in CMake/MSBuild)
+#ifndef TCMT_VERSION_STR
+#define TCMT_VERSION_STR "0.14.0"
+#endif
 
 // Platform abstraction
 #include "../Platform/Platform.h"
@@ -34,6 +39,7 @@ struct SmartAttributeData {
 
 // Physical disk SMART info
 struct PhysicalDiskSmartData {
+    int physicalIndex = -1;        // Windows: Win32_DiskDrive.Index (used for SMART re-reads)
     WCHAR model[128];              // Disk model
     WCHAR serialNumber[64];        // Serial number
     WCHAR firmwareVersion[32];     // Firmware version
@@ -160,6 +166,7 @@ struct SystemInfo {
     double cpuPower = 0.0;          // CPU power in mW
     double gpuPower = 0.0;          // GPU power in mW
     double anePower = 0.0;          // ANE power in mW
+    bool powerAvailable = false;    // true when a live power source is present
     double gpuFreq = 0.0;           // GPU frequency in MHz
     std::string hardwareModel;      // Hardware model (e.g. "Mac14,2")
     std::string gpuName;            // Added
@@ -174,6 +181,8 @@ struct SystemInfo {
     std::string networkAdapterType; // Network adapter type (wireless/wired)
     uint64_t networkAdapterSpeed;   // Added
     double cpuTemperature; // CPU temperature
+    double cpuPcoreTemperature = 0.0; // P-core cluster temperature
+    double cpuEcoreTemperature = 0.0; // E-core cluster temperature
     double gpuTemperature; // GPU temperature
     double cpuUsageSampleIntervalMs = 0.0; // CPU usage sample interval (ms)
     // WiFi
@@ -189,6 +198,50 @@ struct SystemInfo {
     // Bluetooth
     bool btPowerOn = false;
     int btDeviceCount = 0;
+
+    // 鈹€鈹€鈹€ New fields (feature #4-9) 鈹€鈹€鈹€
+    // 4. Fan speeds
+    struct FanData {
+        std::string name;
+        float rpm = 0;
+    };
+    std::vector<FanData> fans;
+
+    // 5. Process top
+    struct ProcData {
+        int32_t pid = 0;
+        std::string name;
+        uint64_t memoryBytes = 0;
+        float cpuPercent = 0;
+    };
+    std::vector<ProcData> topProcesses;
+
+    // 6. Per-core sensors
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    int perCoreCount = 0;
+
+    // 7. Battery detail (extended)
+    int batteryCycleCount = 0;
+    int batteryDesignCapacity = 0;
+    int batteryMaxCapacity = 0;
+    float batteryHealthPercent = 0;
+    float batteryTemp = 0;
+    int batteryAmperage = 0;
+    int batteryVoltage = 0;
+    float batteryChargerWatts = 0;
+    bool batteryIsCharging = false;
+    bool batteryIsPresent = false;
+
+    // System info
+    float loadAvg1 = 0;
+    float loadAvg5 = 0;
+    float loadAvg15 = 0;
+    int processCount = 0;
+    uint64_t uptimeSeconds = 0;
+
+    // App version (e.g. "0.14.0")
+    std::string appVersion = TCMT_VERSION_STR;
 
     // Display monitors
     struct DisplayData {
@@ -209,97 +262,4 @@ struct SystemInfo {
     PlatformSystemTime lastUpdate;
 };
 
-// Shared memory main struct
-struct SharedMemoryBlock {
-    uint32_t writeSequence;   // seqlock: odd=write in progress, even=complete
-
-    WCHAR cpuName[128];       // CPU name - WCHAR array
-    int physicalCores;        // Physical cores
-    int logicalCores;         // Logical cores
-    double cpuUsage;          // Changed to double type, improved precision
-    int performanceCores;     // Performance cores
-    int efficiencyCores;      // Efficiency cores
-    double pCoreFreq;         // Performance core frequency (MHz)
-    double eCoreFreq;         // Efficiency core frequency (MHz)
-    double cpuBaseFreq;       // Nominal base frequency (MHz) from WMI
-    bool hyperThreading;      // Hyperthreading enabled
-    bool virtualization;      // Virtualization enabled
-    uint64_t totalMemory;     // Total memory (bytes)
-    uint64_t usedMemory;      // Used memory (bytes)
-    uint64_t availableMemory; // Available memory (bytes)
-    uint64_t compressedMemory; // Compressed memory (bytes)
-    uint64_t swapUsed;         // Swap used (bytes)
-    uint64_t swapTotal;        // Swap total (bytes)
-    uint32_t ramSpeed;       // RAM frequency in MHz (e.g., 6400)
-    WCHAR ramType[32];       // DDR generation (e.g., "DDR5", "LPDDR5")
-    double cpuTemperature; // CPU temperature
-    double gpuTemperature; // GPU temperature
-    double cpuUsageSampleIntervalMs; // CPU usage sample interval (ms)
-
-    // GPU information (up to 2 GPUs supported)
-    GPUData gpus[2];
-
-    // Network adapter (up to 4 adapters supported)
-    NetworkAdapterData adapters[4];
-
-    // Logical disk information (up to 8 disks supported)
-    struct SharedDiskData {
-        char letter;             // Drive letter (e.g. 'C')
-        WCHAR label[128];      // Volume label - Using WCHAR array for shared memory
-        WCHAR fileSystem[32];  // File system - Using WCHAR array for shared memory
-        uint64_t totalSize;      // Total capacity (bytes)
-        uint64_t usedSpace;      // Used space (bytes)
-        uint64_t freeSpace;      // Free space (bytes)
-    } disks[8];
-
-    // Physical disk SMART info (up to 8 physical disks supported)
-    PhysicalDiskSmartData physicalDisks[8];
-
-    // Temperature data (up to 10 sensors supported)
-    TemperatureData temperatures[10];
-
-    int adapterCount;
-    int tempCount;
-    int gpuCount;
-    int diskCount;
-    int physicalDiskCount;       // Physical disk count
-
-    // TPM info (1 TPM supported)
-    TpmInfo tpm;
-    uint8_t tpmCount;               // TPM count
-
-    // Battery / power info
-    int batteryPercent;             // 0-100, -1 = no battery
-    bool acOnline;                  // AC power connected
-    double cpuPower;                // CPU power in mW
-    double gpuPower;                // GPU power in mW
-    double anePower;                // ANE power in mW
-    double gpuFreq = 0.0;           // GPU frequency in MHz
-
-    // OS version info
-    WCHAR osVersion[128];           // e.g. "macOS 15.6 (MacBookPro18,1)"
-    WCHAR hardwareModel[128] = {};  // Hardware model (e.g. "Mac14,2" or "HP ZBook Fury G10")
-
-    // WiFi info for Avalonia
-    struct {
-        WCHAR ssid[32];
-        int32_t rssi;
-        int32_t channel;
-        WCHAR security[16];
-        WCHAR band[8];
-        WCHAR wifiGen[12];
-        bool powerOn;
-        bool isConnected;
-    } wifi;
-
-    // Bluetooth info for Avalonia
-    struct {
-        bool powerOn;
-        int32_t deviceCount;
-        WCHAR name[64];
-    } bluetooth;
-
-    PlatformSystemTime lastUpdate;
-    PlatformCriticalSection lock;
-};
 #pragma pack(pop)

@@ -1,31 +1,21 @@
 // ConfigManager.h - Application configuration manager
-// Wraps IConfigParser (cpp-parsers) for multi-format config file I/O
-// and provides a typed access API backed by nlohmann/json internally.
+// Loads and saves a JSON config file via nlohmann/json and provides a typed
+// access API: dotted-key resolution, arrays, typed getters/setters.
 //
-// The IConfigParser is selected at construction based on file extension.
-// Currently only the JSON backend is compiled, but the interface-based
-// design allows future backends (YAML, TOML, XML, INI) to be swapped in
-// without changing callers.
-//
-// If no matching parser is available for the file extension, a JsonConfigParser
-// is used as a safe default.
+// The file is UTF-8 JSON with 2-space indent. Key resolution supports dotted
+// notation (e.g., "display.refreshRate").
 
 #pragma once
 
-#include <memory>
 #include <string>
+#include <vector>
 #include <cstdint>
 #include <nlohmann/json.hpp>
-
-class IConfigParser;
 
 class ConfigManager {
 public:
     /// Construct with path to config file (default: "config.json")
     explicit ConfigManager(const std::string& path = "config.json");
-
-    /// Destructor (required by unique_ptr<IConfigParser> with forward decl)
-    ~ConfigManager();
 
     /// Load config from file using the format-specific parser.
     /// Returns true on success; initialises empty and returns false on error.
@@ -82,14 +72,11 @@ private:
     /// Uses pointer (not iterator) to avoid cross-container comparison issues.
     const nlohmann::json* ResolveKey(const std::string& key) const;
 
-    /// Access the internal nlohmann::json storage through the IConfigParser.
-    /// Convenience accessors that downcast to JsonConfigParser.
+    /// Access the internal nlohmann::json storage.
     nlohmann::json& GetData();
     const nlohmann::json& GetData() const;
 
-    /// Format-agnostic config parser (always a JsonConfigParser with
-    /// the current build configuration).
-    std::unique_ptr<IConfigParser> parser_;
+    nlohmann::json data_;
 
     std::string  path_;
     bool         loaded_ = false;

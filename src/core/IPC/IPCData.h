@@ -103,9 +103,12 @@ struct IPCDataBlock {
     float    pCoreFreq               = 0;
     float    eCoreFreq               = 0;
     float    cpuTemp                 = 0;
+    float    cpuPcoreTemp            = 0;
+    float    cpuEcoreTemp            = 0;
     bool     hyperThreading          = false;
     bool     virtualization          = false;
     float    cpuSampleIntervalMs     = 500;
+    float    cpuBaseFreq             = 0;     // nominal base clock in MHz
     char     timestamp[20]           = {};
 
     // Memory
@@ -141,6 +144,7 @@ struct IPCDataBlock {
 
     // Disks (up to 4)
     struct DiskSlot {
+        char     letter              = '\0';
         char     label[32]           = {};
         uint64_t totalSize           = 0;
         uint64_t usedSpace           = 0;
@@ -182,6 +186,8 @@ struct IPCDataBlock {
         bool     smartSupported      = false;
         int32_t  attrCount           = 0;
         char     attrsJson[4096]     = {}; // SMART attributes as JSON array
+        char     logicalDriveLetters[8] = {}; // e.g., "CD"
+        int32_t  logicalDriveCount   = 0;
     };
     PhysDiskSlot physicalDisks[8]    = {};
     uint8_t  physDiskCount           = 0;
@@ -192,6 +198,8 @@ struct IPCDataBlock {
         int32_t  rssi                = 0;
         int32_t  channel             = 0;
         char     security[16]        = {};
+        char     band[8]             = {};
+        char     wifiGen[12]         = {};
         bool     powerOn             = false;
         bool     isConnected         = false;
     };
@@ -204,6 +212,68 @@ struct IPCDataBlock {
         char     name[64]            = {};
     };
     BtSlot bluetooth                  = {};
+
+    // TPM
+    struct TpmSlot {
+        char     manufacturer[32]    = {};
+        char     firmwareVersion[32] = {};
+        uint16_t vendorId            = 0;
+        uint8_t  firmwareVersionMajor = 0;
+        uint8_t  firmwareVersionMinor = 0;
+        uint8_t  firmwareVersionBuild = 0;
+        bool     isPresent           = false;
+        bool     isEnabled           = false;
+        bool     isActive            = false;
+        uint8_t  selfTestStatus      = 0;
+        uint8_t  status              = 0;
+    };
+    TpmSlot tpm                       = {};
+    uint8_t  tpmCount                 = 0;
+
+    // App version string (e.g. "0.14.0")
+    char     appVersion[16]          = {};
+
+    // ─── 4. Fan speeds (up to 6 fans) ───
+    struct FanSlot {
+        char     name[32]            = {};
+        float    rpm                 = 0;
+    };
+    FanSlot  fanSpeeds[6]            = {};
+    uint8_t  fanCount                = 0;
+
+    // ─── 5. Process Top N (up to 7 processes) ───
+    struct ProcSlot {
+        int32_t  pid                 = 0;
+        char     name[64]            = {};
+        uint64_t memoryBytes         = 0;
+        float    cpuPercent           = 0;
+    };
+    ProcSlot topProcesses[7]         = {};
+    uint8_t  topProcCount            = 0;
+
+    // ─── 7. Battery detail (health, cycle count, etc.) ───
+    int32_t  batteryCycleCount       = 0;
+    int32_t  batteryDesignCapacity   = 0;      // mAh
+    int32_t  batteryMaxCapacity      = 0;      // mAh (current max)
+    float    batteryHealthPercent    = 0;      // 0-100
+    float    batteryTemp             = 0;      // Celsius
+    int32_t  batteryAmperage         = 0;      // mA
+    int32_t  batteryVoltage          = 0;      // mV
+    float    batteryChargerWatts     = 0;      // connected charger W
+    bool     batteryIsCharging       = false;
+    bool     batteryIsPresent        = false;
+
+    // ─── 6. Per-core sensor data (up to 16 cores) ───
+    float    perCoreTemp[16]         = {};     // temperature per core (Celsius), 0=unavailable
+    float    perCoreFreq[16]         = {};     // frequency per core (MHz), 0=unavailable
+    uint8_t  perCoreCount            = 0;
+
+    // ─── System info ───
+    float    loadAvg1                = 0;
+    float    loadAvg5                = 0;
+    float    loadAvg15               = 0;
+    int32_t  processCount            = 0;
+    uint64_t uptimeSeconds           = 0;
 };
 
 #pragma pack(pop)

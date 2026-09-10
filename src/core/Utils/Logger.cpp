@@ -42,6 +42,7 @@ void Logger::WorkerThreadFunc() {
         for (const auto& entry : localQueue) {
             logFile.write(entry.c_str(), entry.size());
         }
+        logFile.flush();  // low-volume logs would otherwise sit in the stream buffer
         localQueue.clear();
 
         if (shutdownFlag.load()) {

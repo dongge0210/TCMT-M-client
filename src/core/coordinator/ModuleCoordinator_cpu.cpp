@@ -55,6 +55,9 @@ void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
             if (pf > 0) data.pCoreFreq.store(pf);
             if (ef > 0) data.eCoreFreq.store(ef);
         } catch (const std::exception& e) {
+            // Loop-body failures repeat every tick while the fault persists;
+            // stay at ERROR, but throttling repeated text is a later item
+            // (see Logger level conventions in Logger.h).
             Logger::Error("CpuLoop: collection error - "
                           + std::string(e.what()));
         }

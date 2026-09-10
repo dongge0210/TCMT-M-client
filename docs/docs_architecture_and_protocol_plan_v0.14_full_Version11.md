@@ -135,7 +135,7 @@ errors.log：仅 WARN/ERROR。
 - 哈希失败：`ERROR frontend_log_hash_mismatch seq=<seq>`  
 
 ### 8.5 JSON Error Handling Pending
-JSON 错误处理（标准化 error.code/message/hint/detail）暂缓，等待 CPP-parsers 增加错误 API（has()/lastError()/typed get）。当前仅在指令响应中使用简单 error 对象；复杂场景后续补。
+JSON 错误处理（标准化 error.code/message/hint/detail）暂缓（CPP-parsers 已归档停用，nlohmann/json 直连）。当前仅在指令响应中使用简单 error 对象；复杂场景后续补。
 
 ---
 

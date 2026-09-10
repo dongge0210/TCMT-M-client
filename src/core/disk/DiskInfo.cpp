@@ -89,9 +89,87 @@ static bool ParseDiskPartition(const std::wstring& text, int& diskIndexOut) {
 }
 
 // 使用 WMI 关联查询获取物理磁盘到逻辑驱动器的映射
-void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo) {
+// Fast, non-blocking physical disk list (single Win32_DiskDrive query).
+// No ASSOCIATORS letter mapping and no SMART reads — those can be slow or
+// block on unresponsive drives, so callers publish this list first and read
+// SMART per disk separately.
+void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
     IWbemServices* svc = wmi.GetWmiService();
-    if (!svc) { Logger::Warn("WMI service invalid, skipping physical disk enumeration"); return; }
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
+
+    std::map<int, PhysicalDiskSmartData> tempDisks;
+    IEnumWbemClassObject* pEnum = nullptr;
+    HRESULT hr = svc->ExecQuery(bstr_t(L"WQL"),
+        bstr_t(L"SELECT Index,Model,SerialNumber,InterfaceType,Size,MediaType FROM Win32_DiskDrive"),
+        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnum);
+    if (SUCCEEDED(hr) && pEnum) {
+        IWbemClassObject* obj = nullptr;
+        ULONG ret = 0;
+        while (pEnum->Next(WBEM_INFINITE, 1, &obj, &ret) == S_OK) {
+            VARIANT vIndex, vModel, vSerial, vIface, vSize, vMedia;
+            VariantInit(&vIndex); VariantInit(&vModel); VariantInit(&vSerial);
+            VariantInit(&vIface); VariantInit(&vSize); VariantInit(&vMedia);
+            if (SUCCEEDED(obj->Get(L"Index", 0, &vIndex, 0, 0))
+                && (vIndex.vt == VT_I4 || vIndex.vt == VT_UI4)) {
+                int idx = (vIndex.vt == VT_I4) ? vIndex.intVal : static_cast<int>(vIndex.uintVal);
+                PhysicalDiskSmartData data{};
+                data.physicalIndex = idx;
+                if (SUCCEEDED(obj->Get(L"Model", 0, &vModel, 0, 0)) && vModel.vt == VT_BSTR)
+                    wcsncpy_s(data.model, vModel.bstrVal, _TRUNCATE);
+                if (SUCCEEDED(obj->Get(L"SerialNumber", 0, &vSerial, 0, 0)) && vSerial.vt == VT_BSTR)
+                    wcsncpy_s(data.serialNumber, vSerial.bstrVal, _TRUNCATE);
+                if (SUCCEEDED(obj->Get(L"InterfaceType", 0, &vIface, 0, 0)) && vIface.vt == VT_BSTR)
+                    wcsncpy_s(data.interfaceType, vIface.bstrVal, _TRUNCATE);
+                if (SUCCEEDED(obj->Get(L"Size", 0, &vSize, 0, 0))) {
+                    if (vSize.vt == VT_UI8) data.capacity = vSize.ullVal;
+                    else if (vSize.vt == VT_BSTR) data.capacity = _wcstoui64(vSize.bstrVal, nullptr, 10);
+                }
+                if (SUCCEEDED(obj->Get(L"MediaType", 0, &vMedia, 0, 0)) && vMedia.vt == VT_BSTR) {
+                    std::wstring media = vMedia.bstrVal;
+                    if (media.find(L"SSD") != std::wstring::npos || media.find(L"Solid State") != std::wstring::npos)
+                        wcsncpy_s(data.diskType, L"SSD", _TRUNCATE);
+                    else
+                        wcsncpy_s(data.diskType, L"HDD", _TRUNCATE);
+                } else {
+                    // MediaType missing — infer from model name (case-insensitive)
+                    bool isSSD = false;
+                    if (vModel.vt == VT_BSTR) {
+                        std::wstring mdl = vModel.bstrVal;
+                        isSSD = (mdl.find(L"SSD") != std::wstring::npos ||
+                                 mdl.find(L"ssd") != std::wstring::npos ||
+                                 mdl.find(L"Solid State") != std::wstring::npos ||
+                                 mdl.find(L"NVMe") != std::wstring::npos ||
+                                 mdl.find(L"MZ") != std::wstring::npos ||
+                                 mdl.find(L"mz") != std::wstring::npos);
+                    }
+                    wcsncpy_s(data.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
+                }
+                data.smartSupported = false;
+                data.smartEnabled = false;
+                data.healthPercentage = 100;
+                data.temperature = -1;
+                data.logicalDriveCount = 0;
+                tempDisks[idx] = data;
+            }
+            VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
+            VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
+            obj->Release();
+        }
+        pEnum->Release();
+    }
+
+    sysInfo.physicalDisks.clear();
+    for (auto& kv : tempDisks) {
+        sysInfo.physicalDisks.push_back(kv.second);
+        if (sysInfo.physicalDisks.size() >= 8) break;
+    }
+    Logger::Debug("Physical disk info enumeration complete: " + std::to_string(sysInfo.physicalDisks.size()));
+}
+
+void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
+                                    SystemInfo& sysInfo, bool readSmart) {
+    IWbemServices* svc = wmi.GetWmiService();
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
     std::map<int, std::vector<char>> physicalIndexToLetters;
     IEnumWbemClassObject* pEnum = nullptr;
 
@@ -184,6 +262,7 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 && (vIndex.vt == VT_I4 || vIndex.vt == VT_UI4)) {
                 int idx = (vIndex.vt == VT_I4) ? vIndex.intVal : static_cast<int>(vIndex.uintVal);
                 PhysicalDiskSmartData data{};
+                data.physicalIndex = idx;
                 if (SUCCEEDED(obj->Get(L"Model", 0, &vModel, 0, 0)) && vModel.vt == VT_BSTR)
                     wcsncpy_s(data.model, vModel.bstrVal, _TRUNCATE);
                 if (SUCCEEDED(obj->Get(L"SerialNumber", 0, &vSerial, 0, 0)) && vSerial.vt == VT_BSTR)
@@ -201,7 +280,18 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                     else
                         wcsncpy_s(data.diskType, L"HDD", _TRUNCATE);
                 } else {
-                    wcsncpy_s(data.diskType, L"Unknown", _TRUNCATE);
+                    // MediaType missing — infer from model name (case-insensitive)
+                    bool isSSD = false;
+                    if (vModel.vt == VT_BSTR) {
+                        std::wstring mdl = vModel.bstrVal;
+                        isSSD = (mdl.find(L"SSD") != std::wstring::npos ||
+                                 mdl.find(L"ssd") != std::wstring::npos ||
+                                 mdl.find(L"Solid State") != std::wstring::npos ||
+                                 mdl.find(L"NVMe") != std::wstring::npos ||
+                                 mdl.find(L"MZ") != std::wstring::npos ||
+                                 mdl.find(L"mz") != std::wstring::npos);
+                    }
+                    wcsncpy_s(data.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
                 }
                 data.smartSupported = false;
                 data.smartEnabled = false;
@@ -209,8 +299,10 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 data.temperature = -1;
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
-                // Try DeviceIoControl SMART
-                SmartReader::Read(idx, tempDisks[idx]);
+                // Try DeviceIoControl SMART — skip when caller wants a non-blocking
+                // WMI-only enumeration (SMART can hang on unresponsive drives).
+                if (readSmart)
+                    SmartReader::Read(idx, tempDisks[idx]);
             }
             VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
             VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
