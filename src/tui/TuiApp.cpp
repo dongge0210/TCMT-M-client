@@ -393,6 +393,17 @@ void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     int x = (cols - static_cast<int>(title.size())) / 2;
     mvwprintw(win, 0, std::max(0, x), "%s", title.c_str());
     wattroff(win, COLOR_PAIR(1) | A_BOLD);
+
+    // Live sampling cadence, left-aligned on the title row — always visible
+    // on the dashboard, adjustable on the settings page (S). Skipped when the
+    // centred title leaves no room.
+    std::string sample = std::string(Tr("hint.sample")) + ": " +
+                         std::to_string(data.sampleIntervalMs) + "ms";
+    if (x > static_cast<int>(sample.size()) + 2) {
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, 0, 1, "%s", sample.c_str());
+        wattroff(win, COLOR_PAIR(5));
+    }
 }
 
 int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {

@@ -94,6 +94,7 @@ inline const I18nEntry kI18nTable[] = {
                              "设置保存到 system_monitor.json (server.*)"},
     {"settings.language",    "Language",                                     "语言"},
     {"settings.sample_interval", "Sample interval",                          "采集间隔"},
+    {"hint.sample",              "Sample",                                   "采集"},
     {"settings.sample_bounds",   " ms  (bounds 200-5000)",                   " 毫秒（范围 200-5000）"},
     {"lang.name.en",         "EN",                                           "EN"},
     {"lang.name.zh",         "简体中文",                                       "简体中文"},

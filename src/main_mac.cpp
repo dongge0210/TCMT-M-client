@@ -987,6 +987,7 @@ int main(int argc, char* argv[]) {
                     ? "connecting..."
                     : ("uploading (" + s_probe.DeviceId() + ")");
             }
+            data.sampleIntervalMs = g_sampleIntervalMs.load();  // dashboard header
             data.serverPushEnabled = probeActive;
             data.serverUrl = serverUrl;
             data.serverStatus = probeStatus;

@@ -223,6 +223,9 @@ struct TuiData {
 
     // System uptime / load / process
     uint64_t uptimeSeconds = 0;
+    // Hardware sampling cadence shown on the dashboard header (ms); set on
+    // the settings page (press S) and applied by the monitor loop.
+    int sampleIntervalMs = 500;
     double loadAvg1 = 0.0;
     double loadAvg5 = 0.0;
     double loadAvg15 = 0.0;
