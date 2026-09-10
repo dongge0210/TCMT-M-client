@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
     try {
         Logger::Initialize("system_monitor.log");
         Logger::EnableConsoleOutput(false);
-        Logger::SetLogLevel(LOG_INFO);
+        Logger::SetLogLevel(LOG_WARNING);    // default: WARN+; --debug/--verbose lower it
         Logger::Info("TCMT Linux Client starting (TUI mode)...");
     } catch (const std::exception& e) {
         std::cerr << "Logger init failed: " << e.what() << std::endl;
@@ -122,6 +122,8 @@ int main(int argc, char* argv[]) {
             jsonMode = true;
             break;
         }
+        else if (std::string(argv[i]) == "--debug") Logger::SetLogLevel(LOG_DEBUG);
+        else if (std::string(argv[i]) == "--verbose") Logger::SetLogLevel(LOG_INFO);
     }
 
     if (jsonMode) {

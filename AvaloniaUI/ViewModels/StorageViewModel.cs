@@ -26,7 +26,7 @@ public partial class StorageViewModel : ViewModelBase
     public StorageViewModel()
     {
         Title = "存储";
-        Icon = "💾";
+        Icon = "storage";
     }
 
     public override void Update(SystemInfo info)

@@ -57,9 +57,9 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
         s_probed = true;
         if (!s_pa.Open()) { Logger::Debug("IntelOobmsm: PawnIO not available"); return result; }
         auto data = LoadRes(OOBMSM_RES);
-        if (data.empty()) { Logger::Info("IntelOobmsm: resource not found"); return result; }
+        if (data.empty()) { Logger::Debug("IntelOobmsm: resource not found"); return result; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "IntelOOBMSM")) {
-            Logger::Info("IntelOobmsm: module load failed"); return result;
+            Logger::Debug("IntelOobmsm: module load failed"); return result;
         }
 
         uint64_t idOut[4] = {0};
@@ -114,7 +114,7 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
         Logger::Info(std::string("IntelOobmsm: first PMT entry at 0x") + std::to_string(entryBase));
 
     // TODO: full PMT telemetry enumeration
-    // Reference: Intel PMT spec, LHM IntelOobmsm.cs
+    // Reference: Intel PMT spec
 
     return result;
 }

@@ -28,6 +28,12 @@ public partial class CpuViewModel : ViewModelBase
     private double _cpuTemperature;
 
     [ObservableProperty]
+    private double _cpuPcoreTemperature;
+
+    [ObservableProperty]
+    private double _cpuEcoreTemperature;
+
+    [ObservableProperty]
     private string _cpuFrequency = "N/A";
 
     [ObservableProperty]
@@ -48,7 +54,7 @@ public partial class CpuViewModel : ViewModelBase
     public CpuViewModel()
     {
         Title = "CPU 详情";
-        Icon = "🖥️";
+        Icon = "cpu";
     }
 
     public string HyperThreadingText => HyperThreading ? "已启用" : "已禁用";
@@ -73,6 +79,8 @@ public partial class CpuViewModel : ViewModelBase
         EfficiencyCores = info.EfficiencyCores;
         CpuUsage = FormatUtils.ValidateDouble(info.CpuUsage);
         CpuTemperature = FormatUtils.ValidateDouble(info.CpuTemperature);
+        CpuPcoreTemperature = FormatUtils.ValidateDouble(info.CpuPcoreTemperature);
+        CpuEcoreTemperature = FormatUtils.ValidateDouble(info.CpuEcoreTemperature);
         CpuFrequency = FormatUtils.FormatFrequency(info.PerformanceCoreFreq);
         CpuEfficiencyFrequency = FormatUtils.FormatFrequency(info.EfficiencyCoreFreq);
         CpuBaseFreq = info.CpuBaseFreq;

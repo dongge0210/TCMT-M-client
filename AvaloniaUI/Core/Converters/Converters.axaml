@@ -10,5 +10,11 @@
     <converters:BytesToHumanReadableConverter x:Key="BytesToHumanReadableConverter"/>
     <converters:FrequencyConverter x:Key="FrequencyConverter"/>
     <converters:PowerConverter x:Key="PowerConverter"/>
+    <converters:GreaterThanZeroToBoolConverter x:Key="GreaterThanZeroToBoolConverter"/>
+    <converters:PercentToWidthConverter x:Key="PercentToWidthConverter"/>
+    <converters:NavSelectedToBgConverter x:Key="NavSelectedToBgConverter"/>
+    <converters:NavSelectedToFgConverter x:Key="NavSelectedToFgConverter"/>
+    <converters:NavSelectedToFontWeightConverter x:Key="NavSelectedToFontWeightConverter"/>
+    <converters:IconToGeometryConverter x:Key="IconToGeometryConverter"/>
 
 </ResourceDictionary>

@@ -51,6 +51,7 @@ public class SystemInfo
     public string GpuBrand { get; set; } = string.Empty;
     public ulong GpuMemory { get; set; }
     public double GpuCoreFreq { get; set; }
+    public double GpuMemoryPercent { get; set; }
     public bool GpuIsVirtual { get; set; }
     
     public List<NetworkAdapterData> Adapters { get; set; } = new();
@@ -68,12 +69,31 @@ public class SystemInfo
     public string OsVersion { get; set; } = string.Empty;
     public int BatteryPercent { get; set; } = -1;
     public bool AcOnline { get; set; }
+    public int BatteryCycleCount { get; set; }
+    public int BatteryDesignCapacity { get; set; }
+    public int BatteryMaxCapacity { get; set; }
+    public double BatteryHealthPercent { get; set; }
+    public double BatteryTemperature { get; set; }
+    public int BatteryAmperage { get; set; }
+    public int BatteryVoltage { get; set; }
+    public double BatteryChargerWatts { get; set; }
+    public bool BatteryIsCharging { get; set; }
+    public bool BatteryIsPresent { get; set; }
+    public List<FanData> Fans { get; set; } = new();
+    public List<PerCoreData> PerCores { get; set; } = new();
+    public List<ProcessTopEntry> TopProcesses { get; set; } = new();
+    public double LoadAvg1 { get; set; }
+    public double LoadAvg5 { get; set; }
+    public double LoadAvg15 { get; set; }
+    public int ProcessCount { get; set; }
+    public ulong UptimeSeconds { get; set; }
     public double CpuTemperature { get; set; }
+    public double CpuPcoreTemperature { get; set; }
+    public double CpuEcoreTemperature { get; set; }
     public double GpuTemperature { get; set; }
     public double CpuPower { get; set; }
     public double GpuPower { get; set; }
     public double AnePower { get; set; }
-    public double GpuFreq { get; set; }
     public double CpuUsageSampleIntervalMs { get; set; }
     public DateTime LastUpdate { get; set; }
 
@@ -90,6 +110,9 @@ public class SystemInfo
     public bool HasBluetooth { get; set; }
     public bool BtPowerOn { get; set; }
     public int BtDeviceCount { get; set; }
+
+    // App version
+    public string Version { get; set; } = "0.14.0";
 }
 
 public class GpuData : ModelBase
@@ -101,6 +124,7 @@ public class GpuData : ModelBase
     private bool _isVirtual;
     private double _temperature;
     private double _usage;
+    private double _memoryPercent;
 
     public string Name { get => _name; set => SetProperty(ref _name, value); }
     public string Brand { get => _brand; set => SetProperty(ref _brand, value); }
@@ -109,9 +133,11 @@ public class GpuData : ModelBase
     public bool IsVirtual { get => _isVirtual; set => SetProperty(ref _isVirtual, value); }
     public double Temperature { get => _temperature; set => SetProperty(ref _temperature, value); }
     public double Usage { get => _usage; set => SetProperty(ref _usage, value); }
+    public double MemoryPercent { get => _memoryPercent; set => SetProperty(ref _memoryPercent, value); }
     
     public string DisplayName => string.IsNullOrEmpty(Name) ? "未知显卡" : (IsVirtual ? $"{Name} (虚拟)" : Name);
     public string MemoryDisplay => FormatUtils.FormatBytes(Memory);
+    public string MemoryPercentDisplay => MemoryPercent > 0 ? $"{MemoryPercent:F0}%" : "—";
 }
 
 public class NetworkAdapterData : ModelBase
@@ -263,4 +289,37 @@ public class TpmData : ModelBase
     public bool IsActive { get => _isActive; set => SetProperty(ref _isActive, value); }
     
     public string DisplayName => string.IsNullOrEmpty(Manufacturer) ? "未检测到 TPM" : $"{Manufacturer} TPM";
+}
+
+// ─── 4. Fan speed ───
+public class FanData : ModelBase
+{
+    private string _name = string.Empty;
+    private float _rpm;
+
+    public string Name { get => _name; set => SetProperty(ref _name, value); }
+    public float Rpm { get => _rpm; set => SetProperty(ref _rpm, value); }
+    public string DisplayName => string.IsNullOrEmpty(Name) ? "—" : Name;
+    public string RpmDisplay => Rpm > 0 ? $"{Rpm:F0} RPM" : "—";
+}
+
+// ─── 5. Process top entry ───
+public class ProcessTopEntry
+{
+    public int Pid { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public ulong MemoryBytes { get; set; }
+    public double CpuPercent { get; set; }
+    public string MemoryDisplay => FormatUtils.FormatBytes(MemoryBytes);
+    public string CpuDisplay => $"{CpuPercent:F1}%";
+}
+
+// ─── 6. Per-core sensor ───
+public class PerCoreData
+{
+    public int Index { get; set; }
+    public double Temperature { get; set; }
+    public double Frequency { get; set; }
+    public string TempDisplay => Temperature > 0 ? $"{Temperature:F0}°C" : "—";
+    public string FreqDisplay => Frequency > 0 ? $"{Frequency:F0} MHz" : "—";
 }

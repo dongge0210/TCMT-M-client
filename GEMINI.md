@@ -16,7 +16,7 @@ TCMT is a high-performance, cross-platform hardware monitoring tool for Windows 
 - **Session Status**: Check and update `docs/session.md` for current task status and user preferences.
 - **Core Logic**: `src/core/` contains monitoring modules and coordination.
 - **IPC Implementation**: `src/core/IPC/` (backend) and `AvaloniaUI/Services/IPCServices/` (frontend).
-- **Submodules**: 8 submodules in `src/third_party/` plus `src/CPP-parsers/`.
+- **Submodules**: 11 submodules in `src/third_party/` (incl. nlohmann/json for config).
 
 ## Building and Running
 

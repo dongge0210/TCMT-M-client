@@ -172,11 +172,6 @@ function(tcmt_check_third_party_libs)
     if(EXISTS "${CMAKE_SOURCE_DIR}/src/third_party")
         message(STATUS "    Third-party directory exists")
 
-        # 检查LibreHardwareMonitor（仅Windows）
-        if(TCMT_WINDOWS AND EXISTS "${CMAKE_SOURCE_DIR}/src/third_party/LibreHardwareMonitor")
-            message(STATUS "    LibreHardwareMonitor found")
-        endif()
-
         # Check other third-party libraries
         if(EXISTS "${CMAKE_SOURCE_DIR}/src/third_party/curl")
             message(STATUS "    curl found")
@@ -189,11 +184,11 @@ function(tcmt_check_third_party_libs)
         message(WARNING "Third-party directory not found - some features may be unavailable")
     endif()
 
-    # 检查CPP-parsers子模块
-    if(EXISTS "${CMAKE_SOURCE_DIR}/src/CPP-parsers")
-        message(STATUS "    CPP-parsers found")
+    # 检查 nlohmann/json 子模块
+    if(EXISTS "${CMAKE_SOURCE_DIR}/src/third_party/json/single_include/nlohmann/json.hpp")
+        message(STATUS "    nlohmann/json found")
     else()
-        message(WARNING "CPP-parsers not found - may need to initialize submodules")
+        message(WARNING "nlohmann/json not found - may need to initialize submodules")
     endif()
 
     message(STATUS "  Third-party libraries check completed")

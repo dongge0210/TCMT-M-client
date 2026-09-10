@@ -18,6 +18,8 @@
 #pragma once
 
 #include "LogBuffer.h"
+#include "core/I18n.h"
+#include <functional>
 #include <string>
 // pid_t: POSIX on macOS/Linux, need explicit definition on Windows
 #ifdef _WIN32
@@ -27,7 +29,6 @@ typedef int pid_t;
 #include <mutex>
 #include <atomic>
 #include <thread>
-#include <chrono>
 
 // Forward declarations for ncurses (skip if PDCurses already included)
 #ifndef __PDCURSES__
@@ -36,6 +37,19 @@ typedef struct _win_st WINDOW;
 #endif
 
 namespace tcmt {
+
+// Server push settings, editable from the TUI settings page (press S).
+// The TUI renders these; on save it invokes the handler with the edited
+// values, and main applies them (persist + restart the probe) and reports
+// the resulting state back via `status`.
+struct ServerSettings {
+    bool enabled = false;
+    std::string url = "http://127.0.0.1:8080";
+    bool insecure = false;
+    int intervalSec = 2;       // upload cadence, hard bounds 1..60
+    int sampleIntervalMs = 500; // hardware sampling cadence, bounds 200..5000
+    std::string status = "";   // probe state reported by main ("running" etc.)
+};
 
 // Data snapshot for TUI rendering (filled by main thread)
 struct TuiData {
@@ -53,6 +67,8 @@ struct TuiData {
     double gpuFreq = 0.0;
     double gpuMaxFreq = 0.0;
     double cpuTemp = 0.0;
+    double cpuPcoreTemp = 0.0;
+    double cpuEcoreTemp = 0.0;
 
     // Memory
     uint64_t totalMemory = 0;
@@ -70,6 +86,13 @@ struct TuiData {
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
+    int gpuFanSpeed = -1;            // kept for compat, see gpuFans
+    struct GpuFanInfo {
+        unsigned int index = 0;
+        int speedRpm = 0;
+        bool isRpm = false;
+    };
+    std::vector<GpuFanInfo> gpuFans;
 
     // Disk
     struct DiskInfo {
@@ -136,11 +159,28 @@ struct TuiData {
     double cpuPower = 0.0;
     double gpuPower = 0.0;
     double anePower = 0.0;
+    // Power availability (IOReport energy). Unprivileged processes cannot
+    // read energy on macOS 27 (confirmed system limit); the root helper
+    // tcmt-powerd supplies it via shared memory when installed. Filled by
+    // ModuleCoordinator::Snapshot from PowerMonitor::IsPowerAvailable();
+    // when false, cpuPower/gpuPower/anePower stay 0 and the UI renders N/A.
+    bool powerAvailable = false;
 
     // Connections
     int connectionCount = 0;
     std::string connectionSince;
     std::vector<uint8_t> clientTypes;  // ClientType values per connection
+    int httpClientCount = 0;           // local motion HTTP server clients (macOS)
+
+    // Server push (tcmt-server upload; filled by the monitor loop)
+    bool serverPushEnabled = false;
+    std::string serverUrl;
+    std::string serverStatus;   // "running" / "disabled" / "error: ..."
+    int64_t lastPushMs = 0;     // last successful snapshot post (0 = never)
+
+    // Self-update (filled by the monitor loop)
+    std::string updateStatus;
+    int updateState = 0;   // 0 idle 1 checking 2 available 3 downloading 4 verifying 5 ready 6 failed
 
     // TPM
     std::string tpmInfo;
@@ -150,6 +190,7 @@ struct TuiData {
 
     // WiFi (optional — only if WiFiInfo::Detect() was called)
     bool hasWiFi = false;
+    bool wifiConnected = false;   // adapter on + associated (vs. merely present)
     std::string wifiSSID;
     std::string wifiBSSID;
     int wifiRSSI = 0;
@@ -159,6 +200,7 @@ struct TuiData {
     std::string wifiGen;
     double wifiTxRate = 0;
     bool wifiLocationDenied = false; // macOS 15+: SSID blocked by Location Services
+    int wifiLocationStatus = 0;      // 0=not determined, 1=denied, 2=authorized
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
@@ -181,6 +223,9 @@ struct TuiData {
 
     // System uptime / load / process
     uint64_t uptimeSeconds = 0;
+    // Hardware sampling cadence shown on the dashboard header (ms); set on
+    // the settings page (press S) and applied by the monitor loop.
+    int sampleIntervalMs = 500;
     double loadAvg1 = 0.0;
     double loadAvg5 = 0.0;
     double loadAvg15 = 0.0;
@@ -250,8 +295,32 @@ struct TuiData {
     };
     std::vector<ProcessTopEntry> topProcesses;
 
+    // Per-core sensor data (up to 16 cores)
+    float perCoreTemp[16] = {};
+    float perCoreFreq[16] = {};
+    uint8_t perCoreCount = 0;
+
+    // Network traffic sparkline history (last 40 samples)
+    static constexpr int NET_HISTORY_MAX = 40;
+    uint64_t dlHistory[NET_HISTORY_MAX] = {};
+    uint64_t ulHistory[NET_HISTORY_MAX] = {};
+    int dlHistoryPos = 0;
+    int dlHistoryLen = 0;
+
     // Timestamp
     std::string timestamp;
+};
+
+// Capability report — the single place the TUI answers "what does this
+// build actually support", so key bindings, page availability and guidance
+// text are runtime data instead of #ifdefs sprinkled through the render
+// code. Each platform builds its report once (DetectPlatformCaps in
+// TuiApp.cpp); everything else reads these flags.
+struct PlatformCaps {
+    bool inlineLogPage = false;        // in-TUI log page (L/Tab). Windows pairs the dashboard with its own window instead.
+    bool nativeLogWindow = false;      // OS-native log window exists (Win32 LogWindow / AppKit MacLogWindow).
+    bool resizableTerminal = false;    // terminal reports live resize events (PDCurses is_termresized).
+    bool wifiLocationServices = false; // macOS Location Services SSID flow (R key + guidance text).
 };
 
 class TuiApp {
@@ -267,14 +336,52 @@ public:
     // Update data from main thread (thread-safe)
     void UpdateData(const TuiData& data);
 
-    // Get the log buffer for Logger to write into
-    LogBuffer& GetLogBuffer();
+    // Optional handler invoked when the user presses R on the dashboard
+    // (e.g. request macOS Location Services for WiFi SSID).
+    void SetLocationRequestHandler(std::function<void()> handler) {
+        locationRequestHandler_ = std::move(handler);
+    }
 
-    // Inject external log buffer (e.g. from Logger)
+    // Optional handler invoked when the user presses U (start the update
+    // download) — main wires this to the Updater.
+    void SetUpdateRequestHandler(std::function<void()> h) {
+        updateRequestHandler_ = std::move(h);
+    }
+
+    // Server push settings shown on the settings page (press S).
+    void SetServerSettings(const ServerSettings& s) {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        serverSettings_ = s;
+    }
+    // Invoked on the TUI thread when the user saves the settings page.
+    void SetServerSettingsHandler(std::function<void(const ServerSettings&)> h) {
+        settingsHandler_ = std::move(h);
+    }
+
+    // Hardware sampling interval (ms), shown on the settings page (press S).
+    void SetSampleIntervalMs(int ms) {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        serverSettings_.sampleIntervalMs = ms;
+    }
+    // Invoked on the TUI thread when the interval is saved (Enter).
+    void SetSampleIntervalHandler(std::function<void(int)> h) {
+        sampleIntervalHandler_ = std::move(h);
+    }
+
+    // Inject external log buffer (e.g. from Logger) for the in-TUI log page.
+    // Inert on platforms without the inline page (caps_.inlineLogPage).
     void SetLogBuffer(LogBuffer* buf);
 
 private:
     void Run();
+    void RenderSettingsPage(int rows, int cols, int ch);
+    void RenderLogPage(int rows, int cols, int ch);
+    void RenderHelpPage(int rows, int cols, int ch);
+    void RenderProcessDetails(int rows, int cols, int ch);
+    void RenderConnectionsList(int rows, int cols, int ch);
+    // Minimal mouse support: translate clicks/wheel into the equivalent
+    // synthetic keys so every handler stays keyboard-driven (B direction).
+    int MapMouseEvent(int rows, int cols);
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -291,23 +398,99 @@ private:
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
-    static std::string FormatSize(uint64_t bytes);
-    static std::string FormatSpeed(uint64_t bps);
-    static std::string FormatBar(double pct, int width);
+    static std::string FormatSize(uint64_t bytes);      // storage: binary (1024), "MB" = MiB
+    static std::string FormatSpeed(uint64_t bps);       // link speed: decimal (1000), "Mbps"
+    static std::string FormatRate(uint64_t bytesPerSec); // throughput: decimal (1000), "MB/s"
     static std::string TrimRight(const std::string& s, size_t maxLen);
+
+    // Row layout helpers (#6): every value line on a panel shares one
+    // right-aligned value column (label left), and usage bars draw a
+    // colored fill over a dim track instead of same-colored '='/'-'.
+    void DrawUsageBarRow(WINDOW* win, int y, int x0, int maxW,
+                         const char* label, double pct, const std::string& value);
+    void DrawLabeledValue(WINDOW* win, int y, int x0, int maxW,
+                          const char* label, const std::string& value, int pair = -1);
+
+    // GUI-style panel title strip: full-width reverse bar (works on any
+    // terminal theme and under NO_COLOR). `focused` adds bold so the
+    // active panel reads at a glance (design doc, tier-1 chrome).
+    void DrawPanelTitle(WINDOW* win, int y, int x0, int maxW,
+                        const char* title, bool focused = false);
 
     std::thread thread_;
     std::atomic<bool> running_{false};
 
-    TuiData data_;
-    mutable std::mutex dataMutex_;
+    // Capabilities of this platform/build (see DetectPlatformCaps).
+    PlatformCaps caps_;
+
+    // Page state: Dashboard (hardware panels) or Log (scrolling log page)
+    bool logPage_ = false;
+    int logScrollOffset_ = 0;   // lines scrolled up from bottom
+    bool logFollow_ = true;     // auto-follow newest lines
+    bool logHomePending_ = false;  // HOME pressed; park at oldest on next draw
+    uint64_t lastLogVer_ = 0;      // LogBuffer version at last log-page paint
+    int lastLogRows_ = 0;          // terminal size at last log-page paint
+    int lastLogCols_ = 0;
 
     // Internal buffer (fallback), or use external via SetLogBuffer()
     LogBuffer defaultBuffer_;
     // Points to either &defaultBuffer_ or an external buffer
     LogBuffer* logBuf_ = nullptr;
+
+    // Downgrade switches (detected once in Run, then fixed for the session):
+    // NO_COLOR skips color initialization entirely; TCMT_ASCII=1 (or a
+    // non-UTF-8 locale) swaps Unicode glyphs for ASCII ones.
+    bool noColor_ = false;
+    bool asciiMode_ = false;
+    std::string sparkChars_ = " \xe2\x96\x81\xe2\x96\x82\xe2\x96\x83\xe2\x96\x84"
+                              "\xe2\x96\x85\xe2\x96\x86\xe2\x96\x87\xe2\x96\x88"; // ▁..█, index 0 = empty
+    std::string degSuffixTemp_ = "\xc2\xb0";  // suffix after a core-temp value (° / C)
+    std::string degSuffixAngle_ = "\xc2\xb0"; // suffix after the lid angle (° / deg)
+    std::string upArrow_ = "\xe2\x86\x91";    // ↑ (^ in ASCII mode)
+    std::string downArrow_ = "\xe2\x86\x93";  // ↓ (v)
+    std::string segShade_ = "\xe2\x96\x91";   // ░ title-strip remainder (B · powerline; ASCII '-')
+    std::string barFill_ = "\xe2\x96\xb0";    // ▰ usage-bar fill (ASCII '=')
+    std::string barTrack_ = "\xe2\x96\xb1";   // ▱ usage-bar track (ASCII '-')
+
+    TuiData data_;
+    mutable std::mutex dataMutex_;
+
+    std::function<void()> locationRequestHandler_;
+    std::function<void()> updateRequestHandler_;
+
+    // Freshness watchdog: microseconds (steady clock) of the last UpdateData
+    // snapshot; the dashboard flags stale Ns when it stops advancing.
+    std::atomic<int64_t> lastUpdateUs_{0};
+
+    // Mouse hit-testing cache (filled by DrawProcessPanel each frame):
+    // screen region of the Top Processes list, plus last-click state for
+    // the double-click-to-details gesture.
+    int procListY_ = -1;        // row of the panel title (or -1 when hidden)
+    int procListCount_ = 0;     // visible process rows below the title
+    int procListX0_ = 0;
+    int procListW_ = 0;
+    int lastClickPid_ = -1;
+    int64_t lastClickUs_ = 0;   // steady-clock microseconds
+
+    // Settings page state (press S): framed interactive form.
+    ServerSettings serverSettings_;        // current values (from main)
+    ServerSettings draftSettings_;         // edits in progress
+    std::function<void(const ServerSettings&)> settingsHandler_;
+    std::function<void(int)> sampleIntervalHandler_;   // settings page: sampling interval
+    bool settingsPage_ = false;
+    bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
+    bool detailsPage_ = false;             // process-details overlay (Enter on a selected row)
+    bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
+    int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
+    int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,
+                                           // 4=sample interval, 5=language
+    int urlCursor_ = 0;                    // cursor position inside URL field
+    Lang draftLang_ = Lang::En;            // language draft in the settings form
+    Lang langOnOpen_ = Lang::En;           // language when the form opened (Esc restores)
 
     // Window dimensions
     int termRows_ = 0;

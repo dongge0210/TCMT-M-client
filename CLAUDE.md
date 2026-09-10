@@ -34,13 +34,10 @@ Build order is critical (see `.github/workflows/build.yml` for CI reference):
 ```bash
 git submodule update --init --recursive
 
-# 1. CPP-parsers
-msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
-
-# 2. Main C++/CLI app
+# 1. Main C++/CLI app
 msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
-# 3. AvaloniaUI
+# 2. AvaloniaUI
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release
 ```
 Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0+ SDK.
@@ -71,7 +68,7 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
   - IOReport: `ioreport/IOReportSampler.mm` (macOS-only, private framework, no sudo)
   - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
   - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
-  - Config: `Config/ConfigManager.cpp` (wraps CPP-parsers IConfigParser + nlohmann/json)
+  - Config: `Config/ConfigManager.cpp` (loads JSON config via nlohmann/json)
   - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
 - `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
@@ -148,13 +145,10 @@ The LibreHardwareMonitor submodule uses **CsWin32 v0.3.275** to generate Windows
 ## vcxproj Include Paths
 
 Windows build requires these include directories (set in `TCMT.vcxproj`):
-- `$(ProjectDir)src\CPP-parsers\include` — IConfigParser.h
-- `$(ProjectDir)src\CPP-parsers\src` — JsonConfigParser.h
-- `$(ProjectDir)src\CPP-parsers\extern\json\single_include` — nlohmann/json
-When adding new CPP-parsers dependencies, add their include paths here.
+- `$(ProjectDir)src\third_party\json\single_include` — nlohmann/json (header-only)
 
 ## Submodules
-8 submodules in `src/third_party/` plus `src/CPP-parsers`. CPP-parsers has 5 nested extern submodules (inih, json, tinyxml2, tomlplusplus, yaml-cpp). Always use `--recursive`:
+11 submodules in `src/third_party/` (incl. nlohmann/json at `src/third_party/json`). Always use `--recursive`:
 ```bash
 git submodule update --init --recursive
 ```
@@ -163,7 +157,15 @@ git submodule update --init --recursive
 - **Windows**: CUDA 13.2, LibreHardwareMonitor (MPL-2.0, compiled DLL), WMI, PDH, WLAN API (wlanapi.lib), Bluetooth API (Bthprops.lib)
 - **macOS**: IOKit, CoreFoundation, CoreWLAN, IOBluetooth, ncurses
 - **AvaloniaUI**: Avalonia 12.0.1, CommunityToolkit.Mvvm 8.2.2, Serilog 3.1.1
-- **Config**: nlohmann/json (header-only, bundled in CPP-parsers submodule)
+- **Config**: nlohmann/json (header-only submodule at `src/third_party/json`)
+
+## Logging Conventions
+
+- **Default runtime level is `LOG_WARNING`** in all three entry points (`main.cpp` / `main_mac.cpp` / `main_linux.cpp`). Lower it per run with `--debug` (LOG_DEBUG) or `--verbose` (LOG_INFO); explicit `logging.level` in config still overrides the default, CLI flags win over config.
+- Level semantics: FATAL = unrecoverable / process dying; ERROR = feature actually broken, not recovered; WARN = transient, degraded but working; INFO = lifecycle / user-visible state changes only (never in sampling or per-tick loops); DEBUG = probing, capability absence, per-tick detail. See `src/core/Utils/Logger.h`.
+- Detection of missing optional capabilities ("not found / not installed / not available / not supported / needs root / expected / skipping") is DEBUG — one of these in an INFO/WARN/ERROR message is a bug to fix.
+- Defensive try/catch inside small formatting/util helpers logs DEBUG; the owning collector reports the real error at its own level.
+- Never call `Logger::` from hot loops at INFO+; loop-body failures repeat every tick and flood the 2000-line ring buffer and log file.
 
 ## User addition notices
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
