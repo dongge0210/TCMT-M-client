@@ -320,11 +320,18 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     if (!channels || CFGetTypeID(channels) != CFArrayGetTypeID()) return;
 
     static int logCount = 0;
-    cpuPower_.store(0.0);
-    gpuPower_.store(0.0);
-    anePower_.store(0.0);
     if (!kEnergyModelAllowed && logCount == 0) {
         Logger::Info("PowerMonitor: macOS 27+ restricts IOReport energy to privileged Apple-signed processes; power comes from tcmt-powerd when installed");
+    }
+    // Reset the power accumulators only when energy parsing is allowed. When
+    // gated (macOS 27+, non-privileged) the values come from ReadShmPower —
+    // the daemon publishes every ~4-6s while this loop runs every ~1s, so a
+    // per-round reset here would zero the readings between publishes
+    // ("mostly 0, briefly nonzero" symptom).
+    if (kEnergyModelAllowed) {
+        cpuPower_.store(0.0);
+        gpuPower_.store(0.0);
+        anePower_.store(0.0);
     }
     double gpuFreqSum = 0.0; int gpuFreqN = 0;
     double pCoreFreqSum = 0.0; int pCoreFreqN = 0;

@@ -278,6 +278,45 @@ static std::string JsonSafe(const std::string& s) {
 static std::atomic<int> g_loopStage{0};
 static Updater s_updater;
 
+// SMART attributes → JSON for IPC consumers. Built once per SMART refresh
+// (60s) instead of on every monitor-loop frame — the per-attribute UTF-8
+// conversion + stringstream formatting cost ~150ms per frame otherwise.
+static std::string SmartAttrsToJson(const PhysicalDiskSmartData& src) {
+    if (src.attributeCount <= 0) return std::string();
+    auto toUtf8 = [](const WCHAR* s, int maxLen) -> std::string {
+        std::string out;
+        for (int i = 0; i < maxLen && s[i] != u'\0'; ++i) {
+            uint16_t cp = static_cast<uint16_t>(s[i]);
+            if (cp == '"' || cp == '\\') { out += '\\'; out += (char)cp; }
+            else if (cp < 0x80) out += (char)cp;
+            else if (cp < 0x800) {
+                out += (char)(0xC0 | (cp >> 6));
+                out += (char)(0x80 | (cp & 0x3F));
+            } else {
+                out += (char)(0xE0 | (cp >> 12));
+                out += (char)(0x80 | ((cp >> 6) & 0x3F));
+                out += (char)(0x80 | (cp & 0x3F));
+            }
+        }
+        return out;
+    };
+    std::ostringstream js;
+    js << "[";
+    for (int ai = 0; ai < src.attributeCount; ++ai) {
+        if (ai > 0) js << ",";
+        const auto& a = src.attributes[ai];
+        js << "{\"id\":" << (int)a.id
+           << ",\"cur\":" << (int)a.current
+           << ",\"worst\":" << (int)a.worst
+           << ",\"raw\":" << a.rawValue
+           << ",\"name\":\"" << toUtf8(a.name, 63) << "\""
+           << ",\"desc\":\"" << toUtf8(a.description, 127) << "\""
+           << "}";
+    }
+    js << "]";
+    return js.str();
+}
+
 // ======================== Server push settings ========================
 // No CLI flags: the server connection (enable / URL / TLS verify) is edited
 // on the TUI settings page (press S) and persisted to system_monitor.json
@@ -873,7 +912,7 @@ int main(int argc, char* argv[]) {
     // exits when the TUI quits or a signal arrives, then stops the run loop.
     std::thread monitorThread([&] {
     int loopCounter = 1;
-    const int HEAVY_SENSOR_SKIP = 30; // 30Hz ÷ 30 = 1Hz for CPU/GPU/disk/network/temp
+    const int HEAVY_SENSOR_SKIP = 15; // 30Hz ÷ 15 = 2Hz for CPU/GPU/disk/network/temp (was 30 → 1Hz; 2Hz keeps the TUI snappy)
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {
@@ -1191,7 +1230,10 @@ int main(int argc, char* argv[]) {
             if (isHeavyFrame) {
 
             // System uptime / load / process count / top processes
-            static ProcessTop s_procTop;
+            static ProcessTop s_procTop;      // snapshot read by the loop
+            static ProcessTop s_procTopWork;  // refreshed off-thread
+            static std::mutex procMutex;
+            static std::atomic<bool> procRefreshing{false};
             static int procCtr = 0;
             {
                 // Uptime via sysctl kern.boottime
@@ -1211,18 +1253,31 @@ int main(int argc, char* argv[]) {
                 int n = proc_listallpids(NULL, 0);
                 if (n > 0) data.processCount = n;
 
-                // Top processes — refresh every ~3s (same cadence as WiFi/Display)
-                if (++procCtr >= 6) { procCtr = 0;
-                    try { s_procTop.Refresh(); } catch (...) {}
+                // Top processes — refresh every ~3s off-thread: the per-PID
+                // proc_pidinfo scan is ~500 syscalls and must not stall the loop.
+                if (++procCtr >= 6 && !procRefreshing.load() && !g_shouldExit.load()) {
+                    procCtr = 0;
+                    procRefreshing.store(true);
+                    std::thread([] {
+                        try { s_procTopWork.Refresh(); } catch (...) {}
+                        {
+                            std::lock_guard<std::mutex> lk(procMutex);
+                            s_procTop = s_procTopWork;  // top-N + CPU-delta samples
+                        }
+                        procRefreshing.store(false);
+                    }).detach();
                 }
                 data.topProcesses.clear();
-                for (const auto& e : s_procTop.GetTop()) {
-                    tcmt::TuiData::ProcessTopEntry pe;
-                    pe.pid = e.pid;
-                    pe.name = e.name;
-                    pe.memoryBytes = e.memoryBytes;
-                    pe.cpuPercent = e.cpuPercent;
-                    data.topProcesses.push_back(pe);
+                {
+                    std::lock_guard<std::mutex> lk(procMutex);
+                    for (const auto& e : s_procTop.GetTop()) {
+                        tcmt::TuiData::ProcessTopEntry pe;
+                        pe.pid = e.pid;
+                        pe.name = e.name;
+                        pe.memoryBytes = e.memoryBytes;
+                        pe.cpuPercent = e.cpuPercent;
+                        data.topProcesses.push_back(pe);
+                    }
                 }
             }
 
@@ -1249,16 +1304,40 @@ int main(int argc, char* argv[]) {
 
             // Physical disks (SMART) — refresh every 60 seconds
             static std::vector<PhysicalDiskSmartData> cachedSmart;
+            static std::vector<std::string> cachedSmartJson;  // per-disk attrs JSON
+            static std::atomic<bool> smartRefreshing{false};
+            static std::vector<PhysicalDiskSmartData> smartPending;
+            static std::atomic<bool> smartPendingReady{false};
+            static std::mutex smartMutex;
             static auto lastSmartRefresh = std::chrono::steady_clock::now() - std::chrono::seconds(61);
             auto nowSt = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::seconds>(nowSt - lastSmartRefresh).count() >= 60) {
-                try {
-                    SystemInfo tmp;
-                    DiskInfo().CollectSmartData(tmp);
-                    if (!tmp.physicalDisks.empty())
-                        cachedSmart = std::move(tmp.physicalDisks);
-                    lastSmartRefresh = nowSt;
-                } catch (...) {}
+            // Collect on a background thread: CollectSmartData blocks ~200ms
+            // on IOKit and must not stall the monitor loop / TUI update.
+            if (std::chrono::duration_cast<std::chrono::seconds>(nowSt - lastSmartRefresh).count() >= 60
+                && !smartRefreshing.load() && !g_shouldExit.load()) {
+                lastSmartRefresh = nowSt;
+                smartRefreshing.store(true);
+                std::thread([] {
+                    try {
+                        SystemInfo tmp;
+                        DiskInfo().CollectSmartData(tmp);
+                        if (!tmp.physicalDisks.empty()) {
+                            std::lock_guard<std::mutex> lk(smartMutex);
+                            smartPending = std::move(tmp.physicalDisks);
+                            smartPendingReady.store(true);
+                        }
+                    } catch (...) {}
+                    smartRefreshing.store(false);
+                }).detach();
+            }
+            if (smartPendingReady.exchange(false)) {
+                std::lock_guard<std::mutex> lk(smartMutex);
+                cachedSmart = std::move(smartPending);
+                // Rebuild the IPC JSON cache only when SMART data changes.
+                cachedSmartJson.clear();
+                cachedSmartJson.reserve(cachedSmart.size());
+                for (const auto& d : cachedSmart)
+                    cachedSmartJson.push_back(SmartAttrsToJson(d));
             }
                 data.physicalDisks.clear();
                 data.physicalDisks.reserve(cachedSmart.size());
@@ -1422,42 +1501,11 @@ int main(int argc, char* argv[]) {
                                 pd.temperature = static_cast<float>(src.temperature);
                                 pd.healthPercent = static_cast<float>(src.healthPercentage);
                                 pd.smartSupported = src.smartSupported;
-                                // Serialize SMART attributes to JSON
-                                if (src.attributeCount > 0) {
-                                    std::ostringstream js;
-                                    js << "[";
-                                    for (int ai = 0; ai < src.attributeCount; ++ai) {
-                                        if (ai > 0) js << ",";
-                                        const auto& a = src.attributes[ai];
-                                        // WCHAR (char16_t) → UTF-8 for JSON
-                                        auto toUtf8 = [](const WCHAR* s, int maxLen) -> std::string {
-                                            std::string out;
-                                            for (int i = 0; i < maxLen && s[i] != u'\0'; ++i) {
-                                                uint16_t cp = static_cast<uint16_t>(s[i]);
-                                                if (cp == '"' || cp == '\\') { out += '\\'; out += (char)cp; }
-                                                else if (cp < 0x80) out += (char)cp;
-                                                else if (cp < 0x800) {
-                                                    out += (char)(0xC0 | (cp >> 6));
-                                                    out += (char)(0x80 | (cp & 0x3F));
-                                                } else {
-                                                    out += (char)(0xE0 | (cp >> 12));
-                                                    out += (char)(0x80 | ((cp >> 6) & 0x3F));
-                                                    out += (char)(0x80 | (cp & 0x3F));
-                                                }
-                                            }
-                                            return out;
-                                        };
-                                        js << "{\"id\":" << (int)a.id
-                                           << ",\"cur\":" << (int)a.current
-                                           << ",\"worst\":" << (int)a.worst
-                                           << ",\"raw\":" << a.rawValue
-                                           << ",\"name\":\"" << toUtf8(a.name, 63) << "\""
-                                           << ",\"desc\":\"" << toUtf8(a.description, 127) << "\""
-                                           << "}";
-                                    }
-                                    js << "]";
-                                    std::string jstr = js.str();
-                                    if (jstr.size() < 4096) {
+                                // SMART attributes JSON — precomputed at SMART
+                                // refresh (60s); never rebuilt per frame.
+                                if (src.attributeCount > 0 && pi < cachedSmartJson.size()) {
+                                    const std::string& jstr = cachedSmartJson[pi];
+                                    if (!jstr.empty() && jstr.size() < 4096) {
                                         std::strncpy(pd.attrsJson, jstr.c_str(), 4095);
                                         pd.attrsJson[4095] = '\0';
                                         pd.attrCount = src.attributeCount;

@@ -660,7 +660,15 @@ void GpuInfo::DetectGpusViaMetal() {
     Logger::Debug("GpuInfo: detected " + std::to_string(gpuList.size()) + " GPU(s)");
 }
 
+// Cached IOAccelerator service entries (file-static: GpuInfo is effectively
+// a singleton on macOS). IOServiceGetMatchingServices enumeration is the
+// expensive part of RefreshUsage; we enumerate once and keep the entries
+// retained, reading PerformanceStatistics directly on later calls. Entries
+// are released on re-enumeration and never leak for the process lifetime.
+static std::vector<io_registry_entry_t> g_gpuEntries;
+
 void GpuInfo::RefreshUsage() {
+    if (gpuList.empty()) return;
     mach_port_t masterPort;
     if (@available(macOS 12.0, *)) {
         masterPort = kIOMainPortDefault;
@@ -668,36 +676,42 @@ void GpuInfo::RefreshUsage() {
         masterPort = 0;
     }
 
-    io_iterator_t iter = 0;
-    kern_return_t kr = IOServiceGetMatchingServices(
-        masterPort,
-        IOServiceMatching("IOAccelerator"),
-        &iter);
-    if (kr != KERN_SUCCESS) return;
+    // (Re)enumerate only when we have no cached entries yet.
+    if (g_gpuEntries.empty()) {
+        io_iterator_t iter = 0;
+        kern_return_t kr = IOServiceGetMatchingServices(
+            masterPort,
+            IOServiceMatching("IOAccelerator"),
+            &iter);
+        if (kr != KERN_SUCCESS) return;
+        io_registry_entry_t entry;
+        while ((entry = IOIteratorNext(iter)) != 0) {
+            IOObjectRetain(entry);  // keep alive across RefreshUsage calls
+            g_gpuEntries.push_back(entry);
+        }
+        IOObjectRelease(iter);
+    }
+    if (g_gpuEntries.empty()) return;
 
     size_t gpuIdx = 0;
-    io_registry_entry_t entry;
-    while ((entry = IOIteratorNext(iter)) != 0) {
-        if (gpuIdx < gpuList.size()) {
-            CFTypeRef perfStatsRef = IORegistryEntryCreateCFProperty(
-                entry, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
-            if (perfStatsRef && CFGetTypeID(perfStatsRef) == CFDictionaryGetTypeID()) {
-                CFDictionaryRef perfDict = static_cast<CFDictionaryRef>(perfStatsRef);
-                CFNumberRef utilRef = static_cast<CFNumberRef>(
-                    CFDictionaryGetValue(perfDict, CFSTR("Device Utilization %")));
-                if (utilRef && CFGetTypeID(utilRef) == CFNumberGetTypeID()) {
-                    int utilVal = 0;
-                    if (CFNumberGetValue(utilRef, kCFNumberIntType, &utilVal)) {
-                        gpuList[gpuIdx].usage = static_cast<double>(utilVal);
-                    }
+    for (io_registry_entry_t entry : g_gpuEntries) {
+        if (gpuIdx >= gpuList.size()) break;
+        CFTypeRef perfStatsRef = IORegistryEntryCreateCFProperty(
+            entry, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
+        if (perfStatsRef && CFGetTypeID(perfStatsRef) == CFDictionaryGetTypeID()) {
+            CFDictionaryRef perfDict = static_cast<CFDictionaryRef>(perfStatsRef);
+            CFNumberRef utilRef = static_cast<CFNumberRef>(
+                CFDictionaryGetValue(perfDict, CFSTR("Device Utilization %")));
+            if (utilRef && CFGetTypeID(utilRef) == CFNumberGetTypeID()) {
+                int utilVal = 0;
+                if (CFNumberGetValue(utilRef, kCFNumberIntType, &utilVal)) {
+                    gpuList[gpuIdx].usage = static_cast<double>(utilVal);
                 }
             }
-            if (perfStatsRef) CFRelease(perfStatsRef);
-            gpuIdx++;
         }
-        IOObjectRelease(entry);
+        if (perfStatsRef) CFRelease(perfStatsRef);
+        gpuIdx++;
     }
-    IOObjectRelease(iter);
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
