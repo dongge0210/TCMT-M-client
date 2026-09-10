@@ -249,3 +249,26 @@ jobs:
         files: |
           artifacts/TCMT-Windows-x64-alpha.zip
           artifacts/TCMT-macOS-arm64-alpha.zip
+
+    - name: Clean up older alpha releases
+      if: success()
+      env:
+        GH_TOKEN: ${{ github.token }}
+        KEEP: ${{ steps.tag.outputs.tag }}
+      run: |
+        # Exactly one alpha (test build) may exist at a time. Runs after the
+        # new release is created and keeps it, so a failed create cannot leave
+        # zero alphas behind. Drafts carry no git tag, so releases and refs
+        # are pruned separately.
+        gh api "repos/${{ github.repository }}/releases?per_page=100" \
+          --jq '.[] | select(.tag_name | startswith("alpha-")) | "\(.id) \(.tag_name)"' \
+        | while read -r id tag; do
+            [ "$tag" = "$KEEP" ] && continue
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
+          done
+        gh api "repos/${{ github.repository }}/git/matching-refs/tags/alpha-" \
+          --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' \
+        | while read -r tag; do
+            [ -z "$tag" ] || [ "$tag" = "$KEEP" ] && continue
+            gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" || true
+          done
