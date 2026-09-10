@@ -278,6 +278,11 @@ static std::string JsonSafe(const std::string& s) {
 static std::atomic<int> g_loopStage{0};
 static Updater s_updater;
 
+// Hardware sampling cadence in ms, editable on the TUI settings page (press S)
+// and persisted to system_monitor.json (sampling.intervalMs). The monitor loop
+// reads it every iteration; a change applies from the next frame on.
+static std::atomic<int> g_sampleIntervalMs{500};
+
 // SMART attributes → JSON for IPC consumers. Built once per SMART refresh
 // (60s) instead of on every monitor-loop frame — the per-attribute UTF-8
 // conversion + stringstream formatting cost ~150ms per frame otherwise.
@@ -361,9 +366,12 @@ int main(int argc, char* argv[]) {
             else if (logLevel == "warning")
                 Logger::SetLogLevel(LOG_WARNING);
 
-            int refreshRate = g_cfg.GetInt("display.refreshRate", 500);
-            // (used later for sleep interval)
-            (void)refreshRate;
+            // Hardware sampling cadence, editable from the TUI settings page
+            // (press S). Bounds mirror the form: 200..5000 ms.
+            int sampleMs = g_cfg.GetInt("sampling.intervalMs", 500);
+            if (sampleMs < 200) sampleMs = 200;
+            if (sampleMs > 5000) sampleMs = 5000;
+            g_sampleIntervalMs.store(sampleMs);
         } else {
             Logger::Warn("No config file found, using defaults");
         }
@@ -378,6 +386,11 @@ int main(int argc, char* argv[]) {
         else if (std::string(argv[i]) == "--debug") Logger::SetLogLevel(LOG_DEBUG);
         else if (std::string(argv[i]) == "--verbose") Logger::SetLogLevel(LOG_INFO);
     }
+
+    // Reported after the CLI pass has settled the level, so it is visible
+    // with --verbose (the config path runs before it).
+    Logger::Info("Sampling interval: " + std::to_string(g_sampleIntervalMs.load()) +
+                 " ms (change it on the TUI settings page, press S)");
 
     std::string serverUrl = g_cfg.GetString("server.url", "");
     if (serverUrl.empty()) {
@@ -776,7 +789,16 @@ int main(int argc, char* argv[]) {
         WiFiInfo::RequestLocationAuthorization();
     });
     // Server push settings (TUI settings page, press S) -> persist + apply.
-    tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec, probeStatus});
+    tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec,
+                              g_sampleIntervalMs.load(), probeStatus});
+    tuiApp.SetSampleIntervalHandler([](int ms) {
+        if (ms < 200) ms = 200;
+        if (ms > 5000) ms = 5000;
+        g_sampleIntervalMs.store(ms);
+        g_cfg.SetInt("sampling.intervalMs", ms);
+        g_cfg.Save();
+        Logger::Info("Sampling interval set to " + std::to_string(ms) + " ms");
+    });
     // Self-update: startup check + U-key download.
     s_updater.SetExePath(argv[0]);
     s_updater.CheckForUpdate();
@@ -911,8 +933,6 @@ int main(int argc, char* argv[]) {
     // run the AppKit event loop (fully interactive log window). The loop
     // exits when the TUI quits or a signal arrives, then stops the run loop.
     std::thread monitorThread([&] {
-    int loopCounter = 1;
-    const int HEAVY_SENSOR_SKIP = 15; // 30Hz ÷ 15 = 2Hz for CPU/GPU/disk/network/temp (was 30 → 1Hz; 2Hz keeps the TUI snappy)
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {
@@ -952,7 +972,8 @@ int main(int argc, char* argv[]) {
                         Logger::Info("ServerProbe stopped (disabled in settings)");
                     }
                     tuiApp.SetServerSettings(
-                        {pending.enabled, pending.url, pending.insecure, intervalSec, probeStatus});
+                        {pending.enabled, pending.url, pending.insecure, intervalSec,
+                         g_sampleIntervalMs.load(), probeStatus});
                 }
             }
 
@@ -998,7 +1019,16 @@ int main(int argc, char* argv[]) {
             data.performanceCores = cachedPCores;
             data.efficiencyCores = cachedECores;
 
-            bool isHeavyFrame = (loopCounter % HEAVY_SENSOR_SKIP == 1);
+            // A frame is "heavy" — sensors sampled, TUI data rebuilt, IPC
+            // written — once every g_sampleIntervalMs (TUI settings page,
+            // 200..5000 ms; default 500 = 2 Hz). Time-based rather than
+            // loop-count-based so the cadence survives slow frames.
+            static auto lastHeavyFrame = std::chrono::steady_clock::now() -
+                                         std::chrono::minutes(1);  // first frame is heavy
+            const auto frameNow = std::chrono::steady_clock::now();
+            bool isHeavyFrame = std::chrono::duration_cast<std::chrono::milliseconds>(
+                frameNow - lastHeavyFrame).count() >= g_sampleIntervalMs.load();
+            if (isHeavyFrame) lastHeavyFrame = frameNow;
             g_loopStage = 2;  // heavy-frame sensor sampling
 
             // Coordinator snapshot — 2Hz only
@@ -1085,7 +1115,7 @@ int main(int argc, char* argv[]) {
                 try { s_battery.Detect(); } catch (...) {}
                 try { s_fan.Detect(); } catch (...) {}
                 try { s_als.Detect(); } catch (...) {}
-            } // end if loopCounter % HEAVY_SENSOR_SKIP
+            } // end heavy frame
             // SPU sensors: SpsManager refreshes all sensors atomically (~500ms)
             try { s_sps.Refresh(); } catch (...) {}
 
@@ -1727,7 +1757,6 @@ int main(int argc, char* argv[]) {
                 } catch (...) {}
             }
 
-            loopCounter++;
         }
         catch (const std::exception& e) {
             Logger::Error("Loop error: " + std::string(e.what()));

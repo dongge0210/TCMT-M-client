@@ -47,6 +47,7 @@ struct ServerSettings {
     std::string url = "http://127.0.0.1:8080";
     bool insecure = false;
     int intervalSec = 2;       // upload cadence, hard bounds 1..60
+    int sampleIntervalMs = 500; // hardware sampling cadence, bounds 200..5000
     std::string status = "";   // probe state reported by main ("running" etc.)
 };
 
@@ -354,6 +355,16 @@ public:
         settingsHandler_ = std::move(h);
     }
 
+    // Hardware sampling interval (ms), shown on the settings page (press S).
+    void SetSampleIntervalMs(int ms) {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        serverSettings_.sampleIntervalMs = ms;
+    }
+    // Invoked on the TUI thread when the interval is saved (Enter).
+    void SetSampleIntervalHandler(std::function<void(int)> h) {
+        sampleIntervalHandler_ = std::move(h);
+    }
+
     // Inject external log buffer (e.g. from Logger) for the in-TUI log page.
     // Inert on platforms without the inline page (caps_.inlineLogPage).
     void SetLogBuffer(LogBuffer* buf);
@@ -466,12 +477,14 @@ private:
     ServerSettings serverSettings_;        // current values (from main)
     ServerSettings draftSettings_;         // edits in progress
     std::function<void(const ServerSettings&)> settingsHandler_;
+    std::function<void(int)> sampleIntervalHandler_;   // settings page: sampling interval
     bool settingsPage_ = false;
     bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
     bool detailsPage_ = false;             // process-details overlay (Enter on a selected row)
     bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
-    int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=interval, 4=language
+    int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,
+                                           // 4=sample interval, 5=language
     int urlCursor_ = 0;                    // cursor position inside URL field
     Lang draftLang_ = Lang::En;            // language draft in the settings form
     Lang langOnOpen_ = Lang::En;           // language when the form opened (Esc restores)

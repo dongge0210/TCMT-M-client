@@ -241,6 +241,7 @@ std::vector<std::string> ConfigManager::Validate() const {
     Rule rules[] = {
         {"logging.level",         Rule::STR,    0, 0, logLevels, 4},
         {"display.refreshRate",   Rule::INT,   100, 5000},
+        {"sampling.intervalMs",   Rule::INT,   200, 5000},
     };
 
     for (auto& r : rules) {

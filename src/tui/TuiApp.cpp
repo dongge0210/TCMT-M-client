@@ -1202,7 +1202,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 // the URL field (Left/Right/Home/End/Backspace); Enter saves + applies via
 // the settings handler; Esc cancels without applying.
 void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
-    const int FIELD_COUNT = 5;
+    const int FIELD_COUNT = 6;
     auto insertUrlChar = [&](char c) {
         draftSettings_.url.insert(draftSettings_.url.begin() + urlCursor_, c);
         urlCursor_ += 1;
@@ -1235,7 +1235,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             if (settingsFocus_ == 0) draftSettings_.enabled = !draftSettings_.enabled;
             else if (settingsFocus_ == 2) draftSettings_.insecure = !draftSettings_.insecure;
             else if (settingsFocus_ == 1) insertUrlChar(' ');
-            else if (settingsFocus_ == 4) {
+            else if (settingsFocus_ == 5) {
                 draftLang_ = (draftLang_ == Lang::En) ? Lang::ZhHans : Lang::En;
                 g_lang = draftLang_;   // live preview; Esc restores, Enter keeps
             }
@@ -1248,6 +1248,10 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             // Hard bounds for the upload interval (1..60 s).
             if (draftSettings_.intervalSec < 1) draftSettings_.intervalSec = 1;
             if (draftSettings_.intervalSec > 60) draftSettings_.intervalSec = 60;
+            // Hard bounds for the sampling interval (200..5000 ms).
+            if (draftSettings_.sampleIntervalMs < 200) draftSettings_.sampleIntervalMs = 200;
+            if (draftSettings_.sampleIntervalMs > 5000) draftSettings_.sampleIntervalMs = 5000;
+            if (sampleIntervalHandler_) sampleIntervalHandler_(draftSettings_.sampleIntervalMs);
             if (settingsHandler_) settingsHandler_(draftSettings_);
             {
                 std::lock_guard<std::mutex> lock(dataMutex_);
@@ -1277,6 +1281,11 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
                 draftSettings_.intervalSec = (next > 60) ? 60 : next;
             } else if (settingsFocus_ == 3 && (ch == KEY_BACKSPACE || ch == 127 || ch == 8)) {
                 draftSettings_.intervalSec /= 10;
+            } else if (settingsFocus_ == 4 && ch >= '0' && ch <= '9') {
+                const int next = draftSettings_.sampleIntervalMs * 10 + (ch - '0');
+                draftSettings_.sampleIntervalMs = (next > 5000) ? 5000 : next;
+            } else if (settingsFocus_ == 4 && (ch == KEY_BACKSPACE || ch == 127 || ch == 8)) {
+                draftSettings_.sampleIntervalMs /= 10;
             }
             break;
     }
@@ -1333,7 +1342,9 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
     drawField(2, y0 + 4, Tr("settings.skip_tls"), draftSettings_.insecure ? " ON " : " OFF ");
     drawField(3, y0 + 5, Tr("settings.interval"),
               std::to_string(draftSettings_.intervalSec) + Tr("settings.bounds"));
-    drawField(4, y0 + 6, Tr("settings.language"),
+    drawField(4, y0 + 6, Tr("settings.sample_interval"),
+              std::to_string(draftSettings_.sampleIntervalMs) + Tr("settings.sample_bounds"));
+    drawField(5, y0 + 7, Tr("settings.language"),
               draftLang_ == Lang::ZhHans ? Tr("lang.name.zh") : Tr("lang.name.en"));
     // TODO(i18n): persist the chosen language (e.g. ui.language in
     // system_monitor.json) and read it at startup after TCMT_LANG; the
