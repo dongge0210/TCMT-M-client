@@ -38,6 +38,12 @@ typedef struct _win_st WINDOW;
 
 namespace tcmt {
 
+// Hardware sampling cadence (ms). These bounds mirror the "sampling.intervalMs"
+// rule in ConfigManager — keep the two in sync.
+inline constexpr int kSampleIntervalDefaultMs = 500;
+inline constexpr int kSampleIntervalMinMs = 200;
+inline constexpr int kSampleIntervalMaxMs = 5000;
+
 // Server push settings, editable from the TUI settings page (press S).
 // The TUI renders these; on save it invokes the handler with the edited
 // values, and main applies them (persist + restart the probe) and reports
@@ -47,7 +53,7 @@ struct ServerSettings {
     std::string url = "http://127.0.0.1:8080";
     bool insecure = false;
     int intervalSec = 2;       // upload cadence, hard bounds 1..60
-    int sampleIntervalMs = 500; // hardware sampling cadence, bounds 200..5000
+    int sampleIntervalMs = kSampleIntervalDefaultMs; // hardware sampling cadence
     std::string status = "";   // probe state reported by main ("running" etc.)
 };
 
@@ -223,9 +229,10 @@ struct TuiData {
 
     // System uptime / load / process
     uint64_t uptimeSeconds = 0;
-    // Hardware sampling cadence shown on the dashboard header (ms); set on
-    // the settings page (press S) and applied by the monitor loop.
-    int sampleIntervalMs = 500;
+    // Hardware sampling cadence shown on the dashboard header (ms); 0 means the
+    // platform entry point does not report one (Windows/Linux today), in which
+    // case the header omits the item rather than showing a made-up default.
+    int sampleIntervalMs = 0;
     double loadAvg1 = 0.0;
     double loadAvg5 = 0.0;
     double loadAvg15 = 0.0;

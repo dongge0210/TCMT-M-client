@@ -281,7 +281,7 @@ static Updater s_updater;
 // Hardware sampling cadence in ms, editable on the TUI settings page (press S)
 // and persisted to system_monitor.json (sampling.intervalMs). The monitor loop
 // reads it every iteration; a change applies from the next frame on.
-static std::atomic<int> g_sampleIntervalMs{500};
+static std::atomic<int> g_sampleIntervalMs{tcmt::kSampleIntervalDefaultMs};
 
 // SMART attributes → JSON for IPC consumers. Built once per SMART refresh
 // (60s) instead of on every monitor-loop frame — the per-attribute UTF-8
@@ -367,10 +367,13 @@ int main(int argc, char* argv[]) {
                 Logger::SetLogLevel(LOG_WARNING);
 
             // Hardware sampling cadence, editable from the TUI settings page
-            // (press S). Bounds mirror the form: 200..5000 ms.
-            int sampleMs = g_cfg.GetInt("sampling.intervalMs", 500);
-            if (sampleMs < 200) sampleMs = 200;
-            if (sampleMs > 5000) sampleMs = 5000;
+            // (press S). Bounds mirror the form and ConfigManager's rule.
+            int sampleMs = g_cfg.GetInt("sampling.intervalMs",
+                                        tcmt::kSampleIntervalDefaultMs);
+            if (sampleMs < tcmt::kSampleIntervalMinMs)
+                sampleMs = tcmt::kSampleIntervalMinMs;
+            if (sampleMs > tcmt::kSampleIntervalMaxMs)
+                sampleMs = tcmt::kSampleIntervalMaxMs;
             g_sampleIntervalMs.store(sampleMs);
         } else {
             Logger::Warn("No config file found, using defaults");

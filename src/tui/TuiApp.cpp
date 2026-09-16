@@ -8,6 +8,7 @@
 #include "core/I18n.h"
 #include <ctime>
 #include <cstring>
+#include <cstdio>
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
@@ -395,15 +396,23 @@ void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     wattroff(win, COLOR_PAIR(1) | A_BOLD);
 
     // Live sampling cadence, left-aligned on the title row — always visible
-    // on the dashboard, adjustable on the settings page (S). Skipped when the
-    // centred title leaves no room.
-    std::string sample = std::string(Tr("hint.sample")) + ": " +
-                         std::to_string(data.sampleIntervalMs) + "ms";
-    if (x > static_cast<int>(sample.size()) + 2) {
-        wattron(win, COLOR_PAIR(5));
-        mvwprintw(win, 0, 1, "%s", sample.c_str());
-        wattroff(win, COLOR_PAIR(5));
-    }
+    // on the dashboard, adjustable on the settings page (S). Rendered only
+    // when the platform reports one, and skipped when the centred title leaves
+    // no room; formatted into a stack buffer so the skipped path allocates
+    // nothing.
+    if (data.sampleIntervalMs <= 0) return;
+    char sample[64];
+    const int n = std::snprintf(sample, sizeof(sample), "%s: %dms",
+                                Tr("hint.sample"), data.sampleIntervalMs);
+    if (n <= 0 || n >= static_cast<int>(sizeof(sample))) return;
+    // The text occupies display columns [1, w] and the title starts at x;
+    // require at least one blank column between them. Measured in display
+    // columns, not bytes — the zh label (采集) is wider than it is long.
+    const int w = utf8_display_width(sample);
+    if (x <= w + 1) return;
+    wattron(win, COLOR_PAIR(5));
+    mvwprintw(win, 0, 1, "%s", sample);
+    wattroff(win, COLOR_PAIR(5));
 }
 
 int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
@@ -1259,9 +1268,12 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             // Hard bounds for the upload interval (1..60 s).
             if (draftSettings_.intervalSec < 1) draftSettings_.intervalSec = 1;
             if (draftSettings_.intervalSec > 60) draftSettings_.intervalSec = 60;
-            // Hard bounds for the sampling interval (200..5000 ms).
-            if (draftSettings_.sampleIntervalMs < 200) draftSettings_.sampleIntervalMs = 200;
-            if (draftSettings_.sampleIntervalMs > 5000) draftSettings_.sampleIntervalMs = 5000;
+            // Hard bounds for the sampling interval (same rule ConfigManager
+            // enforces on sampling.intervalMs).
+            if (draftSettings_.sampleIntervalMs < kSampleIntervalMinMs)
+                draftSettings_.sampleIntervalMs = kSampleIntervalMinMs;
+            if (draftSettings_.sampleIntervalMs > kSampleIntervalMaxMs)
+                draftSettings_.sampleIntervalMs = kSampleIntervalMaxMs;
             if (sampleIntervalHandler_) sampleIntervalHandler_(draftSettings_.sampleIntervalMs);
             if (settingsHandler_) settingsHandler_(draftSettings_);
             {
@@ -1294,7 +1306,8 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
                 draftSettings_.intervalSec /= 10;
             } else if (settingsFocus_ == 4 && ch >= '0' && ch <= '9') {
                 const int next = draftSettings_.sampleIntervalMs * 10 + (ch - '0');
-                draftSettings_.sampleIntervalMs = (next > 5000) ? 5000 : next;
+                draftSettings_.sampleIntervalMs =
+                    (next > kSampleIntervalMaxMs) ? kSampleIntervalMaxMs : next;
             } else if (settingsFocus_ == 4 && (ch == KEY_BACKSPACE || ch == 127 || ch == 8)) {
                 draftSettings_.sampleIntervalMs /= 10;
             }
