@@ -299,6 +299,13 @@ struct TuiData {
         std::string name;
         uint64_t memoryBytes = 0;
         double cpuPercent = 0.0;
+        // Row context the list shows next to the process. Filled by the
+        // collector for the top N only; unknown stays -1 / empty and the row
+        // renders N/A.
+        int threads = -1;
+        uint64_t cpuTimeMs = 0;
+        std::string state;
+        std::string user;
     };
     std::vector<ProcessTopEntry> topProcesses;
 
@@ -384,7 +391,6 @@ private:
     void RenderSettingsPage(int rows, int cols, int ch);
     void RenderLogPage(int rows, int cols, int ch);
     void RenderHelpPage(int rows, int cols, int ch);
-    void RenderProcessDetails(int rows, int cols, int ch);
     void RenderConnectionsList(int rows, int cols, int ch);
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
@@ -480,8 +486,6 @@ private:
     int procListCount_ = 0;     // visible process rows below the title
     int procListX0_ = 0;
     int procListW_ = 0;
-    int lastClickPid_ = -1;
-    int64_t lastClickUs_ = 0;   // steady-clock microseconds
 
     // Settings page state (press S): framed interactive form.
     ServerSettings serverSettings_;        // current values (from main)
@@ -490,7 +494,6 @@ private:
     std::function<void(int)> sampleIntervalHandler_;   // settings page: sampling interval
     bool settingsPage_ = false;
     bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
-    bool detailsPage_ = false;             // process-details overlay (Enter on a selected row)
     bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,

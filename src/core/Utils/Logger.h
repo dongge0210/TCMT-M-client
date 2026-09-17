@@ -34,7 +34,9 @@
 // ("not found" / "not installed" / "not available" / "not supported" /
 // "needs root" / "expected" / "skipping") are DEBUG, not INFO/WARN/ERROR —
 // unless the absence disables the core feature entirely, in which case WARN.
-// Default runtime level is LOG_WARNING; pass --debug or --verbose to lower it.
+// The app starts at LOG_INFO — the in-app log page needs it, and a WARN-only
+// gate left that page permanently empty. system_monitor.json logging.level
+// (info / warning / debug) and --debug / --verbose move the level from there.
 enum LogLevel {
     LOG_TRACE = 0,
     LOG_DEBUG = 1,

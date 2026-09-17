@@ -51,6 +51,7 @@ inline const I18nEntry kI18nTable[] = {
 
     // ── log page ─────────────────────────────────────────────────────
     {"log.title",            "TCMT Log",                                     "TCMT 日志"},
+    {"log.level",            "level",                                        "级别"},
     {"log.lines",            "lines: ",                                      "行数："},
     {"log.hint",             "scroll  Home/End  f=follow  ?=help",           "滚动  Home/End  f=跟随  ?=帮助"},
     {"log.empty",            "No log entries yet (l/Esc to dashboard)",      "暂无日志（l/Esc 返回仪表盘）"},
@@ -67,7 +68,6 @@ inline const I18nEntry kI18nTable[] = {
     {"help.close",           "close this help",                              "关闭帮助"},
     {"help.quit",            "quit TCMT Monitor",                            "退出 TCMT Monitor"},
     {"help.select_row",      "select a process row",                         "选择进程行"},
-    {"help.details",         "process details (PID, CPU, memory)",           "进程详情（PID、CPU、内存）"},
     {"help.conn_list",       "connections list (expand the status chip)",    "连接列表（展开状态芯片）"},
     {"help.scroll_line",     "scroll one line",                              "滚动一行"},
     {"help.scroll_page",     "scroll one page",                              "滚动一页"},
@@ -99,9 +99,6 @@ inline const I18nEntry kI18nTable[] = {
     {"lang.name.en",         "EN",                                           "EN"},
     {"lang.name.zh",         "简体中文",                                       "简体中文"},
 
-    // ── process details overlay ──────────────────────────────────────
-    {"details.title",        "Process Details",                              "进程详情"},
-    {"details.close",        "Enter/Esc/q close",                            "Enter/Esc/q 关闭"},
 
     // ── connections overlay ──────────────────────────────────────────
     {"conn.title",           "Connections",                                  "连接"},

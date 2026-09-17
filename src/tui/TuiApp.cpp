@@ -6,6 +6,7 @@
 #include <curses.h>
 #include "TuiApp.h"
 #include "core/I18n.h"
+#include "core/Utils/Logger.h"   // log page header shows the active level
 #include <ctime>
 #include <cstring>
 #include <cstdio>
@@ -84,6 +85,11 @@ static constexpr double kProcCpuWarn = 20.0, kProcCpuCrit = 50.0; // per-process
 static constexpr double kUsageWarn = 70.0, kUsageCrit = 90.0;    // cpu/ram/gpu usage % (bar rows)
 static constexpr double kHealthWarn = 80.0, kHealthCrit = 60.0;  // battery health % (low is worse)
 static constexpr double kBattWarn = 50.0, kBattCrit = 20.0;      // battery charge % (low is worse)
+
+// Declared ahead of their first use: panel rows truncate by display columns,
+// not bytes, and the definitions sit with the other string helpers below.
+static int utf8_display_width(const std::string& s);
+static std::string utf8_truncate(const std::string& s, int maxW);
 
 // ============================================================================
 // TuiApp
@@ -262,7 +268,7 @@ void TuiApp::DrawUsageBarRow(WINDOW* win, int y, int x0, int maxW,
         wattroff(win, A_DIM);
     }
     if (sev >= 0) wattron(win, COLOR_PAIR(sev));
-    mvwprintw(win, y, valueStart, "%.*s", vw, value.c_str());
+    mvwprintw(win, y, valueStart, "%s", utf8_truncate(value, vw).c_str());
     if (sev >= 0) wattroff(win, COLOR_PAIR(sev));
 }
 
@@ -305,25 +311,22 @@ void TuiApp::DrawPanelTitle(WINDOW* win, int y, int x0, int maxW,
 void TuiApp::DrawLabeledValue(WINDOW* win, int y, int x0, int maxW,
                               const char* label, const std::string& value, int pair) {
     const int valueX = x0 + maxW - 2;
-    const int vw = std::min(static_cast<int>(value.size()),
-                            (std::max)(4, maxW - 6));
+    // Budget and measure in columns: vw sets where the label stops, and a CJK
+    // value occupies two columns per three bytes.
+    const std::string valueStr = utf8_truncate(value, (std::max)(4, maxW - 6));
+    const int vw = utf8_display_width(valueStr);
     const int valueStart = valueX - vw + 1;
     const int labelMax = valueStart - (x0 + 2) - 1;   // 1-col gap before value
     if (labelMax < 3) {   // too tight for a label: value alone, right-aligned
         if (pair >= 0) wattron(win, COLOR_PAIR(pair));
-        mvwprintw(win, y, valueStart, "%.*s", vw, value.c_str());
+        mvwprintw(win, y, valueStart, "%s", valueStr.c_str());
         if (pair >= 0) wattroff(win, COLOR_PAIR(pair));
         return;
     }
-    mvwprintw(win, y, x0 + 2, "%.*s", labelMax, label);
+    mvwprintw(win, y, x0 + 2, "%s", utf8_truncate(label, labelMax).c_str());
     if (pair >= 0) wattron(win, COLOR_PAIR(pair));
-    mvwprintw(win, y, valueStart, "%.*s", vw, value.c_str());
+    mvwprintw(win, y, valueStart, "%s", valueStr.c_str());
     if (pair >= 0) wattroff(win, COLOR_PAIR(pair));
-}
-
-std::string TuiApp::TrimRight(const std::string& s, size_t maxLen) {
-    if (s.size() <= maxLen) return s;
-    return s.substr(0, maxLen);
 }
 
 // ── UTF-8 display width helpers (CJK-aware) ──────────────────────────
@@ -381,6 +384,16 @@ static std::string utf8_truncate(const std::string& s, int maxW) {
     return out;
 }
 // ─────────────────────────────────────────────────────────────────────
+
+// Same result as a byte prefix for ASCII, which is every numeric row — but a
+// name, a disk label or an adapter can be CJK, and cutting one mid-sequence is
+// what renders wide text as garbage. The budget is display columns, and a cut
+// is marked with "~" like every other truncation in this file.
+std::string TuiApp::TrimRight(const std::string& s, size_t maxLen) {
+    if (maxLen == 0) return std::string();
+    if (utf8_display_width(s) <= static_cast<int>(maxLen)) return s;
+    return utf8_truncate(s, static_cast<int>(maxLen));
+}
 
 void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
     // Title only. Key hints, the update banner and the stale chip live on
@@ -566,7 +579,7 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         if (d.letter >= 'A' && d.letter <= 'Z')
             off = snprintf(lineBuf, sizeof(lineBuf), "[%c:] ", d.letter);
         auto label = d.label.empty() ? "?" : d.label;
-        if (label.size() > 10) label = label.substr(0, 8) + "..";
+        if (utf8_display_width(label) > 10) label = utf8_truncate(label, 10);
         double upct = (d.totalSize > 0) ? 100.0 * d.usedSpace / d.totalSize : 0;
         auto usedStr = FormatSize(d.usedSpace);
         auto totalStr = FormatSize(d.totalSize);
@@ -575,7 +588,7 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
                        label.c_str(), static_cast<int>(upct),
                        usedStr.c_str(), totalStr.c_str());
         lineBuf[off] = '\0';
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, lineBuf);
+        mvwprintw(win, y + lines, x0 + 2, "%s", utf8_truncate(lineBuf, maxW - 4).c_str());
         lines++;
     }
     return lines;
@@ -671,18 +684,21 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         if (locBlocked) {
             const bool denied = (data.wifiLocationStatus == 1 || data.wifiLocationDenied);
             wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10,
-                      denied ? Tr("wifi.loc_denied") : Tr("wifi.loc_off"));
+            mvwprintw(win, y + lines, x0 + 8, "%s",
+                      utf8_truncate(denied ? Tr("wifi.loc_denied") : Tr("wifi.loc_off"),
+                                    maxW - 10).c_str());
             wattroff(win, COLOR_PAIR(6));
             lines++;
             wattron(win, COLOR_PAIR(6));
-            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10,
-                      denied ? Tr("wifi.grant") : Tr("wifi.press_r"));
+            mvwprintw(win, y + lines, x0 + 8, "%s",
+                      utf8_truncate(denied ? Tr("wifi.grant") : Tr("wifi.press_r"),
+                                    maxW - 10).c_str());
             wattroff(win, COLOR_PAIR(6));
             lines++;
         } else {
             wattron(win, COLOR_PAIR(3));
-            mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, Tr("wifi.disconnected"));
+            mvwprintw(win, y + lines, x0 + 8, "%s",
+                      utf8_truncate(Tr("wifi.disconnected"), maxW - 10).c_str());
             wattroff(win, COLOR_PAIR(3));
             lines++;
         }
@@ -710,7 +726,7 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattron(win, COLOR_PAIR(2));
         for (size_t i = 0; i < wl.size(); ++i) {
             mvwprintw(win, y + lines + static_cast<int>(i), x0 + 8,
-                      "%.*s", maxW - 10, wl[i].c_str());
+                      "%s", utf8_truncate(wl[i], maxW - 10).c_str());
         }
         wattroff(win, COLOR_PAIR(2));
         lines += static_cast<int>(wl.size());
@@ -726,20 +742,26 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             (data.wifiLocationStatus == 0 || data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
             wattron(win, COLOR_PAIR(6));
             if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.g1_denied"));
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.g1_denied"), maxW - 4).c_str());
             } else {
-                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.g1_open"));
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.g1_open"), maxW - 4).c_str());
             }
             lines++;
-            mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.g2"));
+            mvwprintw(win, y + lines, x0 + 2, "%s",
+                      utf8_truncate(Tr("wifi.g2"), maxW - 4).c_str());
             lines++;
             if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.path1"));
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.path1"), maxW - 4).c_str());
                 lines++;
-                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.path2"));
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.path2"), maxW - 4).c_str());
                 lines++;
             } else {
-                mvwprintw(win, y + lines, x0 + 2, "%s", Tr("wifi.path1"));
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.path1"), maxW - 4).c_str());
                 lines++;
             }
             wattroff(win, COLOR_PAIR(6));
@@ -789,7 +811,7 @@ int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     if (maxW < 10) return 0;
     if (data.tpmInfo.empty() || data.tpmInfo == "No TPM") return 0;
     DrawPanelTitle(win, y, x0, maxW, "TPM");
-    mvwprintw(win, y + 1, x0 + 2, "%.*s", maxW - 2, data.tpmInfo.c_str());
+    mvwprintw(win, y + 1, x0 + 2, "%s", utf8_truncate(data.tpmInfo, maxW - 2).c_str());
     return 2;
 }
 
@@ -1039,7 +1061,7 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
 
     // Lid angle (0x0020/138)
     if (data.lidAngle.valid) {
-        mvwprintw(win, y + lines++, x0 + 2, "Lid:     %.1f%s", data.lidAngle.angle, degSuffixAngle_.c_str());
+        mvwprintw(win, y + lines++, x0 + 2, "Lid:     %.0f%s", data.lidAngle.angle, degSuffixAngle_.c_str());
     }
 
     // Motion heartbeat (0xFF0C/1 — SPU fusion liveliness indicator)
@@ -1148,6 +1170,28 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
     return lines + 1;
 }
 
+// "12:04" under an hour, "1:12:04" above it — the CPU-time column's shape.
+static std::string CpuTimeShort(uint64_t ms) {
+    const uint64_t s = ms / 1000;
+    char buf[24];
+    if (s >= 3600)
+        snprintf(buf, sizeof(buf), "%llu:%02llu:%02llu",
+                 (unsigned long long)(s / 3600), (unsigned long long)((s / 60) % 60),
+                 (unsigned long long)(s % 60));
+    else
+        snprintf(buf, sizeof(buf), "%llu:%02llu",
+                 (unsigned long long)(s / 60), (unsigned long long)(s % 60));
+    return std::string(buf);
+}
+
+// Fixed-width cell: pad by display columns (CJK-safe), cut with ~ when it does
+// not fit — the row's columns stay aligned without counting bytes.
+static std::string PadCell(const std::string& s, int w) {
+    const int dw = utf8_display_width(s);
+    if (dw > w) return utf8_truncate(s, w);
+    return (dw < w) ? s + std::string(w - dw, ' ') : s;
+}
+
 int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 15 || data.topProcesses.empty()) {
         procListY_ = -1;   // no list this frame — mouse hits nothing
@@ -1165,7 +1209,18 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     procListX0_ = x0;
     procListW_ = maxW;
 
-    int nameW = maxW - 30;  // room for pid(7) + mem(5) + cpu(7) + spaces
+    // Optional context columns after the CPU% cell: state, threads, CPU time.
+    // They are added while the name still keeps kNameMin columns, and dropped
+    // right-to-left (CPU time → threads → state), so a narrow terminal loses
+    // the least useful column and the name stays readable. 21 = pid(7) +
+    // mem(5) + cpu(7) + the two columns of padding around the row.
+    const int kNameMin = 10;
+    const bool showState = (maxW - 21 - 7 >= kNameMin);
+    const bool showThr   = (maxW - 21 - (showState ? 7 : 0) - 5 >= kNameMin);
+    const bool showCpuT  = (maxW - 21 - (showState ? 7 : 0) - (showThr ? 5 : 0) - 9 >= kNameMin);
+    const int optW = (showState ? 7 : 0) + (showThr ? 5 : 0) + (showCpuT ? 9 : 0);
+
+    int nameW = maxW - 21 - optW;
     if (nameW < 6) nameW = 6;
 
     for (const auto& p : data.topProcesses) {
@@ -1208,6 +1263,20 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         if (cpuColor >= 0 && !selected) wattron(win, COLOR_PAIR(cpuColor));
         mvwprintw(win, y + lines, cpuCol, "%5.1f%%", p.cpuPercent);
         if (cpuColor >= 0 && !selected) wattroff(win, COLOR_PAIR(cpuColor));
+
+        // Context columns — dim, because they describe the process rather than
+        // signal anything. They are drawn inside the row's reverse highlight
+        // (A_DIM is skipped there) so a selected row stays one block.
+        if (optW > 0) {
+            std::string tail;
+            if (showState) tail += PadCell(p.state.empty() ? "N/A" : p.state, 7);
+            if (showThr)   tail += PadCell(p.threads >= 0 ? std::to_string(p.threads) : "N/A", 5);
+            if (showCpuT)  tail += PadCell(p.cpuTimeMs > 0 ? CpuTimeShort(p.cpuTimeMs) : "N/A", 9);
+            if (!selected) wattron(win, A_DIM);
+            mvwprintw(win, y + lines, cpuCol + 6, "%s", tail.c_str());
+            if (!selected) wattroff(win, A_DIM);
+        }
+
         if (selected) wattroff(win, A_REVERSE);
         lines++;
     }
@@ -1329,7 +1398,8 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
         mvwprintw(stdscr, r, x0 + W - 1, "|");
     }
     mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
-    mvwprintw(stdscr, y0, x0 + 3, " %s ", Tr("settings.title"));
+    mvwprintw(stdscr, y0, x0 + 3, " %s ",
+              utf8_truncate(Tr("settings.title"), W - 6).c_str());
 
     // Field rows: [n] label : [ value ] — focused row renders reversed.
     // The label column is padded by display width so CJK labels stay aligned
@@ -1383,11 +1453,15 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
             : (serverSettings_.status.empty()
                 ? (serverSettings_.enabled ? "starting..." : "disabled")
                 : serverSettings_.status);
-        mvwprintw(stdscr, y0 + 8, x0 + 2, " %s%s", Tr("settings.status"), st.c_str());
+        const std::string stLine = std::string(" ") + Tr("settings.status") + st;
+        mvwprintw(stdscr, y0 + 8, x0 + 2, "%s", utf8_truncate(stLine, W - 4).c_str());
     }
-    mvwprintw(stdscr, y0 + 10, x0 + 2, " %s", Tr("settings.hint1"));
-    mvwprintw(stdscr, y0 + 11, x0 + 2, " %s", Tr("settings.hint2"));
-    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s", Tr("settings.persist"));
+    mvwprintw(stdscr, y0 + 10, x0 + 2, " %s",
+              utf8_truncate(Tr("settings.hint1"), W - 4).c_str());
+    mvwprintw(stdscr, y0 + 11, x0 + 2, " %s",
+              utf8_truncate(Tr("settings.hint2"), W - 4).c_str());
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s",
+              utf8_truncate(Tr("settings.persist"), W - 4).c_str());
 
     // Place the cursor inside the URL box when it is focused. Never move the
     // cursor to the screen corners — ncurses treats the bottom-right cell as
@@ -1407,6 +1481,23 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
 // the page stays dormant there. Data comes from the in-process Logger log
 // buffer (no IPC, no files).
 // ────────────────────────────────────────────────────────────────────────────
+// The level the page is showing, spelled out in the header. Without it an
+// empty page cannot be told apart from a page whose level gates everything out
+// before it ever reaches the buffer (WriteLog returns above the TUI push) —
+// which is exactly how this page stayed "mysteriously empty".
+static const char* LogLevelName(LogLevel level) {
+    switch (level) {
+        case LOG_TRACE:    return "trace";
+        case LOG_DEBUG:    return "debug";
+        case LOG_INFO:     return "info";
+        case LOG_WARNING:  return "warning";
+        case LOG_ERROR:    return "error";
+        case LOG_CRITICAL: return "critical";
+        case LOG_FATAL:    return "fatal";
+    }
+    return "info";
+}
+
 void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     if (ch == KEY_UP) { logScrollOffset_++; logFollow_ = false; }
     else if (ch == KEY_DOWN) {
@@ -1440,11 +1531,12 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     std::string header = std::string(" ") + Tr("log.title") + "    " + Tr("log.lines")
                        + std::to_string(lines.size())
                        + "    " + (logFollow_ ? "[FOLLOW]" : "[SCROLL]")
+                       + "    " + Tr("log.level") + " " + LogLevelName(Logger::GetLogLevel())
                        + "    " + upArrow_ + "/" + downArrow_ + " " + Tr("log.hint");
     // (Esc/l back to dashboard and q=quit are listed in the ? help page;
     // they are deliberately not repeated on every log line of the header.)
     wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
-    mvwprintw(stdscr, 1, 1, "%.*s", cols - 2, header.c_str());
+    mvwprintw(stdscr, 1, 1, "%s", utf8_truncate(header, cols - 2).c_str());
     wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
 
     int contentRows = rows - 3;
@@ -1464,7 +1556,7 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
     }
 
     if (total == 0) {
-        mvwprintw(stdscr, 2, 2, "%s", Tr("log.empty"));
+        mvwprintw(stdscr, 2, 2, "%s", utf8_truncate(Tr("log.empty"), cols - 4).c_str());
     }
 
     for (int r = 0; r < contentRows; ++r) {
@@ -1490,7 +1582,7 @@ void TuiApp::RenderLogPage(int rows, int cols, int ch) {
 
         std::string disp = utf8_truncate(entry, cols - 3);
         if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
-        mvwprintw(stdscr, 2 + r, 1, "%.*s", cols - 2, disp.c_str());
+        mvwprintw(stdscr, 2 + r, 1, "%s", disp.c_str());
         if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
     }
 }
@@ -1526,13 +1618,13 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
                      const std::vector<std::pair<std::string, std::string>>& items) {
         if (y >= y0 + H - 2) return;
         wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
-        mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, heading.c_str());
+        mvwprintw(stdscr, y++, x0 + 2, "%s", utf8_truncate(heading, W - 4).c_str());
         wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
         for (const auto& item : items) {
             if (y >= y0 + H - 2) return;
             char line[160];
             snprintf(line, sizeof(line), "%-17s %s", item.first.c_str(), item.second.c_str());
-            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+            mvwprintw(stdscr, y++, x0 + 2, "%s", utf8_truncate(line, W - 4).c_str());
         }
     };
 
@@ -1550,7 +1642,6 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     common.push_back({"q", Tr("help.quit")});
 
     dash.push_back({upArrow_ + " / " + downArrow_, Tr("help.select_row")});
-    dash.push_back({"Enter", Tr("help.details")});
     dash.push_back({"c", Tr("help.conn_list")});
 
     if (caps_.inlineLogPage) {
@@ -1567,82 +1658,19 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     if (!logpage.empty()) group(Tr("help.group.log"), logpage);
 
     // Settings keys are hinted inline on that page; one summary line here.
-    if (y < y0 + H - 2) {
-        mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4,
-                  Tr("help.settings_hint"));
-    }
-}
-
-// Process-details overlay — Enter on a selected dashboard row. Shows what
-// the monitor loop already collects for that pid (same source as the row);
-// Esc / Enter / q close it, q does not quit the app.
-void TuiApp::RenderProcessDetails(int rows, int cols, int ch) {
-    const bool isEnter = (ch == '\n' || ch == '\r'
-#ifdef KEY_ENTER
-        || ch == KEY_ENTER
-#endif
-    );
-    if (ch == 27 || ch == 'q' || ch == 'Q' || isEnter) {
-        detailsPage_ = false;
-        clear();
-        return;
-    }
-
-    // Re-resolve the pid every frame against the freshest snapshot; if the
-    // process is gone the overlay dismisses itself.
-    TuiData data;
+    // Over budget it folds onto another line instead of being chopped: the
+    // English hint is longer than this box on narrow terminals, and a cut
+    // mid-word — or mid-CJK — is exactly the mess this page should not have.
     {
-        std::lock_guard<std::mutex> lock(dataMutex_);
-        data = data_;
+        std::vector<std::string> words;
+        std::istringstream iss(Tr("help.settings_hint"));
+        std::string word;
+        while (iss >> word) words.push_back(word);
+        for (const std::string& ln : WrapFields(words, W - 4)) {
+            if (y >= y0 + H - 2) break;
+            mvwprintw(stdscr, y++, x0 + 2, "%s", ln.c_str());
+        }
     }
-    const TuiData::ProcessTopEntry* proc = nullptr;
-    for (const auto& p : data.topProcesses) {
-        if (p.pid == selPid_) { proc = &p; break; }
-    }
-    if (proc == nullptr) {
-        detailsPage_ = false;
-        clear();
-        return;
-    }
-
-    const int W = std::min(56, cols - 8);
-    const int H = 11;
-    const int x0 = std::max(1, (cols - W) / 2);
-    const int y0 = std::max(1, (rows - H) / 2);
-
-    erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
-    mvwprintw(stdscr, y0, x0 + 3, " %s ", Tr("details.title"));
-
-    std::string memStr;
-    if (proc->memoryBytes >= (uint64_t)1024 * 1024 * 1024)
-        memStr = std::to_string(proc->memoryBytes / (1024 * 1024 * 1024)) + " GB";
-    else
-        memStr = std::to_string(proc->memoryBytes / (1024 * 1024)) + " MB";
-
-    char line[192];
-    int y = y0 + 2;
-    snprintf(line, sizeof(line), "Name:   %s", proc->name.c_str());
-    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
-    snprintf(line, sizeof(line), "PID:    %d", (int)proc->pid);
-    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
-
-    const int cpuColor = HighIsWorsePair(proc->cpuPercent, kProcCpuWarn, kProcCpuCrit);
-    snprintf(line, sizeof(line), "CPU:    %5.1f%%", proc->cpuPercent);
-    if (cpuColor >= 0) wattron(stdscr, COLOR_PAIR(cpuColor));
-    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
-    if (cpuColor >= 0) wattroff(stdscr, COLOR_PAIR(cpuColor));
-
-    snprintf(line, sizeof(line), "Memory: %s", memStr.c_str());
-    mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
-
-    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s ", Tr("details.close"));
 }
 
 // Connections list overlay — 'c' on the dashboard. The compact bottom chip
@@ -1680,30 +1708,32 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
         mvwprintw(stdscr, r, x0 + W - 1, "|");
     }
     mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
-    mvwprintw(stdscr, y0, x0 + 3, " %s ", Tr("conn.title"));
+    mvwprintw(stdscr, y0, x0 + 3, " %s ",
+              utf8_truncate(Tr("conn.title"), W - 6).c_str());
 
     char line[192];
     int y = y0 + 2;
     if (data.connectionCount <= 0) {
-        mvwprintw(stdscr, y++, x0 + 2, "  %s", Tr("conn.empty"));
+        mvwprintw(stdscr, y++, x0 + 2, "  %s",
+                  utf8_truncate(Tr("conn.empty"), W - 6).c_str());
     } else {
         snprintf(line, sizeof(line), Tr("conn.count"),
                  data.connectionCount, data.connectionCount == 1 ? "" : "s");
-        mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+        mvwprintw(stdscr, y++, x0 + 2, "%s", utf8_truncate(line, W - 4).c_str());
         int n = 1;
         for (uint8_t t : data.clientTypes) {
             const char* name = (t == 1) ? "Avalonia" : (t == 2) ? "MCP" : "unknown";
             snprintf(line, sizeof(line), "  #%-3d %s", n++, name);
-            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+            mvwprintw(stdscr, y++, x0 + 2, "%s", utf8_truncate(line, W - 4).c_str());
             if (y >= y0 + H - 4) break;   // keep room for the push line
         }
         if (data.httpClientCount > 0) {
             snprintf(line, sizeof(line), "  #%-3d Web (local HTTP) x%d", n, data.httpClientCount);
-            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+            mvwprintw(stdscr, y++, x0 + 2, "%s", utf8_truncate(line, W - 4).c_str());
         }
         if (!data.connectionSince.empty()) {
             snprintf(line, sizeof(line), "%s%s", Tr("conn.since"), data.connectionSince.c_str());
-            mvwprintw(stdscr, y++, x0 + 2, "%.*s", W - 4, line);
+            mvwprintw(stdscr, y++, x0 + 2, "%s", utf8_truncate(line, W - 4).c_str());
         }
         if (y < y0 + H - 3) y++;
     }
@@ -1727,31 +1757,32 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
         pushStr = Tr("push.prefix") + data.serverStatus + Tr("push.last") + age + Tr("push.last_close");
     }
     if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
-    mvwprintw(stdscr, y, x0 + 2, "%.*s", W - 4, pushStr.c_str());
+    mvwprintw(stdscr, y, x0 + 2, "%s", utf8_truncate(pushStr, W - 4).c_str());
     if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
 
-    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s ", Tr("conn.close"));
+    mvwprintw(stdscr, y0 + H - 2, x0 + 2, " %s ",
+              utf8_truncate(Tr("conn.close"), W - 6).c_str());
 }
 
 // Minimal mouse (B direction): translate one mouse event into the keyboard
 // action a user would have typed. Every existing handler stays the source
 // of truth — mouse is only an input shim:
-//   click a process row       -> select it (a second click on the same pid
-//                                 within 350 ms opens the details overlay)
+//   click a process row       -> select it (dashboard only)
 //   click the Connections row -> 'c' (client list)
-//   wheel up / down           -> KEY_UP / KEY_DOWN (moves the process
-//                                 selection on the dashboard, scrolls the
-//                                 log page)
+//   wheel up / down           -> KEY_UP / KEY_DOWN, which the keyboard
+//                                 dispatch routes by the page on screen
+// Clicking is gated on the dashboard being the visible surface: on any page the
+// list geometry below is left over from the last dashboard frame, and acting on
+// it moved the dashboard selection from behind the page the user was reading.
 int TuiApp::MapMouseEvent(int rows, int cols) {
 #ifdef KEY_MOUSE
     MEVENT mev;
     if (getmouse(&mev) != OK) return ERR;
     (void)cols;
 
-    const int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-
-    if (mev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED)) {
+    const bool dashboardActive = !logPage_ && !settingsPage_ && !helpPage_ && !connListPage_;
+    if (dashboardActive &&
+        (mev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED))) {
         // Click inside the Top Processes list region (geometry cached by
         // DrawProcessPanel every frame).
         if (procListY_ >= 0 && mev.y > procListY_ &&
@@ -1761,15 +1792,7 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
             {
                 std::lock_guard<std::mutex> lock(dataMutex_);
                 if (idx >= 0 && idx < static_cast<int>(data_.topProcesses.size())) {
-                    const int pid = data_.topProcesses[idx].pid;
-                    if (pid == lastClickPid_ && nowUs - lastClickUs_ < 350000) {
-                        detailsPage_ = true;   // double-click -> details
-                        clear();
-                    } else {
-                        selPid_ = pid;
-                    }
-                    lastClickPid_ = pid;
-                    lastClickUs_ = nowUs;
+                    selPid_ = data_.topProcesses[idx].pid;
                 }
             }
             return ERR;   // handled — the next frame paints the selection
@@ -1866,6 +1889,11 @@ void TuiApp::Run() {
         if (ch == KEY_MOUSE) ch = MapMouseEvent(rows, cols);
 #endif
 
+        // While a page owns the screen the dashboard is not drawn, so its
+        // cached list geometry is stale: drop it, and no mouse event can
+        // address a rectangle that is not on screen.
+        if (settingsPage_ || helpPage_ || connListPage_ || logPage_) procListY_ = -1;
+
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
         // repainting the same dialog.
@@ -1880,16 +1908,6 @@ void TuiApp::Run() {
         // global quit handler so q inside help closes the page, not the app.
         if (helpPage_) {
             RenderHelpPage(rows, cols, ch);
-            refresh();
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
-            continue;
-        }
-
-        // Process-details overlay (Enter on a selected dashboard row). Modal
-        // like the others: Esc / Enter / q close it — q here closes the
-        // overlay, not the app.
-        if (detailsPage_) {
-            RenderProcessDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -2018,15 +2036,6 @@ void TuiApp::Run() {
                 selPid_ = data.topProcesses[nextIdx].pid;
                 selIdx = nextIdx;
             }
-            const bool isEnter = (ch == '\n' || ch == '\r'
-#ifdef KEY_ENTER
-                || ch == KEY_ENTER
-#endif
-            );
-            if (isEnter && selIdx >= 0) {
-                detailsPage_ = true;
-                clear();
-            }
         }
 
         erase();
@@ -2118,9 +2127,13 @@ void TuiApp::Run() {
             const int zoneR = cols - 2 - rightReserve;
             if (zoneR >= zoneL) {
                 const int zoneW = zoneR - zoneL + 1;
-                int bx = zoneL + (zoneW - static_cast<int>(banner.size())) / 2;
+                // Centred and clipped in columns: the banner carries update
+                // status copy, which is translated (and therefore wide).
+                const int bannerW = utf8_display_width(banner);
+                int bx = zoneL + (zoneW - bannerW) / 2;
                 bx = (std::max)(zoneL, bx);
-                mvwprintw(stdscr, 1, bx, "%.*s", zoneR - bx + 1, banner.c_str());
+                mvwprintw(stdscr, 1, bx, "%s",
+                          utf8_truncate(banner, zoneR - bx + 1).c_str());
             }
             wattroff(stdscr, COLOR_PAIR(color) | A_BOLD);
         }
@@ -2290,7 +2303,8 @@ void TuiApp::Run() {
             const std::string os = TrimRight(data.osVersion, (cols > 46) ? cols - 42 : 12);
             mvwprintw(stdscr, rows - 2, 10, "%s", os.c_str());
         } else {
-            mvwprintw(stdscr, rows - 2, 10, "%s", Tr("sys.unknown_os"));
+            mvwprintw(stdscr, rows - 2, 10, "%s",
+                      utf8_truncate(Tr("sys.unknown_os"), cols - 12).c_str());
         }
         if (data.batteryPercent >= 0 && data.batteryPercent <= 100) {
             auto batStr = (data.acOnline ? "AC" : "BAT") + std::string(" ") + std::to_string(data.batteryPercent) + "%";

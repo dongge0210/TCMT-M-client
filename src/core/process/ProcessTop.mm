@@ -1,10 +1,26 @@
 // ProcessTop.mm — macOS top processes via proc_listallpids + proc_pidinfo
 #include "ProcessTop.h"
 #include "../Utils/Logger.h"
+#include <cstring>
+#include <pwd.h>
 
 #import <libproc.h>
 #import <mach/mach_time.h>
 #import <mach/mach.h>
+
+// The state word shown next to each process in the list, straight from
+// pbi_status. It stays English by design — status short words are part of the
+// label layer, like stale/FOLLOW/N/A.
+static const char* ProcStateWord(uint32_t status) {
+    switch (status) {
+        case 1:  return "idle";    // SIDL
+        case 2:  return "run";     // SRUN
+        case 3:  return "sleep";   // SSLEEP
+        case 4:  return "stop";    // SSTOP
+        case 5:  return "zombie";  // SZOMB
+        default: return "";
+    }
+}
 
 void ProcessTop::Refresh() {
     // Mach timebase (numerator/denominator for converting to nanoseconds)
@@ -72,8 +88,15 @@ void ProcessTop::Refresh() {
         }
     }
 
-    // Store previous samples for next cycle
+    // Store previous samples for next cycle, and collect the per-row context
+    // the list shows. Threads and CPU time come from the proc_taskinfo call this
+    // loop already makes; state and user cost one bsdinfo per top row (≤7 calls
+    // — never a scan-wide addition). Unreadable rows keep empty/-1 and the list
+    // renders N/A.
     prevSamples_.clear();
+    std::vector<int> thr(topN, -1);
+    std::vector<uint64_t> cpuMs(topN, 0);
+    std::vector<std::string> stateOf(topN), userOf(topN);
     for (int i = 0; i < topN; i++) {
         pid_t pid = byMem[i].first;
         proc_taskinfo taskInfo;
@@ -83,6 +106,20 @@ void ProcessTop::Refresh() {
             ProcSample& ps = prevSamples_[pid];
             ps.totalUser = taskInfo.pti_total_user;
             ps.totalSystem = taskInfo.pti_total_system;
+            thr[i] = static_cast<int>(taskInfo.pti_threadnum);
+            const uint64_t ticks = taskInfo.pti_total_user + taskInfo.pti_total_system;
+            cpuMs[i] = static_cast<uint64_t>(static_cast<double>(ticks) * timebase_ / 1e6);
+        }
+        proc_bsdinfo bi;
+        if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bi, sizeof(bi)) == sizeof(bi)) {
+            stateOf[i] = ProcStateWord(bi.pbi_status);
+            char pwBuf[256] = {};
+            struct passwd pwd;
+            struct passwd* res = nullptr;
+            if (getpwuid_r(bi.pbi_uid, &pwd, pwBuf, sizeof(pwBuf), &res) == 0 &&
+                res != nullptr && res->pw_name != nullptr) {
+                userOf[i] = res->pw_name;
+            }
         }
     }
     prevTime_ = now;
@@ -96,6 +133,10 @@ void ProcessTop::Refresh() {
         e.pid = pid;
         e.memoryBytes = memMap[pid];
         e.cpuPercent = cpuPct[pid];
+        e.threads = thr[i];
+        e.cpuTimeMs = cpuMs[i];
+        e.state = stateOf[i];
+        e.user = userOf[i];
         // Get process name
         char nameBuf[PROC_PIDPATHINFO_MAXSIZE] = {};
         int nameLen = proc_name(pid, nameBuf, sizeof(nameBuf));
@@ -107,3 +148,5 @@ void ProcessTop::Refresh() {
         entries_.push_back(e);
     }
 }
+
+// ── Per-row context for the top N ────────────────────────────────────

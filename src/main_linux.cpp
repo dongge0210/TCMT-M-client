@@ -94,7 +94,11 @@ int main(int argc, char* argv[]) {
     try {
         Logger::Initialize("system_monitor.log");
         Logger::EnableConsoleOutput(false);
-        Logger::SetLogLevel(LOG_WARNING);    // default: WARN+; --debug/--verbose lower it
+        // Start at INFO, not WARN: the in-app log page is a diagnostic surface,
+        // and a WARN-only gate meant INFO never reached g_tuiLogBuffer at all —
+        // the page looked permanently empty. config logging.level (below) and
+        // --debug/--verbose refine the level from here.
+        Logger::SetLogLevel(LOG_INFO);
         Logger::Info("TCMT Linux Client starting (TUI mode)...");
     } catch (const std::exception& e) {
         std::cerr << "Logger init failed: " << e.what() << std::endl;
@@ -110,6 +114,8 @@ int main(int argc, char* argv[]) {
                 Logger::SetLogLevel(LOG_DEBUG);
             else if (logLevel == "warning")
                 Logger::SetLogLevel(LOG_WARNING);
+            else
+                Logger::SetLogLevel(LOG_INFO);   // "info" — the documented default — and anything unrecognised
         } else {
             Logger::Warn("No config file found, using defaults");
         }
