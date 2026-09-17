@@ -8,13 +8,66 @@ namespace TCMT.Avalonia.Core.Converters;
 
 internal static class ConverterColors
 {
+    // Declared first: C# runs static initialisers in declaration order, and the alpha brush below
+    // derives from this one. Everything here is parsed from the single palette in Core/Constants.cs.
+    private static readonly Color Secondary = Color.Parse(AppConstants.Colors.Secondary);
+
     public static readonly SolidColorBrush Green = new(Color.Parse(AppConstants.Colors.Primary));
-    public static readonly SolidColorBrush Blue = new(Color.Parse(AppConstants.Colors.Secondary));
+    public static readonly SolidColorBrush Blue = new(Secondary);
     public static readonly SolidColorBrush Orange = new(Color.Parse(AppConstants.Colors.Warning));
     public static readonly SolidColorBrush Red = new(Color.Parse(AppConstants.Colors.Danger));
     public static readonly SolidColorBrush Gold = new(Color.Parse(AppConstants.Colors.Gold));
-    public static readonly SolidColorBrush Gray = new(new Color(255, 128, 128, 128));
+    public static readonly SolidColorBrush Gray = new(Color.Parse(AppConstants.Colors.Gray));
     public static readonly SolidColorBrush TextMuted = new(Color.Parse(AppConstants.Colors.TextMuted));
+    public static readonly SolidColorBrush TextSecondary = new(Color.Parse(AppConstants.Colors.TextSecondary));
+
+    /// <summary>Selected nav row background — the secondary hue at ~15 %. The palette carries no
+    /// alpha entries (Core/Constants.cs), so the alpha lives here while the hue stays single-sourced.</summary>
+    public static readonly SolidColorBrush BlueSoft = new(new Color(0x26, Secondary.R, Secondary.G, Secondary.B));
+
+    /// <summary>Default foreground — what a normal (in-range) reading is painted with.</summary>
+    public static readonly SolidColorBrush TextPrimary = new(Color.Parse(AppConstants.Colors.TextPrimary));
+}
+
+/// <summary>
+/// Colour for a reading, driven by the single threshold table in Core/Thresholds.cs:
+/// neutral while in range, warning orange past the first threshold, danger red past the second.
+/// Colour only ever carries meaning here — a normal value stays uncoloured, so a "0 °C" can
+/// never be painted as if it were a warning.
+///
+/// ConverterParameter picks the rule: "temperature" | "load" | "battery" | "health"
+/// (defaults to the load rule).
+/// </summary>
+public class ThresholdToColorConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not double reading)
+        {
+            return ConverterColors.TextPrimary;
+        }
+
+        var rule = (parameter as string) switch
+        {
+            "temperature" => Thresholds.Temperature,
+            "battery" => Thresholds.BatteryCharge,
+            "health" => Thresholds.BatteryHealth,
+            "process" => Thresholds.SingleProcessCpu,
+            _ => Thresholds.Load
+        };
+
+        return Thresholds.Evaluate(reading, rule) switch
+        {
+            ThresholdLevel.Critical => ConverterColors.Red,
+            ThresholdLevel.Warning => ConverterColors.Orange,
+            _ => ConverterColors.TextPrimary
+        };
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
 }
 
 public class BoolToColorConverter : IValueConverter
@@ -70,8 +123,11 @@ public class PercentToAngleConverter : IValueConverter
 
 public class PercentToWarningColorConverter : IValueConverter
 {
-    public double WarningThreshold { get; set; } = 80;
-    public double CriticalThreshold { get; set; } = 95;
+    // Thresholds come from the single table in Core/Thresholds.cs (load: warning 70 / critical 90).
+    // Do not reintroduce local numbers here — per the TUI design, thresholds live in one place
+    // and colour is only given to out-of-range values.
+    public double WarningThreshold { get; set; } = Thresholds.Load.Warning;
+    public double CriticalThreshold { get; set; } = Thresholds.Load.Critical;
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -178,7 +234,7 @@ public class NavSelectedToBgConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is bool isSelected && isSelected)
-            return new SolidColorBrush(Color.Parse("#3B82F626"));
+            return ConverterColors.BlueSoft;
         return new SolidColorBrush(Colors.Transparent);
     }
 
@@ -191,8 +247,8 @@ public class NavSelectedToFgConverter : IValueConverter
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is bool isSelected && isSelected)
-            return new SolidColorBrush(Color.Parse("#3B82F6"));
-        return new SolidColorBrush(Color.Parse("#8B949E"));
+            return ConverterColors.Blue;
+        return ConverterColors.TextSecondary;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

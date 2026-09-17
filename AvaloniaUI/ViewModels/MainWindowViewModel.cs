@@ -46,12 +46,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         INavigationService navigationService,
         IThemeService themeService,
         DashboardViewModel dashboardVm,
-        CpuViewModel cpuVm,
-        MemoryViewModel memoryVm,
+        ProcessesViewModel processesVm,
         NetworkViewModel networkVm,
-        StorageViewModel storageVm,
-        GpuViewModel gpuVm,
-        TemperaturesViewModel temperaturesVm,
+        LogViewModel logVm,
         SettingsViewModel settingsVm)
     {
         _hardwareService = hardwareService;
@@ -59,13 +56,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _themeService = themeService;
 
         // Setup navigation items
+        // Five views, matching the design draft: 概览 / 进程 / 网络 / 日志 / 设置.
+        // CPU / GPU / 内存 / 温度 / 存储 五屏的内容已并进概览，原视图与 VM 归档在 _archive/。
         NavigationItems.Add(new NavigationItem("概览", "dashboard", dashboardVm));
-        NavigationItems.Add(new NavigationItem("CPU", "cpu", cpuVm));
-        NavigationItems.Add(new NavigationItem("内存", "memory", memoryVm));
-        NavigationItems.Add(new NavigationItem("GPU", "gpu", gpuVm));
-        NavigationItems.Add(new NavigationItem("温度", "temperature", temperaturesVm));
+        NavigationItems.Add(new NavigationItem("进程", "processes", processesVm));
         NavigationItems.Add(new NavigationItem("网络", "network", networkVm));
-        NavigationItems.Add(new NavigationItem("存储", "storage", storageVm));
+        NavigationItems.Add(new NavigationItem("日志", "log", logVm));
         NavigationItems.Add(new NavigationItem("设置", "settings", settingsVm));
 
         // Wire up navigation

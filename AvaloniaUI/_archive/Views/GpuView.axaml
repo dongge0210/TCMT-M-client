@@ -36,25 +36,25 @@
           <StackPanel Spacing="12">
             <!-- Metrics row: 4 cards -->
             <Grid ColumnDefinitions="*,*,*,*" Grid.ColumnSpan="2">
-              <Border Background="#0D1117" CornerRadius="8" Padding="12">
+              <Border Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12">
                 <StackPanel Spacing="3">
                   <TextBlock Text="温度" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"/>
                   <TextBlock Text="{Binding GpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource WarningBrush}"/>
                 </StackPanel>
               </Border>
-              <Border Grid.Column="1" Background="#0D1117" CornerRadius="8" Padding="12" Margin="6,0">
+              <Border Grid.Column="1" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12" Margin="6,0">
                 <StackPanel Spacing="3">
                   <TextBlock Text="使用率" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"/>
                   <TextBlock Text="{Binding GpuUsage, StringFormat='{}{0:F0}%'}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
                 </StackPanel>
               </Border>
-              <Border Grid.Column="2" Background="#0D1117" CornerRadius="8" Padding="12" Margin="6,0">
+              <Border Grid.Column="2" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12" Margin="6,0">
                 <StackPanel Spacing="3">
                   <TextBlock Text="核心频率" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"/>
                   <TextBlock Text="{Binding CoreClock}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
                 </StackPanel>
               </Border>
-              <Border Grid.Column="3" Background="#0D1117" CornerRadius="8" Padding="12" Margin="6,0,0,0">
+              <Border Grid.Column="3" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12" Margin="6,0,0,0">
                 <StackPanel Spacing="3">
                   <TextBlock Text="显存" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"/>
                   <TextBlock Text="{Binding GpuMemory}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
@@ -64,13 +64,13 @@
 
             <!-- Info row: 2 cards -->
             <Grid ColumnDefinitions="*,*" Grid.ColumnSpan="2">
-              <Border Background="#0D1117" CornerRadius="8" Padding="12" Margin="0,0,6,0">
+              <Border Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12" Margin="0,0,6,0">
                 <StackPanel Spacing="4">
                   <TextBlock Text="显存使用" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"/>
                   <TextBlock Text="{Binding MemoryClock}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
                 </StackPanel>
               </Border>
-              <Border Grid.Column="1" Background="#0D1117" CornerRadius="8" Padding="12" Margin="6,0,0,0">
+              <Border Grid.Column="1" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12" Margin="6,0,0,0">
                 <StackPanel Spacing="4">
                   <TextBlock Text="功耗" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"/>
                   <TextBlock Text="{Binding GpuPowerDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>

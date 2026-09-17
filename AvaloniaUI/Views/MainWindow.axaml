@@ -14,26 +14,18 @@
     </Design.DataContext>
 
     <Window.DataTemplates>
+        <!-- Five views, matching the design draft. The merged views/VM:s live in _archive/. -->
         <DataTemplate DataType="vm:DashboardViewModel">
             <views:DashboardView />
         </DataTemplate>
-        <DataTemplate DataType="vm:CpuViewModel">
-            <views:CpuView />
-        </DataTemplate>
-        <DataTemplate DataType="vm:MemoryViewModel">
-            <views:MemoryView />
+        <DataTemplate DataType="vm:ProcessesViewModel">
+            <views:ProcessesView />
         </DataTemplate>
         <DataTemplate DataType="vm:NetworkViewModel">
             <views:NetworkView />
         </DataTemplate>
-        <DataTemplate DataType="vm:StorageViewModel">
-            <views:StorageView />
-        </DataTemplate>
-        <DataTemplate DataType="vm:GpuViewModel">
-            <views:GpuView />
-        </DataTemplate>
-        <DataTemplate DataType="vm:TemperaturesViewModel">
-            <views:TemperaturesView />
+        <DataTemplate DataType="vm:LogViewModel">
+            <views:LogView />
         </DataTemplate>
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />

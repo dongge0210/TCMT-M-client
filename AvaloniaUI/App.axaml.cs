@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System;
@@ -59,6 +60,12 @@ public partial class App : Application
                 
                 // Tray icon support
                 SetupTrayIcon(mainVm);
+
+                // Feed the log page from the in-memory Serilog sink. Log events are raised on the
+                // writing thread, so marshal to the UI thread before touching the collection.
+                var logVm = Services.GetRequiredService<LogViewModel>();
+                Program.InMemoryLog.EntryWritten += (_, entry) =>
+                    Dispatcher.UIThread.Post(() => logVm.Append(entry));
             }
 
             base.OnFrameworkInitializationCompleted();
@@ -81,27 +88,26 @@ public partial class App : Application
         services.AddSingleton<IHardwareService, HardwareMonitorService>();
         services.AddSingleton<IPCService>();
         services.AddSingleton<IFontService, FontService>();
+        // The same instance Program hands to Serilog, so the log page sees the live tail.
+        services.AddSingleton(Program.InMemoryLog);
 
         // ViewModels - Transient
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<DashboardViewModel>();
-        services.AddTransient<CpuViewModel>();
-        services.AddTransient<MemoryViewModel>();
+        // No IProcessController is registered: the collector exposes no process control, so the
+        // page keeps the action hidden instead of showing a button that could not work.
+        services.AddTransient<ProcessesViewModel>(sp => new ProcessesViewModel(sp.GetService<IProcessController>()));
         services.AddTransient<NetworkViewModel>();
-        services.AddTransient<StorageViewModel>();
-        services.AddTransient<GpuViewModel>();
-        services.AddTransient<TemperaturesViewModel>();
+        // Singleton on purpose: the nav item and the log sink feed must resolve to one instance.
+        services.AddSingleton<LogViewModel>();
         services.AddTransient<SettingsViewModel>();
 
         // Views - Transient
         services.AddTransient<MainWindow>();
         services.AddTransient<DashboardView>();
-        services.AddTransient<CpuView>();
-        services.AddTransient<MemoryView>();
+        services.AddTransient<ProcessesView>();
         services.AddTransient<NetworkView>();
-        services.AddTransient<StorageView>();
-        services.AddTransient<GpuView>();
-        services.AddTransient<TemperaturesView>();
+        services.AddTransient<LogView>();
         services.AddTransient<SettingsView>();
 
         return services.BuildServiceProvider();

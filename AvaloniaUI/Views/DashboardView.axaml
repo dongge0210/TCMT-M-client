@@ -3,138 +3,297 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
-             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
-             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="860"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
              x:Class="TCMT.Avalonia.Views.DashboardView"
              x:DataType="vm:DashboardViewModel">
 
-  <Design.DataContext>
-    <vm:DashboardViewModel Title="概览" CpuUsage="42" MemoryPercent="65" CpuTemperature="42" GpuTemperature="65" CpuName="AMD Ryzen 9 5950X" RamInfo="32GB DDR4" DiskFreeDisplay="1.2 TB" />
-  </Design.DataContext>
-
   <Grid RowDefinitions="Auto,*">
-    <!-- TopBar matching pen design -->
+
+    <!-- TopBar -->
     <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Text="概览" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-          <Border Background="#23863626" CornerRadius="4" Padding="8,4">
-            <TextBlock Text="Running" FontSize="11" Foreground="#238636" FontWeight="SemiBold"/>
-          </Border>
-          <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
-        </StackPanel>
+        <TextBlock Grid.Column="1" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+                   Text="本机硬件实时读数 · 越界值才着色"/>
       </Grid>
     </Border>
 
-    <!-- DashContent matching pen design -->
-    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="24">
-      <StackPanel Spacing="20">
+    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
+      <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
 
-        <!-- MetricsRow: 4 stat cards matching pen design -->
-        <Grid ColumnDefinitions="*,*,*,*" Grid.ColumnSpan="2">
-          <!-- Card_CPU Temp -->
-          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,8,0">
-            <StackPanel Spacing="4">
-              <TextBlock Text="CPU" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="28" FontWeight="Bold" Foreground="#238636"/>
-            </StackPanel>
-          </Border>
-          <!-- Card_GPU Temp -->
-          <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="4,0">
-            <StackPanel Spacing="4">
-              <TextBlock Text="GPU" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding GpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="28" FontWeight="Bold" Foreground="#D97706"/>
-            </StackPanel>
-          </Border>
-          <!-- Card_RAM Usage -->
-          <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="4,0">
-            <StackPanel Spacing="4">
-              <TextBlock Text="内存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding MemoryPercent, StringFormat='{}{0:F0}%'}" FontSize="28" FontWeight="Bold" Foreground="#3B82F6"/>
-            </StackPanel>
-          </Border>
-          <!-- Card_Disk Free -->
-          <Border Grid.Column="3" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="8,0,0,0">
-            <StackPanel Spacing="4">
-              <TextBlock Text="可用磁盘" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding DiskFreeDisplay}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-            </StackPanel>
-          </Border>
-        </Grid>
-
-        <!-- Sensor Details heading matching pen design -->
-        <TextBlock Text="传感器详情" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-
-        <!-- SensorGrid matching pen design -->
-        <Grid ColumnDefinitions="*,*" Grid.ColumnSpan="2">
-          <!-- CPU details -->
-          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,8,0">
-            <StackPanel Spacing="8">
-              <TextBlock Text="CPU" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-              <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="使用率" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="温度" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="型号" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding CpuName}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="功耗" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding CpuPowerDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-            </StackPanel>
-          </Border>
-
-          <!-- Memory + GPU column -->
-          <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="8,0,0,0">
-            <StackPanel Spacing="8">
-              <TextBlock Text="内存" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-              <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="已用" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding MemoryPercent, StringFormat='{}{0:F1}%'}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="容量" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding RamInfo}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-              <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="0,4"/>
-              <TextBlock Text="GPU" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-              <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="温度" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding GpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="功耗" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="{Binding GpuPowerDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
-              </Grid>
-            </StackPanel>
-          </Border>
-        </Grid>
-
-        <!-- TopProcesses matching pen design -->
-        <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,24">
-          <StackPanel Spacing="8">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="进程" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-              <TextBlock Grid.Column="1" Text="CPU" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+        <!-- ── CPU ─────────────────────────────────────────────────────── -->
+        <Border Grid.Row="0" Grid.Column="0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <TextBlock Text="CPU" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="2" Text="{Binding CpuNote}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
             </Grid>
-            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
-            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-              <TextBlock Text="..." FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Grid.Column="1" Text="-" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock FontSize="28" FontWeight="Bold"
+                         Foreground="{Binding CpuUsage, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=load}"
+                         Text="{Binding CpuUsage, StringFormat='{}{0:F1}'}"/>
+              <TextBlock Text="% 总占用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+            </StackPanel>
+
+            <ProgressBar Minimum="0" Maximum="100" Height="6"
+                         Value="{Binding CpuUsage}"
+                         Foreground="{Binding CpuUsage, Converter={StaticResource PercentToWarningColorConverter}}"/>
+
+            <!-- Per-core columns measure temperature: the IPC carries per-core temperature,
+                 not per-core load, and the label says which of the two this is. -->
+            <TextBlock Text="逐核温度" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+            <ItemsControl ItemsSource="{Binding CoreBars}" IsVisible="{Binding HasCoreBars}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" Spacing="3"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:CoreBar">
+                  <Border Width="14" Height="34" CornerRadius="2"
+                          Background="{StaticResource BackgroundBrush}" VerticalAlignment="Bottom">
+                    <Border Height="{Binding BarHeight}" CornerRadius="2" VerticalAlignment="Bottom"
+                            Background="{Binding Temperature, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=temperature}"/>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="负载 1 / 5 / 15" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding LoadDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
             </Grid>
           </StackPanel>
         </Border>
 
-      </StackPanel>
+        <!-- ── Memory ──────────────────────────────────────────────────── -->
+        <Border Grid.Row="0" Grid.Column="1" Margin="16,0,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <TextBlock Text="内存" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock FontSize="28" FontWeight="Bold"
+                         Foreground="{Binding MemoryPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=load}"
+                         Text="{Binding MemoryPercent, StringFormat='{}{0:F0}'}"/>
+              <TextBlock Text="%" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+            </StackPanel>
+
+            <ProgressBar Minimum="0" Maximum="100" Height="6"
+                         Value="{Binding MemoryPercent}"
+                         Foreground="{Binding MemoryPercent, Converter={StaticResource PercentToWarningColorConverter}}"/>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="已用 / 总量" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding MemoryUsageDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="压缩 / 可用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding MemoryDetailDisplay}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Swap" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding SwapDisplay}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- ── Power ───────────────────────────────────────────────────── -->
+        <Border Grid.Row="1" Grid.Column="0" Margin="0,16,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <TextBlock Text="电源" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+
+            <StackPanel Spacing="10" IsVisible="{Binding HasBattery}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock FontSize="28" FontWeight="Bold"
+                           Foreground="{Binding BatteryPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=battery}"
+                           Text="{Binding BatteryPercent}"/>
+                <TextBlock Text="% 电量" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+              </StackPanel>
+              <ProgressBar Minimum="0" Maximum="100" Height="6"
+                           Value="{Binding BatteryPercent}"
+                           Foreground="{Binding BatteryPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=battery}"/>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="电池健康" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding BatteryHealthDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="供电" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding PowerStateDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+            </StackPanel>
+
+            <!-- No battery: the slot stays, says N/A, and says why -->
+            <StackPanel Spacing="6" IsVisible="{Binding HasNoBattery}">
+              <TextBlock Text="N/A" FontSize="20" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Text="{Binding BatteryNote}" FontSize="10" TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- ── Thermal ─────────────────────────────────────────────────── -->
+        <Border Grid.Row="1" Grid.Column="1" Margin="16,16,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <TextBlock Text="温度" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+
+            <StackPanel Spacing="6" IsVisible="{Binding HasSensors}">
+              <ItemsControl ItemsSource="{Binding Sensors}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SensorRow">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Name}" FontSize="11"
+                                 Foreground="{StaticResource TextSecondaryBrush}"
+                                 TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Grid.Column="1" Text="{Binding TempDisplay}" FontSize="12"
+                                 Foreground="{Binding Temperature, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=temperature}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="{Binding SensorOverflowNote}" IsVisible="{Binding HasSensorOverflow}"
+                         FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+            </StackPanel>
+
+            <TextBlock Text="该主机未报告温度传感器" IsVisible="{Binding HasNoSensors}"
+                       FontSize="10" TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"/>
+
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+            <TextBlock Text="{Binding FanDisplay}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+          </StackPanel>
+        </Border>
+
+        <!-- ── Disks ───────────────────────────────────────────────────── -->
+        <Border Grid.Row="2" Grid.Column="0" Margin="0,16,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <TextBlock Text="磁盘" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding DiskNameDisplay}" FontSize="12"
+                         Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+              <TextBlock Grid.Column="1" Text="{Binding DiskUsageDisplay}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </Grid>
+
+            <!-- Disk usage has no entry in the threshold table, so the bar stays neutral
+                 rather than borrowing the load rule and implying one. -->
+            <ProgressBar Minimum="0" Maximum="100" Height="6"
+                         Value="{Binding DiskUsagePercent}"
+                         Foreground="{StaticResource SecondaryBrush}"/>
+
+            <StackPanel Spacing="6" IsVisible="{Binding HasSmart}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="SMART 健康" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding SmartHealthDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="盘温" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding SmartTempDisplay}" FontSize="12"
+                           Foreground="{Binding SmartTempDisplay, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=temperature}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="通电时长" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding SmartHoursDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+            </StackPanel>
+
+            <TextBlock Text="{Binding SmartNote}" IsVisible="{Binding HasNoSmart}"
+                       FontSize="10" TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"/>
+          </StackPanel>
+        </Border>
+
+        <!-- ── Network ─────────────────────────────────────────────────── -->
+        <Border Grid.Row="2" Grid.Column="1" Margin="16,16,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <TextBlock Text="网络" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="2" Text="{Binding NetworkNameDisplay}" FontSize="10"
+                         Foreground="{StaticResource TextMutedBrush}" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="*,*">
+              <StackPanel Spacing="2">
+                <TextBlock Text="下行" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Text="{Binding DownloadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Text="上行" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Text="{Binding UploadDisplay}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+              </StackPanel>
+            </Grid>
+
+            <StackPanel Spacing="4">
+              <Polyline Points="{Binding DownSparkPoints}" Stroke="{StaticResource SecondaryBrush}"
+                        StrokeThickness="1.5" Stretch="Fill" Height="40"/>
+              <Polyline Points="{Binding UpSparkPoints}" Stroke="{StaticResource PrimaryBrush}"
+                        StrokeThickness="1.5" Stretch="Fill" Height="40"/>
+              <Grid ColumnDefinitions="Auto,*">
+                <TextBlock Text="窗口峰值" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding TrafficPeakDisplay}" FontSize="10"
+                           HorizontalAlignment="Right" Foreground="{StaticResource TextMutedBrush}"/>
+              </Grid>
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="IPv4" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding NetworkIpDisplay}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- ── Top Processes ───────────────────────────────────────────── -->
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Margin="0,16,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <TextBlock Text="Top Processes" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="2" Text="按 CPU 排序 · 单进程阈值 20 / 50 %" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+            </Grid>
+
+            <Grid ColumnDefinitions="84,*,96,104" IsVisible="{Binding HasTopProcesses}">
+              <TextBlock Grid.Column="0" Text="PID" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="1" Text="进程" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="2" Text="CPU" FontSize="10" HorizontalAlignment="Right" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="3" Text="内存" FontSize="10" HorizontalAlignment="Right" Foreground="{StaticResource TextMutedBrush}"/>
+            </Grid>
+
+            <ItemsControl ItemsSource="{Binding TopProcesses}" IsVisible="{Binding HasTopProcesses}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProcessRow">
+                  <Grid ColumnDefinitions="84,*,96,104" Height="28">
+                    <TextBlock Grid.Column="0" Text="{Binding Pid}" FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="{Binding CpuDisplay}" FontSize="12" FontWeight="SemiBold"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{Binding Entry.CpuPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=process}"/>
+                    <TextBlock Grid.Column="3" Text="{Binding MemoryDisplay}" FontSize="12"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Text="采集侧未提供进程列表——连上之后这里会列出占用最高的进程"
+                       IsVisible="{Binding HasNoTopProcesses}"
+                       FontSize="10" TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"/>
+          </StackPanel>
+        </Border>
+      </Grid>
     </ScrollViewer>
   </Grid>
 </UserControl>

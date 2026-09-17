@@ -31,19 +31,19 @@
 
         <!-- TempScope: filter tabs matching pen design -->
         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-          <Border Background="#3B82F6" CornerRadius="8" Padding="12,6">
+          <Border Background="{StaticResource SecondaryBrush}" CornerRadius="8" Padding="12,6">
             <TextBlock Text="全部" FontSize="11" Foreground="White" FontWeight="SemiBold"/>
           </Border>
-          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+          <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
             <TextBlock Text="CPU/GPU" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
           </Border>
-          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+          <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
             <TextBlock Text="内存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
           </Border>
-          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+          <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
             <TextBlock Text="存储" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
           </Border>
-          <Border Background="#1a1a26" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
+          <Border Background="{StaticResource SurfaceLightBrush}" CornerRadius="8" Padding="12,6" Margin="6,0,0,0">
             <TextBlock Text="主板" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
           </Border>
         </StackPanel>

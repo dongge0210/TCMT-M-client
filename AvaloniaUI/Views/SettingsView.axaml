@@ -71,7 +71,7 @@
                     HorizontalAlignment="Left"/>
 
             <!-- Preview -->
-            <Border Background="#0D1117" CornerRadius="6" Padding="12">
+            <Border Background="{StaticResource BackgroundBrush}" CornerRadius="6" Padding="12">
               <TextBlock Text="{Binding FontPreviewText}"
                          FontFamily="{Binding SelectedFontFamily}"
                          FontSize="{Binding FontSize}"

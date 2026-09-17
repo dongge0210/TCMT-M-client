@@ -18,6 +18,8 @@
     <Color x:Key="WarningColor">#FFD97706</Color>
     <Color x:Key="DangerColor">#FFE5534B</Color>
     <Color x:Key="GoldColor">#FFFFD700</Color>
+    <!-- Neutral fallback: an unknown / not-applicable reading — never a failure state -->
+    <Color x:Key="GrayColor">#FF808080</Color>
 
     <!-- Brushes -->
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}" />
@@ -32,6 +34,7 @@
     <SolidColorBrush x:Key="WarningBrush" Color="{StaticResource WarningColor}" />
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
     <SolidColorBrush x:Key="GoldBrush" Color="{StaticResource GoldColor}" />
+    <SolidColorBrush x:Key="GrayBrush" Color="{StaticResource GrayColor}" />
 
     <!-- Card Style -->
     <ControlTheme x:Key="CardBorder" TargetType="Border">

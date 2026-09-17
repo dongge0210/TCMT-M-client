@@ -61,6 +61,35 @@ public partial class NetworkViewModel : ViewModelBase
 
     public string BtDisplay => HasBluetooth ? $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")} ({BtDeviceCount} 台设备)" : "蓝牙未检测到";
 
+    /// <summary>Inverse of HasWiFi, for the "capability missing" note in NetworkView.
+    /// The section stays in place and explains itself instead of collapsing to nothing.</summary>
+    public bool HasNoWiFi => !HasWiFi;
+
+    /// <summary>
+    /// Degradation copy in the terminal's four-state wording. Shown only when it says something
+    /// the SSID row does not already say — a connected adapter with a readable SSID needs no note.
+    /// The state is written out in words, so it never depends on colour to be understood.
+    /// </summary>
+    public string WifiStateNote
+    {
+        get
+        {
+            if (!HasWiFi || !string.IsNullOrEmpty(WifiSSID))
+            {
+                return "";
+            }
+
+            return WifiRSSI != 0 || WifiChannel != 0
+                ? "已连接，但 SSID 读不到——系统需要开启定位服务才会返回 SSID"
+                : "未连接——在系统设置里选择网络，这里会跟着变";
+        }
+    }
+
+    public bool HasWifiNote => HasWiFi && WifiStateNote.Length > 0;
+
+    /// <summary>No adapter reported at all — the interface table says so instead of staying blank.</summary>
+    public bool HasNoAdapters => Adapters.Count == 0;
+
     public NetworkViewModel()
     {
         Title = "网络";
@@ -110,5 +139,9 @@ public partial class NetworkViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(WifiDisplay));
         OnPropertyChanged(nameof(BtDisplay));
+        OnPropertyChanged(nameof(HasNoWiFi));
+        OnPropertyChanged(nameof(WifiStateNote));
+        OnPropertyChanged(nameof(HasWifiNote));
+        OnPropertyChanged(nameof(HasNoAdapters));
     }
 }

@@ -35,9 +35,9 @@
           <StackPanel Spacing="8">
             <TextBlock Text="内存使用" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
             <!-- BarTrack -->
-            <Border Background="#30363D" CornerRadius="4" Height="24">
+            <Border Background="{StaticResource BorderBrush}" CornerRadius="4" Height="24">
               <Grid>
-                <Border Background="#3B82F6" CornerRadius="4" HorizontalAlignment="Left" Width="{Binding MemoryPercent, Converter={StaticResource PercentToWidthConverter}}"/>
+                <Border Background="{StaticResource SecondaryBrush}" CornerRadius="4" HorizontalAlignment="Left" Width="{Binding MemoryPercent, Converter={StaticResource PercentToWidthConverter}}"/>
                 <TextBlock Text="{Binding MemoryPercent, StringFormat='{}{0:F0}%'}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
               </Grid>
             </Border>
@@ -56,26 +56,26 @@
           <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,6,0">
             <StackPanel Spacing="4">
               <TextBlock Text="已用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding UsedMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
+              <TextBlock Text="{Binding UsedMemory}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
             </StackPanel>
           </Border>
           <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="6,0">
             <StackPanel Spacing="4">
               <TextBlock Text="可用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding AvailableMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
+              <TextBlock Text="{Binding AvailableMemory}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
             </StackPanel>
           </Border>
           <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="6,0">
             <StackPanel Spacing="4">
               <TextBlock Text="压缩" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding CompressedMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6" IsVisible="{Binding HasRamInfo}"/>
-              <TextBlock Text="-" FontSize="18" FontWeight="Bold" Foreground="#3B82F6" IsVisible="{Binding HasRamInfo, Converter={StaticResource BoolInvertConverter}}"/>
+              <TextBlock Text="{Binding CompressedMemory}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}" IsVisible="{Binding HasRamInfo}"/>
+              <TextBlock Text="-" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}" IsVisible="{Binding HasRamInfo, Converter={StaticResource BoolInvertConverter}}"/>
             </StackPanel>
           </Border>
           <Border Grid.Column="3" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="6,0,0,0">
             <StackPanel Spacing="4">
               <TextBlock Text="缓存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding AvailableMemory}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
+              <TextBlock Text="{Binding AvailableMemory}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
             </StackPanel>
           </Border>
         </Grid>

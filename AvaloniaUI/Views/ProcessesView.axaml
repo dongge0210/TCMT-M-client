@@ -1,0 +1,211 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.ProcessesView"
+             x:DataType="vm:ProcessesViewModel">
+
+  <Design.DataContext>
+    <vm:ProcessesViewModel />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- TopBar -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="进程" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center">
+          <Run Text="{Binding Rows.Count}"/><Run Text=" / "/><Run Text="{Binding TotalCount}"/>
+        </TextBlock>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="*,330" Margin="20">
+
+      <!-- Process list -->
+      <Border Grid.Column="0"
+              Background="{StaticResource SurfaceBrush}"
+              CornerRadius="8"
+              BorderBrush="{StaticResource BorderBrush}"
+              BorderThickness="1">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+
+          <TextBox Grid.Row="0"
+                   Margin="12,12,12,8"
+                   Height="30"
+                   FontSize="12"
+                   Text="{Binding Filter}"
+                   Watermark="按名称或 PID 过滤"
+                   Background="{StaticResource BackgroundBrush}"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   BorderBrush="{StaticResource BorderBrush}"/>
+
+          <!-- Sort header: same column widths as the rows below -->
+          <Grid Grid.Row="1" ColumnDefinitions="84,*,96,104" Margin="12,0,12,4">
+            <Button Grid.Column="0" Command="{Binding SortCommand}" CommandParameter="pid"
+                    Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Left">
+              <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}">
+                <Run Text="PID"/><Run Text="{Binding PidSortGlyph}"/>
+              </TextBlock>
+            </Button>
+            <Button Grid.Column="1" Command="{Binding SortCommand}" CommandParameter="name"
+                    Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Left">
+              <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}">
+                <Run Text="进程"/><Run Text="{Binding NameSortGlyph}"/>
+              </TextBlock>
+            </Button>
+            <Button Grid.Column="2" Command="{Binding SortCommand}" CommandParameter="cpu"
+                    Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Right">
+              <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}">
+                <Run Text="CPU"/><Run Text="{Binding CpuSortGlyph}"/>
+              </TextBlock>
+            </Button>
+            <Button Grid.Column="3" Command="{Binding SortCommand}" CommandParameter="memory"
+                    Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Right">
+              <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}">
+                <Run Text="内存"/><Run Text="{Binding MemorySortGlyph}"/>
+              </TextBlock>
+            </Button>
+          </Grid>
+
+          <Rectangle Grid.Row="2" Height="1" Fill="{StaticResource BorderBrush}"/>
+
+          <ListBox Grid.Row="3"
+                   Margin="0,1,0,0"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   IsVisible="{Binding HasProcesses}"
+                   ItemsSource="{Binding Rows}"
+                   SelectedItem="{Binding Selected}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProcessRow">
+                <Grid ColumnDefinitions="84,*,96,104" Height="30">
+                  <TextBlock Grid.Column="0" Text="{Binding Pid}" FontSize="12"
+                             Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                             Foreground="{StaticResource TextPrimaryBrush}"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                              HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding CpuDisplay}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{Binding Entry.CpuPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=process}"/>
+                    <TextBlock Text="{Binding LevelText}" FontSize="10"
+                               IsVisible="{Binding HasLevel}"
+                               Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <TextBlock Grid.Column="3" Text="{Binding MemoryDisplay}" FontSize="12"
+                             HorizontalAlignment="Right"
+                             Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <!-- Empty state, its own row: says why it is empty instead of showing a blank panel -->
+          <TextBlock Grid.Row="4"
+                     Margin="16,24"
+                     IsVisible="{Binding HasNoProcesses}"
+                     TextWrapping="Wrap"
+                     TextAlignment="Center"
+                     FontSize="12"
+                     Foreground="{StaticResource TextMutedBrush}"
+                     Text="采集侧未提供进程列表——连上之后这里会列出占用最高的进程"/>
+        </Grid>
+      </Border>
+
+      <!-- Detail -->
+      <Border Grid.Column="1"
+              Margin="16,0,0,0"
+              Background="{StaticResource SurfaceBrush}"
+              CornerRadius="8"
+              BorderBrush="{StaticResource BorderBrush}"
+              BorderThickness="1"
+              Padding="16">
+        <ScrollViewer>
+          <StackPanel Spacing="14">
+
+            <TextBlock Text="{Binding Selected.Name}"
+                       FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextPrimaryBrush}"/>
+
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="PID" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Selected.Pid}" FontSize="12"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="CPU" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Selected.CpuDisplay}" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{Binding Selected.Entry.CpuPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=process}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="内存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Selected.MemoryDisplay}" FontSize="12"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+            </StackPanel>
+
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+
+            <!-- CPU trend: one shared scale, drawn from the per-pid ring buffer -->
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding TrendCaption}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+              <Polyline Points="{Binding TrendPoints}"
+                        Stroke="{StaticResource SecondaryBrush}"
+                        StrokeThickness="1.5"
+                        Stretch="Fill"
+                        Height="40"/>
+            </StackPanel>
+
+            <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+
+            <!-- End process: hidden unless a host provides IProcessController (TUI #10) -->
+            <StackPanel Spacing="8" IsVisible="{Binding CanEndProcess}">
+              <Button Content="结束进程"
+                      Command="{Binding BeginEndProcessCommand}"
+                      IsVisible="{Binding IsIdle}"
+                      HorizontalAlignment="Left"
+                      FontSize="12"
+                      Padding="12,6"
+                      Background="Transparent"
+                      BorderThickness="1"
+                      BorderBrush="{StaticResource DangerBrush}"
+                      Foreground="{StaticResource DangerBrush}"/>
+
+              <StackPanel Spacing="8" IsVisible="{Binding IsConfirmingEnd}">
+                <TextBlock Text="将向该进程发送 SIGTERM，未保存的数据会丢失。"
+                           FontSize="11" TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="取消"
+                          Command="{Binding CancelEndProcessCommand}"
+                          FontSize="12" Padding="12,6"
+                          Background="Transparent"
+                          BorderThickness="1"
+                          BorderBrush="{StaticResource BorderBrush}"
+                          Foreground="{StaticResource TextSecondaryBrush}"/>
+                  <Button Content="确认结束"
+                          Command="{Binding ConfirmEndProcessCommand}"
+                          IsEnabled="{Binding CanPressConfirm}"
+                          FontSize="12" Padding="12,6"
+                          Background="{StaticResource DangerBrush}"
+                          Foreground="{StaticResource BackgroundBrush}"/>
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
+
+            <TextBlock Text="{Binding StatusNote}"
+                       IsVisible="{Binding HasStatusNote}"
+                       FontSize="11" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextMutedBrush}"/>
+
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

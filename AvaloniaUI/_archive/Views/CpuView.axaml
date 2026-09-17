@@ -19,7 +19,7 @@
           <Run Text="CPU · "/><Run Text="{Binding CpuName}"/>
         </TextBlock>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-          <TextBlock Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="13" Foreground="#238636"/>
+          <TextBlock Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="13" Foreground="{StaticResource PrimaryBrush}"/>
           <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
         </StackPanel>
       </Grid>
@@ -38,7 +38,7 @@
           <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14,12" Margin="0,0,4,0">
             <StackPanel Spacing="4">
               <TextBlock Text="P-Core 平均" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding CpuFrequency}" FontSize="18" FontWeight="Bold" Foreground="#238636"/>
+              <TextBlock Text="{Binding CpuFrequency}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
               <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
                 <Run Text="{Binding CpuPcoreTemperature, StringFormat='{}{0:F0}°C · '}"/><Run Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}"/>
               </TextBlock>
@@ -48,7 +48,7 @@
           <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14,12" Margin="4,0">
             <StackPanel Spacing="4">
               <TextBlock Text="E-Core 平均" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
-              <TextBlock Text="{Binding CpuEfficiencyFrequency}" FontSize="18" FontWeight="Bold" Foreground="#3B82F6"/>
+              <TextBlock Text="{Binding CpuEfficiencyFrequency}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
               <TextBlock Text="{Binding CpuEcoreTemperature, StringFormat='{}{0:F0}°C'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
             </StackPanel>
           </Border>

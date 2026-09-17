@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TCMT-M · Avalonia 客户端高保真原型</title>
+<style>
+  /* ─── tokens ────────────────────────────────────────────────────────── */
+  :root {
+    --bg:      oklch(17% 0.012 250);
+    --surface: oklch(22% 0.012 250);
+    --fg:      oklch(88% 0.008 250);
+    --muted:   oklch(70% 0.01 250);
+    --border:  oklch(33% 0.012 250);
+    --accent:  oklch(88% 0.008 250);
+
+    --ok:      oklch(76% 0.14 150);
+    --warn:    oklch(79% 0.14 88);
+    --danger:  oklch(70% 0.18 25);
+    --info:    oklch(72% 0.11 255);
+
+    --raise:   color-mix(in oklab, var(--surface) 94%, var(--fg) 6%);
+    --sunken:  color-mix(in oklab, var(--surface) 80%, var(--bg) 20%);
+    --fg-soft: color-mix(in oklab, var(--fg) 8%, transparent);
+    --dim:     color-mix(in oklab, var(--muted) 78%, transparent);
+
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+    --fs-micro: 11px; --fs-meta: 12px; --fs-body: 13px; --fs-lead: 14px;
+    --fs-lg: 16px; --fs-title: 20px; --fs-kpi: 28px;
+
+    --gap-1: 4px; --gap-2: 8px; --gap-3: 12px; --gap-4: 16px; --gap-5: 24px; --gap-6: 32px;
+    --radius: 4px; --radius-lg: 8px;
+    --side-w: 190px;
+  }
+  [data-theme="light"] {
+    --bg:      oklch(97.5% 0 0);
+    --surface: oklch(100% 0 0);
+    --fg:      oklch(18% 0 0);
+    --muted:   oklch(45% 0 0);
+    --border:  oklch(88% 0 0);
+    --accent:  oklch(18% 0 0);
+    --ok:      oklch(52% 0.14 150);
+    --warn:    oklch(52% 0.12 75);
+    --danger:  oklch(50% 0.19 27);
+    --info:    oklch(52% 0.13 255);
+    --raise:   oklch(99% 0 0);
+    --sunken:  oklch(96% 0 0);
+  }
+  /* 灰阶降级：语义色退为明度差，越界改由字重与下划线承载 */
+  .win.is-gray { --ok: var(--fg); --warn: var(--fg); --danger: var(--fg); --info: var(--muted); }
+  .win.is-gray .v-warn { text-decoration: underline; text-underline-offset: 2px; }
+  .win.is-gray .v-crit { text-decoration: underline; text-underline-offset: 2px; font-weight: 700; }
+
+  /* ─── base ──────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: var(--fs-body); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+  :focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; border-radius: 2px; }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .rule { border: 0; border-top: 1px solid var(--border); margin: 0; }
+
+  /* ─── 视图头部动作区 ────────────────────────────────────────────────── */
+  .head-actions { display: flex; align-items: center; gap: var(--gap-2); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .seg button { padding: 5px 12px; font-size: var(--fs-meta); color: var(--muted); border-right: 1px solid var(--border); white-space: nowrap; }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: var(--fg-soft); color: var(--fg); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+
+  /* ─── app window ────────────────────────────────────────────────────── */
+  .win {
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--surface);
+  }
+  .win-bar { display: flex; align-items: center; gap: var(--gap-3); padding: 0 var(--gap-3); height: 38px; flex: none; background: var(--raise); border-bottom: 1px solid var(--border); }
+  .wb-brand { font-weight: 650; font-size: var(--fs-body); letter-spacing: -0.01em; }
+  .wb-host { color: var(--muted); font-size: var(--fs-meta); }
+  .wb-spacer { flex: 1; }
+  .wb-ctl { width: 26px; height: 22px; display: grid; place-items: center; color: var(--muted); border-radius: var(--radius); font-size: 13px; }
+  .wb-ctl:hover { background: var(--fg-soft); color: var(--fg); }
+  .wb-ctl.is-close:hover { background: var(--danger); color: var(--surface); }
+  .win-bar.is-mac .wb-ctlgroup { order: -1; }
+  .win-bar.is-mac .wb-ctlgroup .wb-ctl:nth-child(3) { order: -1; }
+
+  .wb-hostwrap { position: relative; }
+  .wb-host { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: var(--radius); color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-meta); }
+  .wb-host:hover { background: var(--fg-soft); color: var(--fg); }
+  .wb-host .caret { font-size: 9px; opacity: 0.75; }
+  .host-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 330px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 4px; z-index: 30; }
+  .host-menu[hidden] { display: none; }
+  .host-menu button { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; padding: 7px 9px; border-radius: var(--radius); }
+  .host-menu button:hover { background: var(--fg-soft); }
+  .host-menu button[aria-selected="true"] { background: var(--fg-soft); }
+  .host-menu .hn { font-family: var(--font-mono); font-size: var(--fs-meta); }
+  .host-menu .hs { color: var(--muted); font-size: var(--fs-micro); }
+  .note-dim { margin: 0; color: var(--dim); font-size: var(--fs-micro); }
+
+  .win-body { flex: 1; display: flex; min-height: 0; }
+
+  .side { width: var(--side-w); flex: none; border-right: 1px solid var(--border); background: var(--sunken); display: flex; flex-direction: column; padding: var(--gap-3) var(--gap-2); gap: 2px; }
+  .side-label { font-size: var(--fs-micro); color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 8px 4px; }
+  .nav-item { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-2); padding: 7px 9px; border-radius: var(--radius); color: var(--muted); text-align: left; width: 100%; }
+  .nav-item:hover { background: var(--fg-soft); color: var(--fg); }
+  .nav-item[aria-current="true"] { background: var(--accent); color: var(--surface); font-weight: 600; }
+  .nav-item[aria-current="true"] .nav-count { color: var(--surface); opacity: 0.75; }
+  .nav-count { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-micro); color: var(--dim); }
+  .side-foot { margin-top: auto; padding: 8px 9px; border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-micro); display: flex; flex-direction: column; gap: 4px; }
+  .side-foot b { color: var(--fg); font-weight: 600; }
+
+  .views { flex: 1; min-width: 0; overflow-y: auto; padding: var(--gap-4) var(--gap-5) var(--gap-5); }
+  .view { display: none; }
+  .view.is-on { display: block; }
+
+  .view-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--gap-4); flex-wrap: wrap; margin-bottom: var(--gap-4); }
+  .vh-title { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 650; letter-spacing: -0.015em; margin: 0; }
+  .vh-sub { color: var(--muted); font-size: var(--fs-meta); margin: 2px 0 0; }
+  .vh-meta { color: var(--dim); font-size: var(--fs-micro); text-align: right; }
+
+  /* ─── panel ─────────────────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--gap-3); }
+  .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; }
+  .span-5 { grid-column: span 5; } .span-12 { grid-column: span 12; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; min-width: 0; }
+  .panel-h { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--raise); }
+  .panel-h h3 { margin: 0; font-size: var(--fs-micro); font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; }
+  .panel-h .fill { flex: 1; height: 1px; background: var(--border); }
+  .panel-h .note { color: var(--dim); font-size: var(--fs-micro); font-family: var(--font-mono); }
+  .panel-b { padding: 12px; display: flex; flex-direction: column; gap: var(--gap-3); }
+
+  .kpi { display: flex; align-items: baseline; gap: var(--gap-2); }
+  .kpi-v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-kpi); font-weight: 500; letter-spacing: -0.02em; line-height: 1; }
+  .kpi-u { color: var(--muted); font-size: var(--fs-meta); }
+  .v-warn { color: var(--warn); } .v-crit { color: var(--danger); } .v-ok { color: var(--ok); }
+  .meter { height: 6px; border-radius: 3px; background: var(--fg-soft); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--info); border-radius: 3px; }
+  .meter.is-warn i { background: var(--warn); } .meter.is-crit i { background: var(--danger); }
+  .kv { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gap-3); font-size: var(--fs-body); }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .kv-list { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+  .cores { display: flex; gap: 3px; }
+  .core { flex: 1; height: 34px; background: var(--fg-soft); border-radius: 2px; display: flex; align-items: flex-end; }
+  .core i { display: block; width: 100%; background: var(--info); border-radius: 2px; }
+  .core.is-warn i { background: var(--warn); } .core.is-crit i { background: var(--danger); }
+  .spark { width: 100%; height: 40px; display: block; }
+  .spark .area { fill: var(--info); opacity: 0.18; }
+  .spark .line { fill: none; stroke: var(--info); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .spark.is-up .area { fill: var(--ok); } .spark.is-up .line { stroke: var(--ok); }
+  .empty { color: var(--dim); font-size: var(--fs-meta); padding: 18px 12px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+
+  /* ─── table ─────────────────────────────────────────────────────────── */
+  .table-wrap { overflow: hidden; }
+  table.data { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+  table.data th { text-align: left; font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data th.sortable { cursor: pointer; }
+  table.data th.sortable:hover { color: var(--fg); background: var(--fg-soft); }
+  table.data th .caret { opacity: 0; margin-left: 2px; }
+  table.data th[aria-sort] .caret { opacity: 1; color: var(--fg); }
+  table.data td { padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data tr:last-child td { border-bottom: 0; }
+  table.data tbody tr { cursor: pointer; }
+  table.data tbody tr:hover { background: var(--fg-soft); }
+  table.data tbody tr[aria-selected="true"] { background: var(--accent); color: var(--surface); }
+  table.data tbody tr[aria-selected="true"] .u { color: var(--surface); opacity: 0.7; }
+  table.data .r { text-align: right; }
+  table.data .u { color: var(--dim); font-size: var(--fs-meta); }
+  .pname { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .pname b { font-weight: 550; }
+  .pname span { color: var(--dim); font-size: var(--fs-micro); font-family: var(--font-mono); }
+
+  /* ─── 网络 ──────────────────────────────────────────────────────────── */
+  .t-static tbody tr { cursor: default; }          /* 只读行不给可点的假象 */
+  table.data td.name { font-weight: 550; }
+  .legend { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap-3); color: var(--dim); font-size: var(--fs-micro); }
+  .legend > span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { display: block; width: 14px; height: 2px; border-radius: 1px; background: var(--info); }
+  .legend i.up { background: var(--ok); }
+  .spark .up.area { fill: var(--ok); opacity: 0.18; }
+  .spark .up.line { stroke: var(--ok); }
+
+  /* ─── 日志：级别只在状态处着色，正文不着色 ──────────────────────────── */
+  .log-scroll { max-height: calc(100vh - 320px); min-height: 240px; overflow-y: auto; overscroll-behavior: contain; }
+  .log-scroll:focus-visible { outline-offset: -2px; }
+  .log-row { display: grid; grid-template-columns: 96px 52px 88px minmax(0, 1fr); gap: var(--gap-3); align-items: baseline; padding: 5px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-meta); }
+  .log-row:last-child { border-bottom: 0; }
+  .log-row:hover { background: var(--fg-soft); }
+  .log-time { color: var(--dim); }
+  .log-lv { display: block; text-align: center; font-size: var(--fs-micro); font-weight: 650; letter-spacing: 0.05em; padding: 1px 0; border-radius: 2px; border: 1px solid var(--border); color: var(--muted); }
+  .log-src { color: var(--muted); }
+  .log-msg { overflow-wrap: anywhere; }
+  .log-row.is-warn .log-lv { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, var(--border)); background: color-mix(in oklab, var(--warn) 12%, transparent); }
+  .log-row.is-err .log-lv { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border)); background: color-mix(in oklab, var(--danger) 12%, transparent); }
+  .win.is-gray .log-row.is-err .log-lv { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ─── split (processes / settings) ──────────────────────────────────── */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: var(--gap-3); align-items: start; }
+  .split-settings { grid-template-columns: 232px minmax(0, 1fr); }
+  .toolbar { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .input { flex: 1; min-width: 150px; padding: 6px 9px; background: var(--sunken); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: var(--fs-meta); }
+  .input::placeholder { color: var(--dim); }
+  .input:focus { outline: none; border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg) inset; }
+  .input.is-bad { border-color: var(--danger); }
+  .count { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
+  .count b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg); font-weight: 500; }
+
+  /* ─── form ──────────────────────────────────────────────────────────── */
+  .group-list { display: flex; flex-direction: column; gap: 2px; padding: var(--gap-2); }
+  .group-list button { text-align: left; padding: 7px 9px; border-radius: var(--radius); color: var(--muted); display: flex; justify-content: space-between; gap: var(--gap-2); }
+  .group-list button:hover { background: var(--fg-soft); color: var(--fg); }
+  .group-list button[aria-current="true"] { background: var(--accent); color: var(--surface); font-weight: 600; }
+  .fields { display: flex; flex-direction: column; }
+  .frow { display: grid; grid-template-columns: 1fr 220px; gap: var(--gap-3); align-items: start; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .frow:last-child { border-bottom: 0; }
+  .frow > .fl { display: flex; flex-direction: column; gap: 2px; }
+  .fl label { font-size: var(--fs-body); }
+  .fl p { margin: 0; color: var(--muted); font-size: var(--fs-meta); }
+  .fctl { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+  .fctl .hint { color: var(--dim); font-size: var(--fs-micro); }
+  .fctl .hint.bad { color: var(--danger); }
+  .sw { display: inline-flex; align-items: center; gap: var(--gap-2); align-self: flex-start; }
+  .sw-track { width: 34px; height: 18px; border-radius: 9px; background: var(--fg-soft); border: 1px solid var(--border); position: relative; transition: background 0.12s ease; }
+  .sw-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: transform 0.12s ease, background 0.12s ease; }
+  .sw[aria-pressed="true"] .sw-track { background: var(--accent); border-color: var(--accent); }
+  .sw[aria-pressed="true"] .sw-track::after { transform: translateX(16px); background: var(--surface); }
+  .sw span { font-size: var(--fs-meta); color: var(--muted); }
+  .caps { display: flex; flex-direction: column; gap: 0; }
+  .cap { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-3); padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: var(--fs-body); }
+  .cap:last-child { border-bottom: 0; }
+  .cap span { color: var(--muted); font-size: var(--fs-meta); font-family: var(--font-mono); }
+
+  /* ─── buttons ───────────────────────────────────────────────────────── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border); font-size: var(--fs-meta); font-weight: 550; transition: background 0.12s ease, border-color 0.12s ease; }
+  .btn:hover { background: var(--fg-soft); border-color: var(--fg); }
+  .btn-solid { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+  .btn-solid:hover { background: color-mix(in oklab, var(--accent) 86%, var(--bg)); color: var(--surface); }
+  .btn-danger { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border)); }
+  .btn-danger:hover { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+  .btn-ghost { border-color: transparent; color: var(--muted); }
+  .btn-ghost:hover { color: var(--fg); background: var(--fg-soft); }
+
+  /* ─── banner / dialog ───────────────────────────────────────────────── */
+  .banner { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border: 1px solid var(--warn); border-radius: var(--radius); color: var(--warn); font-size: var(--fs-meta); margin-bottom: var(--gap-3); }
+  .banner[hidden] { display: none; }
+  .scrim { position: fixed; inset: 0; background: color-mix(in oklab, var(--bg) 62%, transparent); display: grid; place-items: center; padding: 20px; z-index: 40; }
+  .scrim[hidden] { display: none; }
+  .dialog { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .dialog .panel-b { gap: var(--gap-2); }
+  .dialog p { margin: 0; color: var(--muted); font-size: var(--fs-meta); }
+  .dialog .row-end { display: flex; justify-content: flex-end; gap: var(--gap-2); margin-top: var(--gap-2); }
+
+  /* ─── status bar ────────────────────────────────────────────────────── */
+  .statusbar { flex: none; display: flex; align-items: center; gap: var(--gap-3); padding: 0 12px; height: 30px; border-top: 1px solid var(--border); background: var(--raise); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-micro); color: var(--muted); overflow: hidden; }
+  .statusbar .sb { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .statusbar .sep { color: var(--border); }
+  .statusbar .spacer { flex: 1; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .win.is-stale .dot { background: var(--warn); }
+  .win.is-stale .sb-src { color: var(--warn); }
+  .sb-src { padding: 2px 7px; margin-left: -7px; border-radius: var(--radius); }
+  .sb-src:hover { background: var(--fg-soft); color: var(--fg); }
+  .sb-src[aria-pressed="true"] { color: var(--warn); }
+  .sb.sample { color: var(--dim); }
+
+  @media (max-width: 920px) {
+    body { height: auto; overflow: auto; }
+    .win { height: auto; }
+    .win-body { flex-direction: column; }
+    .side { width: 100%; flex-direction: row; align-items: center; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: var(--gap-2); }
+    .side-label, .side-foot { display: none; }
+    .nav-item { width: auto; }
+    .views { overflow: visible; padding: var(--gap-3); }
+    .grid { grid-template-columns: 1fr; }
+    .span-3, .span-4, .span-5, .span-12 { grid-column: span 1; }
+    .split { grid-template-columns: 1fr; }
+    .frow { grid-template-columns: 1fr; }
+    table.data .hide-sm { display: none; }
+    .statusbar { flex-wrap: wrap; height: auto; padding: 6px 10px; gap: var(--gap-2); }
+    .statusbar .spacer { display: none; }
+    .log-row { grid-template-columns: 88px 48px minmax(0, 1fr); }
+    .log-src { display: none; }
+    .log-scroll { max-height: 70vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="win" id="win" data-theme="dark">
+
+  <header class="win-bar" data-od-id="titlebar">
+    <span class="wb-brand">TCMT-M Monitor</span>
+    <span class="wb-hostwrap">
+      <button class="wb-host" id="host-btn" aria-haspopup="listbox" aria-expanded="false" title="选择主机" data-od-id="btn-host">
+        <span id="host-name">mbp-14-zhaoming</span><span>·</span><span id="host-spec">Apple M3 Pro · macOS 15.4</span><span class="caret">▾</span>
+      </button>
+      <div class="host-menu" id="host-menu" role="listbox" aria-label="主机列表" hidden></div>
+    </span>
+    <span class="wb-spacer"></span>
+    <span class="wb-ctlgroup">
+      <button class="wb-ctl" title="最小化" aria-label="最小化">–</button>
+      <button class="wb-ctl" title="最大化" aria-label="最大化">▢</button>
+      <button class="wb-ctl is-close" title="关闭" aria-label="关闭">✕</button>
+    </span>
+  </header>
+
+  <div class="win-body">
+    <nav class="side" data-od-id="sidenav" aria-label="主导航">
+      <span class="side-label">Views</span>
+      <button class="nav-item" data-view="overview" aria-current="true">
+        <span data-i18n="nav.overview">总览</span><span class="nav-count">DASH</span>
+      </button>
+      <button class="nav-item" data-view="processes" aria-current="false">
+        <span data-i18n="nav.processes">进程</span><span class="nav-count" id="nav-proc-count">16</span>
+      </button>
+      <button class="nav-item" data-view="network" aria-current="false">
+        <span data-i18n="nav.network">网络</span><span class="nav-count" id="nav-net-count">—</span>
+      </button>
+      <button class="nav-item" data-view="log" aria-current="false">
+        <span data-i18n="nav.log">日志</span><span class="nav-count" id="nav-log-count">—</span>
+      </button>
+      <button class="nav-item" data-view="settings" aria-current="false">
+        <span data-i18n="nav.settings">设置</span><span class="nav-count">SET</span>
+      </button>
+      <div class="side-foot">
+        <span><b>Tick</b> <span class="num" id="side-tick">3.0 s</span></span>
+        <span><b>Uptime</b> <span class="num">6 d 04:21</span></span>
+        <span><b>Agent</b> <span class="num">v0.9.4</span></span>
+      </div>
+    </nav>
+
+    <main class="views" id="views">
+
+      <!-- ══════════════════ 总览 ══════════════════ -->
+      <section class="view is-on" id="view-overview" data-od-id="view-overview" aria-labelledby="ov-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="ov-title" data-i18n="view.overview">总览</h1>
+            <p class="vh-sub" data-i18n="ov.sub">本机硬件实时读数，越界值才着色</p>
+          </div>
+          <div class="vh-meta num" data-i18n="ov.meta">上次采样 0.8 s 前 · 间隔 3 s</div>
+        </div>
+
+        <div class="banner" id="stale-banner" data-stale hidden>
+          <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
+        </div>
+
+        <div class="grid">
+          <section class="panel span-5" data-od-id="panel-cpu">
+            <header class="panel-h"><h3>CPU</h3><span class="fill"></span><span class="note" id="cpu-note">// 12 核 · 3.05 GHz</span></header>
+            <div class="panel-b">
+              <div class="kpi">
+                <span class="kpi-v" id="cpu-total">23.4</span><span class="kpi-u">% 总占用</span>
+                <span class="wb-spacer"></span>
+                <span class="kpi-u num">负载 2.14 / 2.02 / 1.88</span>
+              </div>
+              <div class="meter" id="cpu-meter" role="img" aria-label="CPU 总占用 23.4%"><i style="width:23.4%"></i></div>
+              <div class="cores" id="cpu-cores" aria-label="逐核占用"></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="cpu.user">用户 / 系统</dt><dd>17.2% / 6.2%</dd></div>
+                <div class="kv"><dt data-i18n="cpu.pcore">效能核频率</dt><dd>2.42 GHz</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-4" data-od-id="panel-memory">
+            <header class="panel-h"><h3>Memory</h3><span class="fill"></span><span class="note">// 统一内存</span></header>
+            <div class="panel-b">
+              <div class="kpi"><span class="kpi-v v-warn">17.8</span><span class="kpi-u">/ 24.0 GB</span></div>
+              <div class="meter is-warn" role="img" aria-label="内存占用 74%"><i style="width:74%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="mem.pressure">内存压力</dt><dd class="v-warn">偏高</dd></div>
+                <div class="kv"><dt data-i18n="mem.wired">联动 / 已压缩</dt><dd>3.8 GB / 1.1 GB</dd></div>
+                <div class="kv"><dt>Swap</dt><dd>0 B</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-3" data-od-id="panel-power">
+            <header class="panel-h"><h3>Power</h3><span class="fill"></span></header>
+            <div class="panel-b" id="power-body">
+              <div class="kpi"><span class="kpi-v v-warn">47</span><span class="kpi-u">% 电量</span></div>
+              <div class="meter is-warn" role="img" aria-label="电量 47%"><i style="width:47%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="power.health">电池健康</dt><dd>84%</dd></div>
+                <div class="kv"><dt data-i18n="power.state">电源</dt><dd data-i18n="power.battery">电池供电</dd></div>
+                <div class="kv"><dt data-i18n="power.left">预计可用</dt><dd>2:41</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-4" data-od-id="panel-thermal">
+            <header class="panel-h"><h3>Thermal</h3><span class="fill"></span><span class="note">// 阈值 60 / 80 °C</span></header>
+            <div class="panel-b" id="thermal-body">
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="th.pcore">CPU 性能核</dt><dd class="v-warn">68 °C</dd></div>
+                <div class="kv"><dt data-i18n="th.ecore">CPU 效能核</dt><dd>54 °C</dd></div>
+                <div class="kv"><dt>GPU</dt><dd>46 °C</dd></div>
+                <div class="kv"><dt>SSD</dt><dd>41 °C</dd></div>
+              </dl>
+              <hr class="rule" />
+              <div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title)">1993</span><span class="kpi-u">RPM 风扇 1 / 2</span></div>
+            </div>
+          </section>
+
+          <section class="panel span-5" data-od-id="panel-network">
+            <header class="panel-h"><h3>Network</h3><span class="fill"></span><span class="note" id="net-note">// en0 · Wi-Fi</span></header>
+            <div class="panel-b">
+              <div class="kpi">
+                <span class="kpi-v" style="font-size:var(--fs-title)">1.24</span><span class="kpi-u">MB/s ↓</span>
+                <span class="wb-spacer"></span>
+                <span class="kpi-v" style="font-size:var(--fs-title)">126</span><span class="kpi-u">KB/s ↑</span>
+              </div>
+              <svg class="spark" id="spark-down" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="下行流量 60 秒走势"></svg>
+              <svg class="spark is-up" id="spark-up" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="上行流量 60 秒走势"></svg>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="net.peak">窗口峰值</dt><dd>4.86 MB/s</dd></div>
+                <div class="kv"><dt>IPv4</dt><dd id="net-ip">192.168.31.24</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-3" data-od-id="panel-disk">
+            <header class="panel-h"><h3>Disks</h3><span class="fill"></span><span class="note">// SMART</span></header>
+            <div class="panel-b" id="disk-body">
+              <div class="kv"><dt>Macintosh HD</dt><dd>412 / 512 GB</dd></div>
+              <div class="meter" role="img" aria-label="磁盘占用 80%"><i style="width:80%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="disk.smart">SMART 状态</dt><dd class="v-ok" data-i18n="disk.pass">已通过</dd></div>
+                <div class="kv"><dt data-i18n="disk.temp">盘温</dt><dd>41 °C</dd></div>
+                <div class="kv"><dt data-i18n="disk.power">通电时长</dt><dd>1,842 h</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-12" data-od-id="panel-top-processes">
+            <header class="panel-h"><h3>Top Processes</h3><span class="fill"></span><span class="note">// 按 CPU 排序 · 单进程阈值 20 / 50 %</span></header>
+            <div class="table-wrap">
+              <table class="data" id="top-table">
+                <thead>
+                  <tr>
+                    <th class="r" style="width:74px">PID</th>
+                    <th data-i18n="th.process">进程</th>
+                    <th class="r hide-sm" style="width:110px" data-i18n="th.user">用户</th>
+                    <th class="r" style="width:96px">CPU</th>
+                    <th class="r" style="width:106px" data-i18n="th.mem">内存</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ══════════════════ 进程 ══════════════════ -->
+      <section class="view" id="view-processes" data-od-id="view-processes" aria-labelledby="pr-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="pr-title" data-i18n="view.processes">进程</h1>
+            <p class="vh-sub" data-i18n="pr.sub">选中一行查看详情，越界占用按阈值着色</p>
+          </div>
+        </div>
+
+        <div class="banner" id="stale-banner-2" data-stale hidden>
+          <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
+        </div>
+
+        <div class="split">
+          <section class="panel" data-od-id="panel-process-table">
+            <div class="toolbar">
+              <input class="input" id="proc-filter" type="search" placeholder="过滤进程名或 PID" data-i18n-ph="pr.filter" aria-label="过滤进程" />
+              <span class="count"><span data-i18n="pr.shown">显示</span> <b id="proc-shown">16</b> / <b id="proc-total">16</b></span>
+            </div>
+            <div class="table-wrap">
+              <table class="data" id="proc-table">
+                <thead>
+                  <tr>
+                    <th class="r sortable" data-sort="pid" style="width:74px">PID<span class="caret">▾</span></th>
+                    <th data-sort="name" class="sortable"><span data-i18n="th.process">进程</span><span class="caret">▾</span></th>
+                    <th class="r hide-sm" style="width:118px" data-i18n="th.user">用户</th>
+                    <th class="r sortable" data-sort="cpu" style="width:96px" aria-sort="descending">CPU<span class="caret">▾</span></th>
+                    <th class="r sortable" data-sort="mem" style="width:104px" data-i18n="th.mem">内存<span class="caret">▾</span></th>
+                    <th class="r hide-sm" style="width:78px" data-i18n="th.threads">线程</th>
+                    <th class="hide-sm" style="width:88px" data-i18n="th.state">状态</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside class="panel" data-od-id="panel-process-detail" aria-live="polite">
+            <header class="panel-h"><h3 data-i18n="pr.detail">Process Detail</h3><span class="fill"></span></header>
+            <div class="panel-b" id="detail-body"></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ══════════════════ 网络 ══════════════════ -->
+      <section class="view" id="view-network" data-od-id="view-network" aria-labelledby="nw-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="nw-title" data-i18n="view.network">网络</h1>
+            <p class="vh-sub" data-i18n="nw.sub">逐接口读数与无线状态；缺能力的位置保留并说明原因</p>
+          </div>
+          <div class="vh-meta num" data-i18n="nw.meta">窗口 60 点 · 双序列按窗口峰值归一</div>
+        </div>
+
+        <div class="banner" data-stale hidden>
+          <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
+        </div>
+
+        <div class="grid">
+          <section class="panel span-12" data-od-id="panel-interfaces">
+            <header class="panel-h"><h3>Interfaces</h3><span class="fill"></span><span class="note" id="iface-note">// —</span></header>
+            <div class="table-wrap">
+              <table class="data t-static" id="iface-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="nw.th.name">接口</th>
+                    <th class="hide-sm" data-i18n="nw.th.type">类型</th>
+                    <th class="hide-sm" style="width:132px">IPv4</th>
+                    <th class="hide-sm" style="width:168px">MAC</th>
+                    <th class="r" style="width:104px">↓</th>
+                    <th class="r" style="width:104px">↑</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel span-4" data-od-id="panel-wireless">
+            <header class="panel-h"><h3>Wi-Fi · Bluetooth</h3><span class="fill"></span><span class="note">// 状态即能力</span></header>
+            <div class="panel-b" id="wireless-body"></div>
+          </section>
+
+          <section class="panel span-8" data-od-id="panel-traffic">
+            <header class="panel-h"><h3>Traffic</h3><span class="fill"></span><span class="note" id="traffic-note">// 60 s</span></header>
+            <div class="panel-b">
+              <div class="legend">
+                <span><i></i><span data-i18n="nw.down">下行</span></span>
+                <span><i class="up"></i><span data-i18n="nw.up">上行</span></span>
+                <span data-i18n="nw.norm">两条线共用一个刻度</span>
+              </div>
+              <svg class="spark" id="traffic-spark" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="收发行量 60 秒走势"></svg>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="nw.now">当前</dt><dd id="traffic-now">—</dd></div>
+                <div class="kv"><dt data-i18n="nw.peak">窗口峰值</dt><dd id="traffic-peak">—</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-12" data-od-id="panel-connections">
+            <header class="panel-h"><h3>Connections</h3><span class="fill"></span><span class="note" id="conn-note">// —</span></header>
+            <div class="table-wrap">
+              <table class="data t-static" id="conn-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="nw.th.client">客户端</th>
+                    <th class="hide-sm" style="width:130px" data-i18n="nw.th.via">经由</th>
+                    <th style="width:104px" data-i18n="nw.th.state">状态</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ══════════════════ 日志 ══════════════════ -->
+      <section class="view" id="view-log" data-od-id="view-log" aria-labelledby="lg-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="lg-title" data-i18n="view.log">日志</h1>
+            <p class="vh-sub" data-i18n="lg.sub">客户端事件流：新条目在上，滚动离开顶部即暂停跟随</p>
+          </div>
+          <div class="head-actions">
+            <span class="count" id="log-follow-state"></span>
+            <div class="seg" id="log-level-seg" role="group" aria-label="日志级别"></div>
+          </div>
+        </div>
+
+        <section class="panel" data-od-id="panel-log">
+          <header class="panel-h">
+            <h3>Event Stream</h3><span class="fill"></span>
+            <span class="note" id="log-note">// —</span>
+            <button class="btn btn-ghost" id="log-resume" hidden data-i18n="lg.resume">恢复跟随</button>
+          </header>
+          <div class="log-scroll" id="log-scroll" role="log" aria-label="客户端事件流" tabindex="0"></div>
+        </section>
+      </section>
+
+      <!-- ══════════════════ 设置 ══════════════════ -->
+      <section class="view" id="view-settings" data-od-id="view-settings" aria-labelledby="st-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="st-title" data-i18n="view.settings">设置</h1>
+            <p class="vh-sub" data-i18n="st.sub">左选分组、右改字段，改动即时生效</p>
+          </div>
+          <div class="head-actions">
+            <span class="count" id="save-state"></span>
+            <button class="btn btn-solid" id="save-btn" data-od-id="btn-save" data-i18n="st.save">保存设置</button>
+          </div>
+        </div>
+
+        <div class="split split-settings">
+          <aside class="panel" data-od-id="panel-settings-groups">
+            <header class="panel-h"><h3>Groups</h3><span class="fill"></span></header>
+            <div class="group-list" id="group-list"></div>
+          </aside>
+
+          <section class="panel" data-od-id="panel-settings-fields">
+            <div id="field-groups"></div>
+          </section>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="statusbar" data-od-id="statusbar">
+    <button class="sb sb-src" id="src-chip" aria-pressed="false" title="数据源状态（点击切换）">
+      <span class="dot"></span><span id="sb-live" data-i18n="sb.live">实时</span>
+    </button>
+    <span class="sep">│</span>
+    <span class="sb">CPU <span class="num">23.4%</span></span>
+    <span class="sep">│</span>
+    <span class="sb">RAM <span class="num">74%</span></span>
+    <span class="spacer"></span>
+    <span class="sb">NET <span class="num">↓1.24MB/s ↑126KB/s</span></span>
+    <span class="sep">│</span>
+    <span class="sb">TICK <span class="num" id="sb-tick">3.0s</span></span>
+    <span class="sep">│</span>
+    <span class="sb sample" data-i18n="sb.sample">示意数据 · 非实机采样</span>
+    <span class="sep">│</span>
+    <span class="sb">TCMT-M <span class="num">v0.9.4</span></span>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" data-od-id="dialog-end-process">
+    <header class="panel-h"><h3 id="dlg-title" data-i18n="dlg.title">结束进程</h3><span class="fill"></span></header>
+    <div class="panel-b">
+      <p><span data-i18n="dlg.body">将向进程发送 SIGTERM，未保存的数据会丢失。</span></p>
+      <p class="num" id="dlg-target">—</p>
+      <div class="row-end">
+        <button class="btn" id="dlg-cancel" data-i18n="dlg.cancel">取消</button>
+        <button class="btn btn-danger" id="dlg-confirm" data-od-id="btn-end-process" data-i18n="dlg.confirm">确认结束</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── 示意采样数据（非实机） ─────────────────────────────────────────── */
+  var PROCS = [
+    { pid: 1183, name: 'Google Chrome Helper', user: 'zhaoming', cpu: 54.1, mem: 1620, thr: 42, state: 'run', vmem: 8.4, cputime: '41:07', started: '09:12', path: '/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)' },
+    { pid: 218, name: 'WindowServer', user: '_windowserver', cpu: 22.8, mem: 912, thr: 24, state: 'run', vmem: 12.1, cputime: '184:52', started: '09:02', path: '/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer' },
+    { pid: 902, name: 'Xcode', user: 'zhaoming', cpu: 18.3, mem: 3412, thr: 64, state: 'run', vmem: 21.7, cputime: '96:31', started: '09:40', path: '/Applications/Xcode.app/Contents/MacOS/Xcode' },
+    { pid: 733, name: 'node', user: 'zhaoming', cpu: 16.2, mem: 648, thr: 22, state: 'run', vmem: 4.2, cputime: '27:14', started: '10:05', path: '/opt/homebrew/bin/node' },
+    { pid: 0, name: 'kernel_task', user: 'root', cpu: 12.4, mem: 1843, thr: 186, state: 'run', vmem: 0.0, cputime: '512:40', started: '—', path: '/System/Library/Kernels/kernel' },
+    { pid: 441, name: 'mds_stores', user: 'root', cpu: 9.6, mem: 284, thr: 18, state: 'sleep', vmem: 1.8, cputime: '18:09', started: '09:02', path: '/System/Library/Frameworks/CoreServices.framework/Frameworks/Metadata.framework/Versions/A/Support/mds_stores' },
+    { pid: 655, name: 'Docker Desktop', user: 'zhaoming', cpu: 7.2, mem: 1204, thr: 38, state: 'run', vmem: 9.6, cputime: '34:18', started: '09:04', path: '/Applications/Docker.app/Contents/MacOS/Docker Desktop' },
+    { pid: 1204, name: 'com.apple.WebKit.WebContent', user: 'zhaoming', cpu: 6.4, mem: 736, thr: 26, state: 'sleep', vmem: 6.1, cputime: '12:52', started: '09:14', path: '/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent' },
+    { pid: 867, name: 'Photos', user: 'zhaoming', cpu: 3.9, mem: 512, thr: 14, state: 'sleep', vmem: 3.4, cputime: '04:22', started: '09:31', path: '/System/Applications/Photos.app/Contents/MacOS/Photos' },
+    { pid: 512, name: 'coreaudiod', user: '_coreaudiod', cpu: 2.8, mem: 46, thr: 9, state: 'run', vmem: 0.4, cputime: '06:41', started: '09:02', path: '/usr/sbin/coreaudiod' },
+    { pid: 1002, name: 'Terminal', user: 'zhaoming', cpu: 2.1, mem: 188, thr: 11, state: 'run', vmem: 1.2, cputime: '09:37', started: '09:08', path: '/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal' },
+    { pid: 1290, name: 'TCMT-M Agent', user: 'zhaoming', cpu: 1.8, mem: 96, thr: 9, state: 'run', vmem: 0.6, cputime: '22:15', started: '09:02', path: '/Applications/TCMT-M.app/Contents/MacOS/TCMT-M Agent' },
+    { pid: 1502, name: 'Spotlight', user: 'zhaoming', cpu: 1.1, mem: 264, thr: 12, state: 'sleep', vmem: 2.0, cputime: '03:48', started: '09:03', path: '/System/Library/CoreServices/Spotlight.app/Contents/MacOS/Spotlight' },
+    { pid: 311, name: 'loginwindow', user: 'zhaoming', cpu: 0.6, mem: 82, thr: 6, state: 'sleep', vmem: 0.3, cputime: '01:12', started: '09:02', path: '/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow' },
+    { pid: 148, name: 'backupd', user: 'root', cpu: 0.4, mem: 134, thr: 7, state: 'sleep', vmem: 0.9, cputime: '00:41', started: '09:05', path: '/System/Library/CoreServices/backupd.bundle/Contents/Resources/backupd' },
+    { pid: 1441, name: 'sshd', user: 'root', cpu: 0.1, mem: 18, thr: 3, state: 'sleep', vmem: 0.1, cputime: '00:03', started: '11:20', path: '/usr/sbin/sshd' }
+  ];
+
+  /* 三台主机 = 三种平台能力。同一套 IA，缺什么就报 N/A，不假装。 */
+  var HOSTS = [
+    { id: 'mbp', name: 'mbp-14-zhaoming', spec: 'Apple M3 Pro · macOS 15.4', mac: true, freq: '3.05 GHz',
+      cores: [31, 24, 46, 18, 62, 27, 12, 34, 21, 9, 41, 16],
+      battery: { pct: 47, health: '84%', left: '2:41' },
+      net: { iface: 'en0 · Wi-Fi', ip: '192.168.31.24' },
+      fans: 2, fanRpm: 1993,
+      sensors: [['CPU P-core', 68, 'warn'], ['CPU E-core', 54], ['GPU', 46], ['SSD', 41]],
+      disk: { vol: 'Macintosh HD', used: 412, size: 512, temp: 41, hours: '1,842 h', smart: 'ok' },
+      caps: { loc: 'ok', upd: 'ok', smart: 'ok', notif: 'no' } },
+    { id: 'win', name: 'win-workstation-02', spec: 'AMD Ryzen 9 7950X · Windows 11 24H2', mac: false, freq: '4.50 GHz',
+      cores: [42, 28, 35, 19, 54, 30, 22, 16, 48, 26, 38, 20, 58, 31, 24, 17],
+      battery: null,
+      net: { iface: '以太网', ip: '10.0.4.18' },
+      fans: 1, fanRpm: 1042,
+      sensors: [['CPU package', 61, 'warn'], ['Motherboard', 38], ['NVMe', 44]],
+      disk: { vol: 'C:（系统）', used: 620, size: 1024, temp: 46, hours: '3,106 h', smart: 'ok' },
+      caps: { loc: 'no', upd: 'ok', smart: 'ok', notif: 'ok' } },
+    { id: 'linux', name: 'linux-node-07', spec: 'Intel Xeon E-2388G · Ubuntu 24.04 LTS', mac: false, freq: '3.20 GHz',
+      cores: [26, 18, 33, 21, 29, 14, 38, 22],
+      battery: null,
+      net: { iface: 'eth0', ip: '10.0.7.31' },
+      fans: 0, fanRpm: 0,
+      sensors: [['coretemp · Package id 0', 57], ['ACPI zone 0', 31]],
+      disk: { vol: '/dev/nvme0n1p2', used: 218, size: 512, temp: 44, hours: '7,940 h', smart: 'root' },
+      caps: { loc: 'no', upd: 'ok', smart: 'root', notif: 'no' } }
+  ];
+  var NET_DOWN = [12, 18, 26, 22, 34, 58, 44, 30, 26, 38, 52, 71, 64, 48, 39, 33, 29, 41, 55, 68, 82, 74, 61, 52, 44, 37, 31, 28, 35, 47, 59, 66, 58, 49, 42, 36, 30, 26, 24, 29, 38, 45, 52, 61, 70, 63, 54, 46, 40, 34, 30, 27, 25, 31, 39, 48, 56, 63, 57, 50];
+  var NET_UP = [6, 8, 12, 9, 14, 22, 17, 12, 10, 15, 19, 26, 23, 18, 14, 12, 11, 15, 20, 25, 30, 27, 22, 19, 16, 13, 11, 10, 13, 17, 21, 24, 21, 18, 15, 13, 11, 9, 8, 10, 14, 16, 19, 22, 26, 23, 20, 17, 15, 12, 11, 10, 9, 11, 14, 17, 20, 23, 21, 18];
+
+  /* 逐主机网络详情。缺什么就报 N/A 或说明原因，不编字段。 */
+  var MB_PER_UNIT = 0.0593;   /* NET_* 是 0–100 的相对序列；换算到 MB/s 后窗口峰值落在 4.86 */
+  var NET_DETAIL = {
+    mbp: {
+      ifaces: [
+        { n: 'en0', ty: 'Wi-Fi', ip: '192.168.31.24', mac: 'a8:5c:2c:1f:0d:41', dl: 1.24, ul: 0.123 },
+        { n: 'utun3', ty: 'VPN', ip: '10.8.0.6', mac: null, dl: 0.18, ul: 0.06 },
+        { n: 'lo0', ty: 'Loopback', ip: '127.0.0.1', mac: null, dl: 0, ul: 0 }
+      ],
+      wifi: { state: 'on', ssid: 'Studio-5G', band: '5 GHz', rssi: -52 },
+      bt: { state: 'on', device: 'AirPods Pro' },
+      conns: [
+        { who: '10.8.0.6 · zhaoming-mbp', via: 'sshd' },
+        { who: '127.0.0.1 · TCMT-M Agent', via: 'IPC' }
+      ]
+    },
+    win: {
+      ifaces: [
+        { n: '以太网', ty: 'Ethernet', ip: '10.0.4.18', mac: '9c:6b:00:2a:71:c4', dl: 2.86, ul: 0.42 },
+        { n: 'vEthernet (WSL)', ty: 'Virtual', ip: '172.24.96.1', mac: null, dl: 0.02, ul: 0.01 }
+      ],
+      wifi: { state: 'loc' },
+      bt: { state: 'on', device: null },
+      conns: [{ who: '10.0.4.21 · ops-jump', via: 'RDP' }]
+    },
+    linux: {
+      ifaces: [{ n: 'eth0', ty: 'Ethernet', ip: '10.0.7.31', mac: '52:54:00:8f:22:0a', dl: 0.64, ul: 0.21 }],
+      wifi: { state: 'nohw' },
+      bt: { state: 'nohw' },
+      conns: []
+    }
+  };
+
+  /* 客户端事件流（示意）：新条目在上，与「跟随 = 贴顶」一致 */
+  var LOGS = [
+    { t: '12:11:02.550', lv: 'ERR', src: 'push', msg: 'push failed · 502 bad gateway · retry in 15s' },
+    { t: '12:10:58.114', lv: 'INF', src: 'settings', msg: 'settings saved · interval=3s stale=3s theme=dark lang=zh-Hans' },
+    { t: '12:10:47.108', lv: 'WRN', src: 'collector', msg: 'stale data · no sample for 3.2s · banner raised' },
+    { t: '12:10:44.006', lv: 'INF', src: 'collector', msg: 'host selected · linux-node-07 · caps location=off smart=root notif=off' },
+    { t: '12:10:43.812', lv: 'WRN', src: 'caps', msg: 'location services unavailable · SSID and signal strength cannot be read' },
+    { t: '12:10:41.330', lv: 'INF', src: 'collector', msg: 'history window reset · 60 points · host linux-node-07' },
+    { t: '12:09:57.204', lv: 'WRN', src: 'process', msg: 'end process refused · pid=0 · permission denied' },
+    { t: '12:09:55.881', lv: 'INF', src: 'process', msg: 'end process requested · pid=1183 · SIGTERM' },
+    { t: '12:08:12.640', lv: 'INF', src: 'collector', msg: 'sample · cpu 23.4% · ram 74.0% · p-core 68°C' },
+    { t: '12:07:59.017', lv: 'WRN', src: 'disk', msg: 'SMART requires root on /dev/nvme0n1p2 · shown as unavailable' },
+    { t: '12:07:31.442', lv: 'INF', src: 'collector', msg: 'collector connected · pipe tcmt-m · proto 2' },
+    { t: '12:06:48.905', lv: 'ERR', src: 'collector', msg: 'collector disconnected · pipe closed by peer' },
+    { t: '12:06:02.118', lv: 'INF', src: 'app', msg: 'theme variant applied · dark' },
+    { t: '12:05:44.773', lv: 'INF', src: 'app', msg: 'language applied · zh-Hans · prose layer only' },
+    { t: '12:05:12.306', lv: 'INF', src: 'collector', msg: 'sample · cpu 21.8% · ram 73.6% · p-core 66°C' },
+    { t: '12:04:18.402', lv: 'INF', src: 'app', msg: 'window shown · 1280×800 · scale 1.0' },
+    { t: '12:04:18.221', lv: 'INF', src: 'app', msg: 'TCMT-M client 0.9.4 starting · avalonia' },
+    { t: '12:04:17.880', lv: 'INF', src: 'app', msg: 'config loaded · ~/.config/tcmt-m/settings.json' }
+  ];
+
+  var GROUPS = [
+    { id: 'data', en: 'Data & Refresh', zh: '数据与刷新' },
+    { id: 'push', en: 'Server Push', zh: '服务器推送' },
+    { id: 'look', en: 'Appearance & Language', zh: '外观与语言' },
+    { id: 'caps', en: 'Platform Caps', zh: '平台能力' }
+  ];
+
+  var I18N = {
+    'nav.overview': ['总览', 'Overview'],
+    'nav.processes': ['进程', 'Processes'],
+    'nav.settings': ['设置', 'Settings'],
+    'view.overview': ['总览', 'Overview'],
+    'view.processes': ['进程', 'Processes'],
+    'view.settings': ['设置', 'Settings'],
+    'ov.sub': ['本机硬件实时读数，越界值才着色', 'Live hardware readings — only out-of-range values are coloured'],
+    'ov.meta': ['上次采样 0.8 s 前 · 间隔 3 s', 'Last sample 0.8 s ago · interval 3 s'],
+    'pr.sub': ['选中一行查看详情，越界占用按阈值着色', 'Select a row for details — out-of-range load is coloured by threshold'],
+    'st.sub': ['左选分组、右改字段，改动即时生效', 'Pick a group on the left, edit fields on the right'],
+    'cpu.user': ['用户 / 系统', 'User / System'],
+    'cpu.pcore': ['效能核频率', 'E-core clock'],
+    'mem.pressure': ['内存压力', 'Memory pressure'],
+    'mem.wired': ['联动 / 已压缩', 'Wired / Compressed'],
+    'power.health': ['电池健康', 'Battery health'],
+    'power.state': ['电源', 'Power'],
+    'power.battery': ['电池供电', 'On battery'],
+    'power.left': ['预计可用', 'Time left'],
+    'th.pcore': ['CPU 性能核', 'CPU P-core'],
+    'th.ecore': ['CPU 效能核', 'CPU E-core'],
+    'net.peak': ['窗口峰值', 'Window peak'],
+    'disk.smart': ['SMART 状态', 'SMART status'],
+    'disk.pass': ['已通过', 'Verified'],
+    'disk.temp': ['盘温', 'Drive temp'],
+    'disk.power': ['通电时长', 'Power-on hours'],
+    'th.process': ['进程', 'Process'],
+    'th.user': ['用户', 'User'],
+    'th.mem': ['内存', 'Memory'],
+    'th.threads': ['线程', 'Threads'],
+    'th.state': ['状态', 'State'],
+    'pr.filter': ['过滤进程名或 PID', 'Filter by name or PID'],
+    'pr.shown': ['显示', 'Showing'],
+    'pr.detail': ['Process Detail', 'Process Detail'],
+    'pr.none': ['无匹配进程', 'No matching process'],
+    'pr.lv.warn': ['警示', 'Warning'],
+    'pr.lv.crit': ['临界', 'Critical'],
+    'pr.hint': ['选中左侧任意一行查看该进程详情。', 'Select any row on the left to inspect that process.'],
+    'pr.end': ['结束进程', 'End process'],
+    'pr.path': ['路径', 'Path'],
+    'pr.cputime': ['CPU 时间', 'CPU time'],
+    'pr.started': ['启动时刻', 'Started'],
+    'pr.vmem': ['虚拟内存', 'Virtual memory'],
+    'pr.rss': ['常驻内存', 'Resident memory'],
+    'pr.trend': ['近 60 s CPU 走势', 'CPU · last 60 s'],
+    'pr.state.run': ['运行', 'Running'],
+    'pr.state.sleep': ['休眠', 'Sleeping'],
+    'st.save': ['保存设置', 'Save settings'],
+    'st.saved': ['已保存', 'Saved'],
+    'sb.live': ['实时', 'Live'],
+    'dlg.title': ['结束进程', 'End process'],
+    'dlg.body': ['将向进程发送 SIGTERM，未保存的数据会丢失。', 'SIGTERM will be sent to this process. Unsaved data is lost.'],
+    'dlg.cancel': ['取消', 'Cancel'],
+    'dlg.confirm': ['确认结束', 'End process'],
+    'stale.banner': ['数据停摆：距上次采样已超过 3 s，读数可能已过期。', 'Data stalled: no sample for over 3 s — readings may be stale.'],
+    'sb.lost': ['数据源失联', 'Source lost'],
+    'sb.sample': ['示意数据 · 非实机采样', 'Illustrative data · not a real capture'],
+    'power.pct': ['电量', 'battery'],
+    'power.ac': ['交流供电', 'On AC power'],
+    'power.none': ['该主机未报告电池设备', 'This host reports no battery'],
+    'fan.none': ['该主机未暴露风扇转速', 'No fan tachometer exposed'],
+    'smart.root': ['需要 root 权限', 'Requires root'],
+    'st.caps.root': ['需要 root 权限', 'Requires root'],
+    'st.interval': ['采样间隔', 'Sample interval'],
+    'st.interval.h': ['1–60 秒，超界即钳制。终端与 GUI 共用同一数据源。', 'Clamped to 1–60 s. Terminal and GUI share one data source.'],
+    'st.staleAlert': ['数据停摆告警', 'Stale-data alert'],
+    'st.staleAlert.h': ['超过阈值未采到数据时，状态条与视图顶部同时提示。', 'Warns in the status bar and at the top of a view.'],
+    'st.staleAfter': ['停摆判定阈值', 'Stale threshold'],
+    'st.pushOn': ['启用推送', 'Enable push'],
+    'st.url': ['服务器地址', 'Server URL'],
+    'st.url.h': ['需以 https:// 开头。', 'Must start with https://.'],
+    'st.url.bad': ['地址需以 https:// 开头。', 'URL must start with https://.'],
+    'st.insecure': ['跳过 TLS 校验', 'Skip TLS verify'],
+    'st.insecure.h': ['开启后连接不校验证书，仅用于内网自签环境。', 'Certificate checks are skipped — self-signed intranet only.'],
+    'st.insecure.warn': ['已关闭证书校验，状态条将保留一条弱化告警。', 'Certificate verification is off; a muted warning stays in the status bar.'],
+    'st.pushInterval': ['上报间隔', 'Push interval'],
+    'st.theme': ['主题变体', 'Theme variant'],
+    'st.theme.system': ['跟随系统', 'System'],
+    'st.theme.dark': ['深色', 'Dark'],
+    'st.theme.light': ['浅色', 'Light'],
+    'st.lang': ['语言', 'Language'],
+    'st.gray': ['灰阶模式', 'Grayscale mode'],
+    'st.gray.h': ['对齐终端的 NO_COLOR：语义色退为明度差，越界改由字重与下划线承载。', 'Mirrors NO_COLOR: semantics fall back to weight and underline.'],
+    'st.on': ['已开启', 'On'],
+    'st.off': ['已关闭', 'Off'],
+    'st.caps.on': ['已接入', 'Available'],
+    'st.caps.off': ['不可用', 'Unavailable'],
+    'nav.network': ['网络', 'Network'],
+    'nav.log': ['日志', 'Log'],
+    'view.network': ['网络', 'Network'],
+    'view.log': ['日志', 'Log'],
+    'nw.sub': ['逐接口读数与无线状态；缺能力的位置保留并说明原因', 'Per-interface readings and wireless state — missing capabilities stay, with a reason'],
+    'nw.meta': ['窗口 60 点 · 双序列按窗口峰值归一', '60-point window · both series normalised to the window peak'],
+    'nw.th.name': ['接口', 'Interface'],
+    'nw.th.type': ['类型', 'Type'],
+    'nw.th.client': ['客户端', 'Client'],
+    'nw.th.via': ['经由', 'Via'],
+    'nw.th.state': ['状态', 'State'],
+    'nw.iface.unit': ['个接口', 'interfaces'],
+    'nw.iface.none': ['no interfaces', 'no interfaces'],
+    'nw.conn.unit': ['个连接', 'connections'],
+    'nw.conn.none': ['此刻无客户端连接', 'No clients connected right now'],
+    'nw.conn.active': ['活动', 'Active'],
+    'nw.down': ['下行', 'Down'],
+    'nw.up': ['上行', 'Up'],
+    'nw.norm': ['两条线共用一个刻度', 'One shared scale for both lines'],
+    'nw.window': ['窗口 60 s', '60 s window'],
+    'nw.now': ['当前', 'Now'],
+    'nw.peak': ['窗口峰值', 'Window peak'],
+    'nw.wifi.on': ['已连接', 'Connected'],
+    'nw.wifi.on.note': ['SSID 与信号强度已读取，无需操作。', 'SSID and signal strength available — nothing to do.'],
+    'nw.wifi.off': ['未连接', 'Disconnected'],
+    'nw.wifi.off.note': ['用系统 Wi-Fi 菜单连接任一网络，此面板会自动更新。', 'Join a network from the system Wi-Fi menu; this panel updates on its own.'],
+    'nw.wifi.loc': ['SSID 读不到', 'SSID unreadable'],
+    'nw.wifi.loc.note': ['该主机未提供定位服务，SSID 与信号强度读不到——不是没连上。', 'This host exposes no location service, so SSID and signal strength cannot be read — this is not a disconnection.'],
+    'nw.wifi.denied': ['定位权限被拒绝', 'Location access denied'],
+    'nw.wifi.denied.note': ['在 系统设置 › 隐私与安全性 › 定位服务 里为本应用勾选允许，才会显示 SSID。', 'Allow this app under Location Services (System Settings › Privacy & Security) to see the SSID.'],
+    'nw.wifi.nohw': ['未检测到无线网卡', 'No wireless adapter'],
+    'nw.wifi.nohw.note': ['该主机没有无线网卡，无线信息不可读。', 'This host has no wireless adapter, so wireless information cannot be read.'],
+    'nw.bt.on': ['已连接', 'Connected'],
+    'nw.bt.nohw': ['未检测到蓝牙适配器', 'No Bluetooth adapter'],
+    'nw.bt.device': ['设备', 'Device'],
+    'nw.bt.none': ['未连接设备', 'No device connected'],
+    'lg.sub': ['客户端事件流：新条目在上，滚动离开顶部即暂停跟随', 'Client event stream — newest first; scrolling away from the top pauses follow'],
+    'lg.resume': ['恢复跟随', 'Resume follow'],
+    'lg.follow': ['跟随中', 'Following'],
+    'lg.paused': ['已暂停跟随', 'Follow paused'],
+    'lg.level.all': ['全部', 'All'],
+    'lg.unit': ['条', 'entries'],
+    'lg.empty': ['采集侧连上后事件流会出现在这里。', 'Events appear here once the collector connects.'],
+    'lg.empty.level': ['当前级别下没有事件——屏幕是空的，是因为级别挡住了它，不是没写。', 'No events at this level — the filter is hiding them; the stream is not empty.']
+  };
+
+  var root = document.getElementById('win');
+  var state = {
+    view: read('tcmt.view', 'overview'),
+    theme: read('tcmt.theme', 'dark'),
+    lang: read('tcmt.lang', 'zh'),
+    host: parseInt(read('tcmt.host', '0'), 10) || 0,
+    stale: false,
+    gray: false,
+    group: 'data',
+    selected: 1183,
+    filter: '',
+    sortKey: 'cpu',
+    sortDir: 'desc',
+    logLevel: 'all',
+    logFollow: true
+  };
+
+  function read(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function write(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function t(key) { var e = I18N[key]; return e ? (state.lang === 'zh' ? e[0] : e[1]) : key; }
+
+  /* ── 阈值口径（TUI #5 表） ──────────────────────────────────────────── */
+  function level(value, warn, crit, lowerIsWorse) {
+    if (lowerIsWorse) {
+      if (value <= crit) return 'crit';
+      if (value <= warn) return 'warn';
+      return 'ok';
+    }
+    if (value >= crit) return 'crit';
+    if (value >= warn) return 'warn';
+    return 'ok';
+  }
+  function meterClass(lv) { return lv === 'crit' ? 'is-crit' : (lv === 'warn' ? 'is-warn' : ''); }
+  function valueClass(lv) { return lv === 'crit' ? 'v-crit' : (lv === 'warn' ? 'v-warn' : ''); }
+  function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb + ' MB'; }
+
+  /* ── 语言：只翻散文层，面板名与指标名保持英文 ───────────────────────── */
+  function applyLang() {
+    document.documentElement.lang = state.lang === 'zh' ? 'zh-Hans' : 'en';
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      var k = el.getAttribute('data-i18n');
+      if (I18N[k]) el.textContent = t(k);
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+      var k = el.getAttribute('data-i18n-ph');
+      if (I18N[k]) el.placeholder = t(k);
+    });
+  }
+
+  /* ── 视图 ───────────────────────────────────────────────────────────── */
+  function setView(name) {
+    state.view = name; write('tcmt.view', name);
+    document.querySelectorAll('.view').forEach(function (v) { v.classList.toggle('is-on', v.id === 'view-' + name); });
+    document.querySelectorAll('.nav-item').forEach(function (b) { b.setAttribute('aria-current', String(b.dataset.view === name)); });
+    var views = document.getElementById('views');
+    views.scrollTop = 0;
+  }
+
+  /* ── 主题 / 灰阶 / 停摆 ─────────────────────────────────────────────── */
+  function applyTheme() {
+    root.dataset.theme = state.theme;
+    document.querySelectorAll('[data-theme-opt]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.themeOpt === state.theme));
+    });
+  }
+  function applyGray() { root.classList.toggle('is-gray', state.gray); }
+  function applyStale() {
+    root.classList.toggle('is-stale', state.stale);
+    document.querySelectorAll('[data-stale]').forEach(function (b) { b.hidden = !state.stale; });
+    document.getElementById('sb-live').textContent = state.stale ? t('sb.lost') : t('sb.live');
+    document.getElementById('sb-tick').textContent = state.stale ? '—' : '3.0s';
+    document.getElementById('src-chip').setAttribute('aria-pressed', String(state.stale));
+  }
+
+  /* ── 图表：填充面积 + 折线 ──────────────────────────────────────────── */
+  function spark(el, series) {
+    var W = 100, H = 40;
+    var pts = series.map(function (v, i) {
+      return [i * (W / (series.length - 1)), H - (v / 100) * (H - 4) - 2];
+    });
+    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(2) + ',' + p[1].toFixed(2); }).join(' ');
+    var area = line + ' L' + W + ',' + H + ' L0,' + H + ' Z';
+    el.innerHTML = '<path class="area" d="' + area + '"></path><path class="line" d="' + line + '"></path>';
+  }
+
+  /* 双序列：两条线共用一个刻度（窗口峰值归一），否则上下行无法互相比较 */
+  function spark2(el, down, up) {
+    var W = 100, H = 40;
+    var peak = Math.max(Math.max.apply(null, down), Math.max.apply(null, up)) || 1;
+    function path(series) {
+      var pts = series.map(function (v, i) {
+        return [i * (W / (series.length - 1)), H - (v / peak) * (H - 4) - 2];
+      });
+      var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(2) + ',' + p[1].toFixed(2); }).join(' ');
+      return { line: line, area: line + ' L' + W + ',' + H + ' L0,' + H + ' Z' };
+    }
+    var d = path(down), u = path(up);
+    el.innerHTML =
+      '<path class="area" d="' + d.area + '"></path><path class="line" d="' + d.line + '"></path>' +
+      '<path class="up area" d="' + u.area + '"></path><path class="up line" d="' + u.line + '"></path>';
+  }
+
+  /* ── 进程表 ─────────────────────────────────────────────────────────── */
+  function visibleProcs() {
+    var q = state.filter.trim().toLowerCase();
+    var rows = PROCS.filter(function (p) {
+      return !q || p.name.toLowerCase().indexOf(q) >= 0 || String(p.pid).indexOf(q) === 0;
+    });
+    var dir = state.sortDir === 'asc' ? 1 : -1;
+    rows.sort(function (a, b) {
+      var k = state.sortKey, x = a[k], y = b[k];
+      if (typeof x === 'string') return x.localeCompare(y) * dir;
+      return (x - y) * dir;
+    });
+    return rows;
+  }
+  function procRow(p, withUser) {
+    var lv = level(p.cpu, 20, 50, false);
+    var tr = document.createElement('tr');
+    tr.dataset.pid = p.pid;
+    tr.setAttribute('aria-selected', String(p.pid === state.selected));
+    tr.tabIndex = 0;
+    tr.innerHTML =
+      '<td class="r num u">' + p.pid + '</td>' +
+      '<td><span class="pname"><b>' + p.name + '</b><span>' + p.path.split('/').slice(-1)[0] + '</span></span></td>' +
+      (withUser ? '' : '<td class="r u">' + p.user + '</td>') +
+      '<td class="r num ' + valueClass(lv) + '">' + p.cpu.toFixed(1) + '%</td>' +
+      '<td class="r num">' + fmtMem(p.mem) + '</td>' +
+      (withUser ? '' :
+        '<td class="r num u">' + p.thr + '</td>' +
+        '<td class="u">' + t(p.state === 'run' ? 'pr.state.run' : 'pr.state.sleep') + '</td>');
+    tr.addEventListener('click', function () { state.selected = p.pid; renderProcs(); renderDetail(); });
+    tr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.selected = p.pid; renderProcs(); renderDetail(); } });
+    return tr;
+  }
+  function renderProcs() {
+    var rows = visibleProcs();
+    var body = document.querySelector('#proc-table tbody');
+    body.textContent = '';
+    if (!rows.length) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="7"><div class="empty">' + t('pr.none') + '</div></td>';
+      body.appendChild(tr);
+    } else {
+      rows.forEach(function (p) { body.appendChild(procRow(p, false)); });
+    }
+    document.getElementById('proc-shown').textContent = rows.length;
+    document.getElementById('proc-total').textContent = PROCS.length;
+    document.getElementById('nav-proc-count').textContent = PROCS.length;
+    document.querySelectorAll('#proc-table th.sortable').forEach(function (th) {
+      if (th.dataset.sort === state.sortKey) th.setAttribute('aria-sort', state.sortDir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+
+    var top = document.querySelector('#top-table tbody');
+    top.textContent = '';
+    PROCS.slice().sort(function (a, b) { return b.cpu - a.cpu; }).slice(0, 5).forEach(function (p) {
+      var lv = level(p.cpu, 20, 50, false);
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="r num u">' + p.pid + '</td>' +
+        '<td><span class="pname"><b>' + p.name + '</b></span></td>' +
+        '<td class="r u">' + p.user + '</td>' +
+        '<td class="r num ' + valueClass(lv) + '">' + p.cpu.toFixed(1) + '%</td>' +
+        '<td class="r num">' + fmtMem(p.mem) + '</td>';
+      tr.addEventListener('click', function () {
+        state.selected = p.pid; state.filter = ''; document.getElementById('proc-filter').value = '';
+        renderProcs(); renderDetail(); setView('processes');
+      });
+      top.appendChild(tr);
+    });
+  }
+
+  function renderDetail() {
+    var host = document.getElementById('detail-body');
+    var p = PROCS.filter(function (x) { return x.pid === state.selected; })[0];
+    if (!p) {
+      host.innerHTML = '<p class="empty">' + t('pr.hint') + '</p>';
+      return;
+    }
+    var lv = level(p.cpu, 20, 50, false);
+    var trend = [];
+    for (var i = 0; i < 60; i++) {
+      trend.push(Math.max(2, Math.min(100, p.cpu * (0.55 + 0.45 * Math.sin(i / 4.1) + 0.18 * Math.sin(i / 1.7)))));
+    }
+    var lvTag = lv === 'ok'
+      ? '<span class="kpi-u">' + p.cpu.toFixed(1) + '%</span>'
+      : '<span class="kpi-u ' + valueClass(lv) + '">' + p.cpu.toFixed(1) + '% · ' + t(lv === 'crit' ? 'pr.lv.crit' : 'pr.lv.warn') + '</span>';
+    host.innerHTML =
+      '<div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title)">' + p.cpu.toFixed(1) + '</span>' + lvTag + '</div>' +
+      '<div class="meter ' + meterClass(lv) + '" role="img" aria-label="进程 CPU 占用"><i style="width:' + Math.min(100, p.cpu) + '%"></i></div>' +
+      '<svg class="spark" id="detail-spark" viewBox="0 0 100 40" preserveAspectRatio="none" aria-label="' + t('pr.trend') + '"></svg>' +
+      '<dl class="kv-list">' +
+      '<div class="kv"><dt>PID</dt><dd>' + p.pid + '</dd></div>' +
+      '<div class="kv"><dt>' + t('th.user') + '</dt><dd>' + p.user + '</dd></div>' +
+      '<div class="kv"><dt>' + t('th.state') + '</dt><dd>' + t(p.state === 'run' ? 'pr.state.run' : 'pr.state.sleep') + '</dd></div>' +
+      '<div class="kv"><dt>' + t('th.threads') + '</dt><dd>' + p.thr + '</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.rss') + '</dt><dd>' + fmtMem(p.mem) + '</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.vmem') + '</dt><dd>' + p.vmem.toFixed(1) + ' GB</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.cputime') + '</dt><dd>' + p.cputime + '</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.started') + '</dt><dd>' + p.started + '</dd></div>' +
+      '</dl>' +
+      '<div class="kv" style="align-items:flex-start"><dt>' + t('pr.path') + '</dt></div>' +
+      '<p class="num" style="margin:0;font-size:var(--fs-micro);color:var(--dim);word-break:break-all;line-height:1.5">' + p.path + '</p>' +
+      '<button class="btn btn-danger" id="end-btn" data-od-id="btn-open-end">' + t('pr.end') + '</button>';
+    spark(document.getElementById('detail-spark'), trend);
+    document.getElementById('end-btn').addEventListener('click', function () {
+      document.getElementById('dlg-target').textContent = p.name + ' · PID ' + p.pid;
+      openDialog();
+    });
+  }
+
+  /* ── 平台能力：同一套 IA，按主机能力降级，不假装有 ─────────────────── */
+  function renderHost() {
+    var h = HOSTS[state.host];
+    document.getElementById('host-name').textContent = h.name;
+    document.getElementById('host-spec').textContent = h.spec;
+    document.querySelector('.win-bar').classList.toggle('is-mac', !!h.mac);
+    document.getElementById('cpu-note').textContent = '// ' + h.cores.length + ' 核 · ' + h.freq;
+    document.getElementById('cpu-cores').innerHTML = h.cores.map(function (v) {
+      return '<span class="core ' + meterClass(level(v, 70, 90, false)) + '"><i style="height:' + v + '%"></i></span>';
+    }).join('');
+    document.getElementById('net-note').textContent = '// ' + h.net.iface;
+    document.getElementById('net-ip').textContent = h.net.ip;
+
+    var power = document.getElementById('power-body');
+    if (h.battery) {
+      var blv = level(h.battery.pct, 50, 20, true);
+      power.innerHTML =
+        '<div class="kpi"><span class="kpi-v ' + valueClass(blv) + '">' + h.battery.pct + '</span><span class="kpi-u">% ' + t('power.pct') + '</span></div>' +
+        '<div class="meter ' + meterClass(blv) + '"><i style="width:' + h.battery.pct + '%"></i></div>' +
+        '<dl class="kv-list">' +
+        '<div class="kv"><dt>' + t('power.health') + '</dt><dd>' + h.battery.health + '</dd></div>' +
+        '<div class="kv"><dt>' + t('power.state') + '</dt><dd>' + t('power.battery') + '</dd></div>' +
+        '<div class="kv"><dt>' + t('power.left') + '</dt><dd>' + h.battery.left + '</dd></div>' +
+        '</dl>';
+    } else {
+      power.innerHTML =
+        '<div class="kpi"><span class="kpi-v" style="color:var(--dim)">N/A</span><span class="kpi-u">—</span></div>' +
+        '<div class="meter"><i style="width:0"></i></div>' +
+        '<dl class="kv-list">' +
+        '<div class="kv"><dt>' + t('power.health') + '</dt><dd>N/A</dd></div>' +
+        '<div class="kv"><dt>' + t('power.state') + '</dt><dd>' + t('power.ac') + '</dd></div>' +
+        '<div class="kv"><dt>' + t('power.left') + '</dt><dd>N/A</dd></div>' +
+        '</dl>' +
+        '<p class="note-dim">// ' + t('power.none') + '</p>';
+    }
+
+    var rows = h.sensors.map(function (s) {
+      return '<div class="kv"><dt>' + s[0] + '</dt><dd class="' + (s[2] ? valueClass(s[2]) : '') + '">' + s[1] + ' °C</dd></div>';
+    }).join('');
+    var fan = h.fans
+      ? '<div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title)">' + h.fanRpm + '</span><span class="kpi-u">RPM · ' + h.fans + '</span></div>'
+      : '<div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title);color:var(--dim)">N/A</span><span class="kpi-u">' + t('fan.none') + '</span></div>';
+    document.getElementById('thermal-body').innerHTML = '<dl class="kv-list">' + rows + '</dl><hr class="rule" />' + fan;
+
+    var d = h.disk;
+    var smart = d.smart === 'ok'
+      ? '<dd class="v-ok">' + t('disk.pass') + '</dd>'
+      : '<dd>' + (d.smart === 'root' ? t('smart.root') : 'N/A') + '</dd>';
+    document.getElementById('disk-body').innerHTML =
+      '<div class="kv"><dt>' + d.vol + '</dt><dd>' + d.used + ' / ' + d.size + ' GB</dd></div>' +
+      '<div class="meter"><i style="width:' + Math.round(d.used / d.size * 100) + '%"></i></div>' +
+      '<dl class="kv-list">' +
+      '<div class="kv"><dt>' + t('disk.smart') + '</dt>' + smart + '</div>' +
+      '<div class="kv"><dt>' + t('disk.temp') + '</dt><dd>' + d.temp + ' °C</dd></div>' +
+      '<div class="kv"><dt>' + t('disk.power') + '</dt><dd>' + d.hours + '</dd></div>' +
+      '</dl>';
+
+    document.getElementById('host-menu').innerHTML = HOSTS.map(function (x, i) {
+      return '<button role="option" data-host="' + i + '" aria-selected="' + (i === state.host) + '">' +
+        '<span class="hn">' + x.name + '</span><span class="hs">' + x.spec + '</span></button>';
+    }).join('');
+
+    renderNetwork();
+  }
+
+  /* ── 网络：能力给到什么就显示什么，其余报 N/A 并说明原因 ────────────── */
+  function fmtRate(mbps) {
+    if (!mbps) return '0 B/s';
+    return mbps >= 1 ? mbps.toFixed(2) + ' MB/s' : Math.round(mbps * 1000) + ' KB/s';
+  }
+  function renderNetwork() {
+    var net = NET_DETAIL[HOSTS[state.host].id];
+
+    var body = document.querySelector('#iface-table tbody');
+    body.textContent = '';
+    if (!net.ifaces.length) {
+      body.innerHTML = '<tr><td colspan="6"><div class="empty">' + t('nw.iface.none') + '</div></td></tr>';
+    } else {
+      net.ifaces.forEach(function (f) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num name">' + f.n + '</td>' +
+          '<td class="u hide-sm">' + f.ty + '</td>' +
+          '<td class="num u hide-sm">' + f.ip + '</td>' +
+          '<td class="num u hide-sm">' + (f.mac || '—') + '</td>' +
+          '<td class="r num">' + fmtRate(f.dl) + '</td>' +
+          '<td class="r num">' + fmtRate(f.ul) + '</td>';
+        body.appendChild(tr);
+      });
+    }
+    document.getElementById('iface-note').textContent = '// ' + net.ifaces.length + ' ' + t('nw.iface.unit');
+
+    var wifi = net.wifi;
+    var key = { on: 'nw.wifi.on', off: 'nw.wifi.off', loc: 'nw.wifi.loc', denied: 'nw.wifi.denied', nohw: 'nw.wifi.nohw' }[wifi.state] || 'nw.wifi.nohw';
+    var live = wifi.state === 'on';
+    var rows =
+      '<div class="kv"><dt>Wi-Fi</dt><dd class="' + (live ? 'v-ok' : '') + '">' + t(key) + '</dd></div>' +
+      '<div class="kv"><dt>SSID</dt><dd>' + (live ? wifi.ssid + ' · ' + wifi.band + ' · ' + wifi.rssi + ' dBm' : 'N/A') + '</dd></div>' +
+      '<div class="kv"><dt>Bluetooth</dt><dd>' + (net.bt.state === 'on' ? t('nw.bt.on') : t('nw.bt.nohw')) + '</dd></div>' +
+      (net.bt.state === 'on' ? '<div class="kv"><dt>' + t('nw.bt.device') + '</dt><dd>' + (net.bt.device || t('nw.bt.none')) + '</dd></div>' : '');
+    document.getElementById('wireless-body').innerHTML =
+      '<dl class="kv-list">' + rows + '</dl><p class="note-dim">' + t(key + '.note') + '</p>';
+
+    var down = NET_DOWN.map(function (v) { return v * MB_PER_UNIT; });
+    var up = NET_UP.map(function (v) { return v * MB_PER_UNIT; });
+    var last = down.length - 1;
+    spark2(document.getElementById('traffic-spark'), down, up);
+    document.getElementById('traffic-note').textContent = '// ' + t('nw.window');
+    document.getElementById('traffic-now').textContent = '↓' + fmtRate(down[last]) + '  ↑' + fmtRate(up[last]);
+    document.getElementById('traffic-peak').textContent = '↓' + fmtRate(Math.max.apply(null, down)) + '  ↑' + fmtRate(Math.max.apply(null, up));
+
+    var cbody = document.querySelector('#conn-table tbody');
+    cbody.textContent = '';
+    if (!net.conns.length) {
+      cbody.innerHTML = '<tr><td colspan="3"><div class="empty">' + t('nw.conn.none') + '</div></td></tr>';
+    } else {
+      net.conns.forEach(function (c) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num">' + c.who + '</td>' +
+          '<td class="num u hide-sm">' + c.via + '</td>' +
+          '<td class="u">' + t('nw.conn.active') + '</td>';
+        cbody.appendChild(tr);
+      });
+    }
+    document.getElementById('conn-note').textContent = '// ' + net.conns.length + ' ' + t('nw.conn.unit');
+    document.getElementById('nav-net-count').textContent = net.ifaces.length;
+  }
+
+  /* ── 日志：新条目在上，跟随 = 贴顶；级别只给色块上色 ─────────────────── */
+  function renderLog() {
+    var box = document.getElementById('log-scroll');
+    var rows = LOGS.filter(function (e) { return state.logLevel === 'all' || e.lv === state.logLevel; });
+    box.textContent = '';
+    if (!rows.length) {
+      var p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = t(state.logLevel === 'all' ? 'lg.empty' : 'lg.empty.level');
+      box.appendChild(p);
+    } else {
+      rows.forEach(function (e) {
+        var d = document.createElement('div');
+        d.className = 'log-row' + (e.lv === 'WRN' ? ' is-warn' : (e.lv === 'ERR' ? ' is-err' : ''));
+        d.innerHTML =
+          '<span class="log-time num">' + e.t + '</span>' +
+          '<span class="log-lv">' + e.lv + '</span>' +
+          '<span class="log-src num">' + e.src + '</span>' +
+          '<span class="log-msg">' + e.msg + '</span>';
+        box.appendChild(d);
+      });
+    }
+    document.getElementById('log-note').textContent = '// level: ' + state.logLevel + ' · ' + rows.length + ' ' + t('lg.unit');
+    document.getElementById('nav-log-count').textContent = LOGS.length;
+    document.getElementById('log-level-seg').innerHTML = ['all', 'INF', 'WRN', 'ERR'].map(function (lv) {
+      return '<button data-lv="' + lv + '" aria-pressed="' + (state.logLevel === lv) + '">' + (lv === 'all' ? t('lg.level.all') : lv) + '</button>';
+    }).join('');
+    if (state.logFollow) box.scrollTop = 0;
+    applyFollow();
+  }
+  function applyFollow() {
+    document.getElementById('log-resume').hidden = state.logFollow;
+    document.getElementById('log-follow-state').textContent = state.logFollow ? t('lg.follow') : t('lg.paused');
+  }
+
+  /* ── 设置 ───────────────────────────────────────────────────────────── */
+  function field(labelKey, hintKey, controlHTML, withError) {
+    return '<div class="frow">' +
+      '<div class="fl"><label>' + t(labelKey) + '</label>' + (hintKey ? '<p>' + t(hintKey) + '</p>' : '') + '</div>' +
+      '<div class="fctl">' + controlHTML +
+      (withError ? '<span class="hint bad" id="url-hint" style="display:none">' + t('st.url.bad') + '</span>' : '') +
+      '</div></div>';
+  }
+  function sw(id, on) {
+    return '<button class="sw" id="' + id + '" aria-pressed="' + on + '"><span class="sw-track"></span><span class="sw-label">' + t(on ? 'st.on' : 'st.off') + '</span></button>';
+  }
+  function renderSettings() {
+    var host = document.getElementById('field-groups');
+    var html = '';
+    if (state.group === 'data') {
+      html = field('st.interval', 'st.interval.h', '<input class="input num" id="f-interval" type="number" min="1" max="60" step="1" value="3" style="flex:none;width:110px">') +
+             field('st.staleAlert', 'st.staleAlert.h', sw('f-stale', true)) +
+             field('st.staleAfter', null, '<input class="input num" id="f-after" type="number" min="1" max="60" value="3" style="flex:none;width:110px">');
+    } else if (state.group === 'push') {
+      html = field('st.pushOn', null, sw('f-push', true)) +
+             field('st.url', 'st.url.h', '<input class="input num" id="f-url" type="text" value="https://tcmt.internal:8443/report" style="width:100%">', true) +
+             field('st.insecure', null, sw('f-insecure', false)) +
+             field('st.pushInterval', null, '<input class="input num" id="f-push-int" type="number" min="1" max="60" value="15" style="flex:none;width:110px">');
+    } else if (state.group === 'look') {
+      html = '<div class="frow"><div class="fl"><label>' + t('st.theme') + '</label></div><div class="fctl">' +
+               '<div class="seg" id="theme-seg"><button data-theme-opt="system">' + t('st.theme.system') + '</button><button data-theme-opt="dark">' + t('st.theme.dark') + '</button><button data-theme-opt="light">' + t('st.theme.light') + '</button></div>' +
+             '</div></div>' +
+             '<div class="frow"><div class="fl"><label>' + t('st.lang') + '</label></div><div class="fctl">' +
+               '<div class="seg" id="lang-seg"><button data-lang-opt="zh">简体中文</button><button data-lang-opt="en">English</button></div>' +
+             '</div></div>' +
+             field('st.gray', 'st.gray.h', sw('f-gray', state.gray));
+    } else {
+      var ch = HOSTS[state.host];
+      var capName = { loc: ['位置服务', 'Location services'], upd: ['更新检查', 'Update check'], smart: ['SMART', 'SMART'], notif: ['系统通知', 'System notifications'] };
+      var capState = function (v) { return t(v === 'ok' ? 'st.caps.on' : (v === 'root' ? 'st.caps.root' : 'st.caps.off')); };
+      html = '<div class="caps">' + Object.keys(ch.caps).map(function (k) {
+        return '<div class="cap">' + capName[k][state.lang === 'zh' ? 0 : 1] + '<span>' + capState(ch.caps[k]) + '</span></div>';
+      }).join('') +
+      '<div class="cap">' + (state.lang === 'zh' ? '版本' : 'Version') + '<span>TCMT-M 0.9.4</span></div></div>';
+    }
+    host.innerHTML = html;
+    wireSettings();
+    applyTheme();
+  }
+  function renderGroups() {
+    document.getElementById('group-list').innerHTML = GROUPS.map(function (g) {
+      return '<button data-group="' + g.id + '" aria-current="' + (g.id === state.group) + '"><span>' + (state.lang === 'zh' ? g.zh : g.en) + '</span></button>';
+    }).join('');
+    document.querySelectorAll('#group-list button').forEach(function (b) {
+      b.addEventListener('click', function () { state.group = b.dataset.group; renderGroups(); renderSettings(); });
+    });
+  }
+  function wireSettings() {
+    document.querySelectorAll('#field-groups .sw').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var on = b.getAttribute('aria-pressed') !== 'true';
+        b.setAttribute('aria-pressed', String(on));
+        b.querySelector('.sw-label').textContent = t(on ? 'st.on' : 'st.off');
+        if (b.id === 'f-gray') { state.gray = on; applyGray(); }
+        if (b.id === 'f-insecure') { document.getElementById('save-state').textContent = t('st.insecure.warn'); }
+      });
+    });
+    var themeSeg = document.getElementById('theme-seg');
+    if (themeSeg) themeSeg.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      state.theme = b.dataset.themeOpt; write('tcmt.theme', state.theme); applyTheme();
+    });
+    var langSeg = document.getElementById('lang-seg');
+    if (langSeg) {
+      langSeg.querySelectorAll('button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.langOpt === state.lang));
+        b.addEventListener('click', function () {
+          state.lang = b.dataset.langOpt; write('tcmt.lang', state.lang);
+          applyLang(); renderHost(); renderGroups(); renderSettings(); renderProcs(); renderDetail(); renderLog(); applyStale();
+        });
+      });
+    }
+    var url = document.getElementById('f-url');
+    if (url) url.addEventListener('input', function () {
+      var ok = /^https:\/\//.test(url.value.trim());
+      url.classList.toggle('is-bad', !ok);
+      var hint = document.getElementById('url-hint');
+      if (hint) hint.style.display = ok ? 'none' : '';
+    });
+    ['f-interval', 'f-after', 'f-push-int'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('blur', function () {
+        var v = parseInt(el.value, 10);
+        if (isNaN(v)) v = 1;
+        el.value = String(Math.max(1, Math.min(60, v)));
+      });
+    });
+  }
+
+  /* ── 弹层 ───────────────────────────────────────────────────────────── */
+  var scrim = document.getElementById('scrim');
+  function openDialog() { scrim.hidden = false; document.getElementById('dlg-confirm').focus(); }
+  function closeDialog() { scrim.hidden = true; }
+  document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
+  document.getElementById('dlg-confirm').addEventListener('click', closeDialog);
+  scrim.addEventListener('click', function (e) { if (e.target === scrim) closeDialog(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !scrim.hidden) closeDialog(); });
+
+  /* ── 主机切换（换主机 = 换平台能力） ────────────────────────────────── */
+  var hostBtn = document.getElementById('host-btn');
+  var hostMenu = document.getElementById('host-menu');
+  function closeHostMenu() { hostMenu.hidden = true; hostBtn.setAttribute('aria-expanded', 'false'); }
+  hostBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var open = hostMenu.hidden;
+    hostMenu.hidden = !open;
+    hostBtn.setAttribute('aria-expanded', String(open));
+  });
+  hostMenu.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    state.host = parseInt(b.dataset.host, 10);
+    write('tcmt.host', String(state.host));
+    closeHostMenu();
+    renderHost();
+    renderGroups();
+    renderSettings();
+  });
+  document.addEventListener('click', function (e) {
+    if (!hostMenu.hidden && !hostMenu.contains(e.target) && !hostBtn.contains(e.target)) closeHostMenu();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !hostMenu.hidden) closeHostMenu(); });
+
+  /* ── 事件绑定 ───────────────────────────────────────────────────────── */
+  document.querySelectorAll('.nav-item').forEach(function (b) {
+    b.addEventListener('click', function () { setView(b.dataset.view); });
+  });
+  document.querySelectorAll('#proc-table th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+      if (state.sortKey === th.dataset.sort) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      else { state.sortKey = th.dataset.sort; state.sortDir = th.dataset.sort === 'name' ? 'asc' : 'desc'; }
+      renderProcs();
+    });
+  });
+  document.getElementById('proc-filter').addEventListener('input', function (e) {
+    state.filter = e.target.value; renderProcs();
+  });
+  document.getElementById('src-chip').addEventListener('click', function () {
+    state.stale = !state.stale;
+    applyStale();
+  });
+  document.getElementById('log-level-seg').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    state.logLevel = b.dataset.lv;
+    renderLog();
+  });
+  var logScroll = document.getElementById('log-scroll');
+  logScroll.addEventListener('scroll', function () {
+    var atTop = logScroll.scrollTop <= 2;
+    if (atTop === state.logFollow) return;
+    state.logFollow = atTop;   /* 离开顶部即暂停，回到顶部自动恢复 */
+    applyFollow();
+  });
+  document.getElementById('log-resume').addEventListener('click', function () {
+    state.logFollow = true;
+    logScroll.scrollTop = 0;
+    applyFollow();
+  });
+  document.getElementById('save-btn').addEventListener('click', function () {
+    var url = document.getElementById('f-url');
+    if (url && !/^https:\/\//.test(url.value.trim())) {
+      url.classList.add('is-bad');
+      var hint = document.getElementById('url-hint'); if (hint) hint.style.display = '';
+      url.focus();
+      return;
+    }
+    var d = new Date();
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    var ss = String(d.getSeconds()).padStart(2, '0');
+    document.getElementById('save-state').textContent = t('st.saved') + ' · ' + hh + ':' + mm + ':' + ss;
+  });
+
+  /* ── 初始化 ─────────────────────────────────────────────────────────── */
+  var cpuLv = level(23.4, 70, 90, false);
+  document.getElementById('cpu-meter').className = 'meter ' + meterClass(cpuLv);
+  spark(document.getElementById('spark-down'), NET_DOWN);
+  spark(document.getElementById('spark-up'), NET_UP);
+
+  applyLang();
+  applyTheme();
+  applyGray();
+  applyStale();
+  setView(state.view);
+  renderHost();
+  renderProcs();
+  renderDetail();
+  renderLog();
+  renderGroups();
+  renderSettings();
+})();
+</script>
+</body>
+</html>
