@@ -245,15 +245,9 @@
   .btn-ghost { border-color: transparent; color: var(--muted); }
   .btn-ghost:hover { color: var(--fg); background: var(--fg-soft); }
 
-  /* ─── banner / dialog ───────────────────────────────────────────────── */
+  /* ─── banner ────────────────────────────────────────────────────────── */
   .banner { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border: 1px solid var(--warn); border-radius: var(--radius); color: var(--warn); font-size: var(--fs-meta); margin-bottom: var(--gap-3); }
   .banner[hidden] { display: none; }
-  .scrim { position: fixed; inset: 0; background: color-mix(in oklab, var(--bg) 62%, transparent); display: grid; place-items: center; padding: 20px; z-index: 40; }
-  .scrim[hidden] { display: none; }
-  .dialog { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  .dialog .panel-b { gap: var(--gap-2); }
-  .dialog p { margin: 0; color: var(--muted); font-size: var(--fs-meta); }
-  .dialog .row-end { display: flex; justify-content: flex-end; gap: var(--gap-2); margin-top: var(--gap-2); }
 
   /* ─── status bar ────────────────────────────────────────────────────── */
   .statusbar { flex: none; display: flex; align-items: center; gap: var(--gap-3); padding: 0 12px; height: 30px; border-top: 1px solid var(--border); background: var(--raise); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-micro); color: var(--muted); overflow: hidden; }
@@ -360,7 +354,8 @@
                 <span class="kpi-u num">负载 2.14 / 2.02 / 1.88</span>
               </div>
               <div class="meter" id="cpu-meter" role="img" aria-label="CPU 总占用 23.4%"><i style="width:23.4%"></i></div>
-              <div class="cores" id="cpu-cores" aria-label="逐核占用"></div>
+              <div class="cores" id="cpu-cores" aria-label="逐核温度"></div>
+              <p class="note-dim" data-i18n="cpu.cores.note">逐核温度，非占用：IPC 线格式没有逐核占用数据</p>
               <dl class="kv-list">
                 <div class="kv"><dt data-i18n="cpu.user">用户 / 系统</dt><dd>17.2% / 6.2%</dd></div>
                 <div class="kv"><dt data-i18n="cpu.pcore">效能核频率</dt><dd>2.42 GHz</dd></div>
@@ -493,6 +488,7 @@
                 <tbody></tbody>
               </table>
             </div>
+            <p class="note-dim" style="padding:0 12px 10px" data-i18n="pr.wire.note">用户 · 线程 · 状态 · 路径 · CPU 时间 · 启动时刻为示意值：IPC 线格式现只有 PID · 名称 · CPU · 内存</p>
           </section>
 
           <aside class="panel" data-od-id="panel-process-detail" aria-live="polite">
@@ -645,20 +641,6 @@
   </footer>
 </div>
 
-<div class="scrim" id="scrim" hidden>
-  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" data-od-id="dialog-end-process">
-    <header class="panel-h"><h3 id="dlg-title" data-i18n="dlg.title">结束进程</h3><span class="fill"></span></header>
-    <div class="panel-b">
-      <p><span data-i18n="dlg.body">将向进程发送 SIGTERM，未保存的数据会丢失。</span></p>
-      <p class="num" id="dlg-target">—</p>
-      <div class="row-end">
-        <button class="btn" id="dlg-cancel" data-i18n="dlg.cancel">取消</button>
-        <button class="btn btn-danger" id="dlg-confirm" data-od-id="btn-end-process" data-i18n="dlg.confirm">确认结束</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
 (function () {
   'use strict';
@@ -754,8 +736,8 @@
     { t: '12:10:44.006', lv: 'INF', src: 'collector', msg: 'host selected · linux-node-07 · caps location=off smart=root notif=off' },
     { t: '12:10:43.812', lv: 'WRN', src: 'caps', msg: 'location services unavailable · SSID and signal strength cannot be read' },
     { t: '12:10:41.330', lv: 'INF', src: 'collector', msg: 'history window reset · 60 points · host linux-node-07' },
-    { t: '12:09:57.204', lv: 'WRN', src: 'process', msg: 'end process refused · pid=0 · permission denied' },
-    { t: '12:09:55.881', lv: 'INF', src: 'process', msg: 'end process requested · pid=1183 · SIGTERM' },
+    { t: '12:09:57.204', lv: 'WRN', src: 'process', msg: 'process list capped · top 7 by cpu · full scan skipped' },
+    { t: '12:09:55.881', lv: 'INF', src: 'process', msg: 'process sample · 16 entries · sorted by cpu desc' },
     { t: '12:08:12.640', lv: 'INF', src: 'collector', msg: 'sample · cpu 23.4% · ram 74.0% · p-core 68°C' },
     { t: '12:07:59.017', lv: 'WRN', src: 'disk', msg: 'SMART requires root on /dev/nvme0n1p2 · shown as unavailable' },
     { t: '12:07:31.442', lv: 'INF', src: 'collector', msg: 'collector connected · pipe tcmt-m · proto 2' },
@@ -813,7 +795,6 @@
     'pr.lv.warn': ['警示', 'Warning'],
     'pr.lv.crit': ['临界', 'Critical'],
     'pr.hint': ['选中左侧任意一行查看该进程详情。', 'Select any row on the left to inspect that process.'],
-    'pr.end': ['结束进程', 'End process'],
     'pr.path': ['路径', 'Path'],
     'pr.cputime': ['CPU 时间', 'CPU time'],
     'pr.started': ['启动时刻', 'Started'],
@@ -825,10 +806,9 @@
     'st.save': ['保存设置', 'Save settings'],
     'st.saved': ['已保存', 'Saved'],
     'sb.live': ['实时', 'Live'],
-    'dlg.title': ['结束进程', 'End process'],
-    'dlg.body': ['将向进程发送 SIGTERM，未保存的数据会丢失。', 'SIGTERM will be sent to this process. Unsaved data is lost.'],
-    'dlg.cancel': ['取消', 'Cancel'],
-    'dlg.confirm': ['确认结束', 'End process'],
+    'cpu.cores.note': ['逐核温度，非占用：IPC 线格式没有逐核占用数据', 'Per-core temperature, not load: the IPC wire format carries no per-core utilisation'],
+    'pr.wire.note': ['用户 · 线程 · 状态 · 路径 · CPU 时间 · 启动时刻为示意值：IPC 线格式现只有 PID · 名称 · CPU · 内存', 'User · threads · state · path · CPU time · started are illustrative: the IPC wire format currently carries only PID · name · CPU · memory'],
+    'pr.end.note': ['结束进程待 host 实现——有 handler 才显示', 'End process awaits a host handler — shown only when one exists'],
     'stale.banner': ['数据停摆：距上次采样已超过 3 s，读数可能已过期。', 'Data stalled: no sample for over 3 s — readings may be stale.'],
     'sb.lost': ['数据源失联', 'Source lost'],
     'sb.sample': ['示意数据 · 非实机采样', 'Illustrative data · not a real capture'],
@@ -1112,12 +1092,8 @@
       '</dl>' +
       '<div class="kv" style="align-items:flex-start"><dt>' + t('pr.path') + '</dt></div>' +
       '<p class="num" style="margin:0;font-size:var(--fs-micro);color:var(--dim);word-break:break-all;line-height:1.5">' + p.path + '</p>' +
-      '<button class="btn btn-danger" id="end-btn" data-od-id="btn-open-end">' + t('pr.end') + '</button>';
+      '<p class="note-dim">' + t('pr.end.note') + '</p>';
     spark(document.getElementById('detail-spark'), trend);
-    document.getElementById('end-btn').addEventListener('click', function () {
-      document.getElementById('dlg-target').textContent = p.name + ' · PID ' + p.pid;
-      openDialog();
-    });
   }
 
   /* ── 平台能力：同一套 IA，按主机能力降级，不假装有 ─────────────────── */
@@ -1128,7 +1104,7 @@
     document.querySelector('.win-bar').classList.toggle('is-mac', !!h.mac);
     document.getElementById('cpu-note').textContent = '// ' + h.cores.length + ' 核 · ' + h.freq;
     document.getElementById('cpu-cores').innerHTML = h.cores.map(function (v) {
-      return '<span class="core ' + meterClass(level(v, 70, 90, false)) + '"><i style="height:' + v + '%"></i></span>';
+      return '<span class="core ' + meterClass(level(v, 60, 80, false)) + '"><i style="height:' + v + '%"></i></span>';
     }).join('');
     document.getElementById('net-note').textContent = '// ' + h.net.iface;
     document.getElementById('net-ip').textContent = h.net.ip;
@@ -1378,15 +1354,6 @@
       });
     });
   }
-
-  /* ── 弹层 ───────────────────────────────────────────────────────────── */
-  var scrim = document.getElementById('scrim');
-  function openDialog() { scrim.hidden = false; document.getElementById('dlg-confirm').focus(); }
-  function closeDialog() { scrim.hidden = true; }
-  document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
-  document.getElementById('dlg-confirm').addEventListener('click', closeDialog);
-  scrim.addEventListener('click', function (e) { if (e.target === scrim) closeDialog(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !scrim.hidden) closeDialog(); });
 
   /* ── 主机切换（换主机 = 换平台能力） ────────────────────────────────── */
   var hostBtn = document.getElementById('host-btn');
