@@ -24,6 +24,15 @@ public partial class DashboardViewModel : ViewModelBase
     private double _cpuUsage;
 
     [ObservableProperty]
+    private string _cpuUsageDisplay = "—";
+
+    /// <summary>False until the collector has delivered a sample. IPCSystemInfoMapper stamps
+    /// LastUpdate on every real sample, so a default value means nothing has arrived yet —
+    /// and a KPI showing 0 is a measurement, which the absence of one is not.</summary>
+    [ObservableProperty]
+    private bool _hasSample;
+
+    [ObservableProperty]
     private string _cpuNote = "// —";
 
     [ObservableProperty]
@@ -31,6 +40,9 @@ public partial class DashboardViewModel : ViewModelBase
 
     [ObservableProperty]
     private double _memoryPercent;
+
+    [ObservableProperty]
+    private string _memoryPercentDisplay = "—";
 
     [ObservableProperty]
     private string _memoryUsageDisplay = "—";
@@ -129,6 +141,11 @@ public partial class DashboardViewModel : ViewModelBase
 
     public bool HasNoSmart => !HasSmart;
 
+    /// <summary>False until the ring buffer holds two points. A line needs two, and the empty
+    /// string Sparkline returns for fewer converts to a null Points list — which Polyline throws
+    /// on while measuring. The view keeps the lines out of layout instead.</summary>
+    public bool HasTrafficSpark => DownSparkPoints.Length > 0;
+
     public DashboardViewModel()
     {
         Title = "概览";
@@ -141,6 +158,9 @@ public partial class DashboardViewModel : ViewModelBase
 
     public override void Update(SystemInfo info)
     {
+        // Every real sample carries a timestamp; while it is still default nothing has arrived.
+        HasSample = info.LastUpdate != default;
+
         UpdateCpu(info);
         UpdateMemory(info);
         UpdatePower(info);
@@ -153,6 +173,7 @@ public partial class DashboardViewModel : ViewModelBase
     private void UpdateCpu(SystemInfo info)
     {
         CpuUsage = FormatUtils.ValidateDouble(info.CpuUsage);
+        CpuUsageDisplay = HasSample ? $"{CpuUsage:F1}" : "—";
 
         var cores = info.LogicalCores > 0 ? info.LogicalCores : info.PhysicalCores;
         CpuNote = cores > 0 ? $"// {cores} 核" : "// —";
@@ -172,9 +193,16 @@ public partial class DashboardViewModel : ViewModelBase
 
     private void UpdateMemory(SystemInfo info)
     {
+        var hasMemory = HasSample && info.TotalMemory > 0;
+
         MemoryPercent = info.TotalMemory > 0 ? (double)info.UsedMemory / info.TotalMemory * 100 : 0;
-        MemoryUsageDisplay = $"{FormatUtils.FormatBytes(info.UsedMemory)} / {FormatUtils.FormatBytes(info.TotalMemory)}";
-        MemoryDetailDisplay = $"已压缩 {FormatUtils.FormatBytes(info.CompressedMemory)} · 可用 {FormatUtils.FormatBytes(info.AvailableMemory)}";
+        MemoryPercentDisplay = hasMemory ? $"{MemoryPercent:F0}" : "—";
+        MemoryUsageDisplay = hasMemory
+            ? $"{FormatUtils.FormatBytes(info.UsedMemory)} / {FormatUtils.FormatBytes(info.TotalMemory)}"
+            : "—";
+        MemoryDetailDisplay = hasMemory
+            ? $"已压缩 {FormatUtils.FormatBytes(info.CompressedMemory)} · 可用 {FormatUtils.FormatBytes(info.AvailableMemory)}"
+            : "—";
         SwapDisplay = info.SwapTotal > 0
             ? $"{FormatUtils.FormatBytes(info.SwapUsed)} / {FormatUtils.FormatBytes(info.SwapTotal)}"
             : "—";
@@ -258,7 +286,12 @@ public partial class DashboardViewModel : ViewModelBase
 
         DownSparkPoints = Sparkline.Points(_downHistory);
         UpSparkPoints = Sparkline.Points(_upHistory);
-        TrafficPeakDisplay = $"↓ {FormatUtils.FormatNetworkSpeed((ulong)_downHistory.Max())} · ↑ {FormatUtils.FormatNetworkSpeed((ulong)_upHistory.Max())}";
+        OnPropertyChanged(nameof(HasTrafficSpark));
+        // Both buffers are pushed together, so one emptiness check covers the pair.
+        // An empty window is not a reading of zero — say so rather than printing "0 B/s".
+        TrafficPeakDisplay = _downHistory.IsEmpty
+            ? "—"
+            : $"↓ {FormatUtils.FormatNetworkSpeed((ulong)_downHistory.Max())} · ↑ {FormatUtils.FormatNetworkSpeed((ulong)_upHistory.Max())}";
     }
 
     private void UpdateTopProcesses(SystemInfo info)

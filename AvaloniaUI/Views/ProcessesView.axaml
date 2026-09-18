@@ -154,11 +154,14 @@
             <!-- CPU trend: one shared scale, drawn from the per-pid ring buffer -->
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding TrendCaption}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+              <!-- IsVisible is load-bearing, not cosmetic: an empty point string converts to a
+                   null Points list, and Polyline throws on it while measuring. -->
               <Polyline Points="{Binding TrendPoints}"
                         Stroke="{StaticResource SecondaryBrush}"
                         StrokeThickness="1.5"
                         Stretch="Fill"
-                        Height="40"/>
+                        Height="40"
+                        IsVisible="{Binding HasTrend}"/>
             </StackPanel>
 
             <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>

@@ -70,6 +70,11 @@ public partial class ProcessesViewModel : ViewModelBase
 
     public bool HasStatusNote => StatusNote.Length > 0;
 
+    /// <summary>False until the selected process has two samples. A line needs two, and the empty
+    /// string Sparkline returns for fewer converts to a null Points list — which Polyline throws
+    /// on while measuring. The view keeps the line out of layout instead.</summary>
+    public bool HasTrend => TrendPoints.Length > 0;
+
     public string TrendCaption => Selected is null ? "—" : $"近 {TrendWindow} 个采样点";
 
     public string PidSortGlyph => GlyphFor("pid");
@@ -190,6 +195,7 @@ public partial class ProcessesViewModel : ViewModelBase
         }
 
         TrendPoints = Sparkline.Points(_selectedTrend);
+        OnPropertyChanged(nameof(HasTrend));
     }
 
     [RelayCommand]

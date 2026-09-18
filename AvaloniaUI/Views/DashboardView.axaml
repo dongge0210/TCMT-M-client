@@ -34,8 +34,10 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock FontSize="28" FontWeight="Bold"
                          Foreground="{Binding CpuUsage, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=load}"
-                         Text="{Binding CpuUsage, StringFormat='{}{0:F1}'}"/>
-              <TextBlock Text="% 总占用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                         Text="{Binding CpuUsageDisplay}"/>
+              <!-- The unit belongs next to a number — with no sample the value reads "—". -->
+              <TextBlock Text="% 总占用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                         IsVisible="{Binding HasSample}"/>
             </StackPanel>
 
             <ProgressBar Minimum="0" Maximum="100" Height="6"
@@ -79,8 +81,10 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock FontSize="28" FontWeight="Bold"
                          Foreground="{Binding MemoryPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=load}"
-                         Text="{Binding MemoryPercent, StringFormat='{}{0:F0}'}"/>
-              <TextBlock Text="%" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                         Text="{Binding MemoryPercentDisplay}"/>
+              <!-- The unit belongs next to a number — with no sample the value reads "—". -->
+              <TextBlock Text="%" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                         IsVisible="{Binding HasSample}"/>
             </StackPanel>
 
             <ProgressBar Minimum="0" Maximum="100" Height="6"
@@ -233,10 +237,13 @@
             </Grid>
 
             <StackPanel Spacing="4">
+              <!-- IsVisible is load-bearing, not cosmetic: with fewer than two samples the point
+                   string is empty, that converts to a null Points list, and Polyline throws on it
+                   while measuring. An invisible control is not measured. -->
               <Polyline Points="{Binding DownSparkPoints}" Stroke="{StaticResource SecondaryBrush}"
-                        StrokeThickness="1.5" Stretch="Fill" Height="40"/>
+                        StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
               <Polyline Points="{Binding UpSparkPoints}" Stroke="{StaticResource PrimaryBrush}"
-                        StrokeThickness="1.5" Stretch="Fill" Height="40"/>
+                        StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
               <Grid ColumnDefinitions="Auto,*">
                 <TextBlock Text="窗口峰值" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Grid.Column="1" Text="{Binding TrafficPeakDisplay}" FontSize="10"
