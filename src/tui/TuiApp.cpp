@@ -389,10 +389,13 @@ static std::string utf8_truncate(const std::string& s, int maxW) {
 // name, a disk label or an adapter can be CJK, and cutting one mid-sequence is
 // what renders wide text as garbage. The budget is display columns, and a cut
 // is marked with "~" like every other truncation in this file.
-std::string TuiApp::TrimRight(const std::string& s, size_t maxLen) {
-    if (maxLen == 0) return std::string();
-    if (utf8_display_width(s) <= static_cast<int>(maxLen)) return s;
-    return utf8_truncate(s, static_cast<int>(maxLen));
+std::string TuiApp::TrimRight(const std::string& s, int maxLen) {
+    // int, not size_t: callers derive the budget from panel geometry, and a
+    // negative width used to wrap to a huge size_t — which made the comparison
+    // below fail and truncated the string away entirely.
+    if (maxLen <= 0) return std::string();
+    if (utf8_display_width(s) <= maxLen) return s;
+    return utf8_truncate(s, maxLen);
 }
 
 void TuiApp::DrawHeader(WINDOW* win, const TuiData& data) {
@@ -800,7 +803,9 @@ int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, in
             line += " (built-in)";
         else
             line += " scale=" + std::to_string(d.backingScale).substr(0, 3);
-        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, TrimRight(line, maxW - 4).c_str());
+        // No %.*s precision: that counts BYTES while TrimRight budgets display
+        // columns, so a CJK name would be re-cut mid-sequence here.
+        mvwprintw(win, y + lines, x0 + 2, "%s", TrimRight(line, maxW - 4).c_str());
         lines++;
     }
 
@@ -890,21 +895,24 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
         if (leftIdx >= static_cast<int>(displayTemps.size())) break;
 
         auto& [nameL, tempL] = displayTemps[leftIdx];
-        auto labelL = TrimRight(nameL, halfW - 10);
+        // Clamp the label field: halfW shrinks with the panel and a negative
+        // width would wrap to size_t and blank the name out entirely.
+        const int labelW = (std::max)(1, halfW - 10);
+        auto labelL = TrimRight(nameL, labelW);
         const int tcL = HighIsWorsePair(tempL, kTempWarn, kTempCrit);
         if (tcL >= 0) wattron(win, COLOR_PAIR(tcL));
         // Labels pad into a fixed field so every temperature value in the
         // column shares one left edge (#6); sensor names are ASCII.
-        mvwprintw(win, y + lines, x0 + 2, "%-*s %.1f C", halfW - 10, labelL.c_str(), tempL);
+        mvwprintw(win, y + lines, x0 + 2, "%-*s %.1f C", labelW, labelL.c_str(), tempL);
         if (tcL >= 0) wattroff(win, COLOR_PAIR(tcL));
 
         int rightIdx = leftIdx + 1;
         if (rightIdx < static_cast<int>(displayTemps.size())) {
             auto& [nameR, tempR] = displayTemps[rightIdx];
-            auto labelR = TrimRight(nameR, halfW - 10);
+            auto labelR = TrimRight(nameR, labelW);
             const int tcR = HighIsWorsePair(tempR, kTempWarn, kTempCrit);
             if (tcR >= 0) wattron(win, COLOR_PAIR(tcR));
-            mvwprintw(win, y + lines, x0 + 2 + halfW, "%-*s %.1f C", halfW - 10, labelR.c_str(), tempR);
+            mvwprintw(win, y + lines, x0 + 2 + halfW, "%-*s %.1f C", labelW, labelR.c_str(), tempR);
             if (tcR >= 0) wattroff(win, COLOR_PAIR(tcR));
         }
         lines++;
@@ -2239,7 +2247,7 @@ void TuiApp::Run() {
             if (data.processCount > 0) {
                 sysStr += "   Procs: " + std::to_string(data.processCount);
             }
-            mvwprintw(stdscr, rows - 4, 2, "%.*s", cols - 4,
+            mvwprintw(stdscr, rows - 4, 2, "%s",
                       TrimRight(sysStr, cols - 4).c_str());
         }
 
@@ -2288,9 +2296,9 @@ void TuiApp::Run() {
             wattron(stdscr, A_REVERSE);
             mvwprintw(stdscr, rows - 3, 1, " Connections ");
             wattroff(stdscr, A_REVERSE);
-            const int availW = cols - 17;
+            const int availW = (cols > 17) ? (cols - 17) : 1;
             if (color >= 0) wattron(stdscr, COLOR_PAIR(color));
-            mvwprintw(stdscr, rows - 3, 16, "%.*s", availW,
+            mvwprintw(stdscr, rows - 3, 16, "%s",
                       TrimRight(line, availW).c_str());
             if (color >= 0) wattroff(stdscr, COLOR_PAIR(color));
         }

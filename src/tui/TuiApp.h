@@ -418,7 +418,7 @@ private:
     static std::string FormatSize(uint64_t bytes);      // storage: binary (1024), "MB" = MiB
     static std::string FormatSpeed(uint64_t bps);       // link speed: decimal (1000), "Mbps"
     static std::string FormatRate(uint64_t bytesPerSec); // throughput: decimal (1000), "MB/s"
-    static std::string TrimRight(const std::string& s, size_t maxLen);
+    static std::string TrimRight(const std::string& s, int maxLen);
 
     // Row layout helpers (#6): every value line on a panel shares one
     // right-aligned value column (label left), and usage bars draw a
