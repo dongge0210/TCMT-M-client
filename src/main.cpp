@@ -1723,6 +1723,11 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                       pe.name = e.name;
                       pe.memoryBytes = e.memoryBytes;
                       pe.cpuPercent = e.cpuPercent;
+                      // Row context — see the macOS bridge in main_mac.cpp.
+                      pe.threads = e.threads;
+                      pe.cpuTimeMs = e.cpuTimeMs;
+                      pe.state = e.state;
+                      pe.user = e.user;
                       tuiData.topProcesses.push_back(pe);
                   }
                 }

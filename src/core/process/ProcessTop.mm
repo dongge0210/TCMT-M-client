@@ -113,13 +113,22 @@ void ProcessTop::Refresh() {
         proc_bsdinfo bi;
         if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bi, sizeof(bi)) == sizeof(bi)) {
             stateOf[i] = ProcStateWord(bi.pbi_status);
-            char pwBuf[256] = {};
-            struct passwd pwd;
-            struct passwd* res = nullptr;
-            if (getpwuid_r(bi.pbi_uid, &pwd, pwBuf, sizeof(pwBuf), &res) == 0 &&
-                res != nullptr && res->pw_name != nullptr) {
-                userOf[i] = res->pw_name;
+            // uid -> name, cached: a handful of uids repeat across the rows and
+            // getpwuid_r can block on a directory service (LDAP/AD) on each call.
+            static std::unordered_map<uid_t, std::string> uidNames;
+            auto cached = uidNames.find(bi.pbi_uid);
+            if (cached == uidNames.end()) {
+                char pwBuf[256] = {};
+                struct passwd pwd;
+                struct passwd* res = nullptr;
+                std::string nm;
+                if (getpwuid_r(bi.pbi_uid, &pwd, pwBuf, sizeof(pwBuf), &res) == 0 &&
+                    res != nullptr && res->pw_name != nullptr) {
+                    nm = res->pw_name;
+                }
+                cached = uidNames.emplace(bi.pbi_uid, std::move(nm)).first;
             }
+            if (!cached->second.empty()) userOf[i] = cached->second;
         }
     }
     prevTime_ = now;

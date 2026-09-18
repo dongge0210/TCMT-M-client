@@ -1316,6 +1316,13 @@ int main(int argc, char* argv[]) {
                         pe.name = e.name;
                         pe.memoryBytes = e.memoryBytes;
                         pe.cpuPercent = e.cpuPercent;
+                        // Row context — the collector fills these for the top N
+                        // and leaves them empty/-1 otherwise; dropping them here
+                        // is what left every context column showing N/A.
+                        pe.threads = e.threads;
+                        pe.cpuTimeMs = e.cpuTimeMs;
+                        pe.state = e.state;
+                        pe.user = e.user;
                         data.topProcesses.push_back(pe);
                     }
                 }
