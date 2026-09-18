@@ -154,14 +154,15 @@
             <!-- CPU trend: one shared scale, drawn from the per-pid ring buffer -->
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding TrendCaption}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
-              <!-- Sparkline returns a parseable degenerate line for a short window, so a null
-                   Points can never reach the shape; this keeps it from drawing that line. -->
-              <Polyline Points="{Binding TrendPoints}"
-                        Stroke="{StaticResource SecondaryBrush}"
-                        StrokeThickness="1.5"
-                        Stretch="Fill"
-                        Height="40"
-                        IsVisible="{Binding HasTrend}"/>
+              <!-- Path taking a parsed geometry, not a Polyline: a string bound to Polyline.Points
+                   never produced a point list, and a null Points throws while Polyline builds its
+                   geometry. The converter always returns a geometry, empty when there is no data. -->
+              <Path Data="{Binding TrendPoints, Converter={StaticResource SparklineToGeometryConverter}}"
+                    Stroke="{StaticResource SecondaryBrush}"
+                    StrokeThickness="1.5"
+                    Stretch="Fill"
+                    Height="40"
+                    IsVisible="{Binding HasTrend}"/>
             </StackPanel>
 
             <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>

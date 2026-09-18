@@ -297,6 +297,38 @@ public class GreaterThanZeroToBoolConverter : IValueConverter
     }
 }
 
+/// <summary>
+/// Parses the sparkline path from <see cref="Sparkline"/> into a geometry for a Path to draw.
+///
+/// The string is parsed here rather than bound straight to Polyline.Points: a string bound to
+/// Points never produced a point list, so Points stayed at its null default and Polyline threw
+/// while building its geometry — from Measure and from Render both.
+/// </summary>
+public class SparklineToGeometryConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not string path || string.IsNullOrWhiteSpace(path))
+        {
+            return new StreamGeometry();
+        }
+
+        try
+        {
+            return StreamGeometry.Parse(path);
+        }
+        catch (FormatException)
+        {
+            // The string is machine-generated, so this should be unreachable; drawing nothing
+            // beats taking the window down over a chart.
+            return new StreamGeometry();
+        }
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
 public class IconToGeometryConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

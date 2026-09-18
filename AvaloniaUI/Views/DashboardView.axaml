@@ -237,12 +237,15 @@
             </Grid>
 
             <StackPanel Spacing="4">
-              <!-- Sparkline returns a parseable degenerate line for a short window, so a null
-                   Points can never reach the shape; this keeps it from drawing that line. -->
-              <Polyline Points="{Binding DownSparkPoints}" Stroke="{StaticResource SecondaryBrush}"
-                        StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
-              <Polyline Points="{Binding UpSparkPoints}" Stroke="{StaticResource PrimaryBrush}"
-                        StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
+              <!-- Path taking a parsed geometry, not a Polyline: a string bound to Polyline.Points
+                   never produced a point list, and a null Points throws while Polyline builds its
+                   geometry. The converter always returns a geometry, empty when there is no data. -->
+              <Path Data="{Binding DownSparkPoints, Converter={StaticResource SparklineToGeometryConverter}}"
+                    Stroke="{StaticResource SecondaryBrush}"
+                    StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
+              <Path Data="{Binding UpSparkPoints, Converter={StaticResource SparklineToGeometryConverter}}"
+                    Stroke="{StaticResource PrimaryBrush}"
+                    StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
               <Grid ColumnDefinitions="Auto,*">
                 <TextBlock Text="窗口峰值" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
                 <TextBlock Grid.Column="1" Text="{Binding TrafficPeakDisplay}" FontSize="10"

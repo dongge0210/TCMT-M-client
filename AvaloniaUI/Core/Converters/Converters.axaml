@@ -17,5 +17,6 @@
     <converters:NavSelectedToFgConverter x:Key="NavSelectedToFgConverter"/>
     <converters:NavSelectedToFontWeightConverter x:Key="NavSelectedToFontWeightConverter"/>
     <converters:IconToGeometryConverter x:Key="IconToGeometryConverter"/>
+    <converters:SparklineToGeometryConverter x:Key="SparklineToGeometryConverter"/>
 
 </ResourceDictionary>
