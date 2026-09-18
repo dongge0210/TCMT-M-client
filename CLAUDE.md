@@ -161,7 +161,7 @@ git submodule update --init --recursive
 
 ## Logging Conventions
 
-- **Default runtime level is `LOG_WARNING`** in all three entry points (`main.cpp` / `main_mac.cpp` / `main_linux.cpp`). Lower it per run with `--debug` (LOG_DEBUG) or `--verbose` (LOG_INFO); explicit `logging.level` in config still overrides the default, CLI flags win over config.
+- **Default runtime level is `LOG_INFO`** in all three entry points (`main.cpp` / `main_mac.cpp` / `main_linux.cpp`). Lower it per run with `--debug` (LOG_DEBUG) or `--verbose` (LOG_INFO, a no-op at the default); explicit `logging.level` in config overrides the default — valid values are `debug` / `info` / `warning` / `error` — and CLI flags win over config.
 - Level semantics: FATAL = unrecoverable / process dying; ERROR = feature actually broken, not recovered; WARN = transient, degraded but working; INFO = lifecycle / user-visible state changes only (never in sampling or per-tick loops); DEBUG = probing, capability absence, per-tick detail. See `src/core/Utils/Logger.h`.
 - Detection of missing optional capabilities ("not found / not installed / not available / not supported / needs root / expected / skipping") is DEBUG — one of these in an INFO/WARN/ERROR message is a bug to fix.
 - Defensive try/catch inside small formatting/util helpers logs DEBUG; the owning collector reports the real error at its own level.

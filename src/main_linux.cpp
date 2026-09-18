@@ -114,8 +114,10 @@ int main(int argc, char* argv[]) {
                 Logger::SetLogLevel(LOG_DEBUG);
             else if (logLevel == "warning")
                 Logger::SetLogLevel(LOG_WARNING);
+            else if (logLevel == "error")
+                Logger::SetLogLevel(LOG_ERROR);
             else
-                Logger::SetLogLevel(LOG_INFO);   // "info" — the documented default — and anything unrecognised
+                Logger::SetLogLevel(LOG_INFO);   // "info", or an unrecognised value
         } else {
             Logger::Warn("No config file found, using defaults");
         }

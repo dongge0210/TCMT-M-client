@@ -2140,7 +2140,7 @@ int main(int argc, char* argv[]) {
             // (ShellExecuteEx runas) which changes the working directory, so a
             // relative "system_monitor.log" would land in System32 or elsewhere.
             Logger::Initialize(WinUtils::GetExecutableDirectory() + "\\system_monitor.log");
-            Logger::SetLogLevel(LOG_WARNING);   // default: WARN+; --debug/--verbose lower it
+            Logger::SetLogLevel(LOG_INFO);      // default: INFO+ (matches main_mac/main_linux); --debug lowers it
             Logger::Info("Program started");
         }
         catch (const std::exception& e) {
