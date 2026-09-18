@@ -14,14 +14,19 @@ public static class Sparkline
     public const double DefaultWidth = 100;
     public const double DefaultHeight = 40;
 
-    /// <summary>Empty when the window holds fewer than two points — a line needs two.</summary>
+    /// <summary>A zero-length line when the window holds fewer than two points — a line needs two,
+    /// and the string still has to parse (see the note in the body).</summary>
     public static string Points(HistoryBuffer buffer, double width = DefaultWidth, double height = DefaultHeight)
     {
         var values = buffer.ToArray();
 
         if (values.Count < 2)
         {
-            return string.Empty;
+            // The result is fed to a Polyline. An empty string parses to a null point list, and
+            // Polyline throws on null while building its geometry — from Measure *and* from Render,
+            // so hiding the shape is not sufficient on its own. Two coincident points parse cleanly
+            // and draw nothing, which is what "not enough samples" should look like.
+            return "0,0 0,0";
         }
 
         var peak = buffer.Max();

@@ -237,9 +237,8 @@
             </Grid>
 
             <StackPanel Spacing="4">
-              <!-- IsVisible is load-bearing, not cosmetic: with fewer than two samples the point
-                   string is empty, that converts to a null Points list, and Polyline throws on it
-                   while measuring. An invisible control is not measured. -->
+              <!-- Sparkline returns a parseable degenerate line for a short window, so a null
+                   Points can never reach the shape; this keeps it from drawing that line. -->
               <Polyline Points="{Binding DownSparkPoints}" Stroke="{StaticResource SecondaryBrush}"
                         StrokeThickness="1.5" Stretch="Fill" Height="40" IsVisible="{Binding HasTrafficSpark}"/>
               <Polyline Points="{Binding UpSparkPoints}" Stroke="{StaticResource PrimaryBrush}"

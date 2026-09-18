@@ -38,7 +38,7 @@
                    Height="30"
                    FontSize="12"
                    Text="{Binding Filter}"
-                   Watermark="按名称或 PID 过滤"
+                   PlaceholderText="按名称或 PID 过滤"
                    Background="{StaticResource BackgroundBrush}"
                    Foreground="{StaticResource TextPrimaryBrush}"
                    BorderBrush="{StaticResource BorderBrush}"/>
@@ -154,8 +154,8 @@
             <!-- CPU trend: one shared scale, drawn from the per-pid ring buffer -->
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding TrendCaption}" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
-              <!-- IsVisible is load-bearing, not cosmetic: an empty point string converts to a
-                   null Points list, and Polyline throws on it while measuring. -->
+              <!-- Sparkline returns a parseable degenerate line for a short window, so a null
+                   Points can never reach the shape; this keeps it from drawing that line. -->
               <Polyline Points="{Binding TrendPoints}"
                         Stroke="{StaticResource SecondaryBrush}"
                         StrokeThickness="1.5"
