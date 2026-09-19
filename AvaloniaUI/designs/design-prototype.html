@@ -281,6 +281,13 @@
     .log-src { display: none; }
     .log-scroll { max-height: 70vh; }
   }
+
+  /* ─── 未接收样本 ────────────────────────────────────────────────────── */
+  /* 脚本把能写成文字的读数盖成「—」；这里收掉只能靠图形表达的读数。 */
+  .win.is-offline .meter > i { width: 0 !important; }
+  .win.is-offline .cores,
+  .win.is-offline #cores-note,
+  .win.is-offline .spark { visibility: hidden; }
 </style>
 </head>
 <body>
@@ -344,21 +351,25 @@
           <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
         </div>
 
+        <div class="banner" data-offline hidden>
+          <span data-i18n="offline.banner">尚未收到采集端的样本：读数显示为「—」，不按 0 计。</span>
+        </div>
+
         <div class="grid">
           <section class="panel span-5" data-od-id="panel-cpu">
             <header class="panel-h"><h3>CPU</h3><span class="fill"></span><span class="note" id="cpu-note">// 12 核 · 3.05 GHz</span></header>
             <div class="panel-b">
               <div class="kpi">
-                <span class="kpi-v" id="cpu-total">23.4</span><span class="kpi-u">% 总占用</span>
+                <span class="kpi-v" id="cpu-total" data-reading>23.4</span><span class="kpi-u" data-reading-blank>% 总占用</span>
                 <span class="wb-spacer"></span>
-                <span class="kpi-u num">负载 2.14 / 2.02 / 1.88</span>
+                <span class="kpi-u num" data-reading>负载 2.14 / 2.02 / 1.88</span>
               </div>
               <div class="meter" id="cpu-meter" role="img" aria-label="CPU 总占用 23.4%"><i style="width:23.4%"></i></div>
               <div class="cores" id="cpu-cores" aria-label="逐核温度"></div>
-              <p class="note-dim" data-i18n="cpu.cores.note">逐核温度，非占用：IPC 线格式没有逐核占用数据</p>
+              <p class="note-dim" id="cores-note" data-i18n="cpu.cores.note">逐核温度，非占用：IPC 线格式没有逐核占用数据</p>
               <dl class="kv-list">
-                <div class="kv"><dt data-i18n="cpu.user">用户 / 系统</dt><dd>17.2% / 6.2%</dd></div>
-                <div class="kv"><dt data-i18n="cpu.pcore">效能核频率</dt><dd>2.42 GHz</dd></div>
+                <div class="kv"><dt data-i18n="cpu.user">用户 / 系统</dt><dd data-reading>17.2% / 6.2%</dd></div>
+                <div class="kv"><dt data-i18n="cpu.pcore">效能核频率</dt><dd data-reading>2.42 GHz</dd></div>
               </dl>
             </div>
           </section>
@@ -366,12 +377,12 @@
           <section class="panel span-4" data-od-id="panel-memory">
             <header class="panel-h"><h3>Memory</h3><span class="fill"></span><span class="note">// 统一内存</span></header>
             <div class="panel-b">
-              <div class="kpi"><span class="kpi-v v-warn">17.8</span><span class="kpi-u">/ 24.0 GB</span></div>
+              <div class="kpi"><span class="kpi-v v-warn" data-reading>17.8</span><span class="kpi-u" data-reading-blank>/ 24.0 GB</span></div>
               <div class="meter is-warn" role="img" aria-label="内存占用 74%"><i style="width:74%"></i></div>
               <dl class="kv-list">
-                <div class="kv"><dt data-i18n="mem.pressure">内存压力</dt><dd class="v-warn">偏高</dd></div>
-                <div class="kv"><dt data-i18n="mem.wired">联动 / 已压缩</dt><dd>3.8 GB / 1.1 GB</dd></div>
-                <div class="kv"><dt>Swap</dt><dd>0 B</dd></div>
+                <div class="kv"><dt data-i18n="mem.pressure">内存压力</dt><dd class="v-warn" data-reading>偏高</dd></div>
+                <div class="kv"><dt data-i18n="mem.wired">联动 / 已压缩</dt><dd data-reading>3.8 GB / 1.1 GB</dd></div>
+                <div class="kv"><dt>Swap</dt><dd data-reading>0 B</dd></div>
               </dl>
             </div>
           </section>
@@ -407,15 +418,15 @@
             <header class="panel-h"><h3>Network</h3><span class="fill"></span><span class="note" id="net-note">// en0 · Wi-Fi</span></header>
             <div class="panel-b">
               <div class="kpi">
-                <span class="kpi-v" style="font-size:var(--fs-title)">1.24</span><span class="kpi-u">MB/s ↓</span>
+                <span class="kpi-v" style="font-size:var(--fs-title)" data-reading>1.24</span><span class="kpi-u" data-reading-blank="↓">MB/s ↓</span>
                 <span class="wb-spacer"></span>
-                <span class="kpi-v" style="font-size:var(--fs-title)">126</span><span class="kpi-u">KB/s ↑</span>
+                <span class="kpi-v" style="font-size:var(--fs-title)" data-reading>126</span><span class="kpi-u" data-reading-blank="↑">KB/s ↑</span>
               </div>
               <svg class="spark" id="spark-down" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="下行流量 60 秒走势"></svg>
               <svg class="spark is-up" id="spark-up" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="上行流量 60 秒走势"></svg>
               <dl class="kv-list">
-                <div class="kv"><dt data-i18n="net.peak">窗口峰值</dt><dd>4.86 MB/s</dd></div>
-                <div class="kv"><dt>IPv4</dt><dd id="net-ip">192.168.31.24</dd></div>
+                <div class="kv"><dt data-i18n="net.peak">窗口峰值</dt><dd data-reading>4.86 MB/s</dd></div>
+                <div class="kv"><dt>IPv4</dt><dd id="net-ip" data-reading>192.168.31.24</dd></div>
               </dl>
             </div>
           </section>
@@ -810,6 +821,9 @@
     'pr.wire.note': ['用户 · 线程 · 状态 · 路径 · CPU 时间 · 启动时刻为示意值：IPC 线格式现只有 PID · 名称 · CPU · 内存', 'User · threads · state · path · CPU time · started are illustrative: the IPC wire format currently carries only PID · name · CPU · memory'],
     'pr.end.note': ['结束进程待 host 实现——有 handler 才显示', 'End process awaits a host handler — shown only when one exists'],
     'stale.banner': ['数据停摆：距上次采样已超过 3 s，读数可能已过期。', 'Data stalled: no sample for over 3 s — readings may be stale.'],
+    'offline.banner': ['尚未收到采集端的样本：读数显示为「—」，不按 0 计。', 'No sample has arrived from the collector yet — readings show “—” rather than 0.'],
+    'sb.offline': ['未接收样本', 'No samples'],
+    'pr.offline': ['尚未收到样本，进程列表在等待采集端。', 'No sample yet — the process list is waiting on the collector.'],
     'sb.lost': ['数据源失联', 'Source lost'],
     'sb.sample': ['示意数据 · 非实机采样', 'Illustrative data · not a real capture'],
     'power.pct': ['电量', 'battery'],
@@ -894,7 +908,8 @@
     theme: read('tcmt.theme', 'dark'),
     lang: read('tcmt.lang', 'zh'),
     host: parseInt(read('tcmt.host', '0'), 10) || 0,
-    stale: false,
+    /* 数据源三态，点状态条芯片轮换：live 实时 · stale 停摆 · offline 还没收到过样本 */
+    src: 'live',
     gray: false,
     group: 'data',
     selected: 1183,
@@ -954,12 +969,35 @@
     });
   }
   function applyGray() { root.classList.toggle('is-gray', state.gray); }
+  /* 数据源三态。offline = 还没收到过样本：读数一律「—」，不按 0 计——空窗不是 0 读数，
+     判据落在「有没有样本」而不是「数值是不是 0」，跟客户端 HasSample 一致。 */
   function applyStale() {
-    root.classList.toggle('is-stale', state.stale);
-    document.querySelectorAll('[data-stale]').forEach(function (b) { b.hidden = !state.stale; });
-    document.getElementById('sb-live').textContent = state.stale ? t('sb.lost') : t('sb.live');
-    document.getElementById('sb-tick').textContent = state.stale ? '—' : '3.0s';
-    document.getElementById('src-chip').setAttribute('aria-pressed', String(state.stale));
+    var offline = state.src === 'offline';
+    var stale = state.src === 'stale';
+
+    root.classList.toggle('is-stale', stale);
+    root.classList.toggle('is-offline', offline);
+    document.querySelectorAll('[data-stale]').forEach(function (b) { b.hidden = !stale; });
+    document.querySelectorAll('[data-offline]').forEach(function (b) { b.hidden = !offline; });
+
+    /* 能写成文字的读数：offline 时盖成「—」，实时值记在 dataset.live 里。
+       渲染函数刚写进来的新值会被重新记下，所以换过主机再回到实时也不会还原成旧数。 */
+    document.querySelectorAll('[data-reading], [data-reading-blank]').forEach(function (el) {
+      if (!offline) {
+        if (el.dataset.live !== undefined) { el.textContent = el.dataset.live; }
+        el.dataset.live = el.textContent;
+        return;
+      }
+      var placeholder = '—';
+      if (el.hasAttribute('data-reading-blank')) { placeholder = el.getAttribute('data-reading-blank') || ''; }
+      if (el.textContent !== placeholder) { el.dataset.live = el.textContent; }
+      el.textContent = placeholder;
+    });
+
+    document.getElementById('sb-live').textContent =
+      offline ? t('sb.offline') : (stale ? t('sb.lost') : t('sb.live'));
+    document.getElementById('sb-tick').textContent = (offline || stale) ? '—' : '3.0s';
+    document.getElementById('src-chip').setAttribute('aria-pressed', String(offline || stale));
   }
 
   /* ── 图表：填充面积 + 折线 ──────────────────────────────────────────── */
@@ -1044,6 +1082,13 @@
 
     var top = document.querySelector('#top-table tbody');
     top.textContent = '';
+    if (state.src === 'offline') {
+      /* 还没收到样本时列表为空——不是「0 个进程」，客户端同样是空列表加说明 */
+      var none = document.createElement('tr');
+      none.innerHTML = '<td colspan="5"><div class="empty">' + t('pr.offline') + '</div></td>';
+      top.appendChild(none);
+      return;
+    }
     PROCS.slice().sort(function (a, b) { return b.cpu - a.cpu; }).slice(0, 5).forEach(function (p) {
       var lv = level(p.cpu, 20, 50, false);
       var tr = document.createElement('tr');
@@ -1373,6 +1418,7 @@
     renderHost();
     renderGroups();
     renderSettings();
+    applyStale();   /* 换主机重渲染后要重新盖一遍读数 */
   });
   document.addEventListener('click', function (e) {
     if (!hostMenu.hidden && !hostMenu.contains(e.target) && !hostBtn.contains(e.target)) closeHostMenu();
@@ -1394,7 +1440,7 @@
     state.filter = e.target.value; renderProcs();
   });
   document.getElementById('src-chip').addEventListener('click', function () {
-    state.stale = !state.stale;
+    state.src = { live: 'stale', stale: 'offline', offline: 'live' }[state.src] || 'live';
     applyStale();
   });
   document.getElementById('log-level-seg').addEventListener('click', function (e) {
