@@ -23,6 +23,16 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <!-- _archive/ 是已并进概览的旧五屏(CPU/GPU/内存/存储/温度)。_archive/README.md 声称
+       「不参与构建」,但 SDK 式工程默认通配把它们连同 .axaml 一起编了进来。
+       StorageViewModel 引用的 Letter / LogicalDriveLetters 正要改成挂载点,归档不该跟着改。
+       .axaml 与 .cs 必须成对排除 —— 只排一半会留下没有 code-behind 的 XAML,编译失败。 -->
+  <ItemGroup>
+    <Compile Remove="_archive\**\*.cs" />
+    <AvaloniaXaml Remove="_archive\**\*.axaml" />
+    <AvaloniaResource Remove="_archive\**\*.axaml" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
