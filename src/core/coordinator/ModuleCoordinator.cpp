@@ -222,6 +222,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
         for (const auto& d : data_.disks) {
             tcmt::TuiData::DiskInfo di;
             di.letter = d.letter;
+            di.mountPoint = d.mountPoint;
             di.label = d.label;
             di.totalSize = d.totalSize;
             di.usedSpace = d.usedSpace;

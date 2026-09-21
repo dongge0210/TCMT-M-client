@@ -102,7 +102,8 @@ struct TuiData {
 
     // Disk
     struct DiskInfo {
-        char letter = 0;        // Drive letter (e.g. 'C')
+        char letter = 0;        // Windows 盘符；macOS 恒为 0
+        std::string mountPoint; // 平台中性的落点："C:\" / "/System/Volumes/Data"
         std::string label;
         uint64_t totalSize = 0;
         uint64_t usedSpace = 0;
