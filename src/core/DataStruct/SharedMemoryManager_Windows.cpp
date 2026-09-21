@@ -326,6 +326,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         for (int i = 0; i < static_cast<int>(pBuffer->diskCount); ++i) {
             const auto& disk = systemInfo.disks[i];
             pBuffer->disks[i].letter = disk.letter;
+            SafeCopyStr(pBuffer->disks[i].mountPoint, sizeof(pBuffer->disks[i].mountPoint), disk.mountPoint);
             SafeCopyStr(pBuffer->disks[i].label, sizeof(pBuffer->disks[i].label), disk.label);
             SafeCopyStr(pBuffer->disks[i].fs, sizeof(pBuffer->disks[i].fs), disk.fileSystem);
             pBuffer->disks[i].totalSize = disk.totalSize;

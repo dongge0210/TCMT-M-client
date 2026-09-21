@@ -234,6 +234,10 @@ std::vector<uint8_t> IPCServer::SerializeSchema() {
 }
 
 void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields) {
+    // 字段数越过 IPC_MAX_FIELDS 时，客户端会在 IPCClient.cpp:184 静默裁掉多余的，
+    // 症状是"某些字段永远读不到"却全链路无报错。所以在发布点把数目记下来。
+    Logger::Debug("IPC: schema published, " + std::to_string(fields.size()) + " fields"
+                  + (fields.size() > IPC_MAX_FIELDS ? " —— 超过 IPC_MAX_FIELDS，客户端会静默截断" : ""));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         schemaHeader_ = header;
@@ -552,6 +556,10 @@ std::vector<uint8_t> IPCServer::SerializeSchema() {
 }
 
 void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields) {
+    // 字段数越过 IPC_MAX_FIELDS 时，客户端会在 IPCClient.cpp:184 静默裁掉多余的，
+    // 症状是"某些字段永远读不到"却全链路无报错。所以在发布点把数目记下来。
+    Logger::Debug("IPC: schema published, " + std::to_string(fields.size()) + " fields"
+                  + (fields.size() > IPC_MAX_FIELDS ? " —— 超过 IPC_MAX_FIELDS，客户端会静默截断" : ""));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         schemaHeader_ = header;

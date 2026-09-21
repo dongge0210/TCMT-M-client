@@ -216,12 +216,17 @@ public static class IPCSystemInfoMapper
                     var used = reader.ReadUInt64($"disk/{idx}/used") ?? 0;
                     var free = reader.ReadUInt64($"disk/{idx}/free") ?? 0;
                     var fs = reader.ReadWString($"disk/{idx}/fs") ?? "";
+                    // 挂载点。旧服务端没这个字段，HasField 守卫后留空。
+                    var mountPoint = reader.HasField($"disk/{idx}/mountPoint")
+                        ? (reader.ReadWString($"disk/{idx}/mountPoint") ?? "")
+                        : "";
 
                     if (total > 0)
                     {
                         info.Disks.Add(new DiskData
                         {
                             Letter = letter,
+                            MountPoint = mountPoint,
                             Label = label,
                             FileSystem = fs,
                             TotalSize = total,

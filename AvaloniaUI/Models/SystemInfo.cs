@@ -169,6 +169,7 @@ public class NetworkAdapterData : ModelBase
 public class DiskData : ModelBase
 {
     private char _letter;
+    private string _mountPoint = string.Empty;
     private string _label = string.Empty;
     private string _fileSystem = string.Empty;
     private ulong _totalSize;
@@ -177,6 +178,9 @@ public class DiskData : ModelBase
     private int _physicalDiskIndex = -1;
 
     public char Letter { get => _letter; set => SetProperty(ref _letter, value); }
+    /// <summary>挂载点。Windows 是 "C:\"，macOS 是 "/System/Volumes/Data"。
+    /// Win32 把盘符、卷 GUID 路径、挂载文件夹都算 volume mount point，所以两边共用一词。</summary>
+    public string MountPoint { get => _mountPoint; set => SetProperty(ref _mountPoint, value); }
     public string Label { get => _label; set => SetProperty(ref _label, value); }
     public string FileSystem { get => _fileSystem; set => SetProperty(ref _fileSystem, value); }
     public ulong TotalSize { get => _totalSize; set => SetProperty(ref _totalSize, value); }
@@ -185,7 +189,17 @@ public class DiskData : ModelBase
     public int PhysicalDiskIndex { get => _physicalDiskIndex; set => SetProperty(ref _physicalDiskIndex, value); }
 
     public double UsagePercent => TotalSize > 0 ? (double)UsedSpace / TotalSize * 100 : 0;
-    public string DisplayName => string.IsNullOrEmpty(Label) ? "未知分区" : (Letter == '\0' ? Label : $"{Letter}: {Label}");
+    // 盘符最短最易辨识，优先；macOS 没有盘符就走卷名；卷名也空才回落到挂载点。
+    // Letter == '\0' 这个判断不能省 —— 省了 macOS 会渲染出一个 NUL 字符。
+    public string DisplayName
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(Label)) return Letter == '\0' ? Label : $"{Letter}: {Label}";
+            if (!string.IsNullOrEmpty(MountPoint)) return MountPoint;
+            return "未知分区";
+        }
+    }
     public string TotalSizeDisplay => FormatUtils.FormatBytes(TotalSize);
     public string UsedSpaceDisplay => FormatUtils.FormatBytes(UsedSpace);
     public string FreeSpaceDisplay => FormatUtils.FormatBytes(FreeSpace);

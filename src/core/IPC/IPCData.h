@@ -144,7 +144,11 @@ struct IPCDataBlock {
 
     // Disks (up to 4)
     struct DiskSlot {
-        char     letter              = '\0';
+        char     letter              = '\0';   // Windows 盘符；macOS 恒为 0
+        // 挂载点。Win32 把盘符、卷 GUID 路径、挂载文件夹都算 volume mount point，
+        // macOS 的 "/" 与 "/Volumes/X" 同样落得进去 —— 一个字段两边都装得下。
+        // 见 https://learn.microsoft.com/windows/win32/fileio/naming-a-volume
+        char     mountPoint[64]      = {};
         char     label[32]           = {};
         uint64_t totalSize           = 0;
         uint64_t usedSpace           = 0;

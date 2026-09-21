@@ -149,6 +149,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
         char p[32]; snprintf(p, sizeof(p), "disk/%d/", i);
         uint32_t base = offsetof(B, disks) + i * sizeof(B::DiskSlot);
         addS((std::string(p)+"label").c_str(), base + offsetof(B::DiskSlot, label), 32);
+        // 挂载点。字段名上限 31 字符（IPC_FIELD_NAME_LEN=32），"disk/3/mountPoint" 是 18，够。
+        addS((std::string(p)+"mountPoint").c_str(), base + offsetof(B::DiskSlot, mountPoint), 64);
         addU64((std::string(p)+"total").c_str(), base + offsetof(B::DiskSlot, totalSize));
         addU64((std::string(p)+"used").c_str(),  base + offsetof(B::DiskSlot, usedSpace));
         addU64((std::string(p)+"free").c_str(),  base + offsetof(B::DiskSlot, freeSpace));
@@ -1506,6 +1508,8 @@ int main(int argc, char* argv[]) {
                             auto& d = b->disks[di];
                             std::strncpy(d.label, data.disks[di].label.c_str(), 31);
                             d.label[31] = '\0';
+                            std::strncpy(d.mountPoint, data.disks[di].mountPoint.c_str(), 63);
+                            d.mountPoint[63] = '\0';
                             d.totalSize = data.disks[di].totalSize;
                             d.usedSpace = data.disks[di].usedSpace;
                             d.freeSpace = data.disks[di].totalSize - data.disks[di].usedSpace;

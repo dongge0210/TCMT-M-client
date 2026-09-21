@@ -705,6 +705,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         char pfx[32]; snprintf(pfx, sizeof(pfx), "disk/%d/", i);
         uint32_t base = offsetof(B, disks) + i * sizeof(B::DiskSlot);
         addField((std::string(pfx)+"letter").c_str(), base + offsetof(B::DiskSlot, letter), 1, (uint8_t)FT::UInt8);
+        addField((std::string(pfx)+"mountPoint").c_str(), base + offsetof(B::DiskSlot, mountPoint), sizeof(B::DiskSlot::mountPoint), (uint8_t)FT::String);
         addField((std::string(pfx)+"label").c_str(), base + offsetof(B::DiskSlot, label), sizeof(B::DiskSlot::label), (uint8_t)FT::String);
         addField((std::string(pfx)+"total").c_str(), base + offsetof(B::DiskSlot, totalSize), 8, (uint8_t)FT::UInt64);
         addField((std::string(pfx)+"used").c_str(),  base + offsetof(B::DiskSlot, usedSpace), 8, (uint8_t)FT::UInt64);
@@ -1736,6 +1737,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 for (const auto& disk : sysInfo.disks) {
                     tcmt::TuiData::DiskInfo di;
                     di.letter = disk.letter;
+                    di.mountPoint = disk.mountPoint;
                     di.label = disk.label;
                     di.totalSize = disk.totalSize;
                     di.usedSpace = disk.usedSpace;
