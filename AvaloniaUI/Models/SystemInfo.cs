@@ -110,6 +110,8 @@ public class SystemInfo
     public bool HasBluetooth { get; set; }
     public bool BtPowerOn { get; set; }
     public int BtDeviceCount { get; set; }
+    /// <summary>已连接设备名，多个用 " · " 连接。空表示服务端没提供（旧版本）或当前无已连接设备。</summary>
+    public string BtDeviceName { get; set; } = "";
 
     // App version
     public string Version { get; set; } = "0.14.0";

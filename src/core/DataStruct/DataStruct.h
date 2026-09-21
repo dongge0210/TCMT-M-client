@@ -198,6 +198,10 @@ struct SystemInfo {
     // Bluetooth
     bool btPowerOn = false;
     int btDeviceCount = 0;
+    // 已连接设备名拼成的一行（见 BluetoothInfo.h 的 JoinConnectedDeviceNames）。
+    // macOS 的写入点能直接拿到采集结果，不走这里；Windows 侧经 SharedMemoryManager
+    // 传递，只能在 SystemInfo 上过一手。
+    std::string btDeviceName;
 
     // 鈹€鈹€鈹€ New fields (feature #4-9) 鈹€鈹€鈹€
     // 4. Fan speeds

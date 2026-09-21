@@ -1859,6 +1859,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                   tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
                   sysInfo.btPowerOn = bd.adapter.powerOn;
                   sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
+                  sysInfo.btDeviceName = JoinConnectedDeviceNames(bd, 63);
 
                   // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)
                   sysInfo.wifiPowerOn = wd.powerOn;

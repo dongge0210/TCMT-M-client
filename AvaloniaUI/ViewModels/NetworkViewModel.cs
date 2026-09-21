@@ -43,6 +43,10 @@ public partial class NetworkViewModel : ViewModelBase
     [ObservableProperty]
     private int _btDeviceCount;
 
+    /// <summary>已连接设备名，多个用 " · " 连接。空表示服务端没提供（旧版本）或当前无已连接设备。</summary>
+    [ObservableProperty]
+    private string _btDeviceName = "";
+
     public string WifiDisplay
     {
         get
@@ -59,7 +63,12 @@ public partial class NetworkViewModel : ViewModelBase
         }
     }
 
-    public string BtDisplay => HasBluetooth ? $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")} ({BtDeviceCount} 台设备)" : "蓝牙未检测到";
+    // 有已连接设备名就报名字 —— 比"3 台设备"有用得多，也正是设计稿要显示的东西。
+    // 名字来自采集端的 JoinConnectedDeviceNames；旧服务端没这个字段时回落到数量。
+    public string BtDisplay => !HasBluetooth
+        ? "蓝牙未检测到"
+        : $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")}" +
+          (string.IsNullOrEmpty(BtDeviceName) ? $" ({BtDeviceCount} 台设备)" : $" {BtDeviceName}");
 
     /// <summary>Inverse of HasWiFi, for the "capability missing" note in NetworkView.
     /// The section stays in place and explains itself instead of collapsing to nothing.</summary>
@@ -136,6 +145,7 @@ public partial class NetworkViewModel : ViewModelBase
         HasBluetooth = info.HasBluetooth;
         BtPowerOn = info.BtPowerOn;
         BtDeviceCount = info.BtDeviceCount;
+        BtDeviceName = info.BtDeviceName ?? "";
 
         OnPropertyChanged(nameof(WifiDisplay));
         OnPropertyChanged(nameof(BtDisplay));

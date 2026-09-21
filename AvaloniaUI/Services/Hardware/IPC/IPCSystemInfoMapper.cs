@@ -341,6 +341,10 @@ public static class IPCSystemInfoMapper
                 info.HasBluetooth = reader.ReadBool("bluetooth/powerOn") ?? false;
                 info.BtPowerOn = reader.ReadBool("bluetooth/powerOn") ?? false;
                 info.BtDeviceCount = reader.ReadInt32("bluetooth/deviceCount") ?? 0;
+                // 已连接设备名。旧服务端这个槽要么没写、要么装的是适配器名 —— 都留空处理。
+                info.BtDeviceName = reader.HasField("bluetooth/name")
+                    ? (ipc.ReadWString("bluetooth/name") ?? reader.ReadString("bluetooth/name") ?? "")
+                    : "";
             }
 
             // TPM

@@ -402,6 +402,9 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         // Bluetooth
         pBuffer->bluetooth.powerOn = systemInfo.btPowerOn;
         pBuffer->bluetooth.deviceCount = systemInfo.btDeviceCount;
+        // 这个槽以前从来没人写（macOS 那侧装的是适配器名，Windows 空着），两端也都没人读。
+        // 现在统一装"已连接设备名"。
+        SafeCopyStr(pBuffer->bluetooth.name, sizeof(pBuffer->bluetooth.name), systemInfo.btDeviceName);
 
         // App version
         SafeCopyStr(pBuffer->appVersion, sizeof(pBuffer->appVersion), systemInfo.appVersion);

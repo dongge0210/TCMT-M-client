@@ -1586,8 +1586,12 @@ int main(int argc, char* argv[]) {
                     const auto& bd2 = s_bt.GetData();
                     b->bluetooth.powerOn = bd2.adapter.powerOn;
                     b->bluetooth.deviceCount = static_cast<int32_t>(bd2.devices.size());
-                    std::strncpy(b->bluetooth.name, bd2.adapter.name.c_str(), 63);
-                    b->bluetooth.name[63] = '\0';
+                    // name 装"已连接设备名"，不装适配器名（原来是后者，而且两端都没人读）。
+                    // 拼装逻辑与 Windows 侧共用 BluetoothInfo.h 的 JoinConnectedDeviceNames。
+                    const std::string btNames =
+                        JoinConnectedDeviceNames(bd2, sizeof(b->bluetooth.name) - 1);
+                    std::strncpy(b->bluetooth.name, btNames.c_str(), sizeof(b->bluetooth.name) - 1);
+                    b->bluetooth.name[sizeof(b->bluetooth.name) - 1] = '\0';
 
                     // ─── 4. Fan speeds ───
                     b->fanCount = 0;
