@@ -296,13 +296,9 @@ public partial class DashboardViewModel : ViewModelBase
 
     private void UpdateTopProcesses(SystemInfo info)
     {
-        TopProcesses.Clear();
-        foreach (var entry in (info.TopProcesses ?? new List<ProcessTopEntry>())
-                     .OrderByDescending(e => e.CpuPercent)
-                     .Take(MaxTopProcessRows))
-        {
-            TopProcesses.Add(new ProcessRow(entry));
-        }
+        ProcessRow.SyncInto(TopProcesses, (info.TopProcesses ?? new List<ProcessTopEntry>())
+            .OrderByDescending(e => e.CpuPercent)
+            .Take(MaxTopProcessRows));
 
         OnPropertyChanged(nameof(HasTopProcesses));
         OnPropertyChanged(nameof(HasNoTopProcesses));

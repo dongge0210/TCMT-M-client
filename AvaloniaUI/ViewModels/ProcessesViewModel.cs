@@ -168,11 +168,7 @@ public partial class ProcessesViewModel : ViewModelBase
 
         var previousPid = Selected?.Pid ?? -1;
 
-        Rows.Clear();
-        foreach (var entry in query)
-        {
-            Rows.Add(new ProcessRow(entry));
-        }
+        ProcessRow.SyncInto(Rows, query);
 
         TotalCount = _source.Count;
         Selected = Rows.FirstOrDefault(r => r.Pid == previousPid) ?? Rows.FirstOrDefault();
