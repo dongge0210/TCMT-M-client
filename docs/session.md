@@ -194,6 +194,45 @@
 
 PTY 冒烟（`script` 驱动，120×40）：默认色模式色码正常（黄/红越界、蓝 bar、dim 轨）；`NO_COLOR=1` 只剩 bold/dim、零色码；C locale 自动 ASCII（`^/v`、`deg`）；`LANG=en_US.UTF-8` 恢复 ↑↓；`?`→Esc→↓→Esc→q 全程无崩溃、退出码 0。未做：Windows PDCurses 构建验证（改动均用通用 curses API + 既有宏）。
 
+## 2026-09-21 — 采集端补全：磁盘 / Wi-Fi / 蓝牙（由设计稿反推的字段修正）
+
+起因：设计稿硬件页画的行，有几处采集端给不出真值。决定是**修采集端，不砍设计**，并要求
+「尽量压缩，一个字段能干很多事」。核心结论：**净增 1 个字段**就补齐了 —— 靠复用两个早就存在、
+却既没有生产者也没有读取者的死字段。
+
+1. `chore(avalonia)` — `_archive/` 排除编译。`_archive/README.md` 声称「不参与构建」，但 SDK 式
+   csproj 默认通配把它连 `.axaml` 一起编了进去；`StorageViewModel` 引用的 `Letter` /
+   `LogicalDriveLetters` 正要改签名，先排掉。`.cs` 与 `.axaml` 必须**成对**排除，只排一半会留下
+   没有 code-behind 的 XAML。
+2. `fix(disk)` — macOS 卷筛选改用挂载标志。原来是 `DiskInfo.cpp` 里一张越加越长的路径名单，
+   漏掉 `/Volumes/Recovery`、CoreSimulator 的 cryptex 挂载与模拟器卷。改成 `MNT_LOCAL` + 非
+   `MNT_DONTBROWSE`，只显式放行 `/System/Volumes/Data`；并删掉按物理盘去重（它误伤同盘第二卷）、
+   一个 `<100MB` 过滤、一个空壳的 `Skip boot partition` 判断。
+3. `fix(disk)` — 卷名取真值。原来是挂载路径末段，模拟器卷会变成一长串 UUID。改用
+   `getattrlist(ATTR_VOL_NAME)`。**两个坑都踩过**：返回的是 `attrreference_t` 而不是「长度 + 字符串」，
+   且 `attr_length` 含结尾 NUL（不剥掉会把整份日志变成 grep 认定的大二进制文件）。实测字节记在
+   函数注释里。
+4. `feat(disk)` — `mountPoint` 上线。Win32 把盘符、卷 GUID 路径、挂载文件夹都算 volume mount point
+   （MS 文档 Naming a Volume），所以「挂载点」不是生造的中性词。`DiskSlot` 新增 `mountPoint[64]`，
+   两平台写入 + 两处 schema 注册 + C# 读侧与模型。macOS 启动卷组只报数据卷。
+5. `fix(net)` — Wi-Fi `band` / `gen` 补注册。采集端一直在收、写入点一直在写、Windows 侧一直有注册，
+   **只有 macOS 的 schema 构建漏了两行**，于是 C# 侧 `?? ""` 永远读到空串。
+6. `feat(bluetooth)` — `BtSlot.name` 复活。该槽在 macOS 装的是适配器名、Windows 空着、两端都没人读。
+   改成装已连接设备名；拼装逻辑抽到 `BluetoothInfo.h` 的 `JoinConnectedDeviceNames` 由两平台共用
+   （逐段拼、装不下就停，不在 UTF-8 字符中间截断）。`SystemInfo` 加 `btDeviceName` 只为 Windows 过路。
+
+验证：macOS `cmake --build build -j8` 0 error 0 warning（仅既存的 Homebrew dylib 版本链接警告）；
+`dotnet build` 0 警告 0 错误。实跑 `--debug` 确认磁盘只报 `/System/Volumes/Data` 且卷名为真值 `Data`；
+连 `/tmp/tcmt_ipc.sock` 读发布的 schema，确认 `disk/{0..3}/mountPoint`、`wifi/band`、`wifi/gen`、
+`bluetooth/name` 都在线上。
+
+**顺带发现**：schema 字段数 **284**，上限 `IPC_MAX_FIELDS = 300` —— **只剩 16 个余量**，超了会在
+`IPCClient.cpp:184` **静默截断**（无任何报错）。已在 `IPCServer::UpdateSchema` 加一行 DEBUG 记录字段数，
+下次加字段前先看这个数。
+
+**未做**：磁盘「分区」在 macOS 侧需要 APFS 容器（`disk3`）→ 物理盘（`disk0`）映射，得走 IOKit 设备树
+或 `diskutil`；Windows 侧 `partitionLabels` 的填充；以及 Windows 本地构建验证（本机编不了，靠 CI）。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
