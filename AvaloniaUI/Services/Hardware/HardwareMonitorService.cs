@@ -79,8 +79,10 @@ public class HardwareMonitorService : IHardwareService
         ConnectionStatus = "重新连接中...";
         
         await StopAsync();
-        _ipcService.Dispose();
-        
+        // 用 Reset 而不是 Dispose：Dispose 会把 _disposed 置位，之后 Start 直接空转返回，
+        // 「重新连接」变成死操作。Reset 换掉内部连接对象，让下面的 StartAsync 能真正重来。
+        _ipcService.Reset();
+
         try
         {
             await StartAsync();

@@ -14,8 +14,9 @@ namespace TCMT.Avalonia.Services.Hardware.IPC;
 /// </summary>
 public class IPCService : IDisposable
 {
-    private readonly IPCPipeClient _pipeClient = new();
-    private readonly IPCMemoryReader _memoryReader = new();
+    // 不是 readonly：Reset() 要把它们整个换成新实例（见下面的说明）
+    private IPCPipeClient _pipeClient = new();
+    private IPCMemoryReader _memoryReader = new();
     private CancellationTokenSource? _cts;
     private bool _disposed;
 
@@ -142,6 +143,27 @@ public class IPCService : IDisposable
     /// 检查 Schema 中是否包含指定字段
     /// </summary>
     public bool HasField(string name) => _fieldCache.ContainsKey(name);
+
+    /// <summary>
+    /// 丢弃当前连接对象并重建，为下一次 <see cref="Start"/> 做准备。用于界面上的「重新连接」。
+    ///
+    /// 为什么不直接 Dispose 再 Start：<see cref="Dispose"/> 会把 <c>_disposed</c> 置位，
+    /// 而 <see cref="Start"/> 的第一行就是 <c>if (_disposed) return;</c> —— 于是点了刷新反而
+    /// 变成空操作，定时器还在跑但 <c>IsMemoryOpen</c> 永远是 false，界面再也回不来。
+    /// 另外 <c>_pipeClient</c> / <c>_memoryReader</c> 被 Dispose 之后也无法复用，必须换新的。
+    /// </summary>
+    public void Reset()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _ = _pipeClient.DisposeAsync();
+        _memoryReader.Dispose();
+
+        _pipeClient = new IPCPipeClient();
+        _memoryReader = new IPCMemoryReader();
+        _disposed = false;
+    }
 
     public void Dispose()
     {

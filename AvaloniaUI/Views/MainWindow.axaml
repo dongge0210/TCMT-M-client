@@ -151,14 +151,17 @@
                                    Foreground="{StaticResource TextMutedBrush}"
                                    FontSize="10"
                                    VerticalAlignment="Center"/>
-                        <Button Content="🔄" 
-                                Command="{Binding ReconnectCommand}"
+                        <!-- 刷新用矢量图标而不是 emoji：emoji 靠系统字体渲染，不跟主题前景色，
+                             两个平台上还会长成两副样子。PathIcon 走 Foreground，两边一致。 -->
+                        <Button Command="{Binding ReconnectCommand}"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Padding="2"
-                                FontSize="12"
                                 ToolTip.Tip="重新连接"
-                                Height="24" Width="24"/>
+                                Height="24" Width="24">
+                            <PathIcon Width="13" Height="13"
+                                      Data="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                        </Button>
                     </StackPanel>
                 </Grid>
             </Border>
