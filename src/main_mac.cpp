@@ -196,6 +196,10 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addI("wifi/rssi",        offsetof(B, wifi.rssi));
     addI("wifi/channel",     offsetof(B, wifi.channel));
     addS("wifi/security",    offsetof(B, wifi.security), 16);
+    // band / gen 采集端一直在收（WiFiInfo.mm），Windows 侧也一直有注册，
+    // 只有 macOS 这边漏了两行 —— 结果是 C# 用 ?? "" 读到空串，界面上频段和代数永远空着。
+    addS("wifi/band",        offsetof(B, wifi.band), 8);
+    addS("wifi/gen",         offsetof(B, wifi.wifiGen), 12);
     addB("wifi/powerOn",     offsetof(B, wifi.powerOn));
     addB("wifi/isConnected", offsetof(B, wifi.isConnected));
     // Bluetooth
