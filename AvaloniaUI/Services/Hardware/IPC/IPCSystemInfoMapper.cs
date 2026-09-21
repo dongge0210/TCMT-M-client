@@ -259,14 +259,12 @@ public static class IPCSystemInfoMapper
             // Physical disks (SMART)
             if (reader.HasField("phys/0/model"))
             {
-                Serilog.Log.Information("SMART: HasField phys/0/model=true, entering disk loop");
                 int idx = 0;
                 while (reader.HasField($"phys/{idx}/model") && idx < 8)
                 {
                     var model = reader.ReadWString($"phys/{idx}/model") ?? "";
                     var serial = reader.ReadWString($"phys/{idx}/serial") ?? "";
                     var capacity = reader.ReadUInt64($"phys/{idx}/capacity") ?? 0;
-                    Serilog.Log.Information("SMART disk[{Idx}]: model='{M}' capacity={C}", idx, model, capacity);
                     var iface = reader.ReadWString($"phys/{idx}/interface") ?? "";
                     var temp = reader.ReadFloat64($"phys/{idx}/temperature") ?? 0;
                     var health = (byte)(reader.ReadFloat32($"phys/{idx}/health") ?? 0f);
@@ -315,7 +313,6 @@ public static class IPCSystemInfoMapper
                                         Description = el.TryGetProperty("desc", out var desc) ? desc.GetString() ?? "" : ""
                                     });
                                 }
-                                Serilog.Log.Information("SMART: parsed {Count} attrs from IPC", pd.Attributes.Count);
                             }
                             catch (Exception ex) {
                                 Serilog.Log.Warning("SMART JSON parse error: {Err}", ex.Message);
