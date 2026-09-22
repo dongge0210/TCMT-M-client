@@ -16,6 +16,10 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly IThemeService _themeService;
     private readonly IFontService _fontService;
     private readonly IHardwareService _hardwareService;
+    private readonly IClientSettingsStore _clientSettings;
+
+    // 构造期间设的那些值不算用户改动，不存盘
+    private bool _loaded;
 
     [ObservableProperty]
     private AppTheme _currentTheme = AppTheme.Dark;
@@ -48,20 +52,32 @@ public partial class SettingsViewModel : ViewModelBase
     public SettingsViewModel(
         IThemeService themeService,
         IFontService fontService,
-        IHardwareService hardwareService)
+        IHardwareService hardwareService,
+        IClientSettingsStore clientSettings)
     {
         _themeService = themeService;
         _fontService = fontService;
         _hardwareService = hardwareService;
+        _clientSettings = clientSettings;
         Title = "设置";
         Icon = "settings";
-        CurrentTheme = _themeService.CurrentTheme;
+
+        // 已经存过的界面偏好要把界面也铺成那个样子 —— 主题和字体 App 启动时应用过了，
+        // 但这两个字段得自己填，否则设置页会显示成默认值，和实际长相不一致。
+        // 直接写字段不走属性，免得触发一遍"应用 + 保存"。
+        var saved = _clientSettings.Load();
+        _selectedFontFamily = saved.FontFamily;
+        _fontSize = saved.FontSize;
+        _currentTheme = saved.Theme;
 
         PickSystemFontCommand = new AsyncRelayCommand(PickSystemFontAsync);
 
         LoadSystemFonts();
 
         _hardwareService.ConfigSnapshotReceived += (_, json) => ApplySnapshot(json);
+
+        // 构造期间设的那些值不算"用户改动"，从这里开始才存盘
+        _loaded = true;
     }
 
     private void LoadSystemFonts()
@@ -71,14 +87,34 @@ public partial class SettingsViewModel : ViewModelBase
             SystemFonts.Add(font);
     }
 
+    // 设置页的主题下拉原来只改 CurrentTheme，没人把它交给 ThemeService —— 换主题这个动作
+    // 一直是空的（只有工具栏那个 ToggleTheme 按钮真的生效）。补上，顺手落盘。
+    partial void OnCurrentThemeChanged(AppTheme value)
+    {
+        _themeService.SetTheme(value);
+        SaveClientSettings();
+    }
+
     partial void OnSelectedFontFamilyChanged(string value)
     {
         _fontService.ApplyAppFont(value, FontSize);
+        SaveClientSettings();
     }
 
     partial void OnFontSizeChanged(double value)
     {
         _fontService.ApplyAppFont(SelectedFontFamily, value);
+        SaveClientSettings();
+    }
+
+    /// <summary>
+    /// 存一份当前的三项。每次改动整份写 —— 它只有三个字段，为省一次磁盘写去做
+    /// 差异比对不划算，而且整份写天然把"上次存坏了"修回来。
+    /// </summary>
+    private void SaveClientSettings()
+    {
+        if (!_loaded) return;
+        _clientSettings.Save(new ClientSettings(CurrentTheme, SelectedFontFamily, FontSize));
     }
 
     private async Task PickSystemFontAsync()

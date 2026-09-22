@@ -49,7 +49,13 @@ public partial class App : Application
                     mainWindow.FontFamily = new FontFamily($"{family}, {cjkFallback}");
                 };
                 fontService.FontChanged += onFontChanged;
-                
+
+                // 上次的界面偏好。放在挂完 FontChanged 之后 —— 靠那次事件把字体落到窗口上，
+                // 不另开一条应用路径，否则「启动时」和「改设置时」就成了两套行为。
+                var clientSettings = Services.GetRequiredService<IClientSettingsStore>().Load();
+                Services.GetRequiredService<IThemeService>().SetTheme(clientSettings.Theme);
+                fontService.ApplyAppFont(clientSettings.FontFamily, clientSettings.FontSize);
+
                 // Handle startup
                 desktop.Startup += async (_, _) => await mainVm.InitializeAsync();
                 desktop.Exit += (_, _) =>
@@ -88,6 +94,7 @@ public partial class App : Application
         services.AddSingleton<IHardwareService, HardwareMonitorService>();
         services.AddSingleton<IPCService>();
         services.AddSingleton<IFontService, FontService>();
+        services.AddSingleton<IClientSettingsStore, ClientSettingsStore>();
         // The same instance Program hands to Serilog, so the log page sees the live tail.
         services.AddSingleton(Program.InMemoryLog);
 
