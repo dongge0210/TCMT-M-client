@@ -67,7 +67,10 @@ void ProcessTop::Refresh() {
     std::sort(byMem.begin(), byMem.end(),
               [](const auto& a, const auto& b) { return a.second > b.second; });
 
-    int topN = std::min(7, (int)byMem.size());
+    // 128 足够让进程页的排序与过滤真正有用，又不至于每帧样本胀得太厉害。
+    // 这里对每个入选进程都要一次 proc_pidinfo，所以别无限抬；好在这个扫描本来就在后台线程上
+    // （main_mac.cpp 的 procRefreshing 守卫），拖长的是它自己那一轮，不会卡界面。
+    int topN = std::min(128, (int)byMem.size());
 
     // If we have a previous sample, compute CPU%
     std::unordered_map<pid_t, double> cpuPct;

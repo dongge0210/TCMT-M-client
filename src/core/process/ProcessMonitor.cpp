@@ -88,7 +88,8 @@ void ProcessMonitor::Refresh() {
     std::sort(collected.begin(), collected.end(), [](const ProcessTopEntry& a, const ProcessTopEntry& b) {
         return a.memoryBytes > b.memoryBytes;
     });
-    const size_t kTop = 8;
+    // 与 macOS 侧对齐：128。以前是 8，于是进程页只能显示个位数。
+    const size_t kTop = 128;
     if (collected.size() > kTop) {
         collected.resize(kTop);
     }
