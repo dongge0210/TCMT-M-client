@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TCMT.Avalonia.Core;
 using TCMT.Avalonia.Models;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.ViewModels;
 
@@ -45,8 +46,8 @@ public sealed class ProcessRow : ObservableObject
     /// <summary>Out-of-range readings say so in words — colour is never the only carrier.</summary>
     public string LevelText => _level switch
     {
-        ThresholdLevel.Critical => "临界",
-        ThresholdLevel.Warning => "警示",
+        ThresholdLevel.Critical => Translator.T("临界"),
+        ThresholdLevel.Warning => Translator.T("警示"),
         _ => string.Empty
     };
 

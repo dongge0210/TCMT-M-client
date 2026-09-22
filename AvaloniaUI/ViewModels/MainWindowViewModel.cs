@@ -28,7 +28,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string _windowTitle = $"{AppConstants.AppName} - {AppConstants.AppDisplayName}";
 
     [ObservableProperty]
-    private string _connectionStatus = "连接中...";
+    private string _connectionStatus = Translator.T("连接中...");
 
     [ObservableProperty]
     private bool _isConnected;
@@ -199,7 +199,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void OnConnectionStateChanged(object? sender, bool connected)
     {
         IsConnected = connected;
-        ConnectionStatus = connected ? "已连接" : "已断开";
+        ConnectionStatus = connected ? Translator.T("已连接") : Translator.T("已断开");
         WindowTitle = connected
             ? $"{AppConstants.AppName} - {AppConstants.AppDisplayName}"
             : $"{AppConstants.AppName} - {AppConstants.AppDisplayName} (已断开)";
@@ -241,7 +241,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task Reconnect()
     {
-        ConnectionStatus = "重新连接中...";
+        ConnectionStatus = Translator.T("重新连接中...");
         await _hardwareService.ReconnectAsync();
     }
 

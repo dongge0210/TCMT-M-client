@@ -5,6 +5,7 @@ using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TCMT.Avalonia.Core;
 using TCMT.Avalonia.Models;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.ViewModels;
 
@@ -112,7 +113,7 @@ public partial class DashboardViewModel : ViewModelBase
     private string _smartHoursDisplay = "—";
 
     [ObservableProperty]
-    private string _smartNote = "该主机未报告 SMART 数据";
+    private string _smartNote = Translator.T("该主机未报告 SMART 数据");
 
     [ObservableProperty]
     private string _networkNameDisplay = "—";
@@ -164,7 +165,7 @@ public partial class DashboardViewModel : ViewModelBase
 
     public DashboardViewModel()
     {
-        Title = "概览";
+        Title = Translator.T("概览");
         Icon = "dashboard";
     }
 
@@ -236,13 +237,13 @@ public partial class DashboardViewModel : ViewModelBase
     private void UpdatePower(SystemInfo info)
     {
         HasBattery = info.BatteryIsPresent;
-        BatteryNote = HasBattery ? string.Empty : "该主机未报告电池设备";
+        BatteryNote = HasBattery ? string.Empty : Translator.T("该主机未报告电池设备");
         BatteryPercent = Math.Max(0, info.BatteryPercent);
         BatteryHealthDisplay = info.BatteryHealthPercent > 0 ? $"{info.BatteryHealthPercent:F0}%" : "—";
 
         PowerStateDisplay = info.BatteryIsCharging
-            ? "充电中"
-            : info.AcOnline ? "交流供电" : (info.BatteryIsPresent ? "电池供电" : "—");
+            ? Translator.T("充电中")
+            : info.AcOnline ? Translator.T("交流供电") : (info.BatteryIsPresent ? Translator.T("电池供电") : "—");
     }
 
     private void UpdateThermal(SystemInfo info)
@@ -263,7 +264,7 @@ public partial class DashboardViewModel : ViewModelBase
         var fans = (info.Fans ?? new List<FanData>()).Where(f => f.Rpm > 0).ToList();
         FanDisplay = fans.Count > 0
             ? $"最高 {fans.Max(f => f.Rpm):F0} RPM · {fans.Count} 个"
-            : "该主机未暴露风扇转速";
+            : Translator.T("该主机未暴露风扇转速");
 
         OnPropertyChanged(nameof(HasSensors));
         OnPropertyChanged(nameof(HasNoSensors));
@@ -277,7 +278,7 @@ public partial class DashboardViewModel : ViewModelBase
         if (disk is null)
         {
             DiskNameDisplay = "—";
-            DiskUsageDisplay = "该主机未报告分区";
+            DiskUsageDisplay = Translator.T("该主机未报告分区");
             DiskUsagePercent = 0;
         }
         else
@@ -290,7 +291,7 @@ public partial class DashboardViewModel : ViewModelBase
         var smart = (info.PhysicalDisks ?? new List<PhysicalDiskSmartData>()).FirstOrDefault();
 
         HasSmart = smart is not null;
-        SmartNote = smart is null ? "该主机未报告 SMART 数据" : string.Empty;
+        SmartNote = smart is null ? Translator.T("该主机未报告 SMART 数据") : string.Empty;
         SmartHealthDisplay = smart is not null && smart.HealthPercentage > 0 ? $"{smart.HealthPercentage}%" : "—";
         SmartTempDisplay = smart is not null && smart.Temperature > 0 ? $"{smart.Temperature:F0} °C" : "—";
         SmartHoursDisplay = smart is not null && smart.PowerOnHours > 0 ? $"{smart.PowerOnHours:N0} h" : "—";

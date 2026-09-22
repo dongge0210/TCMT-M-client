@@ -39,7 +39,7 @@ public partial class SettingsViewModel : ViewModelBase
     private double _fontSize = 13;
 
     [ObservableProperty]
-    private string _fontPreviewText = "系统硬件监视器 TCMT 0123456789";
+    private string _fontPreviewText = Translator.T("系统硬件监视器 TCMT 0123456789");
 
     [ObservableProperty]
     private bool _showFontPicker;
@@ -60,7 +60,7 @@ public partial class SettingsViewModel : ViewModelBase
         _fontService = fontService;
         _hardwareService = hardwareService;
         _clientSettings = clientSettings;
-        Title = "设置";
+        Title = Translator.T("设置");
         Icon = "settings";
 
         // 已经存过的界面偏好要把界面也铺成那个样子 —— 主题和字体 App 启动时应用过了，
@@ -156,9 +156,9 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private int _collectorSampleIntervalMs = 500;
 
     /// <summary>语言在配置里是 BCP-47 短码，界面上给人看的是名字。就两种，不做查表。</summary>
-    public IReadOnlyList<string> Languages { get; } = ["中文", "English"];
+    public IReadOnlyList<string> Languages { get; } = [Translator.T("中文"), "English"];
 
-    [ObservableProperty] private string _collectorLanguage = "中文";
+    [ObservableProperty] private string _collectorLanguage = Translator.T("中文");
 
     // 界面在往回调写：正在把收到的快照铺开。铺开的时候不能再往回发，
     // 否则每收到一份快照就回一份，两边对着刷。

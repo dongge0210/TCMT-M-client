@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
 using TCMT.Avalonia.Core;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Models;
 
@@ -203,7 +204,7 @@ public class DiskData : ModelBase
         {
             if (!string.IsNullOrEmpty(Label)) return Letter == '\0' ? Label : $"{Letter}: {Label}";
             if (!string.IsNullOrEmpty(MountPoint)) return MountPoint;
-            return "未知分区";
+            return Translator.T("未知分区");
         }
     }
     public string TotalSizeDisplay => FormatUtils.FormatBytes(TotalSize);
@@ -256,7 +257,7 @@ public class TemperatureData
 {
     public string SensorName { get; set; } = string.Empty;
     public double Temperature { get; set; }
-    public string DisplayName => string.IsNullOrEmpty(SensorName) ? "未知传感器" : SensorName;
+    public string DisplayName => string.IsNullOrEmpty(SensorName) ? Translator.T("未知传感器") : SensorName;
     public string TemperatureDisplay => $"{Temperature:0.#}°C";
 }
 
@@ -284,7 +285,7 @@ public class PhysicalDiskView : ModelBase
         get
         {
             if (Partitions.Count > 0)
-                return "卷: " + string.Join(", ", Partitions.Select(p => p.Label));
+                return Translator.T("卷: ") + string.Join(", ", Partitions.Select(p => p.Label));
             if (Disk?.LogicalDriveLetters != null && Disk.LogicalDriveLetters.Count > 0)
                 return string.Join(", ", Disk.LogicalDriveLetters.Select(l => l + ":"));
             return "";

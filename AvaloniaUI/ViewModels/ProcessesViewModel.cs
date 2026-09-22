@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using TCMT.Avalonia.Core;
 using TCMT.Avalonia.Models;
 using TCMT.Avalonia.Services.Contracts;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.ViewModels;
 
@@ -88,7 +89,7 @@ public partial class ProcessesViewModel : ViewModelBase
     public ProcessesViewModel(IProcessController? controller = null)
     {
         _controller = controller;
-        Title = "进程";
+        Title = Translator.T("进程");
         Icon = "processes";
     }
 

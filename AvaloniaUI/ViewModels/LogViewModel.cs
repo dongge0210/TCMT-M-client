@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TCMT.Avalonia.Models;
 using TCMT.Avalonia.Services;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.ViewModels;
 
@@ -25,7 +26,7 @@ public partial class LogViewModel : ViewModelBase
 
     public LogViewModel()
     {
-        Title = "日志";
+        Title = Translator.T("日志");
     }
 
     public bool IsPaused => !IsFollowing;

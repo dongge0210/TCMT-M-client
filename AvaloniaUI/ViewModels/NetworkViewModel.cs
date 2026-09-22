@@ -52,7 +52,7 @@ public partial class NetworkViewModel : ViewModelBase
     {
         get
         {
-            if (!HasWiFi) return "WiFi：未检测到适配器";
+            if (!HasWiFi) return Translator.T("WiFi：未检测到适配器");
             var extra = "";
             if (!string.IsNullOrEmpty(WifiBand)) extra += "  " + WifiBand;
             if (!string.IsNullOrEmpty(WifiGen)) extra += "  " + WifiGen;
@@ -60,14 +60,14 @@ public partial class NetworkViewModel : ViewModelBase
                 return $"WiFi：{WifiSSID}  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
             if (WifiRSSI != 0 || WifiChannel != 0)
                 return $"WiFi：已连接  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
-            return "WiFi：已断开";
+            return Translator.T("WiFi：已断开");
         }
     }
 
     // 有已连接设备名就报名字 —— 比"3 台设备"有用得多，也正是设计稿要显示的东西。
     // 名字来自采集端的 JoinConnectedDeviceNames；旧服务端没这个字段时回落到数量。
     public string BtDisplay => !HasBluetooth
-        ? "蓝牙未检测到"
+        ? Translator.T("蓝牙未检测到")
         : $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")}" +
           (string.IsNullOrEmpty(BtDeviceName) ? $" ({BtDeviceCount} 台设备)" : $" {BtDeviceName}");
 
@@ -90,8 +90,8 @@ public partial class NetworkViewModel : ViewModelBase
             }
 
             return WifiRSSI != 0 || WifiChannel != 0
-                ? "已连接，但 SSID 读不到——系统需要开启定位服务才会返回 SSID"
-                : "未连接——在系统设置里选择网络，这里会跟着变";
+                ? Translator.T("已连接，但 SSID 读不到——系统需要开启定位服务才会返回 SSID")
+                : Translator.T("未连接——在系统设置里选择网络，这里会跟着变");
         }
     }
 
