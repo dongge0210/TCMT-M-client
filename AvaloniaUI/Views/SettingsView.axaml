@@ -66,7 +66,7 @@
             <!-- Native font dialog (Windows only) -->
             <Button Content="系统字体面板…"
                     Command="{Binding PickSystemFontCommand}"
-                    IsVisible="{Binding ShowNativeDialogButton}"
+                    IsVisible="{Binding IsNativeFontDialogSupported}"
                     Width="160"
                     HorizontalAlignment="Left"/>
 

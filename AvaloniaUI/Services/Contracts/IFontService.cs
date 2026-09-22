@@ -16,8 +16,11 @@ public interface IFontService
     IReadOnlyList<string> GetSystemFonts();
 
     /// <summary>
-    /// Whether the platform supports native font dialog.
-    /// (Linux typically returns false — fontconfig doesn't have a standard UI.)
+    /// Whether <see cref="PickFontAsync"/> can actually produce a selection here — not whether the
+    /// platform has a font panel in principle. macOS reports false: it has NSFontPanel, but
+    /// MacPickFont is a no-op because the panel conflicts with Avalonia's render loop.
+    /// Callers use this to decide whether to offer the button at all, so it has to match
+    /// the implementation or the button leads nowhere.
     /// </summary>
     bool IsNativeDialogSupported { get; }
 

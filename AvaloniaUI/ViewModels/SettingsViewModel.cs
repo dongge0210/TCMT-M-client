@@ -36,9 +36,9 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _showFontPicker;
 
+    /// <summary>驱动「系统字体面板」按钮的可见性。走服务，不在这层自己判断平台 ——
+    /// 之前这里另写了一个 OperatingSystem.IsWindows() 的属性，和服务的判断各说各话。</summary>
     public bool IsNativeFontDialogSupported => _fontService.IsNativeDialogSupported;
-
-    public bool ShowNativeDialogButton => OperatingSystem.IsWindows();
 
     public ICommand PickSystemFontCommand { get; }
 

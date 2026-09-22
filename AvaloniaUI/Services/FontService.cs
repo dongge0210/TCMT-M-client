@@ -9,7 +9,14 @@ namespace TCMT.Avalonia.Services;
 
 public class FontService : IFontService
 {
-    public bool IsNativeDialogSupported => OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
+    // 只报 Windows。
+    //
+    // 这个属性的含义是「PickFontAsync 在这个平台上真能选出字体」，不是「这个平台理论上有没有
+    // 原生字体面板」—— macOS 有 NSFontPanel，但 MacPickFont 因为和 Avalonia 渲染循环冲突而
+    // 永远返回 null。跟着报 true 的话，界面会摆出一个点了没反应的按钮，而且失败是静默的：
+    // PickFontAsync 返回 null，调用方 if (result != null) 不成立，既不改字体也不报错。
+    // 改了这里就要同步看 PickFontAsync 的实现，两者是一件事。
+    public bool IsNativeDialogSupported => OperatingSystem.IsWindows();
 
     public string? CurrentFontFamily { get; private set; }
 
