@@ -920,13 +920,13 @@ static int RunMcpMode() {
         nlohmann::json j;
         if (useIpc) {
             j["name"]    = ipc.ReadString("cpu/name").value_or("");
-            j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+            j["usage"]   = ipc.ReadFloat("cpu/usage").value_or(0.0);
             j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
             j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
             j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
-            j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
-            j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
-            j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+            j["frequencies"]["pCore"] = ipc.ReadFloat("cpu/freq/pCore").value_or(0.0);
+            j["frequencies"]["eCore"] = ipc.ReadFloat("cpu/freq/eCore").value_or(0.0);
+            j["temperature"] = ipc.ReadFloat("cpu/temperature").value_or(0.0);
         } else {
             CpuInfo cpu;
             j["name"] = cpu.GetName();
@@ -956,7 +956,7 @@ static int RunMcpMode() {
         nlohmann::json j;
         if (useIpc) {
             j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
-            j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+            j["usage"] = ipc.ReadFloat("gpu/0/usage").value_or(0.0);
             j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
         }
         return j;

@@ -36,6 +36,9 @@ public:
     // Field readers — return nullopt if field not found
     std::optional<std::string> ReadString(const std::string& name);
     std::optional<double>      ReadFloat64(const std::string& name);
+    /// 按字段实际宽度读浮点。见 .cpp 里的说明 —— 用 Float64 读 4 字节的 float 不会失败，
+    /// 但拿到的是非规格化垃圾。调用点通常不知道字段是哪一种，所以用这个。
+    std::optional<double>      ReadFloat(const std::string& name);
     std::optional<float>       ReadFloat32(const std::string& name);
     std::optional<uint64_t>    ReadUInt64(const std::string& name);
     std::optional<int32_t>     ReadInt32(const std::string& name);
