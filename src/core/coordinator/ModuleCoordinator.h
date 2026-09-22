@@ -42,7 +42,8 @@ struct ModuleData {
     std::vector<DiskData> disks;
     // Network (1s)
     std::mutex netMutex;
-    struct NetSlot { std::string name, ip, mac, type; uint64_t speed, dl, ul; };
+    // mac = 硬件地址；currentMac = 当前生效的链路地址（macOS 的私有 Wi-Fi 地址会轮换）
+    struct NetSlot { std::string name, ip, mac, currentMac, type; uint64_t speed, dl, ul; };
     std::vector<NetSlot> adapters;
     // Temperature (2s)
     std::mutex tempMutex;
