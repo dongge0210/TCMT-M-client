@@ -80,6 +80,68 @@
           </StackPanel>
         </Border>
 
+        <!--
+          采集端：这几项不属于客户端 —— 它们落在采集端的 system_monitor.json 里，
+          和 TUI 按 S 打开的是同一份。两个界面改的是同一个东西，不是各存一份。
+        -->
+        <Border Theme="{StaticResource CardBorder}">
+          <StackPanel Spacing="16">
+            <TextBlock Text="采集端" Theme="{StaticResource SectionHeader}"/>
+
+            <StackPanel Spacing="12" IsEnabled="{Binding CollectorEditable}">
+
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="数据上传" FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                <ToggleSwitch Grid.Column="1" IsChecked="{Binding CollectorUploadEnabled}"
+                              OnContent="开" OffContent="关"/>
+              </Grid>
+
+              <StackPanel Spacing="6">
+                <TextBlock Text="服务器地址" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox Text="{Binding CollectorUrl}" Width="360" HorizontalAlignment="Left"/>
+              </StackPanel>
+
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="跳过 TLS 校验" FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                <ToggleSwitch Grid.Column="1" IsChecked="{Binding CollectorInsecure}"
+                              OnContent="开" OffContent="关"/>
+              </Grid>
+
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="上传间隔（秒）" FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                <NumericUpDown Grid.Column="1" Value="{Binding CollectorIntervalSec}"
+                               Minimum="1" Maximum="60" Width="120"/>
+              </Grid>
+
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="采样间隔（毫秒）" FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                <NumericUpDown Grid.Column="1" Value="{Binding CollectorSampleIntervalMs}"
+                               Minimum="200" Maximum="5000" Increment="100" Width="120"/>
+              </Grid>
+
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="语言" FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Languages}"
+                          SelectedItem="{Binding CollectorLanguage}" Width="140"/>
+              </Grid>
+
+            </StackPanel>
+
+            <TextBlock Text="只发改动的那一项，采集端应用后回推一份新值。"
+                       IsVisible="{Binding CollectorEditable}"
+                       FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
+            <TextBlock Text="未连接采集端 —— 这一组现在改不了，值会在连上后自动填进来。"
+                       IsVisible="{Binding !CollectorEditable}"
+                       TextWrapping="Wrap"
+                       FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
+          </StackPanel>
+        </Border>
+
         <!-- About -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">
