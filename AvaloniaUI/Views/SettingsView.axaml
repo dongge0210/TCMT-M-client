@@ -21,8 +21,7 @@
 
     <!-- Content -->
     <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
-      <!-- 宽度与硬件规格页对齐（760）：两页共用同一根右边界线，切页时版面不跳 -->
-      <StackPanel Spacing="20" MaxWidth="760" HorizontalAlignment="Left">
+      <StackPanel Spacing="20">
         
         <!-- Appearance -->
         <Border Theme="{StaticResource CardBorder}">

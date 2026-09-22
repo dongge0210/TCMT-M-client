@@ -31,8 +31,6 @@
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="8"/>
       <Setter Property="Padding" Value="12,9"/>
-      <Setter Property="MaxWidth" Value="760"/>
-      <Setter Property="HorizontalAlignment" Value="Left"/>
     </Style>
     <Style Selector="Border.banner TextBlock">
       <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
@@ -55,7 +53,7 @@
 
     <!-- Content -->
     <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
-      <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+      <StackPanel Spacing="16">
 
         <!--
           规格行直接落在页面上，不套卡片。这一页只有一个部件，卡片的边界就只能圈住它自己 ——
