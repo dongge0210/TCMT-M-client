@@ -42,7 +42,7 @@
     <!-- Header -->
     <StackPanel Grid.Row="0" Margin="32,28,32,0">
       <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="静态规格：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值"
+      <TextBlock Text="静态规格与实时读数：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值"
                  FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
 
       <!-- 没连上时整页都是占位符，这里得先说清楚为什么 -->

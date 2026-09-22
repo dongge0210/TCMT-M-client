@@ -92,18 +92,92 @@ public static class HardwareSpecBuilder
 
     private static SpecUnit Unit(params SpecRow[] rows) => new(rows);
 
+    // ── 实时值的小工具 ───────────────────────────────────────────────────
+    //
+    // FormatUtils 里那几个函数对越界输入会返回字面量 "N/A" 或空串 —— 那是「值」，不是占位符：
+    // 它会以正常颜色渲染出来，混在真正的 N/A 里分不清，而且 AI 从 MCP 那头读到的也会是个字符串
+    // "N/A" 而不是缺失。所以统一在这里先拦一道，拦下来的走 SpecRow.Na，落到压暗的那一档。
+
+    /// <summary>百分比。NaN 与负值当没上报；0 是有效读数，不拦。</summary>
+    private static SpecRow Percent(string label, double percent) =>
+        double.IsFinite(percent) && percent >= 0
+            ? new SpecRow(label, FormatUtils.FormatPercentage(percent))
+            : SpecRow.Na(label);
+
+    /// <summary>电池电量。这一路采集端用 -1 表示没上报，所以不能按 0 处理。</summary>
+    private static SpecRow Percent(string label, int percent) =>
+        percent >= 0 ? new SpecRow(label, FormatUtils.FormatPercentage(percent)) : SpecRow.Na(label);
+
+    private static SpecRow Frequency(string label, double megahertz) =>
+        double.IsFinite(megahertz) && megahertz > 0
+            ? new SpecRow(label, FormatUtils.FormatFrequency(megahertz))
+            : SpecRow.Na(label);
+
+    private static SpecRow Temperature(string label, double celsius) =>
+        double.IsFinite(celsius) && celsius is > 0 and <= 150
+            ? new SpecRow(label, FormatUtils.FormatTemperature(celsius))
+            : SpecRow.Na(label);
+
+    /// <summary>功耗。采集端给的是毫瓦，FormatPower 负责换成瓦。</summary>
+    private static SpecRow Power(string label, double milliwatts) =>
+        double.IsFinite(milliwatts) && milliwatts > 0
+            ? new SpecRow(label, FormatUtils.FormatPower(milliwatts))
+            : SpecRow.Na(label);
+
+    /// <summary>充电器标称瓦数。这一项本来就是瓦，不走 FormatPower（那个要吃毫瓦）。</summary>
+    private static SpecRow ChargerWatts(string label, double watts) =>
+        double.IsFinite(watts) && watts > 0 ? new SpecRow(label, $"{watts:F1} W") : SpecRow.Na(label);
+
+    // 0 B/s 是有效读数（网卡闲着），所以这里不判缺失，直接照写。
+    private static SpecRow Throughput(string label, ulong bytesPerSecond) =>
+        new(label, FormatUtils.FormatSpeed(bytesPerSecond));
+
+    /// <summary>Swap 写成「已用 / 总量」一行 —— 两个数拆两行对不起这张表的密度。</summary>
+    private static SpecRow Swap(string label, ulong used, ulong total) =>
+        total > 0
+            ? new SpecRow(label, $"{FormatUtils.FormatBytes(used)} / {FormatUtils.FormatBytes(total)}")
+            : SpecRow.Na(label);
+
+    /// <summary>负载三项并成一行 —— 它们是同一组的三个时刻，拆开就看不出是一组了。</summary>
+    private static SpecRow LoadAverage(SystemInfo info) =>
+        info.LoadAvg1 > 0 || info.LoadAvg5 > 0 || info.LoadAvg15 > 0
+            ? new SpecRow("负载", $"{info.LoadAvg1:F2} / {info.LoadAvg5:F2} / {info.LoadAvg15:F2}")
+            : SpecRow.Na("负载");
+
+    /// <summary>运行时长粗到天 / 时 / 分。精确到秒没意义，截到整小时又太糊。</summary>
+    private static SpecRow Uptime(SystemInfo info)
+    {
+        if (info.UptimeSeconds == 0) return SpecRow.Na("运行时长");
+
+        var span = TimeSpan.FromSeconds(info.UptimeSeconds);
+        var text = span.TotalDays >= 1
+            ? $"{(int)span.TotalDays}d {span.Hours}h {span.Minutes}m"
+            : span.TotalHours >= 1
+                ? $"{(int)span.TotalHours}h {span.Minutes}m"
+                : $"{span.Minutes}m";
+        return new SpecRow("运行时长", text);
+    }
+
     // ── CPU ──────────────────────────────────────────────────────────────
 
     private static SpecSheet Cpu(SystemInfo info) => new(
-        [Block("CPU", Unit(
-            Row("型号", info.CpuName),
-            Count("核心", info.PhysicalCores),
-            Count("逻辑核", info.LogicalCores),
-            Count("性能核", info.PerformanceCores),
-            Count("能效核", info.EfficiencyCores),
-            Row("基频", info.CpuBaseFreq > 0 ? FormatUtils.FormatFrequency(info.CpuBaseFreq) : null),
-            YesNo("超线程", info.HyperThreading),
-            YesNo("虚拟化", info.Virtualization)))],
+        [
+            Block("CPU", Unit(
+                Row("型号", info.CpuName),
+                Count("核心", info.PhysicalCores),
+                Count("逻辑核", info.LogicalCores),
+                Count("性能核", info.PerformanceCores),
+                Count("能效核", info.EfficiencyCores),
+                Frequency("基频", info.CpuBaseFreq),
+                YesNo("超线程", info.HyperThreading),
+                YesNo("虚拟化", info.Virtualization))),
+            Block("实时", Unit(
+                Percent("占用", info.CpuUsage),
+                Frequency("P 核频率", info.PerformanceCoreFreq),
+                Frequency("E 核频率", info.EfficiencyCoreFreq),
+                Temperature("温度", info.CpuTemperature),
+                Power("功耗", info.CpuPower)))
+        ],
         "大核 / 小核的分法是 Apple Silicon 的，x86 上采集端不上报这两项，故报 N/A —— 不按 0 显示。");
 
     // ── GPU ──────────────────────────────────────────────────────────────
@@ -115,7 +189,7 @@ public static class HardwareSpecBuilder
         if (info.Gpus.Count == 0)
         {
             return new SpecSheet(
-                [Block("GPU", Unit(GpuRows(null)))],
+                [Block("GPU", Unit(GpuRows(null))), Block("实时", Unit(GpuLiveRows(info, null)))],
                 "采集端没有上报任何 GPU（无显卡的机器，或采集端读不到）。");
         }
 
@@ -125,7 +199,11 @@ public static class HardwareSpecBuilder
             .Select((g, i) => new SpecUnit(GpuRows(g), many ? $"GPU {i + 1}" : null))
             .ToArray();
 
-        return new SpecSheet([new SpecBlock("GPU", units)]);
+        // 实时那一块始终只有一组，不分卡 —— 线格式里只有 gpu/0 的占用 / 温度 / 显存，
+        // 逐卡各画一组等于把同一个数抄成好几份。
+        return new SpecSheet(
+            [new SpecBlock("GPU", units), Block("实时", Unit(GpuLiveRows(info, info.Gpus[0])))],
+            many ? "实时读数只覆盖第一块显卡 —— IPC 里只有 gpu/0 的占用 / 温度 / 显存。" : "");
     }
 
     /// <summary>一块显卡的那五行。<paramref name="g"/> 为 null 表示这台机器没有这一块，五行全报 N/A。</summary>
@@ -134,17 +212,37 @@ public static class HardwareSpecBuilder
         Row("型号", g?.Name),
         Row("品牌", g?.Brand),
         Row("显存", g is { Memory: > 0 } ? g.MemoryDisplay : null),
-        Row("核心频率", g is { CoreClock: > 0 } ? FormatUtils.FormatFrequency(g.CoreClock) : null),
+        Frequency("核心频率", g?.CoreClock ?? 0),
         g is null ? SpecRow.Na("虚拟设备") : YesNo("虚拟设备", g.IsVirtual)
+    ];
+
+    /// <summary>
+    /// 显卡的几个实时值。功耗从整机那一路取（<c>power/gpu</c>）—— 它不在 GpuData 上。
+    /// <paramref name="g"/> 为 null 时全报 N/A。
+    /// </summary>
+    private static SpecRow[] GpuLiveRows(SystemInfo info, GpuData? g) =>
+    [
+        Percent("占用", g?.Usage ?? double.NaN),
+        Temperature("温度", g?.Temperature ?? 0),
+        Percent("显存占用", g?.MemoryPercent ?? double.NaN),
+        Frequency("核心频率", g?.CoreClock ?? 0),
+        Power("功耗", info.GpuPower)
     ];
 
     // ── 内存 ─────────────────────────────────────────────────────────────
 
     private static SpecSheet Memory(SystemInfo info) => new(
-        [Block("内存", Unit(
-            Bytes("总容量", info.TotalMemory),
-            Row("内存类型", info.RamType),
-            Row("内存速率", info.RamSpeed > 0 ? $"{info.RamSpeed} MT/s" : null)))]);
+        [
+            Block("内存", Unit(
+                Bytes("总容量", info.TotalMemory),
+                Row("内存类型", info.RamType),
+                Row("内存速率", info.RamSpeed > 0 ? $"{info.RamSpeed} MT/s" : null))),
+            Block("实时", Unit(
+                Bytes("已用", info.UsedMemory),
+                Bytes("可用", info.AvailableMemory),
+                Bytes("已压缩", info.CompressedMemory),
+                Swap("Swap", info.SwapUsed, info.SwapTotal)))
+        ]);
 
     // ── 磁盘 ─────────────────────────────────────────────────────────────
 
@@ -183,8 +281,16 @@ public static class HardwareSpecBuilder
             many ? $"磁盘 {i + 1}" : null,
             SmartTable(d))).ToArray();
 
+        // 磁盘这一页只有温度是实时的，其余全是读一次就不变的规格。小标题跟着上面那套走，
+        // 多盘时两块各自对齐，单盘时两块都是光板。
+        var liveUnits = info.PhysicalDisks
+            .Select((d, i) => new SpecUnit(
+                [Temperature("温度", d.Temperature)],
+                many ? $"磁盘 {i + 1}" : null))
+            .ToArray();
+
         return new SpecSheet(
-            [new SpecBlock("磁盘", units)],
+            [new SpecBlock("磁盘", units), new SpecBlock("实时", liveUnits)],
             "macOS 把启动盘拆成两个卷：/ 是只读系统快照（每次系统更新重建），数据都在这个卷上，" +
             "所以这里报的是数据卷 —— 只有它带真实可用空间。" +
             "「挂载点」与「分区」采集端还没接（物理盘到卷的对应关系尚未建立），故报 N/A。");
@@ -257,8 +363,17 @@ public static class HardwareSpecBuilder
             ],
             many ? $"网卡 {i + 1}" : null)).ToArray();
 
+        // 采集端给的这两个值是字节/秒（NetworkAdapter.cpp 里算的就是 bytes/sec），
+        // 所以走 FormatSpeed。别用 FormatNetworkSpeed —— 那是按位算的，会把 B/s 标成 bps。
+        var liveUnits = info.Adapters.Select((a, i) => new SpecUnit(
+            [
+                Throughput("下载", a.DownloadSpeed),
+                Throughput("上传", a.UploadSpeed)
+            ],
+            many ? $"网卡 {i + 1}" : null)).ToArray();
+
         return new SpecSheet(
-            [new SpecBlock("网卡", units)],
+            [new SpecBlock("网卡", units), new SpecBlock("实时", liveUnits)],
             OperatingSystem.IsMacOS()
                 ? "只列真实网卡，VPN / 回环 / 网桥这类虚拟接口由采集端过滤掉。" +
                   "「当前地址」在 macOS 上取不到：系统把当前链路地址（私有 Wi-Fi 地址）只给已签名进程，" +
@@ -286,15 +401,35 @@ public static class HardwareSpecBuilder
         // 没有电池时照列四项报 N/A，不收成一句话 —— 「这是台台式机」本身就是信息。
         // 四项本来就走 Count/Row 的空值口径，所以这里不需要分支，只需要换掉页底那句说明。
         return new SpecSheet(
-            [Block("电池", Unit(
-                Count("循环次数", info.BatteryCycleCount),
-                Count("设计容量", info.BatteryDesignCapacity),
-                Count("最大容量", info.BatteryMaxCapacity),
-                Row("健康度", info.BatteryHealthPercent > 0
-                    ? FormatUtils.FormatPercentage(info.BatteryHealthPercent)
-                    : null)))],
-            info.BatteryIsPresent ? "" : "这台机器没有电池（台式机，或采集端读不到电池），四项照列报 N/A。");
+            [
+                Block("电池", Unit(
+                    Count("循环次数", info.BatteryCycleCount),
+                    Count("设计容量", info.BatteryDesignCapacity),
+                    Count("最大容量", info.BatteryMaxCapacity),
+                    Percent("健康度", info.BatteryHealthPercent))),
+                Block("实时", Unit(
+                    Percent("电量", info.BatteryPercent),
+                    PowerSourceRow(info),
+                    ChargingRow(info),
+                    Temperature("温度", info.BatteryTemperature),
+                    ChargerWatts("充电功率", info.BatteryChargerWatts)))
+            ],
+            info.BatteryIsPresent ? "" : "这台机器没有电池（台式机，或采集端读不到电池），各行照列报 N/A。");
     }
+
+    /// <summary>
+    /// 电源那一行。没电池时也报 N/A —— 采集端这时给的是 acOnline=false，
+    /// 照直写就成了「使用电池」，等于在描述一块并不存在的电池。
+    /// </summary>
+    private static SpecRow PowerSourceRow(SystemInfo info) =>
+        !info.BatteryIsPresent
+            ? SpecRow.Na("电源")
+            : new SpecRow("电源", info.AcOnline ? "已接电源" : "使用电池");
+
+    private static SpecRow ChargingRow(SystemInfo info) =>
+        !info.BatteryIsPresent
+            ? SpecRow.Na("充电中")
+            : new SpecRow("充电中", info.BatteryIsCharging ? "是" : "否");
 
     // ── 风扇 ─────────────────────────────────────────────────────────────
 
@@ -362,7 +497,11 @@ public static class HardwareSpecBuilder
                     Row("OS", info.OsVersion),
                     Row("主机型号", info.HardwareModel),
                     Row("应用版本", info.Version))),
-                Block("TPM", Unit(tpmRows))
+                Block("TPM", Unit(tpmRows)),
+                Block("实时", Unit(
+                    LoadAverage(info),
+                    Count("进程数", info.ProcessCount),
+                    Uptime(info)))
             ],
             tpm is null ? "本机不提供 TPM，六项照列但报 N/A —— 采集端未上报此字段。" : "");
     }
