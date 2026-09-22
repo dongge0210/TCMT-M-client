@@ -33,6 +33,17 @@ public class IPCPipeClient : IAsyncDisposable
     public bool IsConnected { get; private set; }
     public string LastError { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// 采集端推来的配置快照，JSON 对象文本。握手一过就到一次，之后每次配置变更再推。
+    /// 参数是原始 JSON，解析交给上层 —— 这一层不知道有哪些键，也不该知道。
+    /// </summary>
+    public Action<string>? OnConfigSnapshot { get; set; }
+
+    // 握手之后唯一往服务端写的东西。协议里一条消息 = 4 字节头 + payload 两段写，
+    // 两次写插到一起对端就把 payload 当成下一条的头了，所以写要串行。
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private Stream? _stream;
+
     public async Task StartAsync(CancellationToken ct = default)
     {
         if (_disposed) return;
@@ -66,9 +77,12 @@ public class IPCPipeClient : IAsyncDisposable
 
             if (connected)
             {
-                // 连上过又断了：重试计数从头算，下一轮从最短的退避重新开始
+                // 连上过又断了：重试计数从头算，下一轮从最短的退避重新开始。
+                // 但这里必须先停一下 —— 回 true 只说明"这次握手过了"，服务端如果是
+                // 接受完立刻关闭，不歇就接等于换了个地方空转。
                 everConnected = true;
                 retryCount = 0;
+                await Task.Delay(1000, _cts.Token);
                 continue;
             }
 
@@ -127,8 +141,7 @@ public class IPCPipeClient : IAsyncDisposable
         OnConnectionChanged?.Invoke(true, "已连接");
         Log.Information("IPC: Connected to Windows pipe: {Name}", pipeName);
 
-        await ReceiveLoopAsync(client, ct);
-        return true;
+        return await ReceiveLoopAsync(client, ct);
     }
 
     // --- macOS/Linux: Unix Domain Socket ---
@@ -151,8 +164,7 @@ public class IPCPipeClient : IAsyncDisposable
             Log.Information("IPC: Connected to Unix socket: {Path}", socketPath);
 
             await using var ns = new NetworkStream(client, ownsSocket: false);
-            await ReceiveLoopAsync(ns, ct);
-            return true;
+            return await ReceiveLoopAsync(ns, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -170,10 +182,16 @@ public class IPCPipeClient : IAsyncDisposable
 
     private const int MsgHeaderSize = 4;  // PipeMessage: type(1) + version(1) + payloadSize(2)
 
-    private async Task ReceiveLoopAsync(Stream stream, CancellationToken ct)
+    /// <summary>
+    /// 跑完一次会话。返回 true 表示握手走通了（这次是真连上过），false 表示在握手阶段就断了。
+    /// 调用方靠这个值决定要不要退避重试 —— 一律回 true 的话，握手失败会被当成"连上又断开"，
+    /// 退避就被跳过了。
+    /// </summary>
+    private async Task<bool> ReceiveLoopAsync(Stream stream, CancellationToken ct)
     {
         int n;
         var msgBuf = new byte[MsgHeaderSize];
+        _stream = stream;
 
         if (!OperatingSystem.IsWindows())
         {
@@ -193,7 +211,8 @@ public class IPCPipeClient : IAsyncDisposable
             if (n == 0 || msgBuf[0] != 0x02) // HelloAck
             {
                 Log.Warning("IPC: Expected HELLO_ACK, got type={Type}", msgBuf[0]);
-                return;
+                _stream = null;
+                return false;
             }
             Log.Debug("IPC: HELLO_ACK received");
         }
@@ -205,7 +224,7 @@ public class IPCPipeClient : IAsyncDisposable
         int fieldDefSize = IPCConstants.FieldDefSize;
         var headerBuf = new byte[schemaHeaderSize];
         n = await ReadFullAsync(stream, headerBuf, schemaHeaderSize, ct);
-        if (n < schemaHeaderSize) { Log.Warning("IPC: Incomplete schema header"); return; }
+        if (n < schemaHeaderSize) { Log.Warning("IPC: Incomplete schema header"); _stream = null; return false; }
 
         ushort fieldCount = BitConverter.ToUInt16(headerBuf, 6);
         uint totalSize = BitConverter.ToUInt32(headerBuf, 8);
@@ -223,14 +242,16 @@ public class IPCPipeClient : IAsyncDisposable
         if (schema.Header.Magic != IPCConstants.Magic)
         {
             Log.Warning("IPC: Invalid magic 0x{Actual:X}", schema.Header.Magic);
-            return;
+            _stream = null;
+            return false;
         }
         Log.Information("IPC: Schema received: {Count} fields, totalSize={Size}", schema.Header.FieldCount, schema.Header.TotalSize);
 
         if (!(OnSchemaReceived?.Invoke(schema) ?? true))
         {
             Log.Warning("IPC: Schema rejected");
-            return;
+            _stream = null;
+            return false;
         }
 
         // === Phase 3: Send ACK (macOS/Linux only — Windows skips handshake) ===
@@ -287,6 +308,17 @@ public class IPCPipeClient : IAsyncDisposable
                         if (newSchema.IsValid)
                             OnSchemaReceived?.Invoke(newSchema);
                     }
+                    else if (msgType == 0x0B) // ConfigSnapshot
+                    {
+                        int payloadSize = BitConverter.ToUInt16(msgBuf, 2);
+                        var cfgBuf = new byte[payloadSize];
+                        if (payloadSize > 0 &&
+                            await ReadFullAsync(stream, cfgBuf, payloadSize, ct) < payloadSize)
+                        {
+                            break;   // 半个 payload 留在流里，后面全是对不上的，只能断
+                        }
+                        OnConfigSnapshot?.Invoke(System.Text.Encoding.UTF8.GetString(cfgBuf));
+                    }
                 }
                 catch (IOException) { break; }
                 catch (OperationCanceledException) { break; }
@@ -303,7 +335,59 @@ public class IPCPipeClient : IAsyncDisposable
             }
             Log.Debug("IPC: Keep-alive loop ended");
         }
+
+        // 会话结束，_stream 顺手清掉 —— 它也是 SendConfigSetAsync 判断还能不能写的依据
+        _stream = null;
+        return true;
     }
+
+    /// <summary>
+    /// 把一串键值（JSON 对象文本）发给采集端。返回 false 表示当前没连着，没发出去。
+    ///
+    /// 这里不等回执：采集端应用完会把新的 ConfigSnapshot 推给所有客户端，那一条就是回执。
+    /// 再单独设计一个 ack 只会多一条可能对不上的路径。
+    /// </summary>
+    public async Task<bool> SendConfigSetAsync(string json, CancellationToken ct = default)
+    {
+        var stream = _stream;
+        if (stream is null || _disposed) return false;
+
+        var payload = System.Text.Encoding.UTF8.GetBytes(json);
+        if (payload.Length > ConfigPayloadMax)
+        {
+            Log.Warning("IPC: 配置请求 {Size} 字节，超过上限，未发送", payload.Length);
+            return false;
+        }
+
+        var frame = new byte[MsgHeaderSize + payload.Length];
+        frame[0] = 0x0A; // ConfigSet
+        frame[1] = IPCConstants.CurrentVersion;
+        frame[2] = (byte)(payload.Length & 0xFF);
+        frame[3] = (byte)((payload.Length >> 8) & 0xFF);
+        Buffer.BlockCopy(payload, 0, frame, MsgHeaderSize, payload.Length);
+
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            // 头和 payload 一次写完：分两次写的话，中间插进别的消息就错位了
+            await stream.WriteAsync(frame, ct);
+            await stream.FlushAsync(ct);
+            Log.Debug("IPC: ConfigSet sent ({Size} bytes)", payload.Length);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("IPC: ConfigSet 发送失败: {Msg}", ex.Message);
+            return false;
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    /// <summary>与采集端的 IPC_CONFIG_PAYLOAD_MAX 对齐</summary>
+    private const int ConfigPayloadMax = 8192;
 
     private static async Task<int> ReadFullAsync(Stream stream, byte[] buf, int len, CancellationToken ct)
     {

@@ -38,7 +38,19 @@ public class IPCService : IDisposable
     /// </summary>
     public event Action? DataReady;
 
+    /// <summary>
+    /// 采集端推来的配置快照（JSON 对象文本）。握手后一次，之后每次变更再推。
+    /// 参数是原始 JSON —— 有哪些键、键怎么解释，是设置页的事。
+    /// </summary>
+    public event Action<string>? ConfigSnapshotReceived;
+
     public bool IsConnected => _pipeClient.IsConnected;
+
+    /// <summary>
+    /// 把配置改动发给采集端。返回 false 表示没送出去（没连着，或写失败）。
+    /// 采集端应用完会推一份新快照回来，那才是这次改动的确认。
+    /// </summary>
+    public Task<bool> SendConfigAsync(string json) => _pipeClient.SendConfigSetAsync(json);
     public bool IsMemoryOpen => _memoryReader.IsOpen;
     public IPCMemoryReader Reader => _memoryReader;
 
@@ -71,6 +83,13 @@ public class IPCService : IDisposable
 
         client.OnSchemaReceived = schema =>
             ReferenceEquals(client, _pipeClient) && OnSchemaReceived(schema);
+
+        // 配置快照同样认代：旧客户端晚到的那份反映的是上一个连接的状态
+        client.OnConfigSnapshot = json =>
+        {
+            if (!ReferenceEquals(client, _pipeClient)) return;
+            Dispatcher.UIThread.Post(() => ConfigSnapshotReceived?.Invoke(json));
+        };
 
         // 后台运行 Pipe 客户端
         Task.Run(() => client.StartAsync(_cts.Token));

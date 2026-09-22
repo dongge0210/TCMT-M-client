@@ -24,6 +24,7 @@ public class HardwareMonitorService : IHardwareService
     public event EventHandler<SystemInfo>? DataReceived;
     public event EventHandler<bool>? ConnectionStateChanged;
     public event EventHandler<string>? ErrorOccurred;
+    public event EventHandler<string>? ConfigSnapshotReceived;
 
     public HardwareMonitorService(IPCService ipcService)
     {
@@ -52,7 +53,11 @@ public class HardwareMonitorService : IHardwareService
         {
             ErrorOccurred?.Invoke(this, $"版本不匹配: {msg}");
         };
+
+        _ipcService.ConfigSnapshotReceived += json => ConfigSnapshotReceived?.Invoke(this, json);
     }
+
+    public Task<bool> SendConfigAsync(string json) => _ipcService.SendConfigAsync(json);
 
     public Task StartAsync()
     {
