@@ -233,6 +233,84 @@ PTY 冒烟（`script` 驱动，120×40）：默认色模式色码正常（黄/�
 **未做**：磁盘「分区」在 macOS 侧需要 APFS 容器（`disk3`）→ 物理盘（`disk0`）映射，得走 IOKit 设备树
 或 `diskutil`；Windows 侧 `partitionLabels` 的填充；以及 Windows 本地构建验证（本机编不了，靠 CI）。
 
+## 2026-09-22 — 硬件视图落地、两处 JSON 打包、MCP 浮点读取宽度、网卡修复
+
+### 1 · 「硬件」那一屏搬进应用（设计稿 → AvaloniaUI）
+
+设计稿里的「硬件」分区（左栏可展开组 + 十个部件页）此前**只存在于 HTML**。这次做进应用：
+
+- `Models/HardwareSpec.cs` — `HardwarePart` 枚举 + 显示名/顺序 + `SpecSheet`/`SpecBlock`/`SpecUnit`/`SpecRow`/`SpecTable`
+- `Core/HardwareSpecBuilder.cs` — `SystemInfo` + 部件 → 规格表，十页各一个方法
+- `ViewModels/HardwareSpecViewModel.cs` — **一个类十个实例**；写十个 VM 要配十个 DataTemplate，加一个部件动四处
+- `Views/HardwareSpecView.axaml` — 一个视图
+- `MainWindowViewModel` / `MainWindow.axaml` — `NavigationItem` 加 `Children`/`IsExpanded`/`ActivateCommand`；
+  子项不在 ListBox 的 Items 里，所以选中走命令。ListBox 只管顶层项
+
+**版式**：一页**一张卡**，块间细分隔线。按块各开一张卡的话，只有三四行的页（电池、内存）会变成飘在空白里的小方框。
+
+### 2 · 传感器与进程都打包成 JSON（字段预算救回来了）
+
+`IPC_MAX_FIELDS = 300`，客户端超了会**静默截断**（`IPCClient.cpp:184`）。原来按槽位开字段，撞墙：
+
+| | 之前 | 之后 |
+|---|---|---|
+| 传感器 | `TempSlot temperatures[10]`，每槽 2 字段 | `sensorsJson[4096]`，**1 个字段**，上限消失（采集端实际产 20 个，原来砍一半） |
+| 进程 | `ProcSlot topProcesses[7]`，每槽 4 字段 | `processesJson[16384]`，**1 个字段**，采集端保留数 7/8 → **128** |
+
+**schema 字段数 284 → 265（传感器）→ 237（进程）**，余量 16 → 63。
+装法沿用 SMART 属性表既有的 `attrsJson`。另在 `IPCServer::UpdateSchema` 加了一行 DEBUG 记录字段数 —— 这个上限超了没有任何报错，不主动记就只能靠猜。
+
+**顺带**：进程原来是按**内存**挑前 N、界面按 **CPU** 排，所以"CPU 前几名"其实只是"内存前几名里的 CPU 排序"。**这条没改**，需要时再定口径。
+
+### 3 · MCP 浮点读取宽度 —— 三平台 17 处报给 AI 的都是垃圾
+
+`ReadNumeric<T>` 里是 `memcpy(&val, …, min(sizeof(T), f->size))`。用 `ReadFloat64` 读一个 **4 字节的 float**
+不会失败：低 4 字节填 float 的位、高 4 字节留 0，拼出来是个**非规格化 double**（如 `5.49e-315`）。
+既不是 null 也不是合理值，`value_or()` 之类兜底完全拦不住。
+
+修前 `get_gpu_status` 的温度是 `5.49e-315`，修后是 `59.65 °C`；`get_cpu_status` 的 usage/温度/频率同理。
+
+修法：加 `IPCClient::ReadFloat()`，按字段实际宽度自适应，17 处换过去。**这是给 AI 消费的契约，报垃圾比报错更糟。**
+
+### 4 · 网卡两处
+
+**(a) 类型被截断** —— `char type[16]` 装不下代码自己产出的 `"Wireless adapter"` / `"Ethernet adapter"`
+（都恰好 16 字符），界面上少最后一个字母。加宽到 24。
+
+**(b) 硬件 MAC 取不到** —— 采集端用 `getifaddrs` 的 `AF_LINK` 项，而这台系统（macOS 27 / Darwin 27.2）
+一律返回 `02:00:00:00:00:00`。改用 **SystemConfiguration** 的
+`SCNetworkInterfaceGetHardwareAddressString`（纯 C API，框架本就已链接）。
+**坑**：这个 SDK 里**没有独立的 `SCNetworkInterface.h`**，声明被并进了 `SCNetworkConfiguration.h` ——
+用伞头能编过、精确 include 编不过。
+
+### 5 · 「当前链路地址」：六条路五条不通，第六条被签名挡住
+
+macOS 的「私有 Wi-Fi 地址」按 SSID 轮换，与硬件地址是两个值。实测：
+
+```
+getifaddrs              → 02:00:00:00:00:00
+sysctl(NET_RT_IFLIST)   → 02:00:00:00:00:00（沙箱外同样，已排除沙箱）
+SIOCGIFADDR             → 给的是 IP，不是链路地址
+IOKit IOMACAddress      → 属性不存在
+SIOCGIFLLADDR           → 这版 SDK 里没有
+SystemConfiguration     → 硬件地址（另一个值，不随 SSID 变）
+```
+
+最后一条路是 shell 到 `ifconfig`，**但被签名挡住了**：同一条命令、同一时刻，
+Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地构建（`cc` 出来的即席签名二进制，
+**经 launchd 起也一样** —— 责任进程仍是那个未签名程序）调起 `ifconfig` 只会拿到全零。
+
+**结论**：TCMT 采集端就是未签名的本地构建，这条路对本项目无效，代码里没留 —— 留着只是每 10 秒起一次进程换个空值。
+`currentMac` 这条线（线格式字段 → C# → 界面/TUI）**保留**，但 macOS 上保持为空、界面报 N/A，
+**不拿硬件地址冒充**。真想要这个值得先把采集端签名。
+
+### 6 · 顺带
+
+- 概览页新增 **GPU 面板**（设计稿与应用的栅格都改过：12 栏那侧变成 `CPU(4) GPU(4) 内存(4)` + `电源(3) 温度(3) 网络(3) 磁盘(3)`）。
+  GPU 占用本来就采得到（IOAccelerator 的 `Device Utilization %`），坏的是上面第 3 条的读法。
+- 流程修复若干：`_archive/` 排除编译、进程页每 tick 重建导致的爆闪、重连后状态被上一代连接覆盖、
+  字体能力标志与实现对齐、每 tick 的 SMART 日志清掉。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
