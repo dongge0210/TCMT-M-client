@@ -77,8 +77,37 @@ public static class IPCSystemInfoMapper
                 }
             }
 
-            // ─── 5. Process Top N ───
-            if (reader.HasField("proc/0/name"))
+            // ─── 5. 进程列表 ───
+            // 新服务端整份打包成一行 JSON；旧服务端是 proc/N/* 槽位，而槽位只有 7 个，
+            // 采集端枚举了全部进程却在写入时被砍到 7。两条都认：服务端与客户端不一定同时升级。
+            if (reader.HasField("proc/json"))
+            {
+                var procsJson = reader.ReadString("proc/json") ?? "";
+                if (!string.IsNullOrEmpty(procsJson))
+                {
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(procsJson);
+                        foreach (var el in doc.RootElement.EnumerateArray())
+                        {
+                            var pName = el.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                            if (string.IsNullOrEmpty(pName)) continue;
+                            info.TopProcesses.Add(new ProcessTopEntry
+                            {
+                                Pid = el.TryGetProperty("pid", out var p) && p.TryGetInt32(out var pid) ? pid : 0,
+                                Name = pName,
+                                MemoryBytes = el.TryGetProperty("mem", out var m) && m.TryGetUInt64(out var mem) ? mem : 0UL,
+                                CpuPercent = el.TryGetProperty("cpu", out var c) && c.TryGetDouble(out var cpu) ? (float)cpu : 0f
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Warning("Processes JSON parse error: {Err}", ex.Message);
+                    }
+                }
+            }
+            else if (reader.HasField("proc/0/name"))
             {
                 int idx = 0;
                 while (reader.HasField($"proc/{idx}/name") && idx < 7)

@@ -414,13 +414,9 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         }
 
         // ─── 5. Process top ───
-        pBuffer->topProcCount = (int)(std::min)(systemInfo.topProcesses.size(), (size_t)7);
-        for (int i = 0; i < pBuffer->topProcCount; i++) {
-            pBuffer->topProcesses[i].pid = systemInfo.topProcesses[i].pid;
-            SafeCopyStr(pBuffer->topProcesses[i].name, sizeof(pBuffer->topProcesses[i].name), systemInfo.topProcesses[i].name);
-            pBuffer->topProcesses[i].memoryBytes = systemInfo.topProcesses[i].memoryBytes;
-            pBuffer->topProcesses[i].cpuPercent = systemInfo.topProcesses[i].cpuPercent;
-        }
+        // 整份打包进一个字段，不再截到 7 个
+        SafeCopyStr(pBuffer->processesJson, sizeof(pBuffer->processesJson),
+                    ProcessesToJson(systemInfo.topProcesses));
 
         // ─── 6. Per-core sensors ───
         pBuffer->perCoreCount = systemInfo.perCoreCount;

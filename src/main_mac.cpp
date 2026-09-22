@@ -218,16 +218,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     }
     addU8("fan/count", offsetof(B, fanCount));
 
-    // ─── 5. Process Top N (up to 7) ───
-    for (int i = 0; i < 7; ++i) {
-        char p[32]; snprintf(p, sizeof(p), "proc/%d/", i);
-        uint32_t base = offsetof(B, topProcesses) + i * sizeof(B::ProcSlot);
-        addI((std::string(p)+"pid").c_str(),      base + offsetof(B::ProcSlot, pid));
-        addS((std::string(p)+"name").c_str(),      base + offsetof(B::ProcSlot, name), 64);
-        addU64((std::string(p)+"memory").c_str(),   base + offsetof(B::ProcSlot, memoryBytes));
-        addF((std::string(p)+"cpu").c_str(),       base + offsetof(B::ProcSlot, cpuPercent));
-    }
-    addU8("proc/count", offsetof(B, topProcCount));
+    // ─── 5. 进程列表：一个字段装完整份，形状见 IPCData.h 的 processesJson ───
+    addS("proc/json", offsetof(B, processesJson), 16384);
 
     // ─── 7. Battery detail ───
     addI("battery/cycleCount",       offsetof(B, batteryCycleCount));
@@ -1613,15 +1605,11 @@ int main(int argc, char* argv[]) {
                         }
                     }
 
-                    // ─── 5. Process Top N ───
-                    b->topProcCount = static_cast<uint8_t>(std::min(data.topProcesses.size(), size_t(7)));
-                    for (size_t pi = 0; pi < b->topProcCount; ++pi) {
-                        auto& tp = b->topProcesses[pi];
-                        tp.pid = data.topProcesses[pi].pid;
-                        std::strncpy(tp.name, data.topProcesses[pi].name.c_str(), 63);
-                        tp.name[63] = '\0';
-                        tp.memoryBytes = data.topProcesses[pi].memoryBytes;
-                        tp.cpuPercent = static_cast<float>(data.topProcesses[pi].cpuPercent);
+                    // ─── 5. 进程列表：整份打包进一个字段，不再截到 7 个 ───
+                    {
+                        const std::string procsJson = ProcessesToJson(data.topProcesses);
+                        std::strncpy(b->processesJson, procsJson.c_str(), sizeof(b->processesJson) - 1);
+                        b->processesJson[sizeof(b->processesJson) - 1] = '\0';
                     }
 
                     // ─── 7. Battery detail ───

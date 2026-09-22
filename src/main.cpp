@@ -773,16 +773,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     }
     addField("fan/count", offsetof(B, fanCount), 1, (uint8_t)FT::UInt8);
 
-    // ─── 5. Process top (up to 7) ───
-    for (int i = 0; i < 7; i++) {
-        char pfx[32]; snprintf(pfx, sizeof(pfx), "proc/%d/", i);
-        uint32_t base = offsetof(B, topProcesses) + i * sizeof(B::ProcSlot);
-        addField((std::string(pfx)+"pid").c_str(),     base + offsetof(B::ProcSlot, pid), sizeof(int32_t), (uint8_t)FT::Int32);
-        addField((std::string(pfx)+"name").c_str(),    base + offsetof(B::ProcSlot, name), sizeof(B::ProcSlot::name), (uint8_t)FT::String);
-        addField((std::string(pfx)+"memory").c_str(),   base + offsetof(B::ProcSlot, memoryBytes), sizeof(uint64_t), (uint8_t)FT::UInt64);
-        addField((std::string(pfx)+"cpu").c_str(),     base + offsetof(B::ProcSlot, cpuPercent), sizeof(float), (uint8_t)FT::Float32);
-    }
-    addField("proc/count", offsetof(B, topProcCount), 1, (uint8_t)FT::UInt8);
+    // ─── 5. 进程列表：一个字段装完整份，形状见 IPCData.h 的 processesJson ───
+    addField("proc/json", offsetof(B, processesJson), sizeof(B::processesJson), (uint8_t)FT::String);
 
     // ─── 7. Battery detail ───
     addField("battery/cycleCount",     offsetof(B, batteryCycleCount), sizeof(int32_t), (uint8_t)FT::Int32);

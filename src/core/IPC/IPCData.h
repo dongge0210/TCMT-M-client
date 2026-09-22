@@ -246,15 +246,14 @@ struct IPCDataBlock {
     FanSlot  fanSpeeds[6]            = {};
     uint8_t  fanCount                = 0;
 
-    // ─── 5. Process Top N (up to 7 processes) ───
-    struct ProcSlot {
-        int32_t  pid                 = 0;
-        char     name[64]            = {};
-        uint64_t memoryBytes         = 0;
-        float    cpuPercent           = 0;
-    };
-    ProcSlot topProcesses[7]         = {};
-    uint8_t  topProcCount            = 0;
+    // ─── 5. 进程列表：整份打包成一行 JSON，不再按槽位开字段 ───
+    //
+    // 原来只开 7 个槽位、每槽占 4 个 schema 字段。采集端明明枚举了全部进程，却在写入时被砍到 7，
+    // 进程页也就只能显示 7 行；而 schema 总字段数有硬上限（IPC_MAX_FIELDS = 300，超了客户端
+    // 静默截断），照槽位往上抬是抬不动的 —— 抬到 64 个进程就要 256 个字段。
+    // 装成一个字段后上限消失，schema 反而省下 27 个名额。
+    // 形状：[{"pid":1234,"name":"Google Chrome Helper","mem":1620,"cpu":54.1}, …]
+    char     processesJson[16384]    = {};
 
     // ─── 7. Battery detail (health, cycle count, etc.) ───
     int32_t  batteryCycleCount       = 0;
