@@ -35,6 +35,22 @@ public partial class DashboardViewModel : ViewModelBase
     [ObservableProperty]
     private string _cpuNote = "// —";
 
+    // GPU
+    [ObservableProperty]
+    private double _gpuUsage;
+
+    [ObservableProperty]
+    private string _gpuUsageDisplay = "—";
+
+    [ObservableProperty]
+    private string _gpuNote = "// —";
+
+    [ObservableProperty]
+    private string _gpuTempDisplay = "—";
+
+    [ObservableProperty]
+    private string _gpuMemoryDisplay = "—";
+
     [ObservableProperty]
     private string _loadDisplay = "—";
 
@@ -177,6 +193,15 @@ public partial class DashboardViewModel : ViewModelBase
 
         var cores = info.LogicalCores > 0 ? info.LogicalCores : info.PhysicalCores;
         CpuNote = cores > 0 ? $"// {cores} 核" : "// —";
+
+        // GPU。占用 0 是合法读数（闲着就是 0），所以只有"没有样本"才写 —，
+        // 这一点和 CPU 一致 —— 不能把 0 也当成缺值。
+        // 占用挂在 Gpus[0] 上，SystemInfo 顶层没有这个字段（顶层只有名字/品牌/显存/温度）
+        GpuUsage = FormatUtils.ValidateDouble(info.Gpus?.FirstOrDefault()?.Usage ?? 0);
+        GpuUsageDisplay = HasSample ? $"{GpuUsage:F1}" : "—";
+        GpuNote = string.IsNullOrWhiteSpace(info.GpuName) ? "// —" : $"// {info.GpuName}";
+        GpuTempDisplay = info.GpuTemperature > 0 ? $"{info.GpuTemperature:F0} °C" : "—";
+        GpuMemoryDisplay = info.GpuMemory > 0 ? FormatUtils.FormatBytes(info.GpuMemory) : "—";
 
         LoadDisplay = info.LoadAvg1 > 0
             ? $"{info.LoadAvg1:F2} / {info.LoadAvg5:F2} / {info.LoadAvg15:F2}"

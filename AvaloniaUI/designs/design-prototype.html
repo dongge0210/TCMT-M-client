@@ -392,7 +392,7 @@
         </div>
 
         <div class="grid">
-          <section class="panel span-5" data-od-id="panel-cpu">
+          <section class="panel span-4" data-od-id="panel-cpu">
             <header class="panel-h"><h3>CPU</h3><span class="fill"></span><span class="note" id="cpu-note">// 12 核 · 3.05 GHz</span></header>
             <div class="panel-b">
               <div class="kpi">
@@ -407,6 +407,22 @@
                 <div class="kv"><dt data-i18n="cpu.user">用户 / 系统</dt><dd data-reading>17.2% / 6.2%</dd></div>
                 <div class="kv"><dt data-i18n="cpu.pcore">效能核频率</dt><dd data-reading>2.42 GHz</dd></div>
               </dl>
+            </div>
+          </section>
+
+          <!-- GPU 紧挨 CPU：占用是实时读数，和 CPU 是一类东西。 -->
+          <section class="panel span-4" data-od-id="panel-gpu">
+            <header class="panel-h"><h3>GPU</h3><span class="fill"></span><span class="note" id="gpu-note">// Apple M2</span></header>
+            <div class="panel-b">
+              <div class="kpi">
+                <span class="kpi-v" id="gpu-total" data-reading>6.0</span><span class="kpi-u" data-reading-blank>% 占用</span>
+              </div>
+              <div class="meter" id="gpu-meter" role="img" aria-label="GPU 占用 6.0%"><i style="width:6%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="gpu.temp">温度</dt><dd data-reading>59 °C</dd></div>
+                <div class="kv"><dt data-i18n="gpu.vram">显存</dt><dd data-reading>4.0 GB</dd></div>
+              </dl>
+              <p class="note-dim">占用取自 IOAccelerator。Apple Silicon 是统一内存，显存按系统内存的四分之一估算，不是实测。</p>
             </div>
           </section>
 
@@ -436,7 +452,7 @@
             </div>
           </section>
 
-          <section class="panel span-4" data-od-id="panel-thermal">
+          <section class="panel span-3" data-od-id="panel-thermal">
             <header class="panel-h"><h3>Thermal</h3><span class="fill"></span><span class="note">// 阈值 60 / 80 °C</span></header>
             <div class="panel-b" id="thermal-body">
               <dl class="kv-list">
@@ -450,7 +466,7 @@
             </div>
           </section>
 
-          <section class="panel span-5" data-od-id="panel-network">
+          <section class="panel span-3" data-od-id="panel-network">
             <header class="panel-h"><h3>Network</h3><span class="fill"></span><span class="note" id="net-note">// en0 · Wi-Fi</span></header>
             <div class="panel-b">
               <div class="kpi">
@@ -843,6 +859,8 @@
     'pr.sub': ['选中一行查看详情，越界占用按阈值着色', 'Select a row for details — out-of-range load is coloured by threshold'],
     'st.sub': ['左选分组、右改字段，改动即时生效', 'Pick a group on the left, edit fields on the right'],
     'cpu.user': ['用户 / 系统', 'User / System'],
+    'gpu.temp': ['温度', 'Temperature'],
+    'gpu.vram': ['显存', 'VRAM'],
     'cpu.pcore': ['效能核频率', 'E-core clock'],
     'mem.pressure': ['内存压力', 'Memory pressure'],
     'mem.wired': ['联动 / 已压缩', 'Wired / Compressed'],

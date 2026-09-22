@@ -19,7 +19,7 @@
     </Border>
 
     <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
-      <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
+      <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
 
         <!-- ── CPU ─────────────────────────────────────────────────────── -->
         <Border Grid.Row="0" Grid.Column="0"
@@ -71,8 +71,43 @@
           </StackPanel>
         </Border>
 
-        <!-- ── Memory ──────────────────────────────────────────────────── -->
+        <!-- ── GPU ─────────────────────────────────────────────────────── -->
+        <!-- 紧挨着 CPU：占用是实时读数，和 CPU 是一类东西，这里也才说得通。
+             数值 0 是合法读数（闲着就是 0），所以"没有样本"才写 —，缺值和 0 不能混。 -->
         <Border Grid.Row="0" Grid.Column="1" Margin="16,0,0,0"
+                Background="{StaticResource SurfaceBrush}" CornerRadius="8"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <TextBlock Text="GPU" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="2" Text="{Binding GpuNote}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock FontSize="28" FontWeight="Bold"
+                         Foreground="{Binding GpuUsage, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=load}"
+                         Text="{Binding GpuUsageDisplay}"/>
+              <TextBlock Text="% 占用" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                         IsVisible="{Binding HasSample}"/>
+            </StackPanel>
+
+            <ProgressBar Minimum="0" Maximum="100" Height="6"
+                         Value="{Binding GpuUsage}"
+                         Foreground="{Binding GpuUsage, Converter={StaticResource PercentToWarningColorConverter}}"/>
+
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="温度" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding GpuTempDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="显存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Grid.Column="1" Text="{Binding GpuMemoryDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- ── Memory ──────────────────────────────────────────────────── -->
+        <Border Grid.Row="1" Grid.Column="0" Margin="0,16,0,0"
                 Background="{StaticResource SurfaceBrush}" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
           <StackPanel Spacing="10">
@@ -107,7 +142,7 @@
         </Border>
 
         <!-- ── Power ───────────────────────────────────────────────────── -->
-        <Border Grid.Row="1" Grid.Column="0" Margin="0,16,0,0"
+        <Border Grid.Row="1" Grid.Column="1" Margin="16,16,0,0"
                 Background="{StaticResource SurfaceBrush}" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
           <StackPanel Spacing="10">
@@ -142,7 +177,7 @@
         </Border>
 
         <!-- ── Thermal ─────────────────────────────────────────────────── -->
-        <Border Grid.Row="1" Grid.Column="1" Margin="16,16,0,0"
+        <Border Grid.Row="2" Grid.Column="0" Margin="0,16,0,0"
                 Background="{StaticResource SurfaceBrush}" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
           <StackPanel Spacing="10">
@@ -175,7 +210,7 @@
         </Border>
 
         <!-- ── Disks ───────────────────────────────────────────────────── -->
-        <Border Grid.Row="2" Grid.Column="0" Margin="0,16,0,0"
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Margin="0,16,0,0"
                 Background="{StaticResource SurfaceBrush}" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
           <StackPanel Spacing="10">
@@ -261,7 +296,7 @@
         </Border>
 
         <!-- ── Top Processes ───────────────────────────────────────────── -->
-        <Border Grid.Row="3" Grid.ColumnSpan="2" Margin="0,16,0,0"
+        <Border Grid.Row="4" Grid.ColumnSpan="2" Margin="0,16,0,0"
                 Background="{StaticResource SurfaceBrush}" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14">
           <StackPanel Spacing="10">
