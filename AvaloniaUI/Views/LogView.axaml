@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
@@ -9,20 +10,20 @@
              x:DataType="vm:LogViewModel">
 
   <Design.DataContext>
-    <vm:LogViewModel Title="日志" />
+    <vm:LogViewModel Title="{loc:Tr 日志}" />
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*">
     <!-- TopBar matching pen design -->
     <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="日志" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <TextBlock Text="{loc:Tr 日志}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="{Binding CountText}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
           <!-- Follow mode: the state is written out in words, it does not rely on colour -->
-          <TextBlock Text="跟随最新" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+          <TextBlock Text="{loc:Tr 跟随最新}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
                      IsVisible="{Binding IsFollowing}"/>
-          <TextBlock Text="已暂停跟随" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+          <TextBlock Text="{loc:Tr 已暂停跟随}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
                      IsVisible="{Binding IsPaused}"/>
         </StackPanel>
       </Grid>
@@ -64,8 +65,8 @@
 
         <!-- Empty state explains itself rather than showing a blank page -->
         <StackPanel Spacing="4" Margin="0,12,0,0" IsVisible="{Binding IsEmpty}">
-          <TextBlock Text="暂无日志条目" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
-          <TextBlock Text="把 LogStream 挂到 Serilog 上之后，这里会出现运行时事件。" FontSize="11"
+          <TextBlock Text="{loc:Tr 暂无日志条目}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Text="{loc:Tr 把 LogStream 挂到 Serilog 上之后，这里会出现运行时事件。}" FontSize="11"
                      TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"/>
         </StackPanel>
 

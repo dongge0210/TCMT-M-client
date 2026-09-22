@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
         xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
         xmlns:views="clr-namespace:TCMT.Avalonia.Views"
         x:Class="TCMT.Avalonia.Views.MainWindow"
@@ -112,7 +113,7 @@
                                                 Padding="2"
                                                 Height="18" Width="18"
                                                 VerticalAlignment="Center"
-                                                ToolTip.Tip="展开 / 收起">
+                                                ToolTip.Tip="{loc:Tr 展开 / 收起}">
                                             <PathIcon Width="11" Height="11"
                                                       Classes="chev"
                                                       Classes.expanded="{Binding IsExpanded}"
@@ -214,7 +215,7 @@
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Padding="2"
-                                ToolTip.Tip="重新连接"
+                                ToolTip.Tip="{loc:Tr 重新连接}"
                                 Height="24" Width="24">
                             <PathIcon Width="13" Height="13"
                                       Data="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />

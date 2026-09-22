@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
@@ -16,7 +17,7 @@
     <!-- TopBar -->
     <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="进程" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <TextBlock Text="{loc:Tr 进程}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
         <TextBlock Grid.Column="1" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center">
           <Run Text="{Binding Rows.Count}"/><Run Text=" / "/><Run Text="{Binding TotalCount}"/>
         </TextBlock>
@@ -38,7 +39,7 @@
                    Height="30"
                    FontSize="12"
                    Text="{Binding Filter}"
-                   PlaceholderText="按名称或 PID 过滤"
+                   PlaceholderText="{loc:Tr 按名称或 PID 过滤}"
                    Background="{StaticResource BackgroundBrush}"
                    Foreground="{StaticResource TextPrimaryBrush}"
                    BorderBrush="{StaticResource BorderBrush}"/>
@@ -54,7 +55,7 @@
             <Button Grid.Column="1" Command="{Binding SortCommand}" CommandParameter="name"
                     Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Left">
               <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}">
-                <Run Text="进程"/><Run Text="{Binding NameSortGlyph}"/>
+                <Run Text="{loc:Tr 进程}"/><Run Text="{Binding NameSortGlyph}"/>
               </TextBlock>
             </Button>
             <Button Grid.Column="2" Command="{Binding SortCommand}" CommandParameter="cpu"
@@ -66,7 +67,7 @@
             <Button Grid.Column="3" Command="{Binding SortCommand}" CommandParameter="memory"
                     Background="Transparent" BorderThickness="0" Padding="0" HorizontalAlignment="Right">
               <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}">
-                <Run Text="内存"/><Run Text="{Binding MemorySortGlyph}"/>
+                <Run Text="{loc:Tr 内存}"/><Run Text="{Binding MemorySortGlyph}"/>
               </TextBlock>
             </Button>
           </Grid>
@@ -112,7 +113,7 @@
                      TextAlignment="Center"
                      FontSize="12"
                      Foreground="{StaticResource TextMutedBrush}"
-                     Text="采集侧未提供进程列表——连上之后这里会列出占用最高的进程"/>
+                     Text="{loc:Tr 采集侧未提供进程列表——连上之后这里会列出占用最高的进程}"/>
         </Grid>
       </Border>
 
@@ -143,7 +144,7 @@
                            Foreground="{Binding Selected.Entry.CpuPercent, Converter={StaticResource ThresholdToColorConverter}, ConverterParameter=process}"/>
               </Grid>
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="内存" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Text="{loc:Tr 内存}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
                 <TextBlock Grid.Column="1" Text="{Binding Selected.MemoryDisplay}" FontSize="12"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
               </Grid>
@@ -169,7 +170,7 @@
 
             <!-- End process: hidden unless a host provides IProcessController (TUI #10) -->
             <StackPanel Spacing="8" IsVisible="{Binding CanEndProcess}">
-              <Button Content="结束进程"
+              <Button Content="{loc:Tr 结束进程}"
                       Command="{Binding BeginEndProcessCommand}"
                       IsVisible="{Binding IsIdle}"
                       HorizontalAlignment="Left"
@@ -181,18 +182,18 @@
                       Foreground="{StaticResource DangerBrush}"/>
 
               <StackPanel Spacing="8" IsVisible="{Binding IsConfirmingEnd}">
-                <TextBlock Text="将向该进程发送 SIGTERM，未保存的数据会丢失。"
+                <TextBlock Text="{loc:Tr 将向该进程发送 SIGTERM，未保存的数据会丢失。}"
                            FontSize="11" TextWrapping="Wrap"
                            Foreground="{StaticResource TextSecondaryBrush}"/>
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Content="取消"
+                  <Button Content="{loc:Tr 取消}"
                           Command="{Binding CancelEndProcessCommand}"
                           FontSize="12" Padding="12,6"
                           Background="Transparent"
                           BorderThickness="1"
                           BorderBrush="{StaticResource BorderBrush}"
                           Foreground="{StaticResource TextSecondaryBrush}"/>
-                  <Button Content="确认结束"
+                  <Button Content="{loc:Tr 确认结束}"
                           Command="{Binding ConfirmEndProcessCommand}"
                           IsEnabled="{Binding CanPressConfirm}"
                           FontSize="12" Padding="12,6"

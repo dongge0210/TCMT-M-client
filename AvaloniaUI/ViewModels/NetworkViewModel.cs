@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using TCMT.Avalonia.Localization;
 using TCMT.Avalonia.Models;
 
 namespace TCMT.Avalonia.ViewModels;
@@ -99,9 +100,15 @@ public partial class NetworkViewModel : ViewModelBase
     /// <summary>No adapter reported at all — the interface table says so instead of staying blank.</summary>
     public bool HasNoAdapters => Adapters.Count == 0;
 
+    /// <summary>
+    /// 「3 适配器」那种带数字的短句。做成属性而不是 XAML 里的 StringFormat：
+    /// 数字和量词的顺序中英不一样，StringFormat 拼不出来。
+    /// </summary>
+    public string AdapterCountText => Translator.T("{0} 适配器", Adapters.Count);
+
     public NetworkViewModel()
     {
-        Title = "网络";
+        Title = Translator.T("网络");
         Icon = "network";
     }
 
@@ -153,5 +160,6 @@ public partial class NetworkViewModel : ViewModelBase
         OnPropertyChanged(nameof(WifiStateNote));
         OnPropertyChanged(nameof(HasWifiNote));
         OnPropertyChanged(nameof(HasNoAdapters));
+        OnPropertyChanged(nameof(AdapterCountText));
     }
 }

@@ -2,8 +2,49 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using Avalonia.Markup.Xaml;
+using Avalonia.Data;
 
 namespace TCMT.Avalonia.Localization;
+
+/// <summary>
+/// 一条会跟着语言走的文案。每条 XAML 文案建一个，绑定路径固定是 <c>Text</c>。
+///
+/// 没有做成「一个大对象 + 中文索引器」那种写法（<c>{Binding [型号]}</c>）：绑定路径
+/// 是运行时解析的，中文进路径意味着一条拼错只会静默失败 —— 编译期一点提示都没有。
+/// 换成固定属性名，路径不可能写错，代价只是每条文案多一个几十字节的对象。
+/// </summary>
+public sealed class TranslatedText : INotifyPropertyChanged
+{
+    private readonly string _source;
+
+    public TranslatedText(string source)
+    {
+        _source = source;
+        Translator.LanguageChanged += (_, _) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text)));
+    }
+
+    public string Text => Translator.T(_source);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>
+/// <c>{loc:Tr 中文原文}</c> —— 查表，并且跟着语言变。
+/// </summary>
+public class TrExtension : MarkupExtension
+{
+    public TrExtension() { }
+
+    public TrExtension(string key) => Key = key;
+
+    /// <summary>中文原文。</summary>
+    public string Key { get; set; } = "";
+
+    public override object ProvideValue(IServiceProvider serviceProvider) =>
+        new Binding(nameof(TranslatedText.Text)) { Source = new TranslatedText(Key) };
+}
 
 /// <summary>
 /// 界面文案的中英对照。

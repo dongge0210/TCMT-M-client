@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
              xmlns:themes="clr-namespace:TCMT.Avalonia.Themes"
              mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
              x:Class="TCMT.Avalonia.Views.SettingsView"
@@ -16,7 +17,7 @@
     <!-- Header -->
     <StackPanel Grid.Row="0" Margin="32,28,32,0">
       <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="应用设置" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+      <TextBlock Text="{loc:Tr 应用设置}" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
     </StackPanel>
 
     <!-- Content -->
@@ -26,10 +27,10 @@
         <!-- Appearance -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="16">
-            <TextBlock Text="外观" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="{loc:Tr 外观}" Theme="{StaticResource SectionHeader}"/>
             
             <StackPanel Spacing="8">
-              <TextBlock Text="主题" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 主题}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
               <ComboBox SelectedItem="{Binding CurrentTheme}" Width="200">
                 <ComboBox.Items>
                   <themes:AppTheme>Dark</themes:AppTheme>
@@ -43,10 +44,10 @@
         <!-- Font -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="16">
-            <TextBlock Text="字体" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="{loc:Tr 字体}" Theme="{StaticResource SectionHeader}"/>
 
             <StackPanel Spacing="8">
-              <TextBlock Text="系统字体" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 系统字体}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
               <ComboBox ItemsSource="{Binding SystemFonts}"
                         SelectedItem="{Binding SelectedFontFamily}"
                         Width="280">
@@ -59,12 +60,12 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
-              <TextBlock Text="字号" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 字号}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
               <NumericUpDown Value="{Binding FontSize}" Minimum="8" Maximum="32" Width="100"/>
             </StackPanel>
 
             <!-- Native font dialog (Windows only) -->
-            <Button Content="系统字体面板…"
+            <Button Content="{loc:Tr 系统字体面板…}"
                     Command="{Binding PickSystemFontCommand}"
                     IsVisible="{Binding IsNativeFontDialogSupported}"
                     Width="160"
@@ -86,45 +87,45 @@
         -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="16">
-            <TextBlock Text="采集端" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="{loc:Tr 采集端}" Theme="{StaticResource SectionHeader}"/>
 
             <StackPanel Spacing="12" IsEnabled="{Binding CollectorEditable}">
 
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="数据上传" FontSize="13"
+                <TextBlock Grid.Column="0" Text="{loc:Tr 数据上传}" FontSize="13"
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                 <ToggleSwitch Grid.Column="1" IsChecked="{Binding CollectorUploadEnabled}"
-                              OnContent="开" OffContent="关"/>
+                              OnContent="{loc:Tr 开}" OffContent="{loc:Tr 关}"/>
               </Grid>
 
               <StackPanel Spacing="6">
-                <TextBlock Text="服务器地址" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Text="{loc:Tr 服务器地址}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
                 <TextBox Text="{Binding CollectorUrl}" Width="360" HorizontalAlignment="Left"/>
               </StackPanel>
 
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="跳过 TLS 校验" FontSize="13"
+                <TextBlock Grid.Column="0" Text="{loc:Tr 跳过 TLS 校验}" FontSize="13"
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                 <ToggleSwitch Grid.Column="1" IsChecked="{Binding CollectorInsecure}"
-                              OnContent="开" OffContent="关"/>
+                              OnContent="{loc:Tr 开}" OffContent="{loc:Tr 关}"/>
               </Grid>
 
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="上传间隔（秒）" FontSize="13"
+                <TextBlock Grid.Column="0" Text="{loc:Tr 上传间隔（秒）}" FontSize="13"
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                 <NumericUpDown Grid.Column="1" Value="{Binding CollectorIntervalSec}"
                                Minimum="1" Maximum="60" Width="120"/>
               </Grid>
 
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="采样间隔（毫秒）" FontSize="13"
+                <TextBlock Grid.Column="0" Text="{loc:Tr 采样间隔（毫秒）}" FontSize="13"
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                 <NumericUpDown Grid.Column="1" Value="{Binding CollectorSampleIntervalMs}"
                                Minimum="200" Maximum="5000" Increment="100" Width="120"/>
               </Grid>
 
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Grid.Column="0" Text="语言" FontSize="13"
+                <TextBlock Grid.Column="0" Text="{loc:Tr 语言}" FontSize="13"
                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding Languages}"
                           SelectedItem="{Binding CollectorLanguage}" Width="140"/>
@@ -132,10 +133,10 @@
 
             </StackPanel>
 
-            <TextBlock Text="只发改动的那一项，采集端应用后回推一份新值。"
+            <TextBlock Text="{loc:Tr 只发改动的那一项，采集端应用后回推一份新值。}"
                        IsVisible="{Binding CollectorEditable}"
                        FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
-            <TextBlock Text="未连接采集端 —— 这一组现在改不了，值会在连上后自动填进来。"
+            <TextBlock Text="{loc:Tr 未连接采集端 —— 这一组现在改不了，值会在连上后自动填进来。}"
                        IsVisible="{Binding !CollectorEditable}"
                        TextWrapping="Wrap"
                        FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
@@ -145,14 +146,14 @@
         <!-- About -->
         <Border Theme="{StaticResource CardBorder}">
           <StackPanel Spacing="12">
-            <TextBlock Text="关于" Theme="{StaticResource SectionHeader}"/>
+            <TextBlock Text="{loc:Tr 关于}" Theme="{StaticResource SectionHeader}"/>
             <StackPanel Spacing="8">
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="应用" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
-                <TextBlock Grid.Column="1" Text="TCMT — 系统硬件监视器" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
+                <TextBlock Text="{loc:Tr 应用}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{loc:Tr TCMT — 系统硬件监视器}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
               </Grid>
               <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="版本" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Text="{loc:Tr 版本}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
                 <TextBlock Grid.Column="1" Text="{Binding AppVersion}" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold"/>
               </Grid>
             </StackPanel>

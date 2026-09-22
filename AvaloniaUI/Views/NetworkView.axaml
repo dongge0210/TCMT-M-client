@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
@@ -9,16 +10,16 @@
              x:DataType="vm:NetworkViewModel">
 
   <Design.DataContext>
-    <vm:NetworkViewModel Title="网络" />
+    <vm:NetworkViewModel Title="{loc:Tr 网络}" />
   </Design.DataContext>
 
   <Grid RowDefinitions="Auto,*">
     <!-- TopBar matching pen design -->
     <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="网络" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <TextBlock Text="{loc:Tr 网络}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-          <TextBlock Text="{Binding Adapters.Count, StringFormat='{}{0} 适配器'}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Text="{Binding AdapterCountText}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
           <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
         </StackPanel>
       </Grid>
@@ -57,7 +58,7 @@
               <TextBlock Grid.Column="1" Text="{Binding WifiSSID}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
             </Grid>
             <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
-              <TextBlock Text="频道" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 频道}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Grid.Column="1" Text="{Binding WifiChannel}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
             </Grid>
             <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
@@ -67,15 +68,15 @@
               </TextBlock>
             </Grid>
             <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
-              <TextBlock Text="频段" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 频段}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Grid.Column="1" Text="{Binding WifiBand}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
             </Grid>
             <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
-              <TextBlock Text="协议" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 协议}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Grid.Column="1" Text="{Binding WifiGen}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
             </Grid>
             <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasWiFi}">
-              <TextBlock Text="链接速度" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 链接速度}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock Grid.Column="1" Text="{Binding SelectedAdapter.SpeedDisplay}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"/>
             </Grid>
 
@@ -88,7 +89,7 @@
             <!-- Missing capability never blanks the section: keep the slot, say why, stay muted
                  (TUI design #10 — show what has a handler, never fake the rest). -->
             <Rectangle Height="1" Fill="{StaticResource BorderBrush}" IsVisible="{Binding HasNoWiFi}"/>
-            <TextBlock Text="未检测到无线网卡——无线信息不可读"
+            <TextBlock Text="{loc:Tr 未检测到无线网卡——无线信息不可读}"
                        FontSize="11" TextWrapping="Wrap"
                        Foreground="{StaticResource TextMutedBrush}"
                        IsVisible="{Binding HasNoWiFi}"/>
@@ -100,7 +101,7 @@
           <!-- Download Card -->
           <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14">
             <StackPanel Spacing="4">
-              <TextBlock Text="下载" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 下载}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <!-- ↓ blue / ↑ green, the same pairing the overview chart uses -->
               <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}">
                 <Run Text="↓ "/><Run Text="{Binding SelectedAdapter.DownloadDisplay}"/>
@@ -110,7 +111,7 @@
           <!-- Upload Card -->
           <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14" Margin="12,0,0,0">
             <StackPanel Spacing="4">
-              <TextBlock Text="上传" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{loc:Tr 上传}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
               <TextBlock FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}">
                 <Run Text="↑ "/><Run Text="{Binding SelectedAdapter.UploadDisplay}"/>
               </TextBlock>
@@ -125,14 +126,14 @@
             <Grid ColumnDefinitions="Auto,*,Auto">
               <TextBlock Text="Interfaces" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
               <TextBlock Grid.Column="2" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}">
-                <Run Text="{Binding Adapters.Count}"/><Run Text=" 个接口"/>
+                <Run Text="{Binding Adapters.Count}"/><Run Text="{loc:Tr  个接口}"/>
               </TextBlock>
             </Grid>
             <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
 
             <Grid ColumnDefinitions="*,100,140,170,86,86">
-              <TextBlock Grid.Column="0" Text="接口" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
-              <TextBlock Grid.Column="1" Text="类型" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="0" Text="{loc:Tr 接口}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+              <TextBlock Grid.Column="1" Text="{loc:Tr 类型}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
               <TextBlock Grid.Column="2" Text="IPv4" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
               <TextBlock Grid.Column="3" Text="MAC" FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
               <TextBlock Grid.Column="4" Text="↓" FontSize="10" HorizontalAlignment="Right" Foreground="{StaticResource TextMutedBrush}"/>

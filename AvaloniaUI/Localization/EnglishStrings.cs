@@ -227,6 +227,7 @@ internal static class EnglishStrings
         ["个接口"] = " interfaces",
         ["3 台设备"] = "3 devices",
         ["（{0} 台设备）"] = "({0} devices)",
+        ["{0} 适配器"] = "{0} adapters",
         ["最高 {0} RPM · {1} 个"] = "Max {0} RPM · {1}",
 
         // ── 进程页 ──────────────────────────────────────────────────────
