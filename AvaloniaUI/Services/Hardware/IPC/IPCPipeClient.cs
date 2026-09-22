@@ -39,24 +39,19 @@ public class IPCPipeClient : IAsyncDisposable
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         int retryCount = 0;
+        bool everConnected = false;
         const int maxRetries = 10;
 
         while (!_cts.Token.IsCancellationRequested)
         {
             if (_serverShutdown || _schemaReceived) break;
-            if (retryCount >= maxRetries)
-            {
-                Log.Error("IPC: Max retries ({Max}) reached, giving up", maxRetries);
-                IsConnected = false;
-                OnConnectionChanged?.Invoke(false, "连接失败：已达最大重试次数");
-                break;
-            }
+
+            bool connected;
             try
             {
-                if (OperatingSystem.IsWindows())
-                    await ConnectWindowsAsync(_cts.Token);
-                else
-                    await ConnectUnixAsync(_cts.Token);
+                connected = OperatingSystem.IsWindows()
+                    ? await ConnectWindowsAsync(_cts.Token)
+                    : await ConnectUnixAsync(_cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -64,20 +59,59 @@ public class IPCPipeClient : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                retryCount++;
-                int delayMs = Math.Min(1000 * (1 << retryCount), 30000); // 1s,2s,4s,...,30s max
+                // Windows 那条路连接失败是抛出来的，这里接住；Unix 那条自己接，回 false
                 LastError = ex.Message;
-                Log.Warning(ex, "Pipe connection lost, retry {Count}/{Max} in {Delay}ms...",
-                    retryCount, maxRetries, delayMs);
-                IsConnected = false;
-                OnConnectionChanged?.Invoke(false, LastError);
-                await Task.Delay(delayMs, _cts.Token);
+                connected = false;
             }
+
+            if (connected)
+            {
+                // 连上过又断了：重试计数从头算，下一轮从最短的退避重新开始
+                everConnected = true;
+                retryCount = 0;
+                continue;
+            }
+
+            retryCount++;
+            if (retryCount >= maxRetries)
+            {
+                Log.Error("IPC: Max retries ({Max}) reached, giving up", maxRetries);
+                IsConnected = false;
+                OnConnectionChanged?.Invoke(false, "连接失败：已达最大重试次数");
+                break;
+            }
+
+            var delayMs = Math.Min(1000 * (1 << retryCount), 30000); // 2s,4s,8s,...,30s max
+            IsConnected = false;
+            OnConnectionChanged?.Invoke(false, LastError);
+
+            // 曾经连上过又断了是状态变化，值得说一声；从没连上过时的重试只是细节 ——
+            // 状态栏本来就写着「已断开」，硬件页也画着「未连接采集端」，
+            // 这里再按次刷屏只会把日志页淹掉（之前就是一秒几十行）。
+            if (everConnected)
+            {
+                Log.Warning("IPC: Connection lost, retry {Count}/{Max} in {Delay}ms",
+                    retryCount, maxRetries, delayMs);
+            }
+            else
+            {
+                Log.Debug("IPC: Connect attempt {Count}/{Max} failed, retrying in {Delay}ms",
+                    retryCount, maxRetries, delayMs);
+            }
+
+            await Task.Delay(delayMs, _cts.Token);
         }
     }
 
     // --- Windows: Named Pipe ---
-    private async Task ConnectWindowsAsync(CancellationToken ct)
+
+    /// <summary>
+    /// 连上并跑完接收循环返回 true；连不上返回 false，退避交给调用方。
+    /// 返回值是必需的：之前这两个方法把异常吞在内部、对外只回 Task，
+    /// 于是 <see cref="StartAsync"/> 那个 while 里的退避与重试计数**从来没执行过** ——
+    /// 连接失败会以每秒几十次的速度空转（macOS 侧尤其明显，EADDRNOTAVAIL 是立刻返回的）。
+    /// </summary>
+    private async Task<bool> ConnectWindowsAsync(CancellationToken ct)
     {
         var pipeName = IPCConstants.PipeName;
         Log.Debug("IPC: Connecting to Windows pipe: {Name}", pipeName);
@@ -94,10 +128,13 @@ public class IPCPipeClient : IAsyncDisposable
         Log.Information("IPC: Connected to Windows pipe: {Name}", pipeName);
 
         await ReceiveLoopAsync(client, ct);
+        return true;
     }
 
     // --- macOS/Linux: Unix Domain Socket ---
-    private async Task ConnectUnixAsync(CancellationToken ct)
+
+    /// <summary>见 <see cref="ConnectWindowsAsync"/> 关于返回值的那段说明。</summary>
+    private async Task<bool> ConnectUnixAsync(CancellationToken ct)
     {
         var socketPath = IPCConstants.UnixSocketPath;
         try
@@ -115,14 +152,19 @@ public class IPCPipeClient : IAsyncDisposable
 
             await using var ns = new NetworkStream(client, ownsSocket: false);
             await ReceiveLoopAsync(ns, ct);
+            return true;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            LastError = "连接超时";
             Log.Debug("IPC: Unix socket connect timeout");
+            return false;
         }
         catch (Exception ex)
         {
+            LastError = ex.Message;
             Log.Debug("IPC: Unix socket connect failed: {Msg}", ex.Message);
+            return false;
         }
     }
 

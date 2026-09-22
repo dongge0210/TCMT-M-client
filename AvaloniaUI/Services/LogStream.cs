@@ -29,10 +29,14 @@ public sealed class LogEntry
 
     public string TimeText => Timestamp.ToLocalTime().ToString("HH:mm:ss");
 
+    // Debug 与 Verbose 原来落进 _ => "INFO"，于是日志页里调试噪音和真·消息长得一模一样 ——
+    // 「看不出哪条要紧」不是用户眼花，是这里把它们标成了同一个词。
     public string LevelText => Level switch
     {
         LogEventLevel.Warning => "WARN",
         LogEventLevel.Error or LogEventLevel.Fatal => "ERROR",
+        LogEventLevel.Debug => "DBG",
+        LogEventLevel.Verbose => "TRC",
         _ => "INFO"
     };
 
