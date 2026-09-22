@@ -193,7 +193,7 @@ public partial class DashboardViewModel : ViewModelBase
         CpuUsageDisplay = HasSample ? $"{CpuUsage:F1}" : "—";
 
         var cores = info.LogicalCores > 0 ? info.LogicalCores : info.PhysicalCores;
-        CpuNote = cores > 0 ? $"// {cores} 核" : "// —";
+        CpuNote = cores > 0 ? Translator.T("// {0} 核", cores) : "// —";
 
         // GPU。占用 0 是合法读数（闲着就是 0），所以只有"没有样本"才写 —，
         // 这一点和 CPU 一致 —— 不能把 0 也当成缺值。
@@ -227,7 +227,7 @@ public partial class DashboardViewModel : ViewModelBase
             ? $"{FormatUtils.FormatBytes(info.UsedMemory)} / {FormatUtils.FormatBytes(info.TotalMemory)}"
             : "—";
         MemoryDetailDisplay = hasMemory
-            ? $"已压缩 {FormatUtils.FormatBytes(info.CompressedMemory)} · 可用 {FormatUtils.FormatBytes(info.AvailableMemory)}"
+            ? Translator.T("已压缩 {0} · 可用 {1}", FormatUtils.FormatBytes(info.CompressedMemory), FormatUtils.FormatBytes(info.AvailableMemory))
             : "—";
         SwapDisplay = info.SwapTotal > 0
             ? $"{FormatUtils.FormatBytes(info.SwapUsed)} / {FormatUtils.FormatBytes(info.SwapTotal)}"
@@ -258,12 +258,12 @@ public partial class DashboardViewModel : ViewModelBase
 
         // Never a silent cap: what did not fit is stated, not dropped.
         SensorOverflowNote = sensors.Count > MaxSensorRows
-            ? $"+{sensors.Count - MaxSensorRows} 个传感器未列出"
+            ? Translator.T("+{0} 个传感器未列出", sensors.Count - MaxSensorRows)
             : string.Empty;
 
         var fans = (info.Fans ?? new List<FanData>()).Where(f => f.Rpm > 0).ToList();
         FanDisplay = fans.Count > 0
-            ? $"最高 {fans.Max(f => f.Rpm):F0} RPM · {fans.Count} 个"
+            ? Translator.T("最高 {0} RPM · {1} 个", fans.Max(f => f.Rpm), fans.Count)
             : Translator.T("该主机未暴露风扇转速");
 
         OnPropertyChanged(nameof(HasSensors));

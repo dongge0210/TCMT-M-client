@@ -25,6 +25,9 @@ public partial class HardwareSpecViewModel : ViewModelBase
     /// </summary>
     private SystemInfo? _lastInfo;
 
+    /// <summary>页标题的中文原文。Title 被翻过一遍，语言再变时得靠这个重新翻。</summary>
+    private readonly string _titleSource;
+
     // 页头那行副标题、离线提示条、SMART 表头都是写死的文案，语言一变也要跟着变。
     // 做成属性而不是绑资源，是因为这里已经有现成的重画路径（Rebuild），
     // 多一套 DynamicResource 只会多一处要对齐的东西。
@@ -41,7 +44,8 @@ public partial class HardwareSpecViewModel : ViewModelBase
     public HardwareSpecViewModel(HardwarePart part)
     {
         Part = part;
-        Title = HardwareParts.NameOf(part);
+        _titleSource = HardwareParts.NameOf(part);
+        Title = Translator.T(_titleSource);
         Icon = "hardware";
 
         // 不解除订阅：十个实例与程序同生命周期，没有退场的时机。
@@ -60,6 +64,7 @@ public partial class HardwareSpecViewModel : ViewModelBase
     // 值由 online=false 全部盖成「—」—— 这正是没数据时该有的样子。
     private void Rebuild()
     {
+        Title = Translator.T(_titleSource);
         Sheet = Translator.TranslateSheet(
             HardwareSpecBuilder.Build(Part, _lastInfo ?? new SystemInfo(), IsOnline));
 

@@ -140,7 +140,7 @@ public class GpuData : ModelBase
     public double Usage { get => _usage; set => SetProperty(ref _usage, value); }
     public double MemoryPercent { get => _memoryPercent; set => SetProperty(ref _memoryPercent, value); }
     
-    public string DisplayName => string.IsNullOrEmpty(Name) ? "未知显卡" : (IsVirtual ? $"{Name} (虚拟)" : Name);
+    public string DisplayName => string.IsNullOrEmpty(Name) ? Translator.T("未知显卡") : (IsVirtual ? $"{Name} {Translator.T("(虚拟)")}" : Name);
     public string MemoryDisplay => FormatUtils.FormatBytes(Memory);
     public string MemoryPercentDisplay => MemoryPercent > 0 ? $"{MemoryPercent:F0}%" : "—";
 }
@@ -167,7 +167,7 @@ public class NetworkAdapterData : ModelBase
     public ulong DownloadSpeed { get => _downloadSpeed; set { if (SetProperty(ref _downloadSpeed, value)) OnPropertyChanged(nameof(DownloadDisplay)); } }
     public ulong UploadSpeed { get => _uploadSpeed; set { if (SetProperty(ref _uploadSpeed, value)) OnPropertyChanged(nameof(UploadDisplay)); } }
     
-    public string DisplayName => string.IsNullOrEmpty(Name) ? "未知网卡" : $"{Name} ({IpAddress})";
+    public string DisplayName => string.IsNullOrEmpty(Name) ? Translator.T("未知网卡") : $"{Name} ({IpAddress})";
     public string SpeedDisplay => FormatUtils.FormatNetworkSpeed(Speed);
     public string DownloadDisplay => FormatUtils.FormatNetworkSpeed(DownloadSpeed);
     public string UploadDisplay => FormatUtils.FormatNetworkSpeed(UploadSpeed);
@@ -292,7 +292,7 @@ public class PhysicalDiskView : ModelBase
         }
     }
     
-    public string DisplayName => Disk == null ? "未知磁盘" : $"{Disk.Model} ({LettersDisplay})";
+    public string DisplayName => Disk == null ? Translator.T("未知磁盘") : $"{Disk.Model} ({LettersDisplay})";
 }
 
 public class TpmData : ModelBase
@@ -311,7 +311,7 @@ public class TpmData : ModelBase
     public bool IsEnabled { get => _isEnabled; set => SetProperty(ref _isEnabled, value); }
     public bool IsActive { get => _isActive; set => SetProperty(ref _isActive, value); }
     
-    public string DisplayName => string.IsNullOrEmpty(Manufacturer) ? "未检测到 TPM" : $"{Manufacturer} TPM";
+    public string DisplayName => string.IsNullOrEmpty(Manufacturer) ? Translator.T("未检测到 TPM") : $"{Manufacturer} TPM";
 }
 
 // ─── 4. Fan speed ───

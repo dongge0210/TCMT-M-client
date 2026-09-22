@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Services.Hardware.IPC;
 
@@ -91,7 +92,7 @@ public class IPCPipeClient : IAsyncDisposable
             {
                 Log.Error("IPC: Max retries ({Max}) reached, giving up", maxRetries);
                 IsConnected = false;
-                OnConnectionChanged?.Invoke(false, "连接失败：已达最大重试次数");
+                OnConnectionChanged?.Invoke(false, Translator.T("连接失败：已达最大重试次数"));
                 break;
             }
 

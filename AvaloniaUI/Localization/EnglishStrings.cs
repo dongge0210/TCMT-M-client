@@ -228,6 +228,22 @@ internal static class EnglishStrings
         ["3 台设备"] = "3 devices",
         ["（{0} 台设备）"] = "({0} devices)",
         ["{0} 适配器"] = "{0} adapters",
+        [" ({0} 台设备)"] = " ({0} devices)",
+        ["{0} 条"] = "{0} entries",
+        ["(已断开)"] = "(disconnected)",
+        ["(虚拟)"] = "(virtual)",
+        ["已开启"] = "On",
+        ["已关闭"] = "Off",
+        ["蓝牙：{0}"] = "Bluetooth: {0}",
+        ["WiFi：已连接  频道:{0}  信号:{1} dBm  {2}{3}"] =
+            "WiFi: connected  channel:{0}  signal:{1} dBm  {2}{3}",
+        ["// {0} 核"] = "// {0} cores",
+        ["已压缩 {0} · 可用 {1}"] = "Compressed {0} · available {1}",
+        ["+{0} 个传感器未列出"] = "+{0} more sensors not listed",
+        ["最高 {0} RPM · {1} 个"] = "Max {0} RPM · {1}",
+        ["近 {0} 个采样点"] = "Last {0} samples",
+        ["已收到回执 · PID {0} 结束请求已下发"] = "Acknowledged · SIGTERM sent to PID {0}",
+        ["失败 · PID {0} · {1}"] = "Failed · PID {0} · {1}",
         ["最高 {0} RPM · {1} 个"] = "Max {0} RPM · {1}",
 
         // ── 进程页 ──────────────────────────────────────────────────────

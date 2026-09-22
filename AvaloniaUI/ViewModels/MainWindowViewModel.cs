@@ -95,7 +95,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to initialize hardware monitoring");
-            ConnectionStatus = $"初始化失败: {ex.Message}";
+            ConnectionStatus = Translator.T("初始化失败: {0}", ex.Message);
         }
     }
 
@@ -202,7 +202,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ConnectionStatus = connected ? Translator.T("已连接") : Translator.T("已断开");
         WindowTitle = connected
             ? $"{AppConstants.AppName} - {AppConstants.AppDisplayName}"
-            : $"{AppConstants.AppName} - {AppConstants.AppDisplayName} (已断开)";
+            : $"{AppConstants.AppName} - {AppConstants.AppDisplayName} {Translator.T("(已断开)")}";
 
         // 每一页都要知道：断了线页面得把读数换成占位符，而不是留着断开前那一秒的数
         ForEachPage(vm => vm.IsOnline = connected);
@@ -235,7 +235,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void OnErrorOccurred(object? sender, string error)
     {
         Log.Warning("Hardware service error: {Error}", error);
-        ConnectionStatus = $"错误: {error}";
+        ConnectionStatus = Translator.T("错误: {0}", error);
     }
 
     [RelayCommand]

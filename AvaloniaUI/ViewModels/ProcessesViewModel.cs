@@ -76,7 +76,7 @@ public partial class ProcessesViewModel : ViewModelBase
     /// on while measuring. The view keeps the line out of layout instead.</summary>
     public bool HasTrend => TrendPoints.Length > 0;
 
-    public string TrendCaption => Selected is null ? "—" : $"近 {TrendWindow} 个采样点";
+    public string TrendCaption => Selected is null ? "—" : Translator.T("近 {0} 个采样点", TrendWindow);
 
     public string PidSortGlyph => GlyphFor("pid");
 
@@ -241,12 +241,12 @@ public partial class ProcessesViewModel : ViewModelBase
             var result = await _controller.EndAsync(row.Pid);
 
             StatusNote = result.Succeeded
-                ? $"已收到回执 · PID {row.Pid} 结束请求已下发"
-                : $"失败 · PID {row.Pid} · {result.Message}";
+                ? Translator.T("已收到回执 · PID {0} 结束请求已下发", row.Pid)
+                : Translator.T("失败 · PID {0} · {1}", row.Pid, result.Message);
         }
         catch (Exception ex)
         {
-            StatusNote = $"失败 · PID {row.Pid} · {ex.Message}";
+            StatusNote = Translator.T("失败 · PID {0} · {1}", row.Pid, ex.Message);
         }
         finally
         {

@@ -7,6 +7,7 @@ using TCMT.Avalonia.Core;
 using TCMT.Avalonia.Models;
 using TCMT.Avalonia.Services.Contracts;
 using TCMT.Avalonia.Services.Hardware.IPC;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Services.Hardware;
 
@@ -19,7 +20,7 @@ public class HardwareMonitorService : IHardwareService
     private bool _disposed;
 
     public bool IsConnected { get; private set; }
-    public string ConnectionStatus { get; private set; } = "连接中...";
+    public string ConnectionStatus { get; private set; } = Translator.T("连接中...");
 
     public event EventHandler<SystemInfo>? DataReceived;
     public event EventHandler<bool>? ConnectionStateChanged;
@@ -38,7 +39,7 @@ public class HardwareMonitorService : IHardwareService
         _ipcService.ConnectionStateChanged += (connected, msg) =>
         {
             IsConnected = connected;
-            ConnectionStatus = connected ? $"已连接 ({msg})" : $"已断开 ({msg})";
+            ConnectionStatus = Translator.T(connected ? "已连接 ({0})" : "已断开 ({0})", msg);
             ConnectionStateChanged?.Invoke(this, connected);
         };
 
@@ -51,7 +52,7 @@ public class HardwareMonitorService : IHardwareService
 
         _ipcService.VersionMismatch += msg =>
         {
-            ErrorOccurred?.Invoke(this, $"版本不匹配: {msg}");
+            ErrorOccurred?.Invoke(this, Translator.T("版本不匹配: {0}", msg));
         };
 
         _ipcService.ConfigSnapshotReceived += json => ConfigSnapshotReceived?.Invoke(this, json);
@@ -97,7 +98,7 @@ public class HardwareMonitorService : IHardwareService
             Log.Error(ex, "Reconnect failed");
             IsConnected = false;
             ConnectionStatus = "重连失败";
-            ErrorOccurred?.Invoke(this, $"重连失败: {ex.Message}");
+            ErrorOccurred?.Invoke(this, Translator.T("重连失败: {0}", ex.Message));
         }
     }
 
@@ -157,7 +158,7 @@ public class HardwareMonitorService : IHardwareService
             if (_consecutiveErrors == AppConstants.MaxConsecutiveErrors)
             {
                 IsConnected = false;
-                ConnectionStatus = $"错误: {ex.Message}";
+                ConnectionStatus = Translator.T("错误: {0}", ex.Message);
                 ErrorOccurred?.Invoke(this, ex.Message);
             }
         }

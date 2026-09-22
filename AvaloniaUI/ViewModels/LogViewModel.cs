@@ -31,7 +31,7 @@ public partial class LogViewModel : ViewModelBase
 
     public bool IsPaused => !IsFollowing;
 
-    public string CountText => $"{Entries.Count} 条";
+    public string CountText => Translator.T("{0} 条", Entries.Count);
 
     public bool IsEmpty => Entries.Count == 0;
 

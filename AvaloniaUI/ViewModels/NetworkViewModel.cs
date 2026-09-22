@@ -57,9 +57,9 @@ public partial class NetworkViewModel : ViewModelBase
             if (!string.IsNullOrEmpty(WifiBand)) extra += "  " + WifiBand;
             if (!string.IsNullOrEmpty(WifiGen)) extra += "  " + WifiGen;
             if (!string.IsNullOrEmpty(WifiSSID))
-                return $"WiFi：{WifiSSID}  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+                return Translator.T("WiFi：{0}  频道:{1}  信号:{2} dBm  {3}{4}", WifiSSID, WifiChannel, WifiRSSI, WifiSecurity, extra);
             if (WifiRSSI != 0 || WifiChannel != 0)
-                return $"WiFi：已连接  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+                return Translator.T("WiFi：已连接  频道:{0}  信号:{1} dBm  {2}{3}", WifiChannel, WifiRSSI, WifiSecurity, extra);
             return Translator.T("WiFi：已断开");
         }
     }
@@ -68,8 +68,8 @@ public partial class NetworkViewModel : ViewModelBase
     // 名字来自采集端的 JoinConnectedDeviceNames；旧服务端没这个字段时回落到数量。
     public string BtDisplay => !HasBluetooth
         ? Translator.T("蓝牙未检测到")
-        : $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")}" +
-          (string.IsNullOrEmpty(BtDeviceName) ? $" ({BtDeviceCount} 台设备)" : $" {BtDeviceName}");
+        : Translator.T("蓝牙：{0}", Translator.T(BtPowerOn ? "已开启" : "已关闭")) +
+          (string.IsNullOrEmpty(BtDeviceName) ? Translator.T(" ({0} 台设备)", BtDeviceCount) : $" {BtDeviceName}");
 
     /// <summary>Inverse of HasWiFi, for the "capability missing" note in NetworkView.
     /// The section stays in place and explains itself instead of collapsing to nothing.</summary>
