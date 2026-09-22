@@ -258,25 +258,104 @@ elseif(TCMT_LINUX)
 endif()
 
 # ── Optional TLS for ServerProbe (https upload to public internet) ──
+#
+# 用仓库里的子模块（src/third_party/openssl），**不走系统包**。
+#
+# 以前这段是 find_package(OpenSSL)，它只会在系统里找，找不到就试 Homebrew 那三个路径。
+# 问题不在于找得到找不到，而在于**解析出来的完整路径会被 CMake 缓存钉死**：缓存里写着
+# /opt/homebrew/Cellar/openssl@3/3.6.3/include，Homebrew 一升到 3.6.4，那个目录就没了，
+# 构建直接断在「openssl/ssl.h not found」—— 报错和源码一点关系都没有，看着像代码坏了。
+# 子模块的版本是 commit 钉死的，Homebrew 怎么升都不影响。
+#
+# 子模块里只有源码，而 OpenSSL 到 4.x 还在用 Perl 的 Configure（没有 CMakeLists），
+# 所以这里得自己驱动一次：configure 期跑 Configure 生成 Makefile，构建期跑 make。
+# 两个都带缓存守卫，第二次构建既不重新配置也不重编。
 if(TCMT_MACOS OR TCMT_LINUX)
-    find_package(OpenSSL QUIET)
-    if(NOT OPENSSL_FOUND)
-        foreach(_openssl_hint
-                /opt/homebrew/opt/openssl@3
-                /usr/local/opt/openssl@3
-                /usr/local/opt/openssl)
-            if(EXISTS "${_openssl_hint}")
-                list(APPEND CMAKE_PREFIX_PATH "${_openssl_hint}")
+    set(_ossl_src "${CMAKE_SOURCE_DIR}/src/third_party/openssl")
+    set(_ossl_build "${CMAKE_BINARY_DIR}/third_party/openssl")
+
+    if(EXISTS "${_ossl_src}/Configure")
+        if(NOT EXISTS "${_ossl_build}/Makefile")
+            if(TCMT_MACOS)
+                if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+                    set(_ossl_platform "darwin64-arm64-cc")
+                else()
+                    set(_ossl_platform "darwin64-x86_64-cc")
+                endif()
+            elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+                set(_ossl_platform "linux-aarch64")
+            else()
+                set(_ossl_platform "linux-x86_64")
             endif()
-        endforeach()
-        find_package(OpenSSL QUIET)
-    endif()
-    if(OPENSSL_FOUND)
-        message(STATUS "OpenSSL ${OPENSSL_VERSION} found — ServerProbe https enabled")
+
+            # no-shared：出静态库，不去和系统里的 libssl.dylib 抢符号
+            # no-tests：省掉几万个测试文件，构建快一大截
+            file(MAKE_DIRECTORY "${_ossl_build}")
+            message(STATUS "OpenSSL: configuring bundled submodule (${_ossl_platform})")
+            # macOS 的最低版本要跟着主程序走，否则 OpenSSL 按本机系统版本编（这台机器上
+            # 是 27.0），而主程序按 CMAKE_OSX_DEPLOYMENT_TARGET（15.0）链 —— 链接器会对
+            # 每一个 .o 报一遍「built for newer macOS version」，这个仓库里有 888 个 .o。
+            #
+            # 旗标挂在 CC 上而不是 CFLAGS 上：给 CFLAGS 会把 OpenSSL 自己的 -O3 -Wall 整份
+            # 顶掉（实测过，Makefile 里只剩你传的那一个旗标），挂 CC 则两者都在。
+            set(_ossl_env "${CMAKE_COMMAND}" -E env)
+            if(TCMT_MACOS AND CMAKE_OSX_DEPLOYMENT_TARGET)
+                list(APPEND _ossl_env
+                     "CC=${CMAKE_C_COMPILER} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+            endif()
+
+            execute_process(
+                COMMAND ${_ossl_env} "${_ossl_src}/Configure" "${_ossl_platform}"
+                        --prefix=${_ossl_build} --openssldir=${_ossl_build}/ssl
+                        no-shared no-tests
+                WORKING_DIRECTORY "${_ossl_build}"
+                RESULT_VARIABLE _ossl_configure_result)
+            if(NOT _ossl_configure_result EQUAL 0)
+                message(FATAL_ERROR
+                    "OpenSSL Configure 失败（退出码 ${_ossl_configure_result}）。"
+                    " 删掉 ${_ossl_build} 再试一次。")
+            endif()
+        endif()
+
+        add_custom_command(
+            OUTPUT "${_ossl_build}/libssl.a" "${_ossl_build}/libcrypto.a"
+            COMMAND ${CMAKE_MAKE_PROGRAM} -j8 build_libs
+            WORKING_DIRECTORY "${_ossl_build}"
+            COMMENT "构建 third_party/openssl"
+            VERBATIM)
+        add_custom_target(tcmt_openssl
+            DEPENDS "${_ossl_build}/libssl.a" "${_ossl_build}/libcrypto.a")
+        add_dependencies(TCMTCore tcmt_openssl)
+
+        # 头文件在两边：公开的在源码树，opensslconf.h / ssl.h 这些是 Configure 生成的
+        set(_ossl_includes "${_ossl_src}/include" "${_ossl_build}/include")
+
+        add_library(TCMT::OpenSSL_SSL STATIC IMPORTED GLOBAL)
+        set_target_properties(TCMT::OpenSSL_SSL PROPERTIES
+            IMPORTED_LOCATION "${_ossl_build}/libssl.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${_ossl_includes}")
+        add_library(TCMT::OpenSSL_Crypto STATIC IMPORTED GLOBAL)
+        set_target_properties(TCMT::OpenSSL_Crypto PROPERTIES
+            IMPORTED_LOCATION "${_ossl_build}/libcrypto.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${_ossl_includes}")
+
         target_compile_definitions(TCMTCore PRIVATE TCMT_USE_TLS)
-        target_link_libraries(TCMTCore PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+        target_link_libraries(TCMTCore PRIVATE TCMT::OpenSSL_SSL TCMT::OpenSSL_Crypto)
+        message(STATUS "OpenSSL: using bundled src/third_party/openssl")
     else()
-        message(WARNING "OpenSSL not found — ServerProbe https disabled (use http:// or install openssl)")
+        # 子模块没拉下来（clone 时没带 --recursive）—— 退回系统包，
+        # 总比整个构建失败强，但要让人知道现在用的是系统那一份、会随它升级而变
+        find_package(OpenSSL QUIET)
+        if(OPENSSL_FOUND)
+            message(WARNING
+                "src/third_party/openssl 不存在（跑 git submodule update --init），"
+                "本次退回系统 OpenSSL ${OPENSSL_VERSION} —— 它的版本不受本仓库控制")
+            target_compile_definitions(TCMTCore PRIVATE TCMT_USE_TLS)
+            target_link_libraries(TCMTCore PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+        else()
+            message(WARNING
+                "OpenSSL 不可用（子模块没拉、系统里也没有）—— ServerProbe https 关闭")
+        endif()
     endif()
 endif()
 
