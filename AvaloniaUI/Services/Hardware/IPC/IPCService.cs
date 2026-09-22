@@ -50,8 +50,14 @@ public class IPCService : IDisposable
         if (_disposed) return;
         _cts = new CancellationTokenSource();
 
-        _pipeClient.OnConnectionChanged = (connected, msg) =>
+        // 回调绑到"这一代"客户端，并核对它还是不是当前那一个。
+        // Reset() 换掉 _pipeClient 之后，旧客户端的异步通知仍可能晚到 —— 让它去改当前状态，
+        // 就会把新连接刚报的"已连接"盖成"已断开"（数据照流，状态却是错的）。
+        // schema 也一样：旧客户端递过来的 schema 会去开当前这个 reader。
+        var client = _pipeClient;
+        client.OnConnectionChanged = (connected, msg) =>
         {
+            if (!ReferenceEquals(client, _pipeClient)) return;
             if (!connected)
             {
                 // Server shutdown → close memory reader so timer stops reading stale data
@@ -63,10 +69,11 @@ public class IPCService : IDisposable
             });
         };
 
-        _pipeClient.OnSchemaReceived = OnSchemaReceived;
+        client.OnSchemaReceived = schema =>
+            ReferenceEquals(client, _pipeClient) && OnSchemaReceived(schema);
 
         // 后台运行 Pipe 客户端
-        Task.Run(() => _pipeClient.StartAsync(_cts.Token));
+        Task.Run(() => client.StartAsync(_cts.Token));
     }
 
     private bool OnSchemaReceived(SchemaMessage schema)

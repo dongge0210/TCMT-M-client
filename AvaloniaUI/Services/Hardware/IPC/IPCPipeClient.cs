@@ -250,7 +250,11 @@ public class IPCPipeClient : IAsyncDisposable
                 catch (OperationCanceledException) { break; }
             }
             // Keep-alive ended — treat as disconnect
-            if (!_serverShutdown)
+            //
+            // 但 `_disposed` 为真表示是我们自己关的（Reset / 退出），那不是"连接断开"，不该往外报：
+            // 一来语义不对，二来这条通知是异步到的 —— 会在新连接已经报过"已连接"之后才喊出来，
+            // 把状态盖回"已断开"。表现就是状态栏说断开、数据却照流。
+            if (!_serverShutdown && !_disposed)
             {
                 Log.Warning("IPC: Connection lost (timeout/eof)");
                 OnConnectionChanged?.Invoke(false, "连接已断开");
