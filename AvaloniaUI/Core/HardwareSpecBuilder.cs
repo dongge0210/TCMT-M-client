@@ -110,25 +110,33 @@ public static class HardwareSpecBuilder
 
     private static SpecSheet Gpu(SystemInfo info)
     {
+        // 一块显卡都没有时照列五行报 N/A，不收成一句话：「这台机器没有独显」本身就是信息，
+        // 而且无显卡的机器和有三块显卡的机器点的是同一个导航项，该看到同一张表，只是值空着。
         if (info.Gpus.Count == 0)
         {
-            return SpecSheet.Empty("采集端没有上报任何 GPU。");
+            return new SpecSheet(
+                [Block("GPU", Unit(GpuRows(null)))],
+                "采集端没有上报任何 GPU（无显卡的机器，或采集端读不到）。");
         }
 
         // 只有多于一块显卡时才写小标题，单卡机器上那一行是噪音。
         var many = info.Gpus.Count > 1;
-        var units = info.Gpus.Select((g, i) => new SpecUnit(
-            [
-                Row("型号", g.Name),
-                Row("品牌", g.Brand),
-                Row("显存", g.Memory > 0 ? g.MemoryDisplay : null),
-                Row("核心频率", g.CoreClock > 0 ? FormatUtils.FormatFrequency(g.CoreClock) : null),
-                YesNo("虚拟设备", g.IsVirtual)
-            ],
-            many ? $"GPU {i + 1}" : null)).ToArray();
+        var units = info.Gpus
+            .Select((g, i) => new SpecUnit(GpuRows(g), many ? $"GPU {i + 1}" : null))
+            .ToArray();
 
         return new SpecSheet([new SpecBlock("GPU", units)]);
     }
+
+    /// <summary>一块显卡的那五行。<paramref name="g"/> 为 null 表示这台机器没有这一块，五行全报 N/A。</summary>
+    private static SpecRow[] GpuRows(GpuData? g) =>
+    [
+        Row("型号", g?.Name),
+        Row("品牌", g?.Brand),
+        Row("显存", g is { Memory: > 0 } ? g.MemoryDisplay : null),
+        Row("核心频率", g is { CoreClock: > 0 } ? FormatUtils.FormatFrequency(g.CoreClock) : null),
+        g is null ? SpecRow.Na("虚拟设备") : YesNo("虚拟设备", g.IsVirtual)
+    ];
 
     // ── 内存 ─────────────────────────────────────────────────────────────
 
@@ -275,11 +283,8 @@ public static class HardwareSpecBuilder
 
     private static SpecSheet Battery(SystemInfo info)
     {
-        if (!info.BatteryIsPresent)
-        {
-            return SpecSheet.Empty("这台机器没有电池（台式机，或采集端读不到电池）。");
-        }
-
+        // 没有电池时照列四项报 N/A，不收成一句话 —— 「这是台台式机」本身就是信息。
+        // 四项本来就走 Count/Row 的空值口径，所以这里不需要分支，只需要换掉页底那句说明。
         return new SpecSheet(
             [Block("电池", Unit(
                 Count("循环次数", info.BatteryCycleCount),
@@ -287,32 +292,36 @@ public static class HardwareSpecBuilder
                 Count("最大容量", info.BatteryMaxCapacity),
                 Row("健康度", info.BatteryHealthPercent > 0
                     ? FormatUtils.FormatPercentage(info.BatteryHealthPercent)
-                    : null)))]);
+                    : null)))],
+            info.BatteryIsPresent ? "" : "这台机器没有电池（台式机，或采集端读不到电池），四项照列报 N/A。");
     }
 
     // ── 风扇 ─────────────────────────────────────────────────────────────
 
     private static SpecSheet Fan(SystemInfo info)
     {
-        if (info.Fans.Count == 0)
-        {
-            return SpecSheet.Empty("这台机器没有上报风扇（无风扇机型，或采集端读不到）。");
-        }
+        // 没有风扇时照列一行「转速」报 N/A。无风扇机型（MacBook Air、部分一体机）是常见配置，
+        // 那一行本身就是答案；而且这一页的行集是固定的，编得出来 —— 传感器那页就编不出来，见下。
+        SpecUnit[] units = info.Fans.Count == 0
+            ? [new SpecUnit([SpecRow.Na("转速")])]
+            : info.Fans
+                .Select(f => new SpecUnit([Row("转速", f.RpmDisplay)], f.DisplayName))
+                .ToArray();
 
-        var units = info.Fans
-            .Select(f => new SpecUnit([Row("转速", f.RpmDisplay)], f.DisplayName))
-            .ToArray();
-
-        return new SpecSheet([new SpecBlock("风扇", units)]);
+        return new SpecSheet(
+            [new SpecBlock("风扇", units)],
+            info.Fans.Count == 0 ? "这台机器没有上报风扇（无风扇机型，或采集端读不到）。" : "");
     }
 
     // ── 传感器 ───────────────────────────────────────────────────────────
 
     private static SpecSheet Sensor(SystemInfo info)
     {
+        // 全项目唯一「照列不出来」的一页：每一行的标签就是那一路传感器的名字，没有传感器就没有
+        // 标签可列。别的页行集是固定的，缺了就照列报 N/A；这里编不出一行来，只能把话说清楚。
         if (info.Temperatures.Count == 0)
         {
-            return SpecSheet.Empty("采集端没有上报温度传感器。");
+            return SpecSheet.Empty("采集端没有上报温度传感器。这一页每一行的标签就是传感器的名字，没有传感器就没有行可列。");
         }
 
         var rows = info.Temperatures
