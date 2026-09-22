@@ -151,6 +151,8 @@ public static class IPCSystemInfoMapper
 
             // OS
             info.OsVersion = reader.ReadString("os/version") ?? "";
+            /* 采集端按窄字符串注册（addS("os/model", …)），宽串读不到再回落窄串。 */
+            info.HardwareModel = ipc.ReadWString("os/model") ?? reader.ReadString("os/model") ?? "";
 
             // GPU
             info.GpuName = ipc.ReadWString("gpu/0/name") ?? reader.ReadString("gpu/0/name") ?? "";

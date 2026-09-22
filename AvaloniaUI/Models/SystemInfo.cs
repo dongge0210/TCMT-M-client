@@ -67,6 +67,8 @@ public class SystemInfo
     public List<TemperatureData> Temperatures { get; set; } = new();
     public TpmData? Tpm { get; set; }
     public string OsVersion { get; set; } = string.Empty;
+    /// <summary>主机型号标识（采集端 os/model，如 Mac15,6）。静态信息，只随首个样本到达。</summary>
+    public string HardwareModel { get; set; } = string.Empty;
     public int BatteryPercent { get; set; } = -1;
     public bool AcOnline { get; set; }
     public int BatteryCycleCount { get; set; }
