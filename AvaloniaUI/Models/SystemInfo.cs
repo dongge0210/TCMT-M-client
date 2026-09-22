@@ -110,7 +110,7 @@ public class SystemInfo
     public bool HasBluetooth { get; set; }
     public bool BtPowerOn { get; set; }
     public int BtDeviceCount { get; set; }
-    /// <summary>已连接设备名，多个用 " · " 连接。空表示服务端没提供（旧版本）或当前无已连接设备。</summary>
+    // 已连接设备名，多个用 " · " 连接。空表示服务端没提供（旧版本）或当前无已连接设备。
     public string BtDeviceName { get; set; } = "";
 
     // App version
@@ -182,8 +182,8 @@ public class DiskData : ModelBase
     private int _physicalDiskIndex = -1;
 
     public char Letter { get => _letter; set => SetProperty(ref _letter, value); }
-    /// <summary>挂载点。Windows 是 "C:\"，macOS 是 "/System/Volumes/Data"。
-    /// Win32 把盘符、卷 GUID 路径、挂载文件夹都算 volume mount point，所以两边共用一词。</summary>
+    // 挂载点。Windows 是 "C:\"，macOS 是 "/System/Volumes/Data" —— Win32 把盘符、卷 GUID 路径、
+    // 挂载文件夹都算 volume mount point，所以两边共用一词。
     public string MountPoint { get => _mountPoint; set => SetProperty(ref _mountPoint, value); }
     public string Label { get => _label; set => SetProperty(ref _label, value); }
     public string FileSystem { get => _fileSystem; set => SetProperty(ref _fileSystem, value); }
