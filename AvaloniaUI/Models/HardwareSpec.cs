@@ -98,8 +98,17 @@ public sealed record SpecUnit(
     public bool HasTable => Table is { Rows.Count: > 0 };
 }
 
-/// <summary>一块：一个部件（CPU / 磁盘 …）对应一块。</summary>
-public sealed record SpecBlock(string Title, IReadOnlyList<SpecUnit> Units);
+/// <summary>
+/// 一块：一个部件（CPU / 磁盘 …）对应一块。
+///
+/// <paramref name="Title"/> 为空表示这一块不写标题。首块一律不写 —— 它就是页标题，
+/// 页头已经写着；只有第二块起才需要标题把自己和前面分开。同
+/// <see cref="SpecUnit.HasSubtitle"/> 的「多于一组才写」，只是这里按位置算。
+/// </summary>
+public sealed record SpecBlock(string Title, IReadOnlyList<SpecUnit> Units)
+{
+    public bool HasTitle => !string.IsNullOrWhiteSpace(Title);
+}
 
 /// <summary>
 /// 一页：若干块，加一行页底说明。

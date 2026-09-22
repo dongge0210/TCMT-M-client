@@ -14,20 +14,34 @@ namespace TCMT.Avalonia.Core;
 /// </summary>
 public static class HardwareSpecBuilder
 {
-    public static SpecSheet Build(HardwarePart part, SystemInfo info) => part switch
+    public static SpecSheet Build(HardwarePart part, SystemInfo info)
     {
-        HardwarePart.Cpu => Cpu(info),
-        HardwarePart.Gpu => Gpu(info),
-        HardwarePart.Memory => Memory(info),
-        HardwarePart.Disk => Disk(info),
-        HardwarePart.Volume => Volume(info),
-        HardwarePart.Nic => Nic(info),
-        HardwarePart.Battery => Battery(info),
-        HardwarePart.Fan => Fan(info),
-        HardwarePart.Sensor => Sensor(info),
-        HardwarePart.System => System(info),
-        _ => SpecSheet.Empty()
-    };
+        var sheet = part switch
+        {
+            HardwarePart.Cpu => Cpu(info),
+            HardwarePart.Gpu => Gpu(info),
+            HardwarePart.Memory => Memory(info),
+            HardwarePart.Disk => Disk(info),
+            HardwarePart.Volume => Volume(info),
+            HardwarePart.Nic => Nic(info),
+            HardwarePart.Battery => Battery(info),
+            HardwarePart.Fan => Fan(info),
+            HardwarePart.Sensor => Sensor(info),
+            HardwarePart.System => System(info),
+            _ => SpecSheet.Empty()
+        };
+
+        return WithoutLeadingTitle(sheet);
+    }
+
+    /// <summary>
+    /// 首块的标题一律抹掉。单块页它就是页标题，多块页头一块它还是页标题 —— 页头已经写着，
+    /// 再写一遍等于同一屏上打印两次同一个词。第二块起保留，用来把自己和前面分开。
+    /// </summary>
+    private static SpecSheet WithoutLeadingTitle(SpecSheet sheet) =>
+        sheet.Blocks.Count == 0
+            ? sheet
+            : sheet with { Blocks = [sheet.Blocks[0] with { Title = "" }, .. sheet.Blocks.Skip(1)] };
 
     // ── 小工具 ───────────────────────────────────────────────────────────
 

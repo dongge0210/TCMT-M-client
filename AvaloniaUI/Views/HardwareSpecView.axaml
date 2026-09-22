@@ -39,105 +39,105 @@
       <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
 
         <!--
-          一页一张卡：卡片的边界卡的是「这一页的规格」，不是每一块。
-          按块各开一张卡的话，只有三四行的页（电池、内存）就成了飘在大片空白里的一个小框 ——
-          卡片本来是装「一整个区段」的，装三四行就轻重失衡。
-          块与块之间用一条细线分隔，最后一块不画线。
+          规格行直接落在页面上，不套卡片。这一页只有一个部件，卡片的边界就只能圈住它自己 ——
+          内容越少越像个漂在大片空白里的小框（电池只有四行，最明显）。
+          块与块之间用一条细线分隔；单块页只有一块，两头都被 first/last 规则吃掉，等于没有线。
         -->
-        <Border Theme="{StaticResource CardBorder}">
-          <ItemsControl ItemsSource="{Binding Sheet.Blocks}">
-            <ItemsControl.Styles>
-              <Style Selector="ContentPresenter:first-child Border.blk">
-                <Setter Property="Margin" Value="0"/>
-              </Style>
-              <Style Selector="ContentPresenter:last-child Border.blk">
-                <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="Padding" Value="0"/>
-              </Style>
-            </ItemsControl.Styles>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="models:SpecBlock">
-                <Border Classes="blk"
-                        BorderThickness="0,0,0,1"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        Padding="0,0,0,18"
-                        Margin="0,18,0,0">
-                  <StackPanel Spacing="12">
-                    <TextBlock Text="{Binding Title}" Theme="{StaticResource SectionHeader}"/>
+        <ItemsControl ItemsSource="{Binding Sheet.Blocks}">
+          <ItemsControl.Styles>
+            <Style Selector="ContentPresenter:first-child Border.blk">
+              <Setter Property="Margin" Value="0"/>
+            </Style>
+            <Style Selector="ContentPresenter:last-child Border.blk">
+              <Setter Property="BorderThickness" Value="0"/>
+              <Setter Property="Padding" Value="0"/>
+            </Style>
+          </ItemsControl.Styles>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:SpecBlock">
+              <Border Classes="blk"
+                      BorderThickness="0,0,0,1"
+                      BorderBrush="{StaticResource BorderBrush}"
+                      Padding="0,0,0,18"
+                      Margin="0,18,0,0">
+                <StackPanel Spacing="12">
+                  <!-- 首块不写标题（它就是页标题），只有第二块起才有这一行 -->
+                  <TextBlock Text="{Binding Title}"
+                             IsVisible="{Binding HasTitle}"
+                             Theme="{StaticResource SectionHeader}"/>
 
-                    <ItemsControl ItemsSource="{Binding Units}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:SpecUnit">
-                          <StackPanel Spacing="6" Margin="0,0,0,8">
+                  <ItemsControl ItemsSource="{Binding Units}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="models:SpecUnit">
+                        <StackPanel Spacing="6" Margin="0,0,0,8">
 
-                            <!-- 多于一个实例时才写小标题（多 GPU / 多盘 / 多网卡） -->
-                            <TextBlock Text="{Binding Subtitle}"
-                                       IsVisible="{Binding HasSubtitle}"
-                                       FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                          <!-- 多于一个实例时才写小标题（多 GPU / 多盘 / 多网卡） -->
+                          <TextBlock Text="{Binding Subtitle}"
+                                     IsVisible="{Binding HasSubtitle}"
+                                     FontSize="12" FontWeight="SemiBold"
+                                     Foreground="{StaticResource TextSecondaryBrush}"/>
 
-                            <ItemsControl ItemsSource="{Binding Rows}">
+                          <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="models:SpecRow">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                  <TextBlock Grid.Column="0"
+                                             Classes="kvlabel"
+                                             Text="{Binding Label}"
+                                             FontSize="13"
+                                             Margin="0,0,16,0"/>
+                                  <TextBlock Grid.Column="1"
+                                             Classes="val"
+                                             Classes.na="{Binding IsNa}"
+                                             Text="{Binding Value}"
+                                             FontSize="13"/>
+                                </Grid>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+
+                          <!-- SMART 属性表：全项目只有这一张，表头写死 -->
+                          <StackPanel IsVisible="{Binding HasTable}" Spacing="2" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,0,0,2">
+                              <TextBlock Grid.Column="0" Classes="th" Text="ID"/>
+                              <TextBlock Grid.Column="1" Classes="th" Text="属性"/>
+                              <TextBlock Grid.Column="2" Classes="th" Text="当前" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="3" Classes="th" Text="最差" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="4" Classes="th" Text="阈值" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="5" Classes="th" Text="原始值" TextAlignment="Right"/>
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Table.Rows}">
                               <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:SpecRow">
-                                  <Grid ColumnDefinitions="*,Auto" Margin="0,3">
-                                    <TextBlock Grid.Column="0"
-                                               Classes="kvlabel"
-                                               Text="{Binding Label}"
-                                               FontSize="13"
-                                               Margin="0,0,16,0"/>
-                                    <TextBlock Grid.Column="1"
-                                               Classes="val"
-                                               Classes.na="{Binding IsNa}"
-                                               Text="{Binding Value}"
-                                               FontSize="13"/>
+                                <DataTemplate x:DataType="models:SpecTableRow">
+                                  <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding Id}" FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Current}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Worst}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Threshold}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Raw}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
                                   </Grid>
                                 </DataTemplate>
                               </ItemsControl.ItemTemplate>
                             </ItemsControl>
-
-                            <!-- SMART 属性表：全项目只有这一张，表头写死 -->
-                            <StackPanel IsVisible="{Binding HasTable}" Spacing="2" Margin="0,8,0,0">
-                              <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,0,0,2">
-                                <TextBlock Grid.Column="0" Classes="th" Text="ID"/>
-                                <TextBlock Grid.Column="1" Classes="th" Text="属性"/>
-                                <TextBlock Grid.Column="2" Classes="th" Text="当前" TextAlignment="Right"/>
-                                <TextBlock Grid.Column="3" Classes="th" Text="最差" TextAlignment="Right"/>
-                                <TextBlock Grid.Column="4" Classes="th" Text="阈值" TextAlignment="Right"/>
-                                <TextBlock Grid.Column="5" Classes="th" Text="原始值" TextAlignment="Right"/>
-                              </Grid>
-                              <ItemsControl ItemsSource="{Binding Table.Rows}">
-                                <ItemsControl.ItemTemplate>
-                                  <DataTemplate x:DataType="models:SpecTableRow">
-                                    <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,2">
-                                      <TextBlock Grid.Column="0" Text="{Binding Id}" FontSize="12"
-                                                 Foreground="{StaticResource TextMutedBrush}"/>
-                                      <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
-                                                 Foreground="{StaticResource TextSecondaryBrush}"
-                                                 TextTrimming="CharacterEllipsis"/>
-                                      <TextBlock Grid.Column="2" Text="{Binding Current}" FontSize="12" TextAlignment="Right"
-                                                 Foreground="{StaticResource TextMutedBrush}"/>
-                                      <TextBlock Grid.Column="3" Text="{Binding Worst}" FontSize="12" TextAlignment="Right"
-                                                 Foreground="{StaticResource TextMutedBrush}"/>
-                                      <TextBlock Grid.Column="4" Text="{Binding Threshold}" FontSize="12" TextAlignment="Right"
-                                                 Foreground="{StaticResource TextMutedBrush}"/>
-                                      <TextBlock Grid.Column="5" Text="{Binding Raw}" FontSize="12" TextAlignment="Right"
-                                                 Foreground="{StaticResource TextPrimaryBrush}"/>
-                                    </Grid>
-                                  </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                              </ItemsControl>
-                            </StackPanel>
-
                           </StackPanel>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </Border>
+
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
         <!-- 页底说明：讲清这块数据的口径，以及缺项为什么缺 -->
         <TextBlock Text="{Binding Sheet.Note}"
