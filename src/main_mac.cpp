@@ -326,6 +326,54 @@ static std::mutex s_settingsMutex;
 static bool s_settingsPending = false;
 static tcmt::ServerSettings s_pendingSettings;
 
+// ── IPC 配置通道：允许客户端改的键 ────────────────────────────────────────
+//
+// 白名单是**必须**的，不是保守。g_cfg 里除了用户配置，还存着采集端自己每个周期
+// 写进去的运行时快照（os.version / cpu.name / memory.total …）和一堆内部键。
+// 没有白名单，客户端一个请求就能把它们写坏 —— 而且写进去的还是合法 JSON，
+// 要等下次重启读配置才发现不对。
+//
+// 每个键带类型，是因为 JSON 里的 true / 1 / "1" 必须落到 ConfigManager 不同的
+// Set* 上。类型猜错的后果比不生效更糟：值写进去了、界面也显示改了，但它永远不生效。
+namespace {
+
+enum class CfgType { Bool, Int, Str };
+
+struct CfgKey {
+    const char* key;
+    CfgType     type;
+};
+
+constexpr CfgKey kClientConfigKeys[] = {
+    { "server.enabled",      CfgType::Bool },
+    { "server.url",          CfgType::Str  },
+    { "server.insecure",     CfgType::Bool },
+    { "server.intervalSec",  CfgType::Int  },
+    { "sampling.intervalMs", CfgType::Int  },
+    { "ui.language",         CfgType::Str  },
+};
+
+const CfgKey* FindCfgKey(const std::string& key) {
+    for (const auto& k : kClientConfigKeys) {
+        if (key == k.key) return &k;
+    }
+    return nullptr;
+}
+
+/// 当前配置值，交给 IPCServer 在客户端握手完成后推过去。
+std::string BuildConfigSnapshotJson() {
+    nlohmann::json j;
+    j["server.enabled"]      = g_cfg.GetBool("server.enabled", false);
+    j["server.url"]          = g_cfg.GetString("server.url", "");
+    j["server.insecure"]     = g_cfg.GetBool("server.insecure", false);
+    j["server.intervalSec"]  = g_cfg.GetInt("server.intervalSec", 2);
+    j["sampling.intervalMs"] = g_sampleIntervalMs.load();
+    j["ui.language"]         = g_cfg.GetString("ui.language", "zh-Hans");
+    return j.dump();
+}
+
+} // namespace
+
 // ======================== Main ========================
 int main(int argc, char* argv[]) {
 
@@ -781,6 +829,81 @@ int main(int argc, char* argv[]) {
     } else {
         Logger::Warn("IPC server start failed: " + ipcServer.GetLastError());
     }
+
+    // 客户端（Avalonia 设置页）读写配置的入口。服务端不认识键名，只负责搬 JSON；
+    // 认键、校验、落盘、让探针重启，都在这里 —— 只有 main 有 g_cfg 和那套 pending 机制。
+    ipcServer.SetConfigBridge(
+        [] { return BuildConfigSnapshotJson(); },
+        [&ipcServer](const std::string& payload) {
+            nlohmann::json in;
+            try {
+                in = nlohmann::json::parse(payload);
+            } catch (const std::exception& e) {
+                Logger::Warn(std::string("IPC: ConfigSet 不是合法 JSON，丢弃: ") + e.what());
+                return;
+            }
+            if (!in.is_object()) {
+                Logger::Warn("IPC: ConfigSet 不是 JSON 对象，丢弃");
+                return;
+            }
+
+            int applied = 0;
+            for (auto it = in.begin(); it != in.end(); ++it) {
+                const CfgKey* k = FindCfgKey(it.key());
+                if (!k) {
+                    // 不认识的键说出来，不静默忽略：它意味着客户端和服务端的版本对不上，
+                    // 而静默会让对面以为改成功了。
+                    Logger::Warn("IPC: ConfigSet 含白名单外的键，忽略: " + it.key());
+                    continue;
+                }
+                try {
+                    switch (k->type) {
+                        case CfgType::Bool:
+                            if (!it.value().is_boolean()) throw std::runtime_error("要布尔值");
+                            g_cfg.SetBool(k->key, it.value().get<bool>());
+                            break;
+                        case CfgType::Int:
+                            if (!it.value().is_number_integer()) throw std::runtime_error("要整数");
+                            g_cfg.SetInt(k->key, it.value().get<int>());
+                            break;
+                        case CfgType::Str:
+                            if (!it.value().is_string()) throw std::runtime_error("要字符串");
+                            g_cfg.SetString(k->key, it.value().get<std::string>());
+                            break;
+                    }
+                    applied++;
+                } catch (const std::exception& e) {
+                    Logger::Warn(std::string("IPC: ConfigSet 的 ") + k->key + " 类型不对（" +
+                                 e.what() + "），忽略");
+                }
+            }
+
+            if (applied == 0) return;
+
+            g_cfg.Save();
+
+            // 采样间隔除了落盘还要喂那个原子量 —— 主循环读的是它，不是文件。
+            const int ms = g_cfg.GetInt("sampling.intervalMs", g_sampleIntervalMs.load());
+            g_sampleIntervalMs.store(
+                std::max(tcmt::kSampleIntervalMinMs, std::min(tcmt::kSampleIntervalMaxMs, ms)));
+
+            // 上传那几项要让探针按新值重启，和 TUI 按 S 保存走的是同一条路。
+            tcmt::ServerSettings s;
+            s.enabled     = g_cfg.GetBool("server.enabled", false);
+            s.url         = g_cfg.GetString("server.url", "");
+            s.insecure    = g_cfg.GetBool("server.insecure", false);
+            s.intervalSec = g_cfg.GetInt("server.intervalSec", 2);
+            {
+                std::lock_guard<std::mutex> lock(s_settingsMutex);
+                s_pendingSettings = s;
+                s_settingsPending = true;
+            }
+
+            Logger::Info("IPC: 客户端改了 " + std::to_string(applied) + " 项配置，已保存并生效");
+
+            // 回推一份：改的那个客户端要靠它把界面和落盘的值对齐
+            ipcServer.BroadcastConfigSnapshot();
+        });
 
     // Initial USB detection (startup scan)
     try {

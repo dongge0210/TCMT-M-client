@@ -4,6 +4,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <functional>
 #include "IPCData.h"
 
 namespace tcmt::ipc {
@@ -40,6 +41,22 @@ public:
     // Broadcast config-change notification to all clients (#6 — config hot-reload)
     void NotifyConfigChange();
 
+    // ── 配置通道 ────────────────────────────────────────────────────────
+    //
+    // 服务端不认识配置本身：它只负责把两个 JSON 字符串搬来搬去。谁读、谁写、
+    // 哪些键允许改，全在 main 那边定 —— 只有那儿有 ConfigManager，也只有那儿
+    // 知道改完一个键之后要重启哪个探针。服务端越权去理解键名，以后加一个配置项
+    // 就得改三处。
+    //
+    // provider: 客户端握手完成时叫一次，返回当前配置的 JSON 对象
+    // handler:  收到客户端的 ConfigSet 时叫，参数是它发来的 JSON 对象
+    using ConfigSnapshotProvider = std::function<std::string()>;
+    using ConfigSetHandler = std::function<void(const std::string& payloadJson)>;
+
+    void SetConfigBridge(ConfigSnapshotProvider provider, ConfigSetHandler handler);
+    // 配置变了：把新快照推给所有已连接的客户端
+    void BroadcastConfigSnapshot();
+
     std::string GetLastError() const { return lastError_; }
 
 private:
@@ -52,6 +69,13 @@ private:
 #endif
     void SendSchemaToPeer(void* peerHandle);
     std::vector<uint8_t> SerializeSchema();
+
+    // 把当前配置快照发给某一个对端（客户端握手完成时用）。provider 为空就什么都不发。
+    void SendConfigSnapshotToPeer(void* peerHandle);
+    // 读掉一条配置消息的 payload。返回空串表示读失败或超过上限。
+    std::string ReadConfigPayload(void* peerHandle, uint16_t payloadSize);
+    // 收到客户端 ConfigSet 时调用：交给 handler，然后由 main 决定怎么应用。
+    void HandleConfigSetPayload(void* peerHandle, uint16_t payloadSize);
 
     std::atomic<bool> running_{false};
     std::thread serverThread_;
@@ -79,6 +103,10 @@ private:
     // Current schema
     SchemaHeader schemaHeader_;
     std::vector<FieldDef> schemaFields_;
+
+    // 配置通道的两端。见 SetConfigBridge 上面那段说明。
+    ConfigSnapshotProvider configProvider_;
+    ConfigSetHandler configSetHandler_;
 
     std::string lastError_;
 };

@@ -34,7 +34,13 @@ enum class PipeMsgType : uint8_t {
     Shutdown     = 0x07,  // C++ → C#:  server shutting down (SIGINT/SIGTERM)
     SchemaUpdate = 0x08,  // C++ → C#: schema changed, re-open shared memory
     ConfigUpdate = 0x09,  // C++ → C#: config file changed, client should reload
+    ConfigSet      = 0x0A,  // C# → C++: 改配置，payload = JSON 对象，键必须在白名单里
+    ConfigSnapshot = 0x0B,  // C++ → C#: 当前配置值，payload = JSON 对象（同一份白名单）
 };
+
+// 配置消息的 payload 上限。它是几个键值对，不是数据面 —— 卡住上限是防止
+// 对端发一个超大 payloadSize 把服务端的内存拉爆。
+static constexpr uint16_t IPC_CONFIG_PAYLOAD_MAX = 8192;
 
 #pragma pack(push, 1)
 struct PipeMessage {
