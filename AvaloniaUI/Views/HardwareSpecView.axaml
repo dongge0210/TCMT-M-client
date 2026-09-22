@@ -24,6 +24,20 @@
       <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
       <Setter Property="FontSize" Value="11"/>
     </Style>
+
+    <!-- 页顶提示条：数据不成立时先把原因说清楚，而不是让满页的「—」自己解释自己 -->
+    <Style Selector="Border.banner">
+      <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="MaxWidth" Value="760"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+    <Style Selector="Border.banner TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
@@ -32,6 +46,11 @@
       <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
       <TextBlock Text="静态规格：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值"
                  FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+
+      <!-- 没连上时整页都是占位符，这里得先说清楚为什么 -->
+      <Border Classes="banner" IsVisible="{Binding !IsOnline}" Margin="0,14,0,0">
+        <TextBlock Text="未连接采集端 —— 下面的值等连上再填"/>
+      </Border>
     </StackPanel>
 
     <!-- Content -->

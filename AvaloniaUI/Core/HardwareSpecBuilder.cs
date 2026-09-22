@@ -14,7 +14,7 @@ namespace TCMT.Avalonia.Core;
 /// </summary>
 public static class HardwareSpecBuilder
 {
-    public static SpecSheet Build(HardwarePart part, SystemInfo info)
+    public static SpecSheet Build(HardwarePart part, SystemInfo info, bool online)
     {
         var sheet = part switch
         {
@@ -31,7 +31,11 @@ public static class HardwareSpecBuilder
             _ => SpecSheet.Empty()
         };
 
-        return WithoutLeadingTitle(sheet);
+        sheet = WithoutLeadingTitle(sheet);
+
+        // 没连上时整页改画占位符。这时候不能报 N/A —— N/A 断言「这台机器没有这一项」，
+        // 而我们根本还没问过；采集端没跑，它一个字都报不出来。
+        return online ? sheet : MaskAsUnknown(sheet);
     }
 
     /// <summary>
@@ -42,6 +46,30 @@ public static class HardwareSpecBuilder
         sheet.Blocks.Count == 0
             ? sheet
             : sheet with { Blocks = [sheet.Blocks[0] with { Title = "" }, .. sheet.Blocks.Skip(1)] };
+
+    /// <summary>
+    /// 采集端没连上：整页的值盖成「—」。
+    ///
+    /// 行标签照旧铺出来 —— 页面骨架不该因为断线换一个样子，变的只是值。
+    /// SMART 表整张收掉（逐格盖「—」没有意义，它整张就是一组读数），
+    /// 页底说明也收掉 —— 那些说明讲的都是「这一项为什么是 N/A」，此刻那句话不成立。
+    /// </summary>
+    private static SpecSheet MaskAsUnknown(SpecSheet sheet) =>
+        sheet with
+        {
+            Blocks = sheet.Blocks.Select(MaskBlock).ToArray(),
+            Note = ""
+        };
+
+    private static SpecBlock MaskBlock(SpecBlock block) =>
+        block with { Units = block.Units.Select(MaskUnit).ToArray() };
+
+    private static SpecUnit MaskUnit(SpecUnit unit) =>
+        unit with
+        {
+            Rows = unit.Rows.Select(r => SpecRow.Unknown(r.Label)).ToArray(),
+            Table = null
+        };
 
     // ── 小工具 ───────────────────────────────────────────────────────────
 

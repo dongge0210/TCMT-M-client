@@ -165,32 +165,43 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrEmpty(info.Version))
             AppVersion = info.Version;
 
-        // Broadcast to all view models
-        foreach (var item in NavigationItems)
-        {
-            if (item.HasChildren)
-            {
-                // 分组自己没页面，它的 ViewModel 就是第一个子项那个 —— 只走子项，
-                // 否则同一份规格表每个采样周期会被重建两遍
-                foreach (var child in item.Children)
-                {
-                    child.ViewModel.Update(info);
-                }
-            }
-            else
-            {
-                item.ViewModel.Update(info);
-            }
-        }
+        ForEachPage(vm => vm.Update(info));
     }
 
     private void OnConnectionStateChanged(object? sender, bool connected)
     {
         IsConnected = connected;
         ConnectionStatus = connected ? "已连接" : "已断开";
-        WindowTitle = connected 
+        WindowTitle = connected
             ? $"{AppConstants.AppName} - {AppConstants.AppDisplayName}"
             : $"{AppConstants.AppName} - {AppConstants.AppDisplayName} (已断开)";
+
+        // 每一页都要知道：断了线页面得把读数换成占位符，而不是留着断开前那一秒的数
+        ForEachPage(vm => vm.IsOnline = connected);
+    }
+
+    /// <summary>
+    /// 把一份数据或一个状态送到每一个页面。
+    ///
+    /// 分组自己没有页面，它的 ViewModel 就是第一个子项那个 —— 只走子项，
+    /// 否则同一份规格表每个采样周期会被重建两遍。
+    /// </summary>
+    private void ForEachPage(Action<ViewModelBase> apply)
+    {
+        foreach (var item in NavigationItems)
+        {
+            if (item.HasChildren)
+            {
+                foreach (var child in item.Children)
+                {
+                    apply(child.ViewModel);
+                }
+            }
+            else
+            {
+                apply(item.ViewModel);
+            }
+        }
     }
 
     private void OnErrorOccurred(object? sender, string error)

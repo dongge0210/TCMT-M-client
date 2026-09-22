@@ -57,13 +57,23 @@ public static class HardwareParts
 /// <summary>
 /// 一行规格：左边标签、右边值。
 ///
-/// <paramref name="IsNa"/> 为真表示这一项采集端给不出值 —— 值显示成 N/A，
-/// 原因写在页底那行说明里，不编一个看起来像真的数。
+/// <paramref name="IsNa"/> 为真表示这一行的值不是真读数，只是个压暗的占位符 ——
+/// 要么是 N/A（这台机器没有这一项），要么是「—」（还没连上，无从断言）。
+/// 两种都宁可留白也不编一个看起来像真的数。
 /// </summary>
 public sealed record SpecRow(string Label, string Value, bool IsNa = false)
 {
-    /// <summary>N/A 是恒定事实，与有没有样本无关，所以不走「离线读数」那条盖戳逻辑。</summary>
+    /// <summary>没连上时的占位符。与 N/A 一样是压暗的，不参与数值对齐。</summary>
+    public const string UnknownValue = "—";
+
+    /// <summary>这台机器没有这一项 —— 恒定结论，与采没采到样本无关。</summary>
     public static SpecRow Na(string label) => new(label, "N/A", IsNa: true);
+
+    /// <summary>
+    /// 还没连上，这项是什么不知道。与 <see cref="Na"/> 是两回事：N/A 是查完之后的结论，
+    /// 这个是「还没查」。混用会让页面替采集端说谎。
+    /// </summary>
+    public static SpecRow Unknown(string label) => new(label, UnknownValue, IsNa: true);
 }
 
 /// <summary>

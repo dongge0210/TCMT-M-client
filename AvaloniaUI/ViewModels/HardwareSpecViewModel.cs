@@ -18,6 +18,12 @@ public partial class HardwareSpecViewModel : ViewModelBase
     [ObservableProperty]
     private SpecSheet _sheet = SpecSheet.Empty();
 
+    /// <summary>
+    /// 最近一次拿到的整机信息。留一份是为了连接态翻转时还能重画 ——
+    /// 断了线就再不会有新数据送过来，不留这一份就只能干等下一次采样。
+    /// </summary>
+    private SystemInfo? _lastInfo;
+
     public HardwareSpecViewModel(HardwarePart part)
     {
         Part = part;
@@ -25,5 +31,16 @@ public partial class HardwareSpecViewModel : ViewModelBase
         Icon = "hardware";
     }
 
-    public override void Update(SystemInfo info) => Sheet = HardwareSpecBuilder.Build(Part, info);
+    public override void Update(SystemInfo info)
+    {
+        _lastInfo = info;
+        Rebuild();
+    }
+
+    protected override void OnOnlineChanged(bool online) => Rebuild();
+
+    // 开机就没连上时 _lastInfo 还是 null，给一份空的：Build 照常把行标签铺出来，
+    // 值由 online=false 全部盖成「—」—— 这正是没数据时该有的样子。
+    private void Rebuild() =>
+        Sheet = HardwareSpecBuilder.Build(Part, _lastInfo ?? new SystemInfo(), IsOnline);
 }
