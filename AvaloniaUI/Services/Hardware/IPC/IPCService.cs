@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Serilog;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Services.Hardware.IPC;
 
@@ -102,7 +103,7 @@ public class IPCService : IDisposable
             Log.Warning("IPC: Invalid schema received");
             Dispatcher.UIThread.Post(() =>
             {
-                VersionMismatch?.Invoke($"Schema 无效：magic=0x{schema.Header.Magic:X}");
+                VersionMismatch?.Invoke(Translator.T("Schema 无效：magic=0x{0}", schema.Header.Magic.ToString("X")));
             });
             return false;
         }
@@ -113,11 +114,10 @@ public class IPCService : IDisposable
                 schema.Header.Version, IPCConstants.CurrentVersion);
             Dispatcher.UIThread.Post(() =>
             {
-                VersionMismatch?.Invoke(
-                    $"Schema 版本不匹配\n" +
-                    $"服务端版本: {schema.Header.Version}\n" +
-                    $"客户端版本: {IPCConstants.CurrentVersion}\n" +
-                    $"请联系开发者更新");
+                // 整段一条。原来拆成四行拼，翻译时没法把语序整过来，也没法只翻一半。
+                VersionMismatch?.Invoke(Translator.T(
+                    "Schema 版本不匹配\n服务端版本: {0}\n客户端版本: {1}\n请联系开发者更新",
+                    schema.Header.Version, IPCConstants.CurrentVersion));
             });
             // 不断开，等待服务端推送新版本
             return true;

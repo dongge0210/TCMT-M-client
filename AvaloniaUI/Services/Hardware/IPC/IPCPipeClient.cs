@@ -139,7 +139,7 @@ public class IPCPipeClient : IAsyncDisposable
         await client.ConnectAsync(5000, ct);
 
         IsConnected = true;
-        OnConnectionChanged?.Invoke(true, "已连接");
+        OnConnectionChanged?.Invoke(true, Translator.T("已连接"));
         Log.Information("IPC: Connected to Windows pipe: {Name}", pipeName);
 
         return await ReceiveLoopAsync(client, ct);
@@ -161,7 +161,7 @@ public class IPCPipeClient : IAsyncDisposable
             await client.ConnectAsync(ep, cts.Token);
 
             IsConnected = true;
-            OnConnectionChanged?.Invoke(true, "已连接");
+            OnConnectionChanged?.Invoke(true, Translator.T("已连接"));
             Log.Information("IPC: Connected to Unix socket: {Path}", socketPath);
 
             await using var ns = new NetworkStream(client, ownsSocket: false);
@@ -169,7 +169,7 @@ public class IPCPipeClient : IAsyncDisposable
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            LastError = "连接超时";
+            LastError = Translator.T("连接超时");
             Log.Debug("IPC: Unix socket connect timeout");
             return false;
         }
@@ -290,7 +290,7 @@ public class IPCPipeClient : IAsyncDisposable
                     else if (msgType == 0x07) // Shutdown
                     {
                         Log.Information("IPC: Server shutting down");
-                        OnConnectionChanged?.Invoke(false, "服务器已关闭");
+                        OnConnectionChanged?.Invoke(false, Translator.T("服务器已关闭"));
                         _serverShutdown = true;
                         break;
                     }
@@ -332,7 +332,7 @@ public class IPCPipeClient : IAsyncDisposable
             if (!_serverShutdown && !_disposed)
             {
                 Log.Warning("IPC: Connection lost (timeout/eof)");
-                OnConnectionChanged?.Invoke(false, "连接已断开");
+                OnConnectionChanged?.Invoke(false, Translator.T("连接已断开"));
             }
             Log.Debug("IPC: Keep-alive loop ended");
         }

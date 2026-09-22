@@ -45,6 +45,9 @@ internal static class EnglishStrings
         ["重连失败: {0}"] = "Reconnect failed: {0}",
         ["初始化失败: {0}"] = "Initialization failed: {0}",
         ["版本不匹配: {0}"] = "Version mismatch: {0}",
+        ["Schema 无效：magic=0x{0}"] = "Invalid schema: magic=0x{0}",
+        ["Schema 版本不匹配\n服务端版本: {0}\n客户端版本: {1}\n请联系开发者更新"] =
+            "Schema version mismatch\nServer version: {0}\nClient version: {1}\nAsk the developer for an update",
         ["已连接 ({0})"] = "Connected ({0})",
         ["已断开 ({0})"] = "Disconnected ({0})",
         ["已连接，但 SSID 读不到——系统需要开启定位服务才会返回 SSID"] =

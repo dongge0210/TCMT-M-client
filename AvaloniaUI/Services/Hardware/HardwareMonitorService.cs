@@ -47,7 +47,7 @@ public class HardwareMonitorService : IHardwareService
         {
             _consecutiveErrors = 0;
             IsConnected = true;
-            ConnectionStatus = "已连接 (IPC)";
+            ConnectionStatus = Translator.T("已连接 (IPC)");
         };
 
         _ipcService.VersionMismatch += msg =>
@@ -82,7 +82,7 @@ public class HardwareMonitorService : IHardwareService
     public async Task ReconnectAsync()
     {
         _consecutiveErrors = 0;
-        ConnectionStatus = "重新连接中...";
+        ConnectionStatus = Translator.T("重新连接中...");
         
         await StopAsync();
         // 用 Reset 而不是 Dispose：Dispose 会把 _disposed 置位，之后 Start 直接空转返回，
@@ -97,7 +97,7 @@ public class HardwareMonitorService : IHardwareService
         {
             Log.Error(ex, "Reconnect failed");
             IsConnected = false;
-            ConnectionStatus = "重连失败";
+            ConnectionStatus = Translator.T("重连失败");
             ErrorOccurred?.Invoke(this, Translator.T("重连失败: {0}", ex.Message));
         }
     }
@@ -121,7 +121,7 @@ public class HardwareMonitorService : IHardwareService
                     if (!IsConnected)
                     {
                         IsConnected = true;
-                        ConnectionStatus = "已连接 (IPC)";
+                        ConnectionStatus = Translator.T("已连接 (IPC)");
                         ConnectionStateChanged?.Invoke(this, true);
                     }
                     DataReceived?.Invoke(this, info);
@@ -133,7 +133,7 @@ public class HardwareMonitorService : IHardwareService
             if (_consecutiveErrors >= AppConstants.MaxConsecutiveErrors && IsConnected)
             {
                 IsConnected = false;
-                ConnectionStatus = "连接已断开";
+                ConnectionStatus = Translator.T("连接已断开");
                 ConnectionStateChanged?.Invoke(this, false);
             }
         }
