@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using TCMT.Avalonia.Core;
+using TCMT.Avalonia.Localization;
 using TCMT.Avalonia.Models;
 
 namespace TCMT.Avalonia.ViewModels;
@@ -24,11 +25,27 @@ public partial class HardwareSpecViewModel : ViewModelBase
     /// </summary>
     private SystemInfo? _lastInfo;
 
+    // 页头那行副标题、离线提示条、SMART 表头都是写死的文案，语言一变也要跟着变。
+    // 做成属性而不是绑资源，是因为这里已经有现成的重画路径（Rebuild），
+    // 多一套 DynamicResource 只会多一处要对齐的东西。
+    public string PageSubtitle => Translator.T("静态规格与实时读数：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值");
+
+    public string OfflineBanner => Translator.T("未连接采集端 —— 下面的值等连上再填");
+
+    public string ColumnAttribute => Translator.T("属性");
+    public string ColumnCurrent => Translator.T("当前");
+    public string ColumnWorst => Translator.T("最差");
+    public string ColumnThreshold => Translator.T("阈值");
+    public string ColumnRaw => Translator.T("原始值");
+
     public HardwareSpecViewModel(HardwarePart part)
     {
         Part = part;
         Title = HardwareParts.NameOf(part);
         Icon = "hardware";
+
+        // 不解除订阅：十个实例与程序同生命周期，没有退场的时机。
+        Translator.LanguageChanged += (_, _) => Rebuild();
     }
 
     public override void Update(SystemInfo info)
@@ -41,6 +58,17 @@ public partial class HardwareSpecViewModel : ViewModelBase
 
     // 开机就没连上时 _lastInfo 还是 null，给一份空的：Build 照常把行标签铺出来，
     // 值由 online=false 全部盖成「—」—— 这正是没数据时该有的样子。
-    private void Rebuild() =>
-        Sheet = HardwareSpecBuilder.Build(Part, _lastInfo ?? new SystemInfo(), IsOnline);
+    private void Rebuild()
+    {
+        Sheet = Translator.TranslateSheet(
+            HardwareSpecBuilder.Build(Part, _lastInfo ?? new SystemInfo(), IsOnline));
+
+        // 上面那六个属性跟着语言走，得挨个通知一遍
+        foreach (var p in new[] { nameof(PageSubtitle), nameof(OfflineBanner),
+                                  nameof(ColumnAttribute), nameof(ColumnCurrent),
+                                  nameof(ColumnWorst), nameof(ColumnThreshold), nameof(ColumnRaw) })
+        {
+            OnPropertyChanged(p);
+        }
+    }
 }

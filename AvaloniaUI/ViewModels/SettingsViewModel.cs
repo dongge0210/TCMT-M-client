@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using TCMT.Avalonia.Core;
+using TCMT.Avalonia.Localization;
 using TCMT.Avalonia.Models;
 using TCMT.Avalonia.Services.Contracts;
 using TCMT.Avalonia.Themes;
@@ -190,7 +191,12 @@ public partial class SettingsViewModel : ViewModelBase
             if (root.TryGetProperty("sampling.intervalMs", out var sm) && sm.TryGetInt32(out var smv))
                 CollectorSampleIntervalMs = smv;
             if (root.TryGetProperty("ui.language", out var lg) && lg.ValueKind == JsonValueKind.String)
+            {
                 CollectorLanguage = lg.GetString() == "en" ? "English" : "中文";
+                // 界面文案跟着切。放在这儿是因为 ui.language 的唯一来源就是采集端那份配置 ——
+                // 本机两个界面都读它，谁改的都算数。
+                Translator.SetLanguage(lg.GetString());
+            }
         }
         catch (JsonException ex)
         {

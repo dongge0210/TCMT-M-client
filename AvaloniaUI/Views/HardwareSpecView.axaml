@@ -42,12 +42,12 @@
     <!-- Header -->
     <StackPanel Grid.Row="0" Margin="32,28,32,0">
       <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
-      <TextBlock Text="静态规格与实时读数：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值"
+      <TextBlock Text="{Binding PageSubtitle}"
                  FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
 
       <!-- 没连上时整页都是占位符，这里得先说清楚为什么 -->
       <Border Classes="banner" IsVisible="{Binding !IsOnline}" Margin="0,14,0,0">
-        <TextBlock Text="未连接采集端 —— 下面的值等连上再填"/>
+        <TextBlock Text="{Binding OfflineBanner}"/>
       </Border>
     </StackPanel>
 
@@ -115,13 +115,15 @@
 
                           <!-- SMART 属性表：全项目只有这一张，表头写死 -->
                           <StackPanel IsVisible="{Binding HasTable}" Spacing="2" Margin="0,8,0,0">
-                            <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,0,0,2">
+                            <!-- 表头挂在页面的 VM 上，而这里的作用域是 SpecUnit —— 得往上走一层拿 -->
+                            <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,0,0,2"
+                                  DataContext="{Binding $parent[UserControl].DataContext}">
                               <TextBlock Grid.Column="0" Classes="th" Text="ID"/>
-                              <TextBlock Grid.Column="1" Classes="th" Text="属性"/>
-                              <TextBlock Grid.Column="2" Classes="th" Text="当前" TextAlignment="Right"/>
-                              <TextBlock Grid.Column="3" Classes="th" Text="最差" TextAlignment="Right"/>
-                              <TextBlock Grid.Column="4" Classes="th" Text="阈值" TextAlignment="Right"/>
-                              <TextBlock Grid.Column="5" Classes="th" Text="原始值" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="1" Classes="th" Text="{Binding ColumnAttribute}"/>
+                              <TextBlock Grid.Column="2" Classes="th" Text="{Binding ColumnCurrent}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="3" Classes="th" Text="{Binding ColumnWorst}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="4" Classes="th" Text="{Binding ColumnThreshold}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="5" Classes="th" Text="{Binding ColumnRaw}" TextAlignment="Right"/>
                             </Grid>
                             <ItemsControl ItemsSource="{Binding Table.Rows}">
                               <ItemsControl.ItemTemplate>

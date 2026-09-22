@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
+using TCMT.Avalonia.Localization;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using TCMT.Avalonia.Core;
@@ -60,12 +61,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Setup navigation items
         // Five views, matching the design draft: 概览 / 进程 / 网络 / 日志 / 设置.
         // CPU / GPU / 内存 / 温度 / 存储 五屏的内容已并进概览，原视图与 VM 归档在 _archive/。
-        NavigationItems.Add(new NavigationItem("概览", "dashboard", dashboardVm));
-        NavigationItems.Add(new NavigationItem("进程", "processes", processesVm));
-        NavigationItems.Add(new NavigationItem("网络", "network", networkVm));
-        NavigationItems.Add(new NavigationItem("日志", "log", logVm));
+        NavigationItems.Add(NavItem("概览", "dashboard", dashboardVm));
+        NavigationItems.Add(NavItem("进程", "processes", processesVm));
+        NavigationItems.Add(NavItem("网络", "network", networkVm));
+        NavigationItems.Add(NavItem("日志", "log", logVm));
         NavigationItems.Add(BuildHardwareGroup());
-        NavigationItems.Add(new NavigationItem("设置", "settings", settingsVm));
+        NavigationItems.Add(NavItem("设置", "settings", settingsVm));
+
+        // 语言一变，左栏这些行要跟着换。原文存在 _navSources 里 —— Title 是被覆盖过的，
+        // 拿它当键会越翻越偏。
+        Translator.LanguageChanged += (_, _) => ApplyLanguage();
 
         // Wire up navigation
         _navigationService.Navigated += (_, vm) => CurrentPage = vm;
@@ -94,6 +99,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>左栏每一项的中文原文。见 <see cref="NavItem"/>。</summary>
+    private readonly Dictionary<NavigationItem, string> _navSources = new();
+
+    /// <summary>
+    /// 建一个导航项。文案先翻一遍，同时把中文原文记下来 —— Title 一会儿就被翻成英文了，
+    /// 到时候再想从它身上拿回原文是拿不到的。
+    /// </summary>
+    private NavigationItem NavItem(string source, string icon, ViewModelBase viewModel)
+    {
+        var item = new NavigationItem(Translator.T(source), icon, viewModel);
+        _navSources[item] = source;
+        return item;
+    }
+
+    /// <summary>语言换了：左栏重翻。页面内容由各自的 VM 自己听 LanguageChanged 去重画。</summary>
+    private void ApplyLanguage()
+    {
+        foreach (var (item, source) in _navSources)
+        {
+            item.Title = Translator.T(source);
+        }
+    }
+
     /// <summary>
     /// 「硬件」那一组：十个部件是同一种页面，各配一个 <see cref="HardwareSpecViewModel"/>。
     /// 组本身没有自己的页面 —— 它的 ViewModel 直接借第一个子项的，所以点分组等于进第一页
@@ -102,11 +130,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private NavigationItem BuildHardwareGroup()
     {
         var children = HardwareParts.Ordered
-            .Select(part => new NavigationItem(
+            .Select(part => NavItem(
                 HardwareParts.NameOf(part), "hardware", new HardwareSpecViewModel(part)))
             .ToList();
 
-        var group = new NavigationItem("硬件", "hardware", children[0].ViewModel);
+        var group = NavItem("硬件", "hardware", children[0].ViewModel);
 
         foreach (var child in children)
         {
@@ -266,7 +294,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 /// </summary>
 public class NavigationItem : ObservableObject
 {
-    public string Title { get; }
+    // 可写：语言一换，左栏这几行要跟着变。只读属性改不动，切语言就得把整个导航重建，
+    // 那会把展开态和当前页一起丢掉。
+    private string _title;
+    public string Title
+    {
+        get => _title;
+        set => SetProperty(ref _title, value);
+    }
+
     public string Icon { get; }
     public ViewModelBase ViewModel { get; }
 
@@ -302,7 +338,7 @@ public class NavigationItem : ObservableObject
 
     public NavigationItem(string title, string icon, ViewModelBase viewModel)
     {
-        Title = title;
+        _title = title;
         Icon = icon;
         ViewModel = viewModel;
     }
