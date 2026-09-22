@@ -206,15 +206,32 @@ public static class HardwareSpecBuilder
             many ? "实时读数只覆盖第一块显卡 —— IPC 里只有 gpu/0 的占用 / 温度 / 显存。" : "");
     }
 
-    /// <summary>一块显卡的那五行。<paramref name="g"/> 为 null 表示这台机器没有这一块，五行全报 N/A。</summary>
+    /// <summary>
+    /// 一块显卡的规格行。<paramref name="g"/> 为 null 表示这台机器没有这一块，各行全报 N/A。
+    /// 品牌那一行是有条件的，见 <see cref="BrandRow"/>。
+    /// </summary>
     private static SpecRow[] GpuRows(GpuData? g) =>
     [
         Row("型号", g?.Name),
-        Row("品牌", g?.Brand),
+        .. BrandRow(g),
         Row("显存", g is { Memory: > 0 } ? g.MemoryDisplay : null),
         Frequency("核心频率", g?.CoreClock ?? 0),
         g is null ? SpecRow.Na("虚拟设备") : YesNo("虚拟设备", g.IsVirtual)
     ];
+
+    /// <summary>
+    /// 品牌那一行，只在它真能补信息时才画。
+    ///
+    /// 型号里已经带着厂商名的时候（「Apple M2」的品牌、「NVIDIA GeForce RTX 4090」的品牌，
+    /// 都是同一件事说两遍），这行不画；采集端压根没给的时候也不画 ——
+    /// 一行永远是空的标签不是信息。全项目只有显卡这一处有品牌列，所以没做成通用规则。
+    /// </summary>
+    private static SpecRow[] BrandRow(GpuData? g)
+    {
+        if (g is null || string.IsNullOrWhiteSpace(g.Brand)) return [];
+        if (g.Name?.Contains(g.Brand, StringComparison.OrdinalIgnoreCase) == true) return [];
+        return [Row("品牌", g.Brand)];
+    }
 
     /// <summary>
     /// 显卡的几个实时值。功耗从整机那一路取（<c>power/gpu</c>）—— 它不在 GpuData 上。
