@@ -615,7 +615,14 @@ int TuiApp::DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, in
             lines++;
         }
         if (!n.mac.empty() && n.mac != "00:00:00:00:00:00") {
-            mvwprintw(win, y + lines, x0 + 4, "%.*s", maxW - 6, n.mac.c_str());
+            // 加了 hw 前缀：下面可能还有一行当前地址，两条裸 MAC 分不清谁是谁
+            mvwprintw(win, y + lines, x0 + 4, "hw  %.*s", maxW - 10, n.mac.c_str());
+            lines++;
+        }
+        // 只在与硬件地址不同时才单列 —— macOS 的私有 Wi-Fi 地址按 SSID 轮换；
+        // Windows / Linux 上两者相同，再列一行是噪音。
+        if (!n.currentMac.empty() && n.currentMac != n.mac) {
+            mvwprintw(win, y + lines, x0 + 4, "cur %.*s", maxW - 10, n.currentMac.c_str());
             lines++;
         }
         if (n.speed > 0) {

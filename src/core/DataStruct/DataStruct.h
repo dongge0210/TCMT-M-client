@@ -174,7 +174,8 @@ struct GPUData {
 // Network adapter info
 struct NetworkAdapterData {
     WCHAR name[128];    // Adapter name
-    WCHAR mac[32];      // MAC address
+    WCHAR mac[32];      // 硬件 MAC
+    WCHAR macCurrent[32]; // 当前生效的链路地址（Windows 上同 mac）
     WCHAR ipAddress[64]; // IP address
     WCHAR adapterType[32]; // Adapter type (wireless/wired)
     uint64_t speed;       // Link speed (bps)

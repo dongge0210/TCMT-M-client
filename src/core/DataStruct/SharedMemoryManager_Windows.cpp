@@ -305,6 +305,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
                         WinUtils::WstringToString(src.ipAddress));
             SafeCopyStr(pBuffer->adapters[i].mac, sizeof(pBuffer->adapters[i].mac),
                         WinUtils::WstringToString(src.mac));
+            SafeCopyStr(pBuffer->adapters[i].macCurrent, sizeof(pBuffer->adapters[i].macCurrent),
+                        WinUtils::WstringToString(src.macCurrent));
             SafeCopyStr(pBuffer->adapters[i].type, sizeof(pBuffer->adapters[i].type),
                         WinUtils::WstringToString(src.adapterType));
             pBuffer->adapters[i].speed = src.speed;
@@ -315,6 +317,8 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         if (adapterWriteCount == 0 && !systemInfo.networkAdapterName.empty()) {
             SafeCopyStr(pBuffer->adapters[0].name, sizeof(pBuffer->adapters[0].name), systemInfo.networkAdapterName);
             SafeCopyStr(pBuffer->adapters[0].mac, sizeof(pBuffer->adapters[0].mac), systemInfo.networkAdapterMac);
+            // 这个回退路径只有单适配器的旧字段可用，当前地址与硬件地址同值
+            SafeCopyStr(pBuffer->adapters[0].macCurrent, sizeof(pBuffer->adapters[0].macCurrent), systemInfo.networkAdapterMac);
             SafeCopyStr(pBuffer->adapters[0].ip, sizeof(pBuffer->adapters[0].ip), systemInfo.networkAdapterIp);
             SafeCopyStr(pBuffer->adapters[0].type, sizeof(pBuffer->adapters[0].type), systemInfo.networkAdapterType);
             pBuffer->adapters[0].speed = systemInfo.networkAdapterSpeed;

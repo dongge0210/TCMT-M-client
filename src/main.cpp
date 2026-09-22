@@ -692,6 +692,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         char pfx[32]; snprintf(pfx, sizeof(pfx), "net/%d/", i);
         uint32_t base = offsetof(B, adapters) + i * sizeof(B::NetSlot);
         addField((std::string(pfx)+"name").c_str(), base + offsetof(B::NetSlot, name), sizeof(B::NetSlot::name), (uint8_t)FT::String);
+        addField((std::string(pfx)+"macCurrent").c_str(), base + offsetof(B::NetSlot, macCurrent), sizeof(B::NetSlot::macCurrent), (uint8_t)FT::String);
         addField((std::string(pfx)+"ip").c_str(),   base + offsetof(B::NetSlot, ip), sizeof(B::NetSlot::ip), (uint8_t)FT::String);
         addField((std::string(pfx)+"mac").c_str(),  base + offsetof(B::NetSlot, mac), sizeof(B::NetSlot::mac), (uint8_t)FT::String);
         addField((std::string(pfx)+"type").c_str(), base + offsetof(B::NetSlot, type), sizeof(B::NetSlot::type), (uint8_t)FT::String);

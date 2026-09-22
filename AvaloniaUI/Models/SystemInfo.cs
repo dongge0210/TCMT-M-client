@@ -146,6 +146,7 @@ public class NetworkAdapterData : ModelBase
 {
     private string _name = string.Empty;
     private string _mac = string.Empty;
+    private string _currentMac = string.Empty;
     private string _ipAddress = string.Empty;
     private string _adapterType = string.Empty;
     private ulong _speed;
@@ -154,6 +155,9 @@ public class NetworkAdapterData : ModelBase
 
     public string Name { get => _name; set => SetProperty(ref _name, value); }
     public string Mac { get => _mac; set => SetProperty(ref _mac, value); }
+    // 与 Mac 不同：macOS 的「私有 Wi-Fi 地址」按 SSID 轮换，所以这个值会变；
+    // Windows / Linux 上两者相同。为空表示服务端没提供。
+    public string CurrentMac { get => _currentMac; set => SetProperty(ref _currentMac, value); }
     public string IpAddress { get => _ipAddress; set => SetProperty(ref _ipAddress, value); }
     public string AdapterType { get => _adapterType; set => SetProperty(ref _adapterType, value); }
     public ulong Speed { get => _speed; set => SetProperty(ref _speed, value); }

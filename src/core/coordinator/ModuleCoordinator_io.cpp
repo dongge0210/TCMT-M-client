@@ -79,6 +79,14 @@ void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
                     ns.name  = a.name;
                     ns.ip    = a.ip;
                     ns.mac   = a.mac;
+#ifdef TCMT_MACOS
+                    // macOS 取不到当前链路地址（系统按"责任进程"的签名状态限制），保持为空。
+                    // 不拿硬件地址冒充 —— 那两个值其实是不同的，只是我们读不到。
+                    ns.currentMac = a.currentMac;
+#else
+                    // Windows / Linux 上本就相同，没填就与硬件地址同值
+                    ns.currentMac = a.currentMac.empty() ? a.mac : a.currentMac;
+#endif
                     ns.type  = a.adapterType;
                     ns.speed = a.speed;
                     ns.dl    = a.downloadSpeed;

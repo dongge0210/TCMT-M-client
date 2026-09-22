@@ -243,6 +243,9 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
             memset(&sysAd, 0, sizeof(sysAd));
             wcsncpy_s(sysAd.name, WinUtils::StringToWstring(n.name).c_str(), _TRUNCATE);
             wcsncpy_s(sysAd.mac, WinUtils::StringToWstring(n.mac).c_str(), _TRUNCATE);
+            wcsncpy_s(sysAd.macCurrent,
+                      WinUtils::StringToWstring(n.currentMac.empty() ? n.mac : n.currentMac).c_str(),
+                      _TRUNCATE);
             wcsncpy_s(sysAd.ipAddress, WinUtils::StringToWstring(n.ip).c_str(), _TRUNCATE);
             wcsncpy_s(sysAd.adapterType, WinUtils::StringToWstring(n.type).c_str(), _TRUNCATE);
             sysAd.speed = n.speed;
@@ -254,6 +257,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
             ni.name = n.name;
             ni.ip = n.ip;
             ni.mac = n.mac;
+            ni.currentMac = n.currentMac;
             ni.type = n.type;
             ni.speed = n.speed;
             ni.downloadSpeed = n.dl;

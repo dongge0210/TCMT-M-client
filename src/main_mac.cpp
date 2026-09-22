@@ -164,19 +164,15 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
         addS((std::string(p)+"name").c_str(),   base + offsetof(B::NetSlot, name), 32);
         addS((std::string(p)+"ip").c_str(),     base + offsetof(B::NetSlot, ip), 16);
         addS((std::string(p)+"mac").c_str(),    base + offsetof(B::NetSlot, mac), 18);
-        addS((std::string(p)+"type").c_str(),   base + offsetof(B::NetSlot, type), 16);
+        addS((std::string(p)+"macCurrent").c_str(), base + offsetof(B::NetSlot, macCurrent), 18);
+        addS((std::string(p)+"type").c_str(),   base + offsetof(B::NetSlot, type), 24);
         addU64((std::string(p)+"speed").c_str(),  base + offsetof(B::NetSlot, speed));
         addU64((std::string(p)+"downloadSpeed").c_str(), base + offsetof(B::NetSlot, downloadSpeed));
         addU64((std::string(p)+"uploadSpeed").c_str(),   base + offsetof(B::NetSlot, uploadSpeed));
     }
 
-    // Temperatures (up to 10)
-    for (int i = 0; i < 10; ++i) {
-        char p[32]; snprintf(p, sizeof(p), "sensor/%d/", i);
-        uint32_t base = offsetof(B, temperatures) + i * sizeof(B::TempSlot);
-        addS((std::string(p)+"name").c_str(), base + offsetof(B::TempSlot, name), 64);
-        addF((std::string(p)+"value").c_str(), base + offsetof(B::TempSlot, value));
-    }
+    // 温度传感器：一个字段装完整份，形状见 IPCData.h 的 sensorsJson
+    addS("sensors/json", offsetof(B, sensorsJson), 4096);
 
     // Physical disks (up to 8)
     for (int i = 0; i < 8; ++i) {
@@ -672,6 +668,9 @@ int main(int argc, char* argv[]) {
                     na["name"] = *name;
                     na["ip"]   = ipc.ReadString("net/" + std::to_string(i) + "/ip").value_or("");
                     na["mac"]  = ipc.ReadString("net/" + std::to_string(i) + "/mac").value_or("");
+                    // 当前生效的链路地址。macOS 上采集端给不出（系统按签名状态限制），这里是空串 ——
+                    // 不拿硬件地址冒充，消费方据"空"判断未知即可。
+                    na["macCurrent"] = ipc.ReadString("net/" + std::to_string(i) + "/macCurrent").value_or("");
                     na["type"] = ipc.ReadString("net/" + std::to_string(i) + "/type").value_or("");
                     na["speed"] = ipc.ReadUInt64("net/" + std::to_string(i) + "/speed").value_or(0);
                     na["downloadSpeed"] = ipc.ReadUInt64("net/" + std::to_string(i) + "/downloadSpeed").value_or(0);
@@ -686,6 +685,7 @@ int main(int argc, char* argv[]) {
                     na["name"] = a.name;
                     na["ip"] = a.ip;
                     na["mac"] = a.mac;
+                    na["macCurrent"] = a.currentMac;
                     na["type"] = a.adapterType;
                     na["speed"] = a.speed;
                     na["downloadSpeed"] = a.downloadSpeed;
@@ -1521,19 +1521,21 @@ int main(int argc, char* argv[]) {
                             std::strncpy(n.name, data.adapters[ai].name.c_str(), 31);
                             std::strncpy(n.ip,   data.adapters[ai].ip.c_str(), 15);
                             std::strncpy(n.mac,  data.adapters[ai].mac.c_str(), 17);
-                            std::strncpy(n.type, data.adapters[ai].type.c_str(), 15);
+                            // 当前地址：macOS 上采集端就是空的（系统限制，见 NetworkAdapter.cpp 的说明），
+                            // 原样写出去，界面据"空"判断取不到 —— 不拿硬件地址冒充。
+                            std::strncpy(n.macCurrent, data.adapters[ai].currentMac.c_str(), sizeof(n.macCurrent) - 1);
+                            n.macCurrent[sizeof(n.macCurrent) - 1] = '\0';
+                            std::strncpy(n.type, data.adapters[ai].type.c_str(), sizeof(n.type) - 1);
                             n.speed = data.adapters[ai].speed;
                             n.downloadSpeed = data.adapters[ai].downloadSpeed;
                             n.uploadSpeed = data.adapters[ai].uploadSpeed;
                             b->adapterCount++;
                         }
-                        // Temperatures (up to 10)
-                        b->tempCount = 0;
-                        for (size_t ti = 0; ti < std::min(data.temperatures.size(), size_t(10)); ++ti) {
-                            std::strncpy(b->temperatures[ti].name, data.temperatures[ti].first.c_str(), 63);
-                            b->temperatures[ti].name[63] = '\0';
-                            b->temperatures[ti].value = static_cast<float>(data.temperatures[ti].second);
-                            b->tempCount++;
+                        // 温度传感器：整份打包进一个字段，不再截到 10 个
+                        {
+                            const std::string sensorsJson = SensorsToJson(data.temperatures);
+                            std::strncpy(b->sensorsJson, sensorsJson.c_str(), sizeof(b->sensorsJson) - 1);
+                            b->sensorsJson[sizeof(b->sensorsJson) - 1] = '\0';
                         }
                         // Physical disks (SMART) — reuse TUI cache for IPC
                         {

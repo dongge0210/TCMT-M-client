@@ -138,7 +138,8 @@ struct TuiData {
     struct NetInfo {
         std::string name;
         std::string ip;
-        std::string mac;
+        std::string mac;         // 硬件 MAC，不随网络变
+        std::string currentMac;  // 当前生效的链路地址；macOS 上按 SSID 轮换
         std::string type;
         uint64_t speed = 0;
         uint64_t downloadSpeed = 0;

@@ -162,8 +162,15 @@ struct IPCDataBlock {
     struct NetSlot {
         char     name[32]            = {};
         char     ip[16]              = {};
+        // 硬件 MAC：这块网卡出厂的那个，不随网络变。
         char     mac[18]             = {};
-        char     type[16]            = {};
+        // 当前生效的链路层地址。macOS 的「私有 Wi-Fi 地址」按 SSID 轮换，所以它会与 mac 不同；
+        // Windows / Linux 上通常与 mac 相同。采集端给不出时写空串。
+        char     macCurrent[18]      = {};
+        // 24 而不是 16 —— 采集端产出的两个标准值 "Wireless adapter" 与 "Ethernet adapter"
+        // 都恰好是 16 个字符，装进 char[16] 只剩 15 个位置，界面上显示成 "Wireless adapte"。
+        // 缓冲区至少要能装下自己写进去的字符串。
+        char     type[24]            = {};
         uint64_t speed               = 0;
         uint64_t downloadSpeed       = 0;
         uint64_t uploadSpeed         = 0;

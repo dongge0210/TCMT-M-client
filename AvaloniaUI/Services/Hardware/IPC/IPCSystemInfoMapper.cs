@@ -189,6 +189,10 @@ public static class IPCSystemInfoMapper
                     var name = ipc.ReadWString($"net/{idx}/name") ?? reader.ReadString($"net/{idx}/name") ?? "";
                     var ip = reader.ReadWString($"net/{idx}/ip") ?? "";
                     var mac = reader.ReadWString($"net/{idx}/mac") ?? "";
+                    // 当前生效的链路地址。旧服务端没这个字段，HasField 守卫后留空。
+                    var macCurrent = reader.HasField($"net/{idx}/macCurrent")
+                        ? (reader.ReadWString($"net/{idx}/macCurrent") ?? "")
+                        : "";
                     var type = reader.ReadWString($"net/{idx}/type") ?? "";
                     var speed = reader.ReadUInt64($"net/{idx}/speed") ?? 0;
                     var dl = reader.ReadUInt64($"net/{idx}/downloadSpeed") ?? 0;
@@ -201,6 +205,7 @@ public static class IPCSystemInfoMapper
                             Name = name,
                             IpAddress = ip,
                             Mac = mac,
+                            CurrentMac = macCurrent,
                             AdapterType = type,
                             Speed = speed,
                             DownloadSpeed = dl,
