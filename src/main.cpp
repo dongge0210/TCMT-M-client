@@ -684,6 +684,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("gpu/0/usage", offsetof(B, gpuUsage), 4);
     addField("gpu/0/memoryPercent", offsetof(B, gpuMemoryPercent), 4);
     addField("gpu/0/isVirtual", offsetof(B, gpuIsVirtual), 1, (uint8_t)FT::Bool);
+    // Windows 上是独立显存，永远 false；这一项在 macOS 上才有意义（统一内存）
+    addField("gpu/0/unified", offsetof(B, gpuUnified), 1, (uint8_t)FT::Bool);
     addField("gpu/0/temperature", offsetof(B, gpuTemp), 4);
     addField("gpu/freq", offsetof(B, gpuFreq), 4);
 

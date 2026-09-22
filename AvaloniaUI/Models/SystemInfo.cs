@@ -54,6 +54,12 @@ public class SystemInfo
     public double GpuCoreFreq { get; set; }
     public double GpuMemoryPercent { get; set; }
     public bool GpuIsVirtual { get; set; }
+
+    /// <summary>
+    /// GPU 和 CPU 共用同一块物理内存（Apple Silicon）。为真时 <c>GpuMemory</c> 报的是统一内存
+    /// 总量，不是显存 —— 那种机器没有独立显存。
+    /// </summary>
+    public bool GpuIsUnified { get; set; }
     
     public List<NetworkAdapterData> Adapters { get; set; } = new();
     public string NetworkAdapterName { get; set; } = string.Empty;
@@ -130,6 +136,7 @@ public class GpuData : ModelBase
     private double _temperature;
     private double _usage;
     private double _memoryPercent;
+    private bool _isUnified;
 
     public string Name { get => _name; set => SetProperty(ref _name, value); }
     public string Brand { get => _brand; set => SetProperty(ref _brand, value); }
@@ -139,6 +146,9 @@ public class GpuData : ModelBase
     public double Temperature { get => _temperature; set => SetProperty(ref _temperature, value); }
     public double Usage { get => _usage; set => SetProperty(ref _usage, value); }
     public double MemoryPercent { get => _memoryPercent; set => SetProperty(ref _memoryPercent, value); }
+
+    /// <summary>见 <c>SystemInfo.GpuIsUnified</c>。</summary>
+    public bool IsUnified { get => _isUnified; set => SetProperty(ref _isUnified, value); }
     
     public string DisplayName => string.IsNullOrEmpty(Name) ? Translator.T("未知显卡") : (IsVirtual ? $"{Name} {Translator.T("(虚拟)")}" : Name);
     public string MemoryDisplay => FormatUtils.FormatBytes(Memory);

@@ -89,6 +89,8 @@ struct TuiData {
     // GPU
     std::string gpuName;
     uint64_t gpuMemory = 0;
+    // gpuMemory 报的是统一内存而不是独立显存（Apple Silicon）
+    bool gpuUnified = false;
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;

@@ -192,6 +192,8 @@ public static class IPCSystemInfoMapper
             var gpuUsage = reader.ReadFloat64("gpu/0/usage") ?? (double?)reader.ReadFloat32("gpu/0/usage") ?? 0;
             info.GpuTemperature = reader.ReadFloat64("gpu/0/temperature") ?? (double?)reader.ReadFloat32("gpu/0/temperature") ?? 0;
             info.GpuIsVirtual = reader.ReadBool("gpu/0/isVirtual") ?? false;
+            // 老版本采集端没这个字段 —— 缺席就是「不是统一内存」，Windows 上也一直是 false
+            info.GpuIsUnified = reader.ReadBool("gpu/0/unified") ?? false;
 
             if (!string.IsNullOrEmpty(info.GpuName))
             {
@@ -206,6 +208,7 @@ public static class IPCSystemInfoMapper
                         CoreClock = info.GpuCoreFreq,
                         MemoryPercent = info.GpuMemoryPercent,
                         IsVirtual = info.GpuIsVirtual,
+                        IsUnified = info.GpuIsUnified,
                         Temperature = info.GpuTemperature
                     }
                 };

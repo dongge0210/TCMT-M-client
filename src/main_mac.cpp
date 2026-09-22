@@ -143,6 +143,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("gpu/0/temperature",     offsetof(B, gpuTemp));
     addF("gpu/freq",              offsetof(B, gpuFreq));
     addB("gpu/0/isVirtual",       offsetof(B, gpuIsVirtual));
+    addB("gpu/0/unified",         offsetof(B, gpuUnified));
 
     // Disks (up to 4)
     for (int i = 0; i < 4; ++i) {
@@ -1204,6 +1205,7 @@ int main(int argc, char* argv[]) {
                         std::string gn(gpu.name.begin(), gpu.name.end());
                         data.gpuName = gn;
                         data.gpuMemory = gpu.dedicatedMemory;
+                        data.gpuUnified = gpu.isUnified;
                     }
                     if (data.gpuUsage == 0.0 && gpu.usage > 0.0) {
                         data.gpuUsage = gpu.usage;
@@ -1622,6 +1624,7 @@ int main(int argc, char* argv[]) {
                         b->gpuTemp = static_cast<float>(data.gpuTemp);
                         b->gpuFreq = static_cast<float>(data.gpuFreq);
                         b->gpuIsVirtual = false;
+                        b->gpuUnified = data.gpuUnified;
                         // Disks (up to 4)
                         b->diskCount = 0;
                         for (size_t di = 0; di < std::min(data.disks.size(), size_t(4)); ++di) {

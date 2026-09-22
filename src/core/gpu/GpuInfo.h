@@ -38,7 +38,12 @@ public:
     struct GpuData {
         std::wstring name;
         std::wstring deviceId;
+        // 独立显存字节数。Apple Silicon 上是**统一内存总量** —— 那种机器没有独立显存，
+        // 见 GpuInfo.cpp 里赋值处，以及 isUnified。
         uint64_t dedicatedMemory = 0;
+        // true 表示 dedicatedMemory 报的其实是统一内存，不是 VRAM。
+        // 界面靠它决定要不要画「显存」那一行 —— 名字叫显存、数是系统内存，会骗人。
+        bool isUnified = false;
         double coreClock = 0.0;
         bool isNvidia = false;
         bool isIntegrated = false;

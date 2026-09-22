@@ -594,8 +594,12 @@ void GpuInfo::DetectGpusViaMetal() {
             if (vram > 0) {
                 data.dedicatedMemory = vram * 1024 * 1024;
             } else if (isAppleSilicon && totalMem > 0) {
-                // Apple Silicon uses unified memory: GPU uses a portion of system RAM
-                data.dedicatedMemory = totalMem / 4; // rough estimate
+                // Apple Silicon 没有独立显存：GPU 和 CPU 共用同一块物理内存，能寻址到全部。
+                // 这里以前报的是 totalMem / 4 —— 一个凭空的四分之一，被界面当成「显存」显示，
+                // 也被 MCP 当成 VRAM 报给 AI。改成报真实总量，并打上 unified 标记，
+                // 让上层知道这个数不是显存。
+                data.dedicatedMemory = totalMem;
+                data.isUnified = true;
             } else {
                 data.dedicatedMemory = 0;
             }
@@ -651,8 +655,10 @@ void GpuInfo::DetectGpusViaMetal() {
         data.isVirtual = false;
         data.coreClock = 0.0;
         data.temperature = 0;
-        if (totalMem > 0) {
-            data.dedicatedMemory = isAppleSilicon ? (totalMem / 4) : 0;
+        if (isAppleSilicon && totalMem > 0) {
+            // 同上：统一内存报真实总量，不编四分之一
+            data.dedicatedMemory = totalMem;
+            data.isUnified = true;
         }
         gpuList.push_back(data);
     }

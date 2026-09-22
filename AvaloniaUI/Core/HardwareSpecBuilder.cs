@@ -214,10 +214,22 @@ public static class HardwareSpecBuilder
     [
         Row("型号", g?.Name),
         .. BrandRow(g),
-        Row("显存", g is { Memory: > 0 } ? g.MemoryDisplay : null),
+        .. UnifiedOrVramRow(g),
         Frequency("核心频率", g?.CoreClock ?? 0),
         g is null ? SpecRow.Na("虚拟设备") : YesNo("虚拟设备", g.IsVirtual)
     ];
+
+    /// <summary>
+    /// 显存那一行 —— **统一内存的机器上不画**。
+    ///
+    /// Apple Silicon 没有独立显存，采集端那个数现在报的是统一内存总量（以前是 totalMem / 4，
+    /// 一个凭空的四分之一）。数是真的，但「显存」这个标签在那类机器上是错的，画出来会让人
+    /// 以为有一块独立显存。宁可少一行，也不给一个名字对不上的数。
+    /// </summary>
+    private static SpecRow[] UnifiedOrVramRow(GpuData? g) =>
+        g is null || g.IsUnified
+            ? []
+            : [Row("显存", g is { Memory: > 0 } ? g.MemoryDisplay : null)];
 
     /// <summary>
     /// 品牌那一行，只在它真能补信息时才画。
@@ -241,10 +253,19 @@ public static class HardwareSpecBuilder
     [
         Percent("占用", g?.Usage ?? double.NaN),
         Temperature("温度", g?.Temperature ?? 0),
-        Percent("显存占用", g?.MemoryPercent ?? double.NaN),
+        .. VramUsageRow(g),
         Frequency("核心频率", g?.CoreClock ?? 0),
         Power("功耗", info.GpuPower)
     ];
+
+    /// <summary>
+    /// 显存占用那一行。去掉的条件和 <see cref="UnifiedOrVramRow"/> 一样，另有一条：
+    /// macOS 上采集端从来没算过 <c>gpuMemoryPercent</c>，它一路是 0 —— 而 0 是个合法读数
+    /// （闲着就是 0%），画出来就是一条永远 0.0% 的假数。统一内存本身就覆盖了这种情况
+    /// （macOS 必然是统一内存），所以这里不用再单独判平台。
+    /// </summary>
+    private static SpecRow[] VramUsageRow(GpuData? g) =>
+        g is null || g.IsUnified ? [] : [Percent("显存占用", g.MemoryPercent)];
 
     // ── 内存 ─────────────────────────────────────────────────────────────
 

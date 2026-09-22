@@ -147,6 +147,8 @@ struct IPCDataBlock {
     float    gpuTemp                 = 0;
     float    gpuFreq                 = 0;
     bool     gpuIsVirtual            = false;
+    // gpuMemory 是统一内存而非独立显存（Apple Silicon），界面据此不画「显存」那一行
+    bool     gpuUnified              = false;
 
     // Disks (up to 4)
     struct DiskSlot {
