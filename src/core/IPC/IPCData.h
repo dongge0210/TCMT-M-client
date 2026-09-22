@@ -171,13 +171,14 @@ struct IPCDataBlock {
     NetSlot  adapters[4]             = {};
     uint8_t  adapterCount            = 0;
 
-    // Temperatures (up to 10)
-    struct TempSlot {
-        char     name[64]            = {};
-        float    value               = 0;
-    };
-    TempSlot temperatures[10]        = {};
-    uint8_t  tempCount               = 0;
+    // 温度传感器：整份打包成一行 JSON，不再按槽位开字段。
+    //
+    // 原来开 10 个 TempSlot，每个占 2 个 schema 字段 —— 而采集端实际产出 20 个传感器，
+    // 一半被截掉，且槽位一满就没救；schema 总字段数还有硬上限（IPC_MAX_FIELDS）。
+    // 装成一个字段后上限消失，schema 也只占 1 个名额。
+    // 装法与解析沿用 SMART 属性表那套（PhysDiskSlot::attrsJson）。
+    // 形状：[{"name":"CPU P-core","value":68},{"name":"GPU","value":46}, ...]
+    char     sensorsJson[4096]       = {};
 
     // Physical disks + SMART (up to 2)
     struct PhysDiskSlot {

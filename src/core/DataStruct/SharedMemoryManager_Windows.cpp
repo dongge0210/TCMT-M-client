@@ -363,13 +363,9 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
             pBuffer->physicalDisks[i].logicalDriveCount = ldCount;
         }
 
-        // Temperature sensors
-        pBuffer->tempCount = static_cast<uint8_t>((std::min)(systemInfo.temperatures.size(), static_cast<size_t>(10)));
-        for (int i = 0; i < static_cast<int>(pBuffer->tempCount); ++i) {
-            const auto& temp = systemInfo.temperatures[i];
-            SafeCopyStr(pBuffer->temperatures[i].name, sizeof(pBuffer->temperatures[i].name), temp.first);
-            pBuffer->temperatures[i].value = static_cast<float>(temp.second);
-        }
+        // 温度传感器：整份打包进一个字段，不再截到 10 个
+        SafeCopyStr(pBuffer->sensorsJson, sizeof(pBuffer->sensorsJson),
+                    SensorsToJson(systemInfo.temperatures));
 
         // TPM
         pBuffer->tpmCount = 0;

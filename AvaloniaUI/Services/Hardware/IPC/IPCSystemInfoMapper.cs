@@ -239,8 +239,33 @@ public static class IPCSystemInfoMapper
                 }
             }
 
-            // Temperatures
-            if (reader.HasField("sensor/0/name"))
+            // 温度传感器。
+            // 新服务端把整份打包成一行 JSON；旧服务端是 sensor/N/* 的槽位字段 —— 而槽位只有
+            // 10 个，采集端实际产出 20 个，一半会被砍掉。两条都认：服务端与客户端不一定同时升级。
+            if (reader.HasField("sensors/json"))
+            {
+                var sensorsJson = reader.ReadString("sensors/json") ?? "";
+                if (!string.IsNullOrEmpty(sensorsJson))
+                {
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(sensorsJson);
+                        foreach (var el in doc.RootElement.EnumerateArray())
+                        {
+                            info.Temperatures.Add(new TemperatureData
+                            {
+                                SensorName = el.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+                                Temperature = el.TryGetProperty("value", out var v) && v.TryGetDouble(out var d) ? d : 0
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Warning("Sensors JSON parse error: {Err}", ex.Message);
+                    }
+                }
+            }
+            else if (reader.HasField("sensor/0/name"))
             {
                 int idx = 0;
                 while (reader.HasField($"sensor/{idx}/name") && idx < 10)

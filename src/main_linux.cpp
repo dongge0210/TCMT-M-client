@@ -396,11 +396,15 @@ int main(int argc, char* argv[]) {
         [&ipc, useIpc]() -> nlohmann::json {
             nlohmann::json j;
             if (useIpc) {
-                for (int i = 0; i < 10; i++) {
-                    auto name = ipc.ReadString("sensor/" + std::to_string(i) + "/name");
-                    if (!name || name->empty()) continue;
-                    auto val = ipc.ReadFloat32("sensor/" + std::to_string(i) + "/value");
-                    if (val) j["sensors"].push_back({{"name", *name}, {"value", *val}});
+                // sensors/json 是整份打包好的数组，形状与下面本地分支一致。
+                // 解析失败就当没有，保持和以前"读不到就不放 sensors 键"一样的行为 ——
+                // 这是给 AI 消费的工具，宁可少给也不能给个形状不对的东西。
+                const std::string raw = ipc.ReadString("sensors/json").value_or("");
+                if (!raw.empty()) {
+                    auto parsed = nlohmann::json::parse(raw, nullptr, false);
+                    if (!parsed.is_discarded() && parsed.is_array()) {
+                        j["sensors"] = std::move(parsed);
+                    }
                 }
             } else {
                 for (const auto& [name, value] : TemperatureWrapper::GetTemperatures())

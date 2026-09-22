@@ -1,6 +1,9 @@
 ﻿// DataStruct.h
 #pragma once
+#include <cstdio>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 // App version string (override via -DTCMT_VERSION_STR="x.y.z" in CMake/MSBuild)
@@ -19,6 +22,68 @@ using WCHAR = char16_t;
 #else
 using WCHAR = wchar_t;
 #endif
+
+// 温度传感器打包成一行 JSON，给 IPC 的 sensors/json 槽用。
+//
+// 为什么不按槽位一个个注册字段：那要给每个传感器占两个 schema 字段，而 schema 的总字段数
+// 有硬上限（IPC_MAX_FIELDS = 300，客户端超了会静默截断）。之前开的是 10 个槽位，而采集端
+// 实际拿到 20 个传感器 —— 一半直接没了，而且槽位一满就没救。
+// SMART 属性表早就是用同一个办法装的（PhysDiskSlot::attrsJson），这里沿用。
+// 把字符串里的 " \ 和控制字符转义成 JSON 能装的样子。
+// 内容本身已经是 UTF-8，原样带走，不做编码转换。
+inline std::string JsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (c < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += static_cast<char>(c);
+                }
+        }
+    }
+    return out;
+}
+
+inline std::string SensorsToJson(const std::vector<std::pair<std::string, double>>& sensors) {
+    std::ostringstream js;
+    js << "[";
+    for (size_t i = 0; i < sensors.size(); ++i) {
+        if (i > 0) js << ",";
+        js << "{\"name\":\"" << JsonEscape(sensors[i].first) << "\",\"value\":" << sensors[i].second << "}";
+    }
+    js << "]";
+    return js.str();
+}
+
+// 进程列表打包成一行 JSON，形状 [{"pid":…,"name":"…","mem":…,"cpu":…}, …]。
+//
+// 模板是为了同时吃两种元素类型：macOS 的写入点拿的是 TuiData 的条目，Windows 拿的是
+// SystemInfo::ProcData，两边同名字段（pid / name / memoryBytes / cpuPercent）一样，
+// 没必要为此造一个中立结构体再逐字段搬一遍。
+template <typename Proc>
+inline std::string ProcessesToJson(const std::vector<Proc>& procs) {
+    std::ostringstream js;
+    js << "[";
+    for (size_t i = 0; i < procs.size(); ++i) {
+        if (i > 0) js << ",";
+        js << "{\"pid\":" << procs[i].pid
+           << ",\"name\":\"" << JsonEscape(procs[i].name) << "\""
+           << ",\"mem\":" << procs[i].memoryBytes
+           << ",\"cpu\":" << procs[i].cpuPercent << "}";
+    }
+    js << "]";
+    return js.str();
+}
 
 #pragma pack(push, 1) // Ensure memory alignment
 

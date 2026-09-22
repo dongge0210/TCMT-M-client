@@ -713,13 +713,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
         addField((std::string(pfx)+"fs").c_str(),    base + offsetof(B::DiskSlot, fs), sizeof(B::DiskSlot::fs), (uint8_t)FT::String);
     }
 
-    // Temperature sensors (up to 10)
-    for (int i = 0; i < 10; i++) {
-        char pfx[32]; snprintf(pfx, sizeof(pfx), "sensor/%d/", i);
-        uint32_t base = offsetof(B, temperatures) + i * sizeof(B::TempSlot);
-        addField((std::string(pfx)+"name").c_str(), base + offsetof(B::TempSlot, name), sizeof(B::TempSlot::name), (uint8_t)FT::String);
-        addField((std::string(pfx)+"value").c_str(), base + offsetof(B::TempSlot, value), 4);
-    }
+    // 温度传感器：一个字段装完整份，形状见 IPCData.h 的 sensorsJson
+    addField("sensors/json", offsetof(B, sensorsJson), sizeof(B::sensorsJson), (uint8_t)FT::String);
 
     // Physical disks (SMART) (up to 8)
     for (int i = 0; i < 8; i++) {
