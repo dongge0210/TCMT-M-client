@@ -30,7 +30,21 @@
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>
+        <!-- 硬件那十页共用一个 VM 类型，所以一个模板就够 -->
+        <DataTemplate DataType="vm:HardwareSpecViewModel">
+            <views:HardwareSpecView />
+        </DataTemplate>
     </Window.DataTemplates>
+
+    <Window.Styles>
+        <!-- 分组的箭头：展开时翻过来 -->
+        <Style Selector="PathIcon.chev">
+            <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+        </Style>
+        <Style Selector="PathIcon.chev.expanded">
+            <Setter Property="RenderTransform" Value="rotate(180deg)"/>
+        </Style>
+    </Window.Styles>
 
     <Grid ColumnDefinitions="200,*">
         <!-- Sidebar (matching pen design: 200px, dark surface, nav items with text) -->
@@ -77,16 +91,59 @@
 
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:NavigationItem">
-                            <Border CornerRadius="8" 
-                                    Padding="12,10" 
-                                    Margin="0,2"
-                                    Background="{Binding IsSelected, Converter={StaticResource NavSelectedToBgConverter}}">
-                                <TextBlock Text="{Binding Title}" 
-                                           FontSize="13" 
-                                           FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeightConverter}}" 
-                                           Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"
-                                           VerticalAlignment="Center"/>
-                            </Border>
+                            <StackPanel>
+                                <Border CornerRadius="8"
+                                        Padding="12,10"
+                                        Margin="0,2"
+                                        Background="{Binding IsSelected, Converter={StaticResource NavSelectedToBgConverter}}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Title}"
+                                                   FontSize="13"
+                                                   FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeightConverter}}"
+                                                   Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- 只有分组有箭头。点它只收起/展开，不动选中态 -->
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ActivateCommand}"
+                                                IsVisible="{Binding HasChildren}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="2"
+                                                Height="18" Width="18"
+                                                VerticalAlignment="Center"
+                                                ToolTip.Tip="展开 / 收起">
+                                            <PathIcon Width="11" Height="11"
+                                                      Classes="chev"
+                                                      Classes.expanded="{Binding IsExpanded}"
+                                                      Data="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"
+                                                      Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 子项：不在 ListBox 的 Items 里，所以自己走命令切页 -->
+                                <ItemsControl ItemsSource="{Binding Children}"
+                                              IsVisible="{Binding IsExpanded}"
+                                              Margin="10,0,0,2">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:NavigationItem">
+                                            <Button Command="{Binding ActivateCommand}"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="12,5"
+                                                    CornerRadius="6"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left">
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="12"
+                                                           FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeightConverter}}"
+                                                           Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"/>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                     <ListBox.Styles>

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia;
@@ -62,6 +64,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NavigationItems.Add(new NavigationItem("进程", "processes", processesVm));
         NavigationItems.Add(new NavigationItem("网络", "network", networkVm));
         NavigationItems.Add(new NavigationItem("日志", "log", logVm));
+        NavigationItems.Add(BuildHardwareGroup());
         NavigationItems.Add(new NavigationItem("设置", "settings", settingsVm));
 
         // Wire up navigation
@@ -91,18 +94,69 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// 「硬件」那一组：十个部件是同一种页面，各配一个 <see cref="HardwareSpecViewModel"/>。
+    /// 组本身没有自己的页面 —— 它的 ViewModel 直接借第一个子项的，所以点分组等于进第一页
+    /// （或上次停的那一页）。这样不必让 ViewModel 变成可空，也不必为分组造一个空壳 VM。
+    /// </summary>
+    private NavigationItem BuildHardwareGroup()
+    {
+        var children = HardwareParts.Ordered
+            .Select(part => new NavigationItem(
+                HardwareParts.NameOf(part), "hardware", new HardwareSpecViewModel(part)))
+            .ToList();
+
+        var group = new NavigationItem("硬件", "hardware", children[0].ViewModel);
+
+        foreach (var child in children)
+        {
+            // 子项不在 ListBox 的 Items 里，选中它没有别的路可走
+            child.ActivateCommand = new RelayCommand(() => ActivateChild(group, child));
+            group.Children.Add(child);
+        }
+
+        // 分组行只在点箭头时收起 —— 展开由"选中该分组"负责
+        group.ActivateCommand = new RelayCommand(() => group.IsExpanded = !group.IsExpanded);
+        return group;
+    }
+
+    /// <summary>
+    /// 切到分组里的某一项。
+    /// 父项保持高亮（它是当前分区），子项另标一个"当前"—— 两者是两件事，不能共用一个 IsSelected。
+    /// </summary>
+    private void ActivateChild(NavigationItem group, NavigationItem child)
+    {
+        foreach (var sibling in group.Children)
+        {
+            sibling.IsSelected = sibling == child;
+        }
+
+        group.ActiveChild = child;
+        _navigationService.NavigateTo(child.ViewModel);
+    }
+
     partial void OnSelectedNavigationItemChanged(NavigationItem? value)
     {
-        // Update IsSelected on all items
         foreach (var item in NavigationItems)
         {
             item.IsSelected = item == value;
+            // 换到别的分区时，别把上一个分区的子项高亮留在那儿
+            foreach (var child in item.Children)
+            {
+                child.IsSelected = false;
+            }
         }
 
-        if (value?.ViewModel != null)
+        if (value is null) return;
+
+        if (value.HasChildren)
         {
-            _navigationService.NavigateTo(value.ViewModel);
+            value.IsExpanded = true;
+            ActivateChild(value, value.ActiveChild ?? value.Children[0]);
+            return;
         }
+
+        _navigationService.NavigateTo(value.ViewModel);
     }
 
     private void OnHardwareDataReceived(object? sender, SystemInfo info)
@@ -114,7 +168,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Broadcast to all view models
         foreach (var item in NavigationItems)
         {
-            item.ViewModel.Update(info);
+            if (item.HasChildren)
+            {
+                // 分组自己没页面，它的 ViewModel 就是第一个子项那个 —— 只走子项，
+                // 否则同一份规格表每个采样周期会被重建两遍
+                foreach (var child in item.Children)
+                {
+                    child.ViewModel.Update(info);
+                }
+            }
+            else
+            {
+                item.ViewModel.Update(info);
+            }
         }
     }
 
@@ -181,11 +247,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 }
 
+/// <summary>
+/// 一个导航项。顶层项平铺在左栏；带子项的顶层项是一个可展开的分组（目前只有「硬件」）。
+///
+/// 子项不放进 ListBox 的 Items —— 它嵌在父项的模板里，所以 ListBox 的选中态管不到它，
+/// 点它得走 <see cref="ActivateCommand"/>。
+/// </summary>
 public class NavigationItem : ObservableObject
 {
     public string Title { get; }
     public string Icon { get; }
     public ViewModelBase ViewModel { get; }
+
+    /// <summary>分组里的子项。空表示这是一个普通页面。</summary>
+    public ObservableCollection<NavigationItem> Children { get; } = new();
+
+    public bool HasChildren => Children.Count > 0;
 
     private bool _isSelected;
     public bool IsSelected
@@ -193,6 +270,24 @@ public class NavigationItem : ObservableObject
         get => _isSelected;
         set => SetProperty(ref _isSelected, value);
     }
+
+    private bool _isExpanded;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => SetProperty(ref _isExpanded, value);
+    }
+
+    /// <summary>
+    /// 分组内当前停在哪一项。切回这个分组时回到这里，而不是每次都被弹回第一项。
+    /// </summary>
+    public NavigationItem? ActiveChild { get; set; }
+
+    /// <summary>
+    /// 这一项被点时要做什么。由 MainWindowViewModel 注入 —— "当前显示哪一页"归它管，
+    /// 导航项自己不知道。
+    /// </summary>
+    public ICommand? ActivateCommand { get; set; }
 
     public NavigationItem(string title, string icon, ViewModelBase viewModel)
     {
