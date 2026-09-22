@@ -98,7 +98,9 @@ void ModuleCoordinator::Start() {
 #ifdef TCMT_MACOS
     // PowerMonitor — direct IOReport (no sudo) with powermetrics fallback
     if (!powerMonitor_.Start()) {
-        Logger::Info("ModuleCoordinator: PowerMonitor direct mode unavailable, using powermetrics fallback");
+        // 能力探测，不是故障 —— powermetrics 那条路照样能出功耗。
+        // 真拿不到数据时界面会自己说（"Power unavailable"），日志里不必留一条 INFO。
+        Logger::Debug("ModuleCoordinator: PowerMonitor direct mode unavailable, using powermetrics fallback");
     } else {
         Logger::Info("ModuleCoordinator: PowerMonitor direct mode active (no sudo)");
         // Seed frequency immediately (before TemperatureLoop's first iteration)

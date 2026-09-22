@@ -110,6 +110,12 @@ public class HardwareMonitorService : IHardwareService
                 var info = IPCSystemInfoMapper.Read(_ipcService);
                 if (info != null)
                 {
+                    // 从连续失败里爬出来了，说一声。每次都报就成了每秒两条的噪音 ——
+                    // 这个定时器按 UpdateIntervalMs 跑。
+                    if (_consecutiveErrors > 0)
+                    {
+                        Log.Information("硬件数据读取已恢复（连续失败 {Count} 次后）", _consecutiveErrors);
+                    }
                     _consecutiveErrors = 0;
                     if (!IsConnected)
                     {
@@ -132,10 +138,23 @@ public class HardwareMonitorService : IHardwareService
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error reading hardware data");
             _consecutiveErrors++;
-            
-            if (_consecutiveErrors >= AppConstants.MaxConsecutiveErrors)
+
+            // 按次打 ERROR 是不行的：这里每个刷新周期都被调到，采集端一断，
+            // 同一行会把日志页和环形缓冲刷满（实际发生过）。只报第一次，
+            // 之后的降到 DEBUG 并带上次数，恢复时上面那条 Information 收尾。
+            if (_consecutiveErrors == 1)
+            {
+                Log.Error(ex, "读取硬件数据失败");
+            }
+            else
+            {
+                Log.Debug(ex, "读取硬件数据仍在失败（第 {Count} 次）", _consecutiveErrors);
+            }
+
+            // 用 == 而不是 >=：>= 会让这条通知在越过阈值之后的每一个周期都重发一次，
+            // 状态栏和日志跟着一起刷。
+            if (_consecutiveErrors == AppConstants.MaxConsecutiveErrors)
             {
                 IsConnected = false;
                 ConnectionStatus = $"错误: {ex.Message}";

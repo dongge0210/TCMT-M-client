@@ -913,7 +913,7 @@ static int RunMcpMode() {
         Logger::Info("MCP: connected to running TCMT via IPC");
         ipc.ClosePipe();
     } else {
-        Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+        Logger::Debug("MCP: IPC unavailable, using direct hardware reads");
     }
 
     server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",

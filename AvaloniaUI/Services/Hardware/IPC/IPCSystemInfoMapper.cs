@@ -5,6 +5,35 @@ namespace TCMT.Avalonia.Services.Hardware.IPC;
 
 public static class IPCSystemInfoMapper
 {
+    // ── 一份会重复犯的错只报一次 ─────────────────────────────────────────
+    //
+    // Read 每个刷新周期跑一次。这里的日志要是按次打，采集端一断、
+    // 或者某段 JSON 一直不合规，同一行就会以每秒两次的速度把日志页和环形缓冲刷满。
+    // 按约定，循环体里的失败本来就该压到 DEBUG，而"第一次"是真正的状态变化，值得说。
+    //
+    // 所以：第一次出错报 WARN，之后不再重复；恢复了（或者上报成功过一次）把钥匙销掉，
+    // 下一次再坏还能报出来。
+    private static readonly HashSet<string> ReportedFailures = new();
+    private static readonly object ReportedLock = new();
+
+    private static void LogFailureOnce(string key, string what, Exception ex)
+    {
+        lock (ReportedLock)
+        {
+            if (!ReportedFailures.Add(key)) return;
+        }
+        Log.Warning(ex, "{What} —— 后续同样的失败不再重复上报，恢复后重新计", what);
+    }
+
+    /// <summary>整份读成功一次，之前报过的失败就算过去了，下次再坏要能重新报出来。</summary>
+    private static void ClearFailures()
+    {
+        lock (ReportedLock)
+        {
+            ReportedFailures.Clear();
+        }
+    }
+
     public static SystemInfo Read(IPCService ipc)
     {
         var reader = ipc.Reader;
@@ -103,7 +132,7 @@ public static class IPCSystemInfoMapper
                     }
                     catch (Exception ex)
                     {
-                        Serilog.Log.Warning("Processes JSON parse error: {Err}", ex.Message);
+                        LogFailureOnce("proc-json", "进程列表 JSON 解析失败", ex);
                     }
                 }
             }
@@ -297,7 +326,7 @@ public static class IPCSystemInfoMapper
                     }
                     catch (Exception ex)
                     {
-                        Serilog.Log.Warning("Sensors JSON parse error: {Err}", ex.Message);
+                        LogFailureOnce("sensors-json", "温度传感器 JSON 解析失败", ex);
                     }
                 }
             }
@@ -376,7 +405,7 @@ public static class IPCSystemInfoMapper
                                 }
                             }
                             catch (Exception ex) {
-                                Serilog.Log.Warning("SMART JSON parse error: {Err}", ex.Message);
+                                LogFailureOnce("smart-json", "SMART 属性 JSON 解析失败", ex);
                             }
                         }
 
@@ -436,11 +465,15 @@ public static class IPCSystemInfoMapper
             if (!string.IsNullOrEmpty(appVersion))
                 info.Version = appVersion;
 
+            ClearFailures();
             return info;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "IPC: Failed to read SystemInfo from shared memory");
+            // 这不是 ERROR 级，也不是按次该报的：它每个刷新周期都会失败一次，
+            // 而"读不到共享内存"由 HardwareMonitorService 那边统一判连接状态并上报。
+            // 这里留 WARN-once 是为了留一条线索，不至于连为什么读不到都查不到。
+            LogFailureOnce("read", "从共享内存读取整机信息失败", ex);
             return null!;
         }
     }

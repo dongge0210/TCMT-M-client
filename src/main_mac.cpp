@@ -580,7 +580,8 @@ int main(int argc, char* argv[]) {
             Logger::Info("MCP: connected to running TCMT-M via IPC");
             ipc.ClosePipe(); // free server slot for other clients (Avalonia)
         } else {
-            Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+            // 可选能力的探测：走直读是正常路径，不是降级，按约定压到 DEBUG
+            Logger::Debug("MCP: IPC unavailable, using direct hardware reads");
         }
 
         server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",

@@ -150,7 +150,7 @@ bool PowerMonitor::Start() {
 
     if (!LoadIOReport()) {
         running_.store(false);
-        Logger::Info("PowerMonitor: IOReport unavailable, will use powermetrics fallback");
+        Logger::Debug("PowerMonitor: IOReport unavailable, will use powermetrics fallback");
         return false;
     }
 
