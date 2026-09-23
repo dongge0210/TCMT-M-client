@@ -218,6 +218,12 @@ if(TCMT_WINDOWS)
     target_compile_definitions(TCMTCore PRIVATE
         TCMT_WINDOWS UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
         _CRT_SECURE_NO_WARNINGS
+        # PDCurses 的两套鼠标 API：不定义这个就只有那个 0 参的 mmask_t getmouse(void)，
+        # 而 TuiApp.cpp 用的是 ncurses 那种 getmouse(&mev)。定义之后 curses.h 才会把
+        # 名字映射到 nc_getmouse（curses.h:258）。
+        # TCMT.vcxproj 里也有一份 —— 两条构建路径都得有，msvc.yml 的代码分析走的是 CMake
+        # 这一条，只在 vcxproj 里定义的话它照样红。
+        PDC_NCMOUSE
     )
 
 elseif(TCMT_MACOS)
