@@ -4,7 +4,15 @@ public static class AppConstants
 {
     public const string AppName = "TCMT";
     public const string AppDisplayName = "系统硬件监视器";
-    public const string AppVersion = "2.0.0";
+    // 版本号的源头是根 CMakeLists.txt 的 project(TCMT-M VERSION …) —— release-mac.sh 就取那一个，
+    // 发出去的包叫 TCMT-M-<那个版本>.tar.gz。改版本时这几处要一起改：
+    //   CMakeLists.txt   project(TCMT-M VERSION …)
+    //   AvaloniaUI/Core/Constants.cs                 ← 这里
+    //   AvaloniaUI/TCMT.Avalonia.csproj              <AssemblyVersion>
+    //   src/core/MCP/MCPServer.cpp                   SERVER_VERSION
+    //   CLAUDE.md                                    开头那句
+    // （C++ 侧不用管：TCMT_VERSION_STR 在 DataStruct.h 里只是兜底，CMake 会覆盖。）
+    public const string AppVersion = "0.14.0";
     
     // UI Constants
     /// <summary>Sidebar width. MainWindow.axaml currently hardcodes 200 in its column definition —

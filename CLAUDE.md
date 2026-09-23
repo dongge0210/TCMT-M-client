@@ -4,7 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cross-platform hardware monitoring tool (alpha-0.2, GPL-3.0). Monitors CPU, GPU, memory, disk, network, WiFi, Bluetooth, OS, and temperature data, exposing results via shared memory IPC for a desktop UI or TUI.
+Cross-platform hardware monitoring tool (0.14.0, GPL-3.0). Monitors CPU, GPU, memory, disk, network, WiFi, Bluetooth, OS, and temperature data, exposing results via shared memory IPC for a desktop UI or TUI.
+
+**Version.** The number lives in the root `CMakeLists.txt` as `project(TCMT-M VERSION …)`;
+`tools/release-mac.sh` reads that one and names the tarball after it. Four more places carry a
+copy — `AvaloniaUI/Core/Constants.cs`, `AvaloniaUI/TCMT.Avalonia.csproj`,
+`src/core/MCP/MCPServer.cpp`, and this line — and they have drifted before (that is how
+`alpha-0.2` and `2.0.0` got in). Change all five together. The C++ side needs nothing: it gets
+the version from CMake at compile time, and `TCMT_VERSION_STR` in `DataStruct.h` is only a
+fallback.
 
 **Two separate build systems co-exist:**
 - **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.

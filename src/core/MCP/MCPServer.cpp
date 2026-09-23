@@ -12,7 +12,9 @@ namespace tcmt::mcp {
 
 static const char* PROTOCOL_VERSION = "2024-11-05";
 static const char* SERVER_NAME    = "tcmt-mcp";
-static const char* SERVER_VERSION = "alpha-0.2";
+// 与根 CMakeLists.txt 的 project(VERSION) 对齐 —— 那是发布脚本用的那个数。
+// 改版本时四处一起改，清单见 AvaloniaUI/Core/Constants.cs 上面那段注释。
+static const char* SERVER_VERSION = "0.14.0";
 
 MCPServer::MCPServer()  = default;
 MCPServer::~MCPServer() { Stop(); }
