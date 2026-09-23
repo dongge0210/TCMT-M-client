@@ -1,7 +1,7 @@
 # TCMT Repository Directory
 
 318 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
-`python3 tools/gen-repo-directory.py`，别手改这一份。
+`node tools/gen-repo-directory.mjs`，别手改这一份。
 
 ```
 |-- .codegraph/
@@ -383,7 +383,7 @@
 |-- tools/
 |   |-- ioreport/
 |   |   |-- ioreport_dump.cpp
-|   |-- gen-repo-directory.py
+|   |-- gen-repo-directory.mjs
 |   |-- install-powerd.sh
 |   |-- mcp-http-bridge.mjs
 |   |-- release-mac.sh
