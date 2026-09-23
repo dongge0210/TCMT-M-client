@@ -43,7 +43,13 @@ struct ModuleData {
     // Network (1s)
     std::mutex netMutex;
     // mac = 硬件地址；currentMac = 当前生效的链路地址（macOS 的私有 Wi-Fi 地址会轮换）
-    struct NetSlot { std::string name, ip, mac, currentMac, type; uint64_t speed, dl, ul; };
+    // 三个 uint64 要带默认值：文件里其它成员全都有，就这三个没有，
+    // 静态分析（C26495）会一直报未初始化。运行时多半被 vector 的零初始化盖住了，
+    // 但让"结构体自己保证有初值"比依赖调用方怎么构造它更省心。
+    struct NetSlot {
+        std::string name, ip, mac, currentMac, type;
+        uint64_t speed = 0, dl = 0, ul = 0;
+    };
     std::vector<NetSlot> adapters;
     // Temperature (2s)
     std::mutex tempMutex;
