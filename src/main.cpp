@@ -1239,8 +1239,13 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     g_push.status = "disabled";
                     Logger::Info("ServerProbe stopped (disabled in settings)");
                 }
+                // ServerSettings 有六个成员，这里以前只传五个 —— 09-16 给 macOS 那边加了
+                // sampleIntervalMs 之后，这个调用点没跟着改，MSVC 直接 C2664 编不过。
+                // Windows 目前没有采样间隔的运行时控制（下面没注册 SetSampleIntervalHandler），
+                // 所以填默认值：表单里显示的数就是 macOS 那边同样的默认，改了也不会生效。
                 tuiApp.SetServerSettings(
-                    {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec, g_push.status});
+                    {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec,
+                     tcmt::kSampleIntervalDefaultMs, g_push.status});
             }
         }
         static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
@@ -2191,8 +2196,10 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+        // 同上：六个成员，别漏 sampleIntervalMs
         tuiApp.SetServerSettings(
-            {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec, g_push.status});
+            {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec,
+             tcmt::kSampleIntervalDefaultMs, g_push.status});
         tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
             auto& cfg = GetServerCfg();
             cfg.SetBool("server.enabled", s.enabled);
