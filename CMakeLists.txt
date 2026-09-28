@@ -11,10 +11,26 @@ if(APPLE)
 endif()
 
 project(TCMT-M
-    VERSION 0.14.0
+    VERSION 0.0.79
     DESCRIPTION "TCMT Windows Client - Cross-platform hardware monitoring tool"
     LANGUAGES C CXX
 )
+
+# 对外显示的版本串，带阶段标记：ALPHA_0.0.79。
+#
+# 为什么不直接写进 project(VERSION)：CMake 只接受 主.次.修订[.补丁] 这种纯数字，
+# 传 ALPHA_0.0.79 进去 configure 就报错。所以数字给 CMake 管（它自己要用），
+# 带标记的那份在这里拼一次，再由 src/CMakeLists.txt 注入成编译宏。
+#
+# 改版本时这几处要一起改（清单也写在 AvaloniaUI/Core/Constants.cs 上面）：
+#   本文件 project(VERSION) + 这一行
+#   src/core/DataStruct/DataStruct.h          TCMT_VERSION_STR 兜底
+#   AvaloniaUI/Core/Constants.cs              AppVersion
+#   AvaloniaUI/TCMT.Avalonia.csproj           AssemblyVersion（同样只能填数字）
+#   src/core/MCP/MCPServer.cpp                SERVER_VERSION
+#   CLAUDE.md                                 开头那句
+set(TCMT_VERSION_DISPLAY "ALPHA_${PROJECT_VERSION}"
+    CACHE STRING "对外显示的版本串（含阶段标记）")
 
 # Set C++20 standard
 set(CMAKE_CXX_STANDARD 20)

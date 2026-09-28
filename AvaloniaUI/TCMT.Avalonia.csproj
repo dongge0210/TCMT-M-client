@@ -12,9 +12,9 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyTitle>TCMT - 系统硬件监视器</AssemblyTitle>
     <AssemblyDescription>实时硬件监控工具 Avalonia 版本</AssemblyDescription>
-    <!-- 跟根 CMakeLists.txt 的 project(VERSION) 对齐；改版本时四处一起改，
-         清单见 AvaloniaUI/Core/Constants.cs 上面那段注释。 -->
-    <AssemblyVersion>0.14.0.0</AssemblyVersion>
+    <!-- 只能填数字，不能带 ALPHA_ 前缀 —— 跟根 CMakeLists 的 project(VERSION) 对齐。
+         改版本时六处一起改，清单见 AvaloniaUI/Core/Constants.cs 上面那段注释。 -->
+    <AssemblyVersion>0.0.79.0</AssemblyVersion>
     <RootNamespace>TCMT.Avalonia</RootNamespace>
     <!-- OS support: Windows 10 22H2+ / Win11 24H2+, macOS 15+ (arm64 + Intel), Ubuntu 22.04 LTS+ -->
     <SupportedOSPlatformVersion Condition="$([MSBuild]::IsOSPlatform('osx'))">15.0</SupportedOSPlatformVersion>

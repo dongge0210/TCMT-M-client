@@ -14,7 +14,7 @@ static const char* PROTOCOL_VERSION = "2024-11-05";
 static const char* SERVER_NAME    = "tcmt-mcp";
 // 与根 CMakeLists.txt 的 project(VERSION) 对齐 —— 那是发布脚本用的那个数。
 // 改版本时四处一起改，清单见 AvaloniaUI/Core/Constants.cs 上面那段注释。
-static const char* SERVER_VERSION = "0.14.0";
+static const char* SERVER_VERSION = "ALPHA_0.0.79";
 
 MCPServer::MCPServer()  = default;
 MCPServer::~MCPServer() { Stop(); }

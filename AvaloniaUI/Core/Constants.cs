@@ -4,15 +4,19 @@ public static class AppConstants
 {
     public const string AppName = "TCMT";
     public const string AppDisplayName = "系统硬件监视器";
-    // 版本号的源头是根 CMakeLists.txt 的 project(TCMT-M VERSION …) —— release-mac.sh 就取那一个，
-    // 发出去的包叫 TCMT-M-<那个版本>.tar.gz。改版本时这几处要一起改：
-    //   CMakeLists.txt   project(TCMT-M VERSION …)
-    //   AvaloniaUI/Core/Constants.cs                 ← 这里
-    //   AvaloniaUI/TCMT.Avalonia.csproj              <AssemblyVersion>
-    //   src/core/MCP/MCPServer.cpp                   SERVER_VERSION
-    //   CLAUDE.md                                    开头那句
-    // （C++ 侧不用管：TCMT_VERSION_STR 在 DataStruct.h 里只是兜底，CMake 会覆盖。）
-    public const string AppVersion = "0.14.0";
+    // 版本串带阶段标记：ALPHA_0.0.79。
+    //
+    // 改版本时这六处一起改（没有单一来源，靠人记住 —— 已经漂过两次，见 CLAUDE.md）：
+    //   CMakeLists.txt                        project(VERSION) + TCMT_VERSION_DISPLAY
+    //   src/core/DataStruct/DataStruct.h       TCMT_VERSION_STR 兜底
+    //   AvaloniaUI/Core/Constants.cs          ← 这里
+    //   AvaloniaUI/TCMT.Avalonia.csproj        AssemblyVersion（只能填数字，不带 ALPHA_）
+    //   src/core/MCP/MCPServer.cpp             SERVER_VERSION
+    //   CLAUDE.md                              开头那句
+    //
+    // C++ 侧正常构建时由 CMake 注入，DataStruct.h 那个只是兜底 —— 但兜底也要跟着改，
+    // 否则不经过 CMake 的构建（比如 Windows 的 vcxproj）会显示旧号。
+    public const string AppVersion = "ALPHA_0.0.79";
     
     // UI Constants
     /// <summary>Sidebar width. MainWindow.axaml currently hardcodes 200 in its column definition —

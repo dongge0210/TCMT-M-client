@@ -6,9 +6,11 @@
 #include <utility>
 #include <vector>
 
-// App version string (override via -DTCMT_VERSION_STR="x.y.z" in CMake/MSBuild)
+// App version string (override via -DTCMT_VERSION_STR="x.y.z" in CMake/MSBuild).
+// 兜底值，正常构建时由 CMake 用根 CMakeLists 的 TCMT_VERSION_DISPLAY 覆盖。
+// 改版本时六处一起改，清单见 AvaloniaUI/Core/Constants.cs 上面。
 #ifndef TCMT_VERSION_STR
-#define TCMT_VERSION_STR "0.14.0"
+#define TCMT_VERSION_STR "ALPHA_0.0.79"
 #endif
 
 // Platform abstraction

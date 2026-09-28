@@ -4,15 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cross-platform hardware monitoring tool (0.14.0, GPL-3.0). Monitors CPU, GPU, memory, disk, network, WiFi, Bluetooth, OS, and temperature data, exposing results via shared memory IPC for a desktop UI or TUI.
+Cross-platform hardware monitoring tool (ALPHA_0.0.79, GPL-3.0). Monitors CPU, GPU, memory, disk, network, WiFi, Bluetooth, OS, and temperature data, exposing results via shared memory IPC for a desktop UI or TUI.
 
-**Version.** The number lives in the root `CMakeLists.txt` as `project(TCMT-M VERSION …)`;
-`tools/release-mac.sh` reads that one and names the tarball after it. Four more places carry a
-copy — `AvaloniaUI/Core/Constants.cs`, `AvaloniaUI/TCMT.Avalonia.csproj`,
-`src/core/MCP/MCPServer.cpp`, and this line — and they have drifted before (that is how
-`alpha-0.2` and `2.0.0` got in). Change all five together. The C++ side needs nothing: it gets
-the version from CMake at compile time, and `TCMT_VERSION_STR` in `DataStruct.h` is only a
-fallback.
+**Version.** One string, `ALPHA_<主>.<次>.<修订>` — the stage marker stays in front because
+everything shipped so far is alpha and the wire format is not frozen. Six places carry a copy:
+
+| 位置 | 值 | 备注 |
+|---|---|---|
+| `CMakeLists.txt` | `project(VERSION 0.0.79)` + `TCMT_VERSION_DISPLAY` | `project()` 只吃数字，`ALPHA_` 在 `TCMT_VERSION_DISPLAY` 里拼 |
+| `src/core/DataStruct/DataStruct.h` | `TCMT_VERSION_STR` | 兜底值；CMake 正常构建时会覆盖它，但 vcxproj 那条路会用到 |
+| `AvaloniaUI/Core/Constants.cs` | `AppConstants.AppVersion` | 界面离线时显示的那个 |
+| `AvaloniaUI/TCMT.Avalonia.csproj` | `<AssemblyVersion>` | 同样只能填数字，不带 `ALPHA_` |
+| `src/core/MCP/MCPServer.cpp` | `SERVER_VERSION` | MCP 对客户端报的版本 |
+| 这一行 | | |
+
+They have drifted twice already — that is how `alpha-0.2` (2026-05-11, only two files touched)
+and `2.0.0` (2026-06-17 merge) got in. There is no single source; change all six together.
+
+`ALPHA_0.0.79` is 11 characters and fits `appVersion[16]`. **Adding a git suffix would not** —
+`ALPHA_0.0.79-129ead3a` is 20 and would be truncated at 15; that change needs the field widened
+first.
 
 **Two separate build systems co-exist:**
 - **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.

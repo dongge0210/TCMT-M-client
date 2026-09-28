@@ -514,8 +514,10 @@ elseif(TCMT_LINUX)
     )
 endif()
 
-target_compile_definitions(TCMTCore PUBLIC TCMT_VERSION_STR="${PROJECT_VERSION}")
-target_compile_definitions(TCMT-M PRIVATE APP_VERSION="${PROJECT_VERSION}")
+# 注入的是带阶段标记的那份（ALPHA_0.0.79），不是 PROJECT_VERSION —— 见根 CMakeLists 里
+# TCMT_VERSION_DISPLAY 的说明。界面和 MCP 显示的就是这个串。
+target_compile_definitions(TCMTCore PUBLIC TCMT_VERSION_STR="${TCMT_VERSION_DISPLAY}")
+target_compile_definitions(TCMT-M PRIVATE APP_VERSION="${TCMT_VERSION_DISPLAY}")
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
 
 set_target_properties(TCMT-M PROPERTIES
