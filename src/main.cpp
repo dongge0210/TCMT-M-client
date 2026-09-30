@@ -114,6 +114,13 @@ static std::string JsonSafeStr(const std::string& s) {
     }
     return out;
 }
+// 采样周期（毫秒）。TUI 设置页那个「采样间隔」改的就是它。
+// macOS 那边同样的东西叫 g_sampleIntervalMs，这里是 Windows 的对应物 —— 以前根本没有：
+// 主循环里写死 int targetCycleTime = 1000，所以设置页里改采样间隔在这台机器上是空操作。
+// 默认值沿用 Windows 原来的 1 秒（不是 macOS 的 500ms —— 那是另一台机器的既有行为，
+// 要统一得单独说）。
+static std::atomic<int> g_sampleIntervalMs{1000};
+
 static std::atomic<bool> g_monitoringStarted{false};
 static std::atomic<bool> g_comInitialized{false};
 
@@ -1241,11 +1248,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 }
                 // ServerSettings 有六个成员，这里以前只传五个 —— 09-16 给 macOS 那边加了
                 // sampleIntervalMs 之后，这个调用点没跟着改，MSVC 直接 C2664 编不过。
-                // Windows 目前没有采样间隔的运行时控制（下面没注册 SetSampleIntervalHandler），
-                // 所以填默认值：表单里显示的数就是 macOS 那边同样的默认，改了也不会生效。
+                // 采样间隔走 g_sampleIntervalMs（设置页可改），不是默认值
                 tuiApp.SetServerSettings(
                     {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec,
-                     tcmt::kSampleIntervalDefaultMs, g_push.status});
+                     g_sampleIntervalMs.load(), g_push.status});
             }
         }
         static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
@@ -1967,8 +1973,8 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 auto loopEnd = std::chrono::high_resolution_clock::now();
                 auto loopDuration = std::chrono::duration_cast<std::chrono::milliseconds>(loopEnd - loopStart);
                 
-                // 1 second cycle time
-                int targetCycleTime = 1000;
+                // 采样周期由设置页控制（原来是写死的 1000ms）
+                int targetCycleTime = g_sampleIntervalMs.load();
                 int sleepTime = (std::max)(targetCycleTime - static_cast<int>(loopDuration.count()), 100); // Min sleep 100ms
                 
                 if (isDetailedLogging) {
@@ -2196,10 +2202,22 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        // 同上：六个成员，别漏 sampleIntervalMs
+        // 采样间隔从配置读（跟 macOS 那边一样），夹到允许区间内。
+        // 这是启动时的一次性读取，主循环每次迭代读的是上面那个原子量。
+        {
+            const int ms = GetServerCfg().GetInt("sampling.intervalMs",
+                                                 g_sampleIntervalMs.load());
+            g_sampleIntervalMs.store(
+                (std::max)(tcmt::kSampleIntervalMinMs,
+                           (std::min)(tcmt::kSampleIntervalMaxMs, ms)));
+            Logger::Info("Sampling interval: " + std::to_string(g_sampleIntervalMs.load()) +
+                         " ms");
+        }
+
+        // 同上：六个成员，别漏 sampleIntervalMs —— 而且这里要传真值，不是默认值
         tuiApp.SetServerSettings(
             {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec,
-             tcmt::kSampleIntervalDefaultMs, g_push.status});
+             g_sampleIntervalMs.load(), g_push.status});
         tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
             auto& cfg = GetServerCfg();
             cfg.SetBool("server.enabled", s.enabled);
@@ -2212,6 +2230,17 @@ int main(int argc, char* argv[]) {
             g_push.pendingReady = true;
             Logger::Info("Server settings saved: enabled=" +
                          std::string(s.enabled ? "true" : "false") + " url=" + s.url);
+        });
+        // 采样间隔单独一个 handler（TuiApp 保存时会两个都调）。以前这台机器上没注册它，
+        // 所以设置页里那个输入框改了不生效 —— 主循环读的是写死的 1000ms。
+        tuiApp.SetSampleIntervalHandler([](int ms) {
+            if (ms < tcmt::kSampleIntervalMinMs) ms = tcmt::kSampleIntervalMinMs;
+            if (ms > tcmt::kSampleIntervalMaxMs) ms = tcmt::kSampleIntervalMaxMs;
+            g_sampleIntervalMs.store(ms);
+            auto& cfg = GetServerCfg();
+            cfg.SetInt("sampling.intervalMs", ms);
+            cfg.Save();
+            Logger::Info("Sampling interval set to " + std::to_string(ms) + " ms");
         });
         Logger::Info("TUI started");
 
