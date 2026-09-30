@@ -29,8 +29,21 @@ project(TCMT-M
 #   AvaloniaUI/TCMT.Avalonia.csproj           AssemblyVersion（同样只能填数字）
 #   src/core/MCP/MCPServer.cpp                SERVER_VERSION
 #   CLAUDE.md                                 开头那句
-set(TCMT_VERSION_DISPLAY "ALPHA_${PROJECT_VERSION}"
-    CACHE STRING "对外显示的版本串（含阶段标记）")
+# git 短 SHA：同一个版本号的不同构建靠它区分。取不到（源码包解压出来没有 .git）就退成 nogit。
+# 注意如果是一条命令都跑不起来，CMAKE_CURRENT_SOURCE_DIR 这类变量此时已经可用。
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE TCMT_GIT_SHA
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+if(NOT TCMT_GIT_SHA)
+    set(TCMT_GIT_SHA "nogit")
+endif()
+
+# 故意不加 CACHE：SHA 每次提交都在变，缓存住的话第一次 configure 之后它就冻在那儿了，
+# 后面所有构建都会顶着第一个 SHA —— 比不显示还糟，因为它看着是对的。
+set(TCMT_VERSION_DISPLAY "ALPHA_${PROJECT_VERSION}-${TCMT_GIT_SHA}")
 
 # Set C++20 standard
 set(CMAKE_CXX_STANDARD 20)

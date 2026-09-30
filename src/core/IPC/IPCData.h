@@ -251,7 +251,9 @@ struct IPCDataBlock {
     uint8_t  tpmCount                 = 0;
 
     // App version string (e.g. "0.14.0")
-    char     appVersion[16]          = {};
+    // 32 而不是 16：版本串现在是 ALPHA_0.0.79-<git 短 SHA>，20 个字符。
+    // 原来 16（写入截到 15）会把后缀吃掉一半，而且截断后看着还像个正常版本号。
+    char     appVersion[32]          = {};
 
     // ─── 4. Fan speeds (up to 6 fans) ───
     struct FanSlot {
