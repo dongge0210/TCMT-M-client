@@ -224,51 +224,17 @@ jobs:
         zip -r TCMT-Windows-x64-alpha.zip windows/
         zip -r TCMT-macOS-arm64-alpha.zip macos/
 
-    - name: Generate alpha tag
-      id: tag
-      run: |
-        TAG="alpha-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_RUN_ID}"
-        echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-    - name: Create Alpha Release
-      uses: softprops/action-gh-release@v3.0.2
+    # 不再发 release。这些是每次推 dev 都出的测试构建，没有 manifest.json 也没有签名，
+    # 自动更新器拿到也用不了；而且 draft/prerelease 根本不进 /releases/latest，
+    # 它连看都看不见。结果是每次推送往 releases 里转一圈、留下一个孤儿 tag —— 仓库里积了 6 个。
+    #
+    # 真正的发布走 tools/release-mac.sh（tag v<版本>、带 manifest 和签名），那条路才进 releases。
+    # 这里改成 workflow artifact：要下载的人去 Actions 页拿，过期自动清。
+    - name: Upload alpha build
+      uses: actions/upload-artifact@v7
       with:
-        tag_name: ${{ steps.tag.outputs.tag }}
-        name: Alpha ${{ steps.tag.outputs.tag }}
-        body: |
-          Commit: ${{ github.sha }}
-          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-          Artifacts:
-          - TCMT-Windows-x64-alpha.zip
-          - TCMT-macOS-arm64-alpha.zip
-        # Immutable-release repos only allow asset uploads to drafts;
-        # publish the release manually afterwards to avoid upload errors.
-        draft: true
-        prerelease: true
-        files: |
+        name: TCMT-alpha-build-${{ github.run_number }}
+        path: |
           artifacts/TCMT-Windows-x64-alpha.zip
           artifacts/TCMT-macOS-arm64-alpha.zip
-
-    - name: Clean up older alpha releases
-      if: success()
-      env:
-        GH_TOKEN: ${{ github.token }}
-        KEEP: ${{ steps.tag.outputs.tag }}
-      run: |
-        # Exactly one alpha (test build) may exist at a time. Runs after the
-        # new release is created and keeps it, so a failed create cannot leave
-        # zero alphas behind. Drafts carry no git tag, so releases and refs
-        # are pruned separately.
-        gh api "repos/${{ github.repository }}/releases?per_page=100" \
-          --jq '.[] | select(.tag_name | startswith("alpha-")) | "\(.id) \(.tag_name)"' \
-        | while read -r id tag; do
-            [ "$tag" = "$KEEP" ] && continue
-            gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
-          done
-        gh api "repos/${{ github.repository }}/git/matching-refs/tags/alpha-" \
-          --jq '.[].ref' 2>/dev/null | sed 's|^refs/tags/||' \
-        | while read -r tag; do
-            [ -z "$tag" ] || [ "$tag" = "$KEEP" ] && continue
-            gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" || true
-          done
+        retention-days: 14
