@@ -43,8 +43,9 @@ Missing a build system causes linker errors on one platform while the other buil
 cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
 # AvaloniaUI desktop frontend
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
-# Run
-./build/src/TCMT-M
+# Run — from inside the .app bundle, NOT the bare binary
+# (CoreLocation / SSID need the bundle; the bare binary silently returns nothing)
+./build/src/TCMT-M.app/Contents/MacOS/TCMT-M
 ```
 macOS requires `brew install ncurses` (CMake's `find_package(Curses)` handles it).
 
@@ -60,6 +61,12 @@ msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v14
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release
 ```
 Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0+ SDK.
+
+## Output Paths
+Never hardcode a build output path. Ask the MCP server to infer it:
+- `.csproj` → parse the XML (`OutputType`, `TargetFramework`, `AssemblyName`, `-r` flag)
+- `.vcxproj` → parse the XML (`ConfigurationType`, `TargetName`, MSBuild defaults for `OutDir`)
+- CMake → read `build/CMakeCache.txt` (`CMAKE_RUNTIME_OUTPUT_DIRECTORY`)
 
 ## Architecture
 
@@ -87,7 +94,7 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
   - IOReport: `ioreport/IOReportSampler.mm` (macOS-only, private framework, no sudo)
   - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
   - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
-  - Config: `Config/ConfigManager.cpp` (loads JSON config via nlohmann/json)
+  - Config: `Config/ConfigManager.h/.cpp` — loads `system_monitor.json` from the project root at startup (nlohmann/json, header-only via `src/third_party/json/single_include/`). **Not wired into Windows `main.cpp` yet.**
   - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
 - `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
@@ -131,7 +138,7 @@ Some `.cpp` / `.mm` files are compiled on ONE platform only:
 ### Cross-platform
 1. **macOS `wchar_t` is 4 bytes** — `DataStruct.h` uses `WCHAR` typedef (`char16_t` on non-Windows). Do NOT revert.
 2. **Two shared memory blocks**: `IPCDataBlock` (macOS, schema-driven) and `SharedMemoryBlock` (Windows, legacy). C# mapper reads BOTH; field names and offsets differ per platform.
-3. **Schema MaxFields=200** — must match in both `IPCData.h` and `IPCSchema.cs`. Bump both when adding fields.
+3. **Schema MaxFields=300** (`IPC_MAX_FIELDS`) — must match in both `IPCData.h` and `IPCSchema.cs`. Bump both when adding fields. Going over the limit is **silent**: `IPCClient.cpp:184` drops the extras, so overflow shows up as *missing fields*, not as an error. (Was 200 until 2026-05-16, when WiFi's schema crossed index 257 and got cut.)
 
 ### Windows-specific (critical)
 4. **Shared memory name**: C++ creates `Global\SystemMonitorSharedMemory` (fallback `Local\` then no prefix). C# must try all 3.
@@ -190,6 +197,20 @@ git submodule update --init --recursive
 - **structure**: If need to check the location of file or menu, please check `docs/repo-directory.md` **FRIST**.
 - **sessions**: change `docs/session.md` when current status changed also you see current status from that file.
 - **read-scope**: **Always use `Read` with `offset` and `limit` parameters.** Never read entire files — read only the relevant range.
+- **no-section-sign**: **Never use the section sign (U+00A7, 节号) anywhere in this repository** — not in source, comments, docs, commit messages, or generated output. That character is not a project convention; it leaks in from generated documentation. Cite a section as `7.4 节` or the bare number `7.4`. The 4 occurrences under `src/third_party/` are upstream RFC citations inside submodules — leave those alone.
+
+## 已更正的历史错误（别再写回去）
+
+下面这些说法都在本仓库的文档里出现过，而且全是错的。任意一条重新出现，说明有人在凭记忆写文档而不是去查：
+
+| 曾经写过的错 | 真相 | 纠正时间 |
+|---|---|---|
+| Schema `MaxFields=200` | 300；超限是静默截断，不是报错 | 2026-05-16 |
+| `src/third_party/` 有 9 个（后来改成 10 个）子模块 | 11 个。FFmpeg 只出现在 `.gitmodules` 的历史里，当前 checkout 从来没有过 | 2026-09-03 |
+| macOS 产物在 `build/bin/TCMT-M` | 在 `build/src/TCMT-M`，且运行要进 `.app` 包内那个（裸二进制拿不到 CoreLocation/SSID） | 2026-10-12 |
+| AGENTS.md 是一份独立的规则文件 | 它只是 CLAUDE.md 的并行副本，已经漂移出错误内容，现压成一行指针 | 2026-10-12 |
+
+**仍未清理**：子模块 `LibreHardwareMonitor` 已在 `d98e601f` 移除，但「CsWin32 / P/Invoke Rules」一节的引言和「Key Dependencies」都在提它，还把 CsWin32 挂在那个子模块名下。规则本身可能仍然成立（取决于现在谁生成 `NativeMethods`），但归属描述是错的。
 
 ## Scope & Boundaries
 - **Stay focused**: When debugging, focus narrowly on the specific error or crash. Do NOT deep-dive into unrelated internals, propose tangential refactors, or expand the scope without asking.
