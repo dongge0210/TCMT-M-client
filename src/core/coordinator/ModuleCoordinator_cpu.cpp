@@ -164,15 +164,24 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
             PowerInfo powerInfo;
             powerInfo.Detect();
 
-            data.acOnline.store(powerInfo.acOnline);
+            // An ETW (Windows) or SystemEventMonitor power callback may have landed
+            // while we were reading. Those callbacks store the state the change
+            // actually produced, so this read is older by definition: keep theirs and
+            // re-read next tick instead of overwriting a fresh value with a stale one.
+            // At most one iteration is skipped per event, because the flags are
+            // consumed below.
+            const bool supersededByEvent = data.powerDirty.load() || data.sysPowerDirty.load();
+            if (!supersededByEvent) {
+                data.acOnline.store(powerInfo.acOnline);
 
-            // Use the first battery's charge percentage; -1 means no battery
-            int batPct = -1;
-            if (!powerInfo.batteries.empty()) {
-                batPct = static_cast<int>(
-                    powerInfo.batteries[0].chargePercent);
+                // Use the first battery's charge percentage; -1 means no battery
+                int batPct = -1;
+                if (!powerInfo.batteries.empty()) {
+                    batPct = static_cast<int>(
+                        powerInfo.batteries[0].chargePercent);
+                }
+                data.batteryPercent.store(batPct);
             }
-            data.batteryPercent.store(batPct);
         } catch (const std::exception& e) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
         }
