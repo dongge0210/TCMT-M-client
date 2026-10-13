@@ -193,6 +193,7 @@
 |   |   |-- Utils/
 |   |   |   |-- ComInitializationHelper.cpp    -- CoInitializeEx wrapper
 |   |   |   |-- JThreadCompat.h    -- jthread compatibility shim for older C++ std
+|   |   |   |-- LogBuffer.h    -- 500-line thread-safe ring buffer
 |   |   |   |-- Logger.cpp    -- File + console + TUI buffer output
 |   |   |   |-- Logger.h    -- 7-level thread-safe logger
 |   |   |   |-- TimeUtils.cpp    -- std::chrono helpers
@@ -256,8 +257,6 @@
 |   |   |-- history/
 |   |   |   |-- HistoryLogger.cpp    -- Background flush worker, retention
 |   |   |   |-- HistoryLogger.h    -- SQLite sensor log header
-|   |   |-- ioreport/
-|   |   |   |-- IOReportSampler.mm
 |   |   |-- memory/
 |   |   |   |-- MemoryInfo.cpp    -- GlobalMemoryStatusEx / host_statistics64
 |   |   |   |-- MemoryInfo.h    -- RAM stats header
@@ -282,6 +281,7 @@
 |   |   |   |-- PowerInfo.h    -- Battery + power plan header
 |   |   |   |-- PowerMonitor.cpp
 |   |   |   |-- PowerMonitor.h
+|   |   |   |-- PowerMonitor_mac.mm
 |   |   |-- process/
 |   |   |   |-- ProcessMonitor.cpp
 |   |   |   |-- ProcessMonitor.h
@@ -360,7 +360,6 @@
 |   |-- tools/
 |   |   |-- sensor_recorder.mm
 |   |-- tui/
-|   |   |-- LogBuffer.h    -- 500-line thread-safe ring buffer
 |   |   |-- LogWindow.cpp
 |   |   |-- LogWindow.h
 |   |   |-- MacLogWindow.h
@@ -391,7 +390,7 @@
 |-- .gitattributes
 |-- .gitignore
 |-- .gitmodules
-|-- AGENTS.md    -- Agent behavioral rules
+|-- AGENTS.md    -- Pointer to CLAUDE.md (kept for tools that only read AGENTS.md)
 |-- CLAUDE.md    -- Claude Code project guidelines
 |-- CMakeLists.txt    -- Core library + executable build
 |-- GEMINI.md

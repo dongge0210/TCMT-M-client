@@ -472,6 +472,16 @@ Linux 文件在 Linux 上）。真未编译的只有 `AccelSensor.mm`，而它�
 已按用户口径（mac 只要 arm64）把默认改成 arm64，全量 Release 复验通过，产物是
 `Mach-O 64-bit executable arm64`。本文件早先把这件事记成「已知问题 + 本地绕过」，那个绕过往后不需要了。
 
+### 生成器陷阱：`docs/repo-directory.md` 的说明列不会因重跑而更正
+
+`tools/gen-repo-directory.mjs` 的「`-- 说明`」列是从**上一版文档**照抄的（`carryOverDescriptions`），
+不是从代码里推出来的。所以重跑这个脚本只改文件树的增删，**改不了任何一句过时说明，也不会给新文件补
+说明**。上一版交接记录恰好写着「那是生成物，要重跑生成器才更新」，那是错的。
+
+本轮踩到：AGENTS.md 早已压成一句指向 CLAUDE.md 的指针，说明列却还写着 "Agent behavioral rules"，
+重跑生成器纹丝不动。已直接改 `docs/repo-directory.md` 那行文字，并把「改说明=改文档、别指望重跑」
+写进生成器的头注释和 `CLAUDE.md` 的 `structure` 条目，免得下一个人重复这个无效动作。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
