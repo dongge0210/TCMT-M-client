@@ -543,55 +543,32 @@ void PlatformCleanup() {
 
 namespace PlatformMacOS {
 
-// SMC connection handle
-static void* g_smc_connection = nullptr;
+// macOS SMC access is NOT implemented in this project. This file was never part of
+// any build (see the build-registration rule in CLAUDE.md), and it used to fake both a
+// connection handle and two temperatures while reporting success. That is exactly how
+// a "no data" case turns into a plausible-looking 45 degrees, so it fails honestly now.
 
 bool OpenSMCConnection() {
-    // Dynamically load IOKit framework
-    void* iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
-    if (!iokit) {
-        return false;
-    }
-
-    // Get function pointers (simplified implementation) 
-    // This is just a placeholder, actual SMC access requires more code
-    g_smc_connection = reinterpret_cast<void*>(1); // placeholder
-    return true;
+    // No SMC backend here. Do not reintroduce a fake success path.
+    return false;
 }
 
 void CloseSMCConnection() {
-    if (g_smc_connection) {
-        g_smc_connection = nullptr;
-    }
+    // Nothing is ever held open — OpenSMCConnection() always fails.
 }
 
 bool ReadSMCKey(const char* key, uint32_t* outSize, void* outValue) {
-    if (!g_smc_connection || !key || !outSize || !outValue) {
-        return false;
-    }
-
-    // Simplified implementation, actual IOKit function calls needed
-    // Returns dummy data for testing
-    if (strcmp(key, "TC0P") == 0) {
-        // CPUTemperature
-        float temp = 45.0f; // Sample temperature
-        *outSize = sizeof(float);
-        memcpy(outValue, &temp, sizeof(float));
-        return true;
-    } else if (strcmp(key, "TG0P") == 0) {
-        // GPUTemperature
-        float temp = 55.0f; // Sample temperature
-        *outSize = sizeof(float);
-        memcpy(outValue, &temp, sizeof(float));
-        return true;
-    }
-
+    // Not implemented. This previously returned a fabricated temperature (45.0f for
+    // "TC0P", 55.0f for "TG0P") together with a success return, which no caller could
+    // tell apart from a real reading. Never do that in a hardware monitor.
+    (void)key; (void)outSize; (void)outValue;
     return false;
 }
 
 void* GetIOKitService(const char* serviceName) {
-    // Simplified implementation
-    return reinterpret_cast<void*>(1);
+    // Not implemented: return nullptr rather than a fake handle.
+    (void)serviceName;
+    return nullptr;
 }
 
 void ReleaseIOKitObject(void* object) {
