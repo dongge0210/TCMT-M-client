@@ -378,6 +378,8 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
 - 注明 `accel/` + `als/` + `MotionHTTPServer`（`127.0.0.1:9876/sensors/motion`，`motion_http.enabled`
   默认 false）是实验性、不是产品面，免得下一个人再判它是死的。
 - 历史错误表新增 4 行。
+- 新增词表 `banned-words`（`CLAUDE.md` 的 `## User addition notices`），首个禁用词是 agent 造的
+  `契约`（用户从不写）；仓库里 4 处已换成 `约定` / `接口约定` / `字段约定`。以后造词前先查这张表。
 
 ### 引用偏差（按「引用有偏差就更新」扫了一遍）
 
