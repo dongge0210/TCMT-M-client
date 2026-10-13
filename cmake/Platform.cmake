@@ -40,6 +40,20 @@ function(tcmt_detect_platform)
         message(STATUS "  Build host: macOS ${MACOS_VERSION}")
 
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # Linux is NOT a supported target (decided 2026-10-13). There is no Linux
+        # machine to validate readings against, so accuracy cannot be guaranteed — and
+        # the tree is only half-wired anyway: main_linux.cpp is registered, but
+        # WiFiInfo and BluetoothInfo have no Linux implementation, so it fails at link.
+        # Fail at configure time instead of half-building. The platform code is still
+        # in the tree (Platform_Linux.cpp, SharedMemoryManager_Linux.cpp — pulled in by
+        # their parents' #include, so they are not registered separately).
+        # Reviving Linux means implementing WiFiInfo/BluetoothInfo for it and removing
+        # this guard; the opt-in below exists only so that work can start.
+        if(NOT TCMT_ALLOW_UNSUPPORTED_LINUX)
+            message(FATAL_ERROR
+                "Linux is not a supported target for TCMT-M (see CLAUDE.md). "
+                "Configure with -DTCMT_ALLOW_UNSUPPORTED_LINUX=ON to try anyway.")
+        endif()
         set(TCMT_LINUX ON CACHE BOOL "Building for Linux platform")
         set(TCMT_PLATFORM_NAME "Linux" CACHE STRING "Platform name")
         set(TCMT_PLATFORM "linux" CACHE STRING "Platform identifier")
@@ -50,7 +64,7 @@ function(tcmt_detect_platform)
             OUTPUT_VARIABLE LINUX_KERNEL
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL})")
+        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL}) [UNSUPPORTED]")
 
     else()
         message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
