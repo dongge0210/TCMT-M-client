@@ -311,6 +311,83 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
 - 流程修复若干：`_archive/` 排除编译、进程页每 tick 重建导致的爆闪、重连后状态被上一代连接覆盖、
   字体能力标志与实现对齐、每 tick 的 SMART 日志清掉。
 
+## 2026-10-13 — plan.md 审计落地（12 commits on dev，ccb1a2d7..accfe874）
+
+2026-10-12 的审计报告 plan.md 是临时文件、不入库；此处记录其中「无需再决策」的部分已逐条落地。
+`cmake --build build -j8` 连续通过，只有既有的 ncurses ld 版本警告。
+
+### 真 bug（用户能看到的）
+
+- **macOS 功率回退断路**。`ModuleCoordinator` 的温度循环注释写「falls back to powermetrics globals」，
+  但 `else` 分支只抄了两个核心频率、没读三个功率，非 direct 模式下界面显示 0 W。
+  `GetPmCpuPower/GpuPower/AnePower`（`TemperatureWrapper.cpp`）此前全项目零调用。已接上（单位均为 mW）。
+- **`EnergyToPower` 的「T = 1 秒」隐含假设**。函数返回焦耳，调用点乘 1000 当作 mW，前提是采样周期恰好
+  1 秒；实测循环是 1.00~1.10 秒，功耗被系统性高估 2~5%（负载越高越偏）。改成 `steady_clock` 实测间隔
+  再除，函数更名 `EnergyJoules`，单位写进名字。
+- **Intel OOBMSM 每 2 秒 2 条 INFO**。`ReadAll()` 由 `GetTemperaturesImpl()` 每 2 秒调一次，成功路径打
+  BAR0 magic 与首个 PMT entry，约 8.6 万行/天。5 条探测类日志全部降到 DEBUG（规范里「探测 = DEBUG」）。
+- **`tcmt-powerd` 的 `WriteShm` 吞掉 `write()` 返回值**。写盘失败时守护进程照常报「在发布」、客户端
+  `shmValid_` 保持 true，界面是一个冻结的功耗值且无任何信号。现在检查 lseek/write，且一段连续失败里
+  只记第一条。
+
+### 平台与结构
+
+- 三个 `.mm`（WiFiInfo / DisplayInfo / BluetoothInfo）够不着的 `#else` stub 换成 `#error`；
+  `WiFiInfo_wlan.c` 同样处理（第四例）。
+- `IOReportSampler.mm` 移到 `src/core/power/PowerMonitor_mac.mm`。`src/core/ioreport/` 只有它一个文件，
+  且它就是 `PowerMonitor` 的 macOS 实现，`PowerMonitor.cpp` 的头注释早就这么指了。空目录已删。
+- `LogBuffer.h` 从 `src/tui/` 挪到 `src/core/Utils/`。`Logger.h` include 它、而约 55 个文件 include
+  `Logger.h`，整棵 `src/core` 因此传递依赖 `src/tui`（headless 的 `TCMT-M --mcp` 也要链 ncurses）。
+  便宜那半做完；贵那半 `Snapshot(SystemInfo&, TuiData&)` 的签名没动，要设计决策。
+- 调试设施改为 opt-in（`TCMT_IOREPORT_DEBUG=1`）。原先每次 `Start()` 都无缓冲写固定的 /tmp 文件、
+  且 dump 在采样循环内，等于往「功率的分母」里加 write 系统调用。
+- 删掉 `ReadShmPower` 里那句 `__sync_synchronize()`（下面的原子写本来就是顺序一致），
+  以及 `value == INT64_MIN` 死条件。
+
+### CI
+
+- **`build.yml` 的 `push` 触发被注释掉**，历史 60 次运行全是 `pull_request`。Actions 缓存按 ref 作用域，
+  PR 运行写进 `refs/pull/N/merge`，别的分支读不到，于是永远没有分支级缓存，每个新 PR 冷跑多约 9 分钟。
+  放出 `push: [dev]`。
+- **ccache 路径用了 Linux 默认值**（`~/.cache/ccache`），ccache 4.x 在 macOS 上写 `~/Library/Caches/ccache`，
+  所以 restore/save 从未命中（自报 `Cacheable 48/48, Hits 0/48`）。给 macOS job 加 `CCACHE_DIR`。
+- **产出 3 个 artifact 应为 2 个**。两个 build job 各自 upload 未打包的中间产物，只为让第三个 job 去 zip。
+  改成各自打包上传（`TCMT-Windows-x64-alpha` / `TCMT-macOS-arm64-alpha`），删掉 `package-artifacts` job。
+- 3 处 MSVC C4267 收窄（`IPCServer.cpp:360`、`ServerProbe.cpp:77/:129/:131`）加显式 cast，
+  就是 Actions 网页上那个「7 warnings」。Windows-only，本机验不到。
+
+### 文档
+
+- `CLAUDE.md`：数据流图与 IPC 那两节把 `IPCDataBlock` 说成「两块、偏移随平台变」。全仓
+  `SharedMemoryBlock` 零命中，其实只有一块，平台差异在传输不在布局，恰好把这个项目在 IPC 上做得最对
+  的决定说成了反面。`src/DataStruct.h` 路径不存在（真身 `src/core/DataStruct/DataStruct.h`）；
+  `AvaloniaUI/Services/IPCServices/` 不存在（是 `Services/Hardware/IPC/`）。
+- 删掉整节「CsWin32 / P/Invoke Rules」：LibreHardwareMonitor 子模块已由 `d98e601f` 移除，且全仓已无
+  CsWin32 包、无 `NativeMethods.txt`、无 `PInvoke.` 调用。`Key Dependencies` 同步去掉它。
+- `IPCSchema.cs` 注释指向不存在的 `IPCSchema.h`，改成 `IPCData.h`。
+- 给「每个源文件必须三处登记」补两个例外：`src/tools/` 是按需手编工具、故意不登记；漏登记的失败症状
+  （链接错误）只在符号被引用时出现，零引用时是静默的。
+- 注明 `accel/` + `als/` + `MotionHTTPServer`（`127.0.0.1:9876/sensors/motion`，`motion_http.enabled`
+  默认 false）是实验性、不是产品面，免得下一个人再判它是死的。
+- 历史错误表新增 4 行。
+
+### 审计里被推翻的一条
+
+- **A4「回调里的 `batteryPercent` 被丢掉」不成立**。`EtwMonitor` 的 `PowerEventCallback` 是
+  `void(bool acOnline)`、`BatteryEventCallback` 是 `void(int percent)`，两条独立且都写了值；
+  `SystemEventMonitor` 那条 `void(bool, int)` 也写了 percent。只有 `PowerLoop` 存 `batPct` 时不设下限
+  （可为 -1），这才是「缝法不一致」的真身。未改。
+
+### 仍未决策
+
+- `acOnline` 三写者无仲裁（`PowerLoop` / ETW / `SystemEventMonitor`），要选一种仲裁方式。
+- `Platform_macOS.cpp:544-600` 伪造 45.0f / 55.0f（该文件未进任何构建）：删掉，还是改成诚实 `return false`。
+- `tcmt_sensor_helper.c` 的 `kIOMasterPortDefault`：改 `kIOMainPortDefault` 加守卫，还是承认 pragma 是既定做法。
+- `main` 落后 `dev` 303 个提交（合并 PR #98 才能止血 Dependabot）。
+- 三份 main 的 schema builder 合一、线格式能否表达列表（设计决策）。
+- Linux 还算不算支持目标；`127.0.0.1:9876/sensors/motion` 有没有消费者。
+- `docs/repo-directory.md` 是生成物，里面对 `AGENTS.md` 的描述要重跑生成器。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
