@@ -64,13 +64,13 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
 
         uint64_t idOut[4] = {0};
         if (!s_pa.Execute("ioctl_identity", nullptr, 0, idOut, 4, nullptr)) {
-            Logger::Info("IntelOobmsm: identity probe failed"); return result;
+            Logger::Debug("IntelOobmsm: identity probe failed"); return result;
         }
         uint16_t vid = (uint16_t)(idOut[0] & 0xFFFF);
         uint16_t did = (uint16_t)((idOut[0] >> 16) & 0xFFFF);
         s_bar0Base = idOut[2];
         s_bar0Size = idOut[3];
-        Logger::Info(std::string("IntelOobmsm: VID=0x") + std::to_string(vid) +
+        Logger::Debug(std::string("IntelOobmsm: VID=0x") + std::to_string(vid) +
                      " DID=0x" + std::to_string(did) +
                      " BAR0=0x" + std::to_string(s_bar0Base));
 
@@ -86,7 +86,7 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
                 uint32_t dvsec1 = PciConfigRead(s_pa, capOff + 4);
                 if ((uint16_t)(dvsec1 & 0xFFFF) == INTEL_DVSEC_VENDOR_ID &&
                     (uint16_t)((dvsec1 >> 16) & 0xFFFF) == INTEL_PMT_DVSEC_ID) {
-                    Logger::Info(std::string("IntelOobmsm: PMT DVSEC at 0x") + std::to_string(capOff));
+                    Logger::Debug(std::string("IntelOobmsm: PMT DVSEC at 0x") + std::to_string(capOff));
                     s_hasPmt = true;
                     break;
                 }
@@ -106,12 +106,12 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
     for (int i = 0; i < 4; i++) { magic[i] = (char)((magic0 >> (i * 8)) & 0xFF); }
     for (int i = 0; i < 4; i++) { magic[i + 4] = (char)((magic1 >> (i * 8)) & 0xFF); }
     magic[8] = '\0';
-    Logger::Info(std::string("IntelOobmsm: BAR0 magic=\"") + magic + "\"");
+    Logger::Debug(std::string("IntelOobmsm: BAR0 magic=\"") + magic + "\"");
 
     // Read first telemetry entry base offset from PMT discovery table
     uint32_t entryBase = Bar0Read(s_pa, 12);
     if (entryBase != 0 && entryBase != 0xFFFFFFFF)
-        Logger::Info(std::string("IntelOobmsm: first PMT entry at 0x") + std::to_string(entryBase));
+        Logger::Debug(std::string("IntelOobmsm: first PMT entry at 0x") + std::to_string(entryBase));
 
     // TODO: full PMT telemetry enumeration
     // Reference: Intel PMT spec
