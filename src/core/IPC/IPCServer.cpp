@@ -357,7 +357,7 @@ std::string IPCServer::ReadConfigPayload(void* peerHandle, uint16_t payloadSize)
     size_t got = 0;
     while (got < payloadSize) {
         DWORD n = 0;
-        if (!ReadFile(h, buf.data() + got, payloadSize - got, &n, nullptr) || n == 0) return {};
+        if (!ReadFile(h, buf.data() + got, static_cast<DWORD>(payloadSize - got), &n, nullptr) || n == 0) return {};
         got += n;
     }
     return buf;

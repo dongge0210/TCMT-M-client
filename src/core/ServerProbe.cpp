@@ -74,7 +74,7 @@ static int RawPost(const std::string& host, int port, const std::string& path,
 
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) { freeaddrinfo(res); return 0; }
-    if (connect(fd, res->ai_addr, res->ai_addrlen) < 0) {
+    if (connect(fd, res->ai_addr, static_cast<int>(res->ai_addrlen)) < 0) {
         CloseFd(fd); freeaddrinfo(res); return 0;
     }
     freeaddrinfo(res);
@@ -126,9 +126,9 @@ static int RawPost(const std::string& host, int port, const std::string& path,
         while (off < n) {
 #ifdef TCMT_USE_TLS
             int w = ssl ? SSL_write(ssl, data + off, static_cast<int>(n - off))
-                        : static_cast<int>(send(fd, data + off, n - off, 0));
+                        : static_cast<int>(send(fd, data + off, static_cast<int>(n - off), 0));
 #else
-            int w = static_cast<int>(send(fd, data + off, n - off, 0));
+            int w = static_cast<int>(send(fd, data + off, static_cast<int>(n - off), 0));
 #endif
             if (w <= 0) return false;
             off += static_cast<size_t>(w);
