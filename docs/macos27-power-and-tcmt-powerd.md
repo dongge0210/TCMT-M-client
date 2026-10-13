@@ -22,7 +22,7 @@ macOS 27(Darwin 27)起,TUI 的 Power 面板(CPU/GPU/ANE/Total)恒为 0.00 W,而�
 
 ## 方案:tcmt-powerd
 
-架构(数据层,UI 渲染见下文契约):
+架构(数据层,UI 渲染见下文接口约定):
 
 ```
 /usr/bin/powermetrics (Apple-signed, 仅 root)
@@ -41,7 +41,7 @@ TuiData.cpuPower/gpuPower/anePower + powerAvailable
 - `tools/install-powerd.sh` / `uninstall-powerd.sh` — sudo 安装/卸载(拷贝二进制 + LaunchDaemon plist + `launchctl bootstrap`)。注意:`bootout` 后需 sleep 再 `bootstrap`(launchd 竞态会报 EIO)。
 - 构建:CMake target `tcmt-powerd`(macOS only;源 = daemon main + Logger.cpp,不链 TCMTCore)。
 
-## 数据契约(UI 用)
+## 接口约定(UI 用)
 
 - `PowerMonitor::IsPowerAvailable() → bool`
 - `SystemInfo::powerAvailable` / `TuiData::powerAvailable`(bool,Snapshot 填充)
@@ -59,4 +59,4 @@ TuiData.cpuPower/gpuPower/anePower + powerAvailable
 - 功率更新粒度 ~3-5s(powermetrics 采样窗口),非 1s。
 - ANE 在 M2 基础款空闲为 0(通道行为,非错误)。
 - macOS ≤26 且装了 daemon 时,客户端仍走直读(不读文件);daemon 无副作用可常驻。
-- UI "N/A" 渲染未合入(数据契约已就绪)。(原先这里指向 `.claude/plans/encapsulated-gathering-cookie.md` 第 5 节,该计划文件已不在仓库中,不再引用。)
+- UI "N/A" 渲染未合入(字段约定已就绪)。(原先这里指向 `.claude/plans/encapsulated-gathering-cookie.md` 第 5 节,该计划文件已不在仓库中,不再引用。)
