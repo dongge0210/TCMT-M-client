@@ -1,7 +1,7 @@
 // LogWindow.cpp — see LogWindow.h
 
 #include "LogWindow.h"
-#include "LogBuffer.h"
+#include "core/Utils/LogBuffer.h"
 
 #include <windowsx.h>
 

@@ -1,7 +1,7 @@
 #include "Logger.h"
 
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
-#include "../../tui/LogBuffer.h"
+#include "LogBuffer.h"
 #endif
 
 #include <filesystem>

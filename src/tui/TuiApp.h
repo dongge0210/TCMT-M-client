@@ -17,7 +17,7 @@
 //
 #pragma once
 
-#include "LogBuffer.h"
+#include "core/Utils/LogBuffer.h"
 #include "core/I18n.h"
 #include <functional>
 #include <string>

@@ -13,9 +13,11 @@
 #include <windows.h>
 #endif
 
-// Include LogBuffer for TUI support (macOS, Linux, and Windows)
+// Include LogBuffer for TUI support (macOS, Linux, and Windows).
+// It lives in this directory (Utils/) on purpose: it used to sit in src/tui/, which
+// made every one of the ~55 files that include Logger.h transitively depend on src/tui.
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(TCMT_WINDOWS)
-#include "../tui/LogBuffer.h"
+#include "LogBuffer.h"
 #endif
 
 // Log level enumeration.

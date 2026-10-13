@@ -5,7 +5,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include "MacLogWindow.h"
-#include "LogBuffer.h"
+#include "core/Utils/LogBuffer.h"
 
 @interface TCMTLogWindowController : NSObject
 - (instancetype)initWithBuffer:(tcmt::LogBuffer*)buffer;

@@ -84,7 +84,7 @@
     <ClInclude Include="src\core\Config\ConfigManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\tui\LogBuffer.h">
+    <ClInclude Include="src\core\Utils\LogBuffer.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\tui\LogWindow.h">

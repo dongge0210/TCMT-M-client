@@ -177,7 +177,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\Utils\JThreadCompat.h" />
     <ClInclude Include="src\core\etw\EtwMonitor.h" />
     <ClInclude Include="src\tui\TuiApp.h" />
-    <ClInclude Include="src\tui\LogBuffer.h" />
+    <ClInclude Include="src\core\Utils\LogBuffer.h" />
     <ClInclude Include="src\tui\LogWindow.h" />
   </ItemGroup>
   <ItemGroup>
