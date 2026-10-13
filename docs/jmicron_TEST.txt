@@ -1,0 +1,343 @@
+JMicron JMS583 macOS SMART 读取记录
+
+日期：2026-10-13
+设备：JMicron JMS583（USB 3.1 Gen 2 转 NVMe 桥接芯片）
+环境：macOS，Python 虚拟环境，usb-helper + libusb
+目标：在 macOS 上通过 USB 直接读取 NVMe SSD 的 SMART 数据
+
+────────────────────────────────────────
+1. 设备信息
+────────────────────────────────────────
+
+芯片型号：JMicron JMS583
+USB VID：0x152d
+USB PID：0x0583
+固件版本：0x0214
+设备名称：JMicron Generic SCSI Disk Device
+连接类型：Removable
+
+────────────────────────────────────────
+2. 环境准备
+────────────────────────────────────────
+
+2.1 安装依赖
+
+    brew install libusb
+    cd ~/temps
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install usb-helper
+
+2.2 权限要求
+
+macOS 下 libusb 需要 root 权限才能枚举和访问 USB 设备。
+所有脚本必须用 sudo 运行，且需指定虚拟环境中的 Python 解释器：
+
+    sudo .venv/bin/python3 <脚本名>.py
+
+注意：不要用 sudo python3，否则找不到虚拟环境中的 usb_helper。
+
+────────────────────────────────────────
+3. 通信链路验证（INQUIRY 测试）
+────────────────────────────────────────
+
+在没有接入 NVMe 硬盘的情况下，使用 SCSI INQUIRY 命令验证桥接芯片通信是否正常。
+
+3.1 测试脚本（2.py）
+
+    import sys
+    from usb_helper import SCSIDevice, DeviceIdentity
+
+    device = SCSIDevice(DeviceIdentity(vid=0x152d, pid=0x0583))
+    device.open()
+
+    # INQUIRY CDB: opcode 0x12, 分配长度 36 字节
+    cdb = bytes([0x12, 0x00, 0x00, 0x00, 0x24, 0x00])
+
+    result = device.send_command(
+        cdb=cdb,
+        data_in_length=36,
+        timeout_ms=5000
+    )
+
+    print(f"ok={result.ok}")
+    print(f"bytes_transferred={result.bytes_transferred}")
+    if result.ok and len(result.data) >= 36:
+        vendor   = result.data[8:16].decode('ascii', errors='replace').strip()
+        product  = result.data[16:32].decode('ascii', errors='replace').strip()
+        revision = result.data[32:36].decode('ascii', errors='replace').strip()
+        print(f"Vendor:   {vendor}")
+        print(f"Product:  {product}")
+        print(f"Revision: {revision}")
+
+    device.close()
+
+3.2 运行结果
+
+    sudo .venv/bin/python3 2.py
+
+输出：
+
+    ok=True
+    bytes_transferred=36
+    Vendor:   JMicron
+    Product:  Generic
+    Revision: 0214
+
+结论：
+libusb → JMS583 → BOT 协议链路完全正常，桥接芯片能正确响应 SCSI 标准命令。
+
+────────────────────────────────────────
+4. NVMe SMART 读取脚本（待硬盘接入后验证）
+────────────────────────────────────────
+
+以下脚本基于 smartmontools 的 sntjmicron 驱动实现，用于发送 NVMe Get Log Page 命令读取 SMART 数据。
+
+注意：当前无硬盘，NVMe 命令会返回 CSW status=FAILED。
+需接入 NVMe SSD 后再测试。
+
+4.1 完整脚本（1.py）
+
+    #!/usr/bin/env python3
+    """
+    jm583_smart_reader.py
+
+    通过 usb-helper (libusb) 在 macOS 上读取 JMicron JMS583 桥接芯片后 NVMe SSD 的 SMART 数据。
+    基于 smartmontools 的 sntjmicron 驱动实现。
+    """
+
+    import sys
+    import struct
+    from usb_helper import SCSIDevice, DeviceIdentity
+
+    # 设备标识
+    VID = 0x152d
+    PID = 0x0583
+
+    # 常量
+    SNT_JMICRON_CDB_LEN = 12
+    SNT_JMICRON_NVM_CMD_LEN = 0x1000  # 4096 字节
+    SNT_JMICRON_NVME_SIGNATURE = 0x454D4E56  # "NVME" 小端
+
+    NVME_ADMIN_GET_LOG_PAGE = 0x02
+    NVME_LOG_SMART = 0x02
+
+    TIMEOUT_MS = 5000
+
+    def build_nvme_passthrough_cdb(admin: bool = True, data_transfer_len: int = SNT_JMICRON_NVM_CMD_LEN) -> bytes:
+        """构建 JMicron 的 NVMe Pass-through SCSI CDB (12 字节)。"""
+        cdb = bytearray(SNT_JMICRON_CDB_LEN)
+        cdb[0] = 0xA1  # SAT ATA PASS-THROUGH (12)
+        cdb[1] = 0x80 if admin else 0x00
+        cdb[3] = (data_transfer_len >> 16) & 0xFF
+        cdb[4] = (data_transfer_len >> 8) & 0xFF
+        cdb[5] = data_transfer_len & 0xFF
+        return bytes(cdb)
+
+    def build_nvme_smart_log_command() -> bytes:
+        """构建读取 NVMe SMART/Health Information Log (Log ID 0x02) 的 NVMe 命令缓冲区。"""
+        cmd = bytearray(64)
+        struct.pack_into('<I', cmd, 0, NVME_ADMIN_GET_LOG_PAGE)
+        struct.pack_into('<I', cmd, 4, 0xFFFFFFFF)
+        struct.pack_into('<I', cmd, 40, NVME_LOG_SMART)
+        struct.pack_into('<I', cmd, 44, 127)  # 512 字节 = 128 dwords (0-based)
+        return bytes(cmd)
+
+    def parse_smart_data(data: bytes) -> dict:
+        """解析 NVMe SMART/Health Information Log (512 字节)。"""
+        result = {}
+        if len(data) < 512:
+            raise ValueError(f"SMART 数据长度不足: {len(data)} 字节")
+
+        result['critical_warning'] = struct.unpack_from('<B', data, 0)[0]
+        result['temperature_kelvin'] = struct.unpack_from('<H', data, 1)[0]
+        result['available_spare'] = struct.unpack_from('<B', data, 3)[0]
+        result['available_spare_threshold'] = struct.unpack_from('<B', data, 4)[0]
+        result['percentage_used'] = struct.unpack_from('<B', data, 5)[0]
+        result['data_units_read'] = struct.unpack_from('<Q', data, 32)[0]
+        result['data_units_written'] = struct.unpack_from('<Q', data, 48)[0]
+        result['host_read_commands'] = struct.unpack_from('<Q', data, 64)[0]
+        result['host_write_commands'] = struct.unpack_from('<Q', data, 80)[0]
+        result['controller_busy_time'] = struct.unpack_from('<Q', data, 96)[0]
+        result['power_cycles'] = struct.unpack_from('<Q', data, 112)[0]
+        result['power_on_hours'] = struct.unpack_from('<Q', data, 128)[0]
+        result['unsafe_shutdowns'] = struct.unpack_from('<Q', data, 144)[0]
+        result['media_errors'] = struct.unpack_from('<Q', data, 160)[0]
+        result['num_err_log_entries'] = struct.unpack_from('<Q', data, 176)[0]
+        result['temperature_celsius'] = result['temperature_kelvin'] - 273.15
+        return result
+
+    def print_smart_report(smart: dict):
+        """打印 SMART 报告。"""
+        print("\n" + "=" * 50)
+        print("NVMe SMART / Health Information Log")
+        print("=" * 50)
+
+        critical = smart['critical_warning']
+        health = "PASSED" if critical == 0 else "WARNING"
+        print(f"SMART overall-health self-assessment test result: {health}")
+        print(f"Critical Warning: 0x{critical:02x}")
+        print(f"Temperature: {smart['temperature_celsius']:.0f} Celsius")
+        print(f"Available Spare: {smart['available_spare']}%")
+        print(f"Available Spare Threshold: {smart['available_spare_threshold']}%")
+        print(f"Percentage Used: {smart['percentage_used']}%")
+        print(f"Data Units Read: {smart['data_units_read']:,} [{smart['data_units_read'] * 512000 / 1e12:.1f} TB]")
+        print(f"Data Units Written: {smart['data_units_written']:,} [{smart['data_units_written'] * 512000 / 1e12:.1f} TB]")
+        print(f"Host Read Commands: {smart['host_read_commands']:,}")
+        print(f"Host Write Commands: {smart['host_write_commands']:,}")
+        print(f"Controller Busy Time: {smart['controller_busy_time']} (minutes)")
+        print(f"Power Cycles: {smart['power_cycles']:,}")
+        print(f"Power On Hours: {smart['power_on_hours']:,}")
+        print(f"Unsafe Shutdowns: {smart['unsafe_shutdowns']:,}")
+        print(f"Media and Data Integrity Errors: {smart['media_errors']:,}")
+        print(f"Error Information Log Entries: {smart['num_err_log_entries']:,}")
+
+    def main():
+        print("正在查找 JMicron JMS583 设备...")
+
+        identity = DeviceIdentity(vid=VID, pid=PID)
+
+        try:
+            device = SCSIDevice(identity)
+            device.open()
+        except Exception as e:
+            print(f"错误: 无法打开设备 (VID={VID:#06x}, PID={PID:#06x})")
+            print(f"详细信息: {e}")
+            sys.exit(1)
+
+        print(f"找到设备: VID={VID:#06x}, PID={PID:#06x}")
+
+        try:
+            # 步骤 1: 发送 NVMe 命令写入桥接芯片
+            print("\n[1/3] 发送 NVMe Get Log Page 命令...")
+            nvme_cmd = build_nvme_smart_log_command()
+            cdb = build_nvme_passthrough_cdb(admin=True, data_transfer_len=SNT_JMICRON_NVM_CMD_LEN)
+
+            result = device.send_command(
+                cdb=cdb,
+                data_out=nvme_cmd,
+                data_in_length=0,
+                timeout_ms=TIMEOUT_MS
+            )
+            if not result.ok:
+                print(f"  发送 NVMe 命令失败: {result}")
+                sys.exit(1)
+            print("  NVMe 命令发送成功")
+
+            # 步骤 2: 读取桥接芯片的响应
+            print("\n[2/3] 读取桥接芯片响应...")
+            read_cdb = build_nvme_passthrough_cdb(
+                admin=True,
+                data_transfer_len=SNT_JMICRON_NVM_CMD_LEN
+            )
+            read_cdb = bytearray(read_cdb)
+            read_cdb[1] |= 0x40  # 尝试设置读取方向位
+
+            result = device.send_command(
+                cdb=bytes(read_cdb),
+                data_in_length=SNT_JMICRON_NVM_CMD_LEN,
+                timeout_ms=TIMEOUT_MS
+            )
+            if not result.ok:
+                print(f"  读取响应失败: {result}")
+                sys.exit(1)
+
+            reply_data = result.data
+            print(f"  收到 {len(reply_data)} 字节响应")
+
+            # 步骤 3: 解析 SMART 数据
+            print("\n[3/3] 解析 SMART 数据...")
+
+            if len(reply_data) >= 4:
+                signature = struct.unpack_from('<I', reply_data, 0)[0]
+                if signature != SNT_JMICRON_NVME_SIGNATURE:
+                    print(f"  警告: 响应签名不匹配 (期望 0x{SNT_JMICRON_NVME_SIGNATURE:08x}, 实际 0x{signature:08x})")
+
+            smart_offset = 0x100  # 待验证，需根据实际响应调整
+            if len(reply_data) >= smart_offset + 512:
+                smart_data = reply_data[smart_offset:smart_offset + 512]
+                try:
+                    smart = parse_smart_data(smart_data)
+                    print_smart_report(smart)
+                except Exception as e:
+                    print(f"  解析 SMART 数据失败: {e}")
+                    print(f"  原始数据前 64 字节: {smart_data[:64].hex()}")
+            else:
+                print(f"  响应数据不足，无法提取 512 字节的 SMART 日志")
+                print(f"  实际收到: {len(reply_data)} 字节")
+                print(f"  原始数据前 64 字节: {reply_data[:64].hex()}")
+
+        finally:
+            device.close()
+
+    if __name__ == "__main__":
+        main()
+
+────────────────────────────────────────
+5. 已知问题与解决方案
+────────────────────────────────────────
+
+问题：ModuleNotFoundError: No module named 'usb_helper'
+原因：未激活虚拟环境或使用了错误的 Python
+解决：使用 sudo .venv/bin/python3
+
+问题：Access denied (insufficient permissions)
+原因：普通用户无 USB 访问权限
+解决：使用 sudo 运行
+
+问题：Device not found: 152d:0583
+原因：未用 sudo，设备未枚举
+解决：使用 sudo 运行
+
+问题：CSW status=FAILED
+原因：下游无 NVMe 硬盘，命令无法转发
+解决：接入硬盘后重试
+
+问题：'SCSIDevice' object has no attribute 'write'
+原因：API 调用错误
+解决：使用 send_command() 而非 write() / read()
+
+────────────────────────────────────────
+6. 待办事项（接入硬盘后）
+────────────────────────────────────────
+
+1. 验证桥接芯片识别下游设备
+   发送 TEST UNIT READY (0x00) 或 READ CAPACITY (10) (0x25)
+   确认硬盘已被 JMS583 识别
+
+2. 发送 NVMe Get Log Page
+   运行 1.py
+   观察是否仍返回 CSW status=FAILED
+
+3. 根据实际响应调整解析逻辑
+   打印完整的 4096 字节 hex dump
+   定位 NVMe 签名 0x454D4E56（即 ASCII "NVME"）
+   确定 SMART 数据的实际偏移量（当前硬编码为 0x100，需验证）
+
+4. 验证 CDB 构造
+   若 NVMe 命令失败，尝试调整 cdb[1] 的位（如 0x80 | 0x40）
+   参考 smartmontools 源码 scsinvme.cpp 中的 sntjmicron_device::nvme_pass_through
+
+────────────────────────────────────────
+7. 运行命令备忘
+────────────────────────────────────────
+
+    cd ~/temps
+    source .venv/bin/activate
+
+    # 运行 INQUIRY 测试
+    sudo .venv/bin/python3 2.py
+
+    # 运行 SMART 读取（需硬盘接入）
+    sudo .venv/bin/python3 1.py
+
+────────────────────────────────────────
+8. 参考资源
+────────────────────────────────────────
+
+usb-helper 官方文档：https://github.com/KunYi/usb-helper
+smartmontools 源码：https://github.com/smartmontools/smartmontools
+libusb_scsi_command 示例：https://github.com/KunYi/libusb_scsi_command
+NVMe 规范：SMART / Health Information Log (Log ID 02h)
+
+文档状态：通信链路已验证，SMART 读取待硬盘接入后继续调试。

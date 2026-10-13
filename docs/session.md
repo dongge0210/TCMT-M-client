@@ -1,4 +1,4 @@
-# Session State (2026-08-08)
+# Session State (start: 2026-08-08)
 
 ## 2026-08-12 — 前后端分离：server / viewer 移出 client 仓库
 

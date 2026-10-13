@@ -140,3 +140,4 @@ enc_temp_folder/
 
 # tcmt-server runtime state (device registry, snapshots)
 server/data/
+plan.md
