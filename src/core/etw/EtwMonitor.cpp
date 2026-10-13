@@ -189,7 +189,7 @@ void EtwMonitor::DispatchEvent(const void* pEvent) {
             if (id == 105 || id == 107) {  // PowerSourceChange
                 if (powerCb_) powerCb_(id == 107);
             } else if (id == 106 && batteryCb_) {
-                batteryCb_(-1); // placeholder
+                batteryCb_(-1); // -1 = this event carries no level; consumer re-reads on the next poll
             }
         } else if (IsEqualGUID(pid, kTcpip)) {
             if (networkCb_) networkCb_();
