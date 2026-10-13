@@ -59,4 +59,4 @@ TuiData.cpuPower/gpuPower/anePower + powerAvailable
 - 功率更新粒度 ~3-5s(powermetrics 采样窗口),非 1s。
 - ANE 在 M2 基础款空闲为 0(通道行为,非错误)。
 - macOS ≤26 且装了 daemon 时,客户端仍走直读(不读文件);daemon 无副作用可常驻。
-- UI "N/A" 渲染未合入(数据契约已就绪)—— 见 UI agent 提示词(plan: .claude/plans/encapsulated-gathering-cookie.md 第 5 节)。
+- UI "N/A" 渲染未合入(数据契约已就绪)。(原先这里指向 `.claude/plans/encapsulated-gathering-cookie.md` 第 5 节,该计划文件已不在仓库中,不再引用。)

@@ -6,7 +6,7 @@
 // powermetrics periodically as root and parses its output, publishing the
 // milliwatt values to /tmp/tcmt-power (root-owned; /tmp is sticky so other
 // users cannot replace it). The client side is PowerMonitor::ReadShmPower
-// in IOReportSampler.mm (macOS 27+).
+// in src/core/power/PowerMonitor_mac.mm (macOS 27+).
 //
 // Installed once via tools/install-powerd.sh (sudo); managed by launchd.
 
