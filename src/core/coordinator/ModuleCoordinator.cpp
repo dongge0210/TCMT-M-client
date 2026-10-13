@@ -396,6 +396,14 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 double ef = GetPmECoreFreq();
                 if (pf > 0) data_.pCoreFreq.store(pf);
                 if (ef > 0) data_.eCoreFreq.store(ef);
+                // powermetrics globals (all mW — same unit as data_.*Power). Without
+                // these the UI showed 0 W whenever direct IOReport mode was unavailable.
+                double cp = GetPmCpuPower();
+                double gp = GetPmGpuPower();
+                double ap = GetPmAnePower();
+                if (cp > 0) data_.cpuPower.store(cp);
+                if (gp > 0) data_.gpuPower.store(gp);
+                if (ap > 0) data_.anePower.store(ap);
             }
 #endif
         } catch (const std::exception& e) {
