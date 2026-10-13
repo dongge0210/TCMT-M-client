@@ -1,8 +1,18 @@
 name: Build TCMT-M
 
+# 这些是每次推 dev / 开 PR 都出的测试构建，没有 manifest.json 也没有签名，自动更新器拿到也用不了；
+# 而且 draft/prerelease 根本不进 /releases/latest。所以不发 release，只上传 workflow artifact
+# （要下载的人去 Actions 页拿，过期自动清）。真正的发布走 tools/release-mac.sh。
+#
+# 每个 build job 自己打包并上传一个 zip（Windows: TCMT-Windows-x64-alpha，macOS: TCMT-macOS-arm64-alpha）。
+# 以前的 package-artifacts job 额外传了两个未打包的中间产物，既占体积又让 Actions 页面出现 3 个 artifact。
+
 on:
-  #push:
-    #branches: [ main, dev ]
+  # Cache scope: PR runs write to refs/pull/N/merge, which no other branch can read.
+  # Without a push run there is never a branch-level cache, so every new PR pays the
+  # full cold cost (~9 min extra). Pushing dev seeds the dev-scoped caches.
+  push:
+    branches: [ dev ]
   pull_request:
     branches: [ main, dev ]
   workflow_dispatch:
@@ -138,18 +148,26 @@ jobs:
           x64/${{ env.BUILD_CONFIGURATION }}/
         key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
 
-    - name: Upload build artifacts
+    - name: Package alpha build
+      shell: pwsh
+      run: |
+        Compress-Archive -Path "x64/${{ env.BUILD_CONFIGURATION }}/*" `
+                         -DestinationPath "TCMT-Windows-x64-alpha.zip" -Force
+
+    - name: Upload alpha artifact
       uses: actions/upload-artifact@v7
       with:
-        name: TCMT-Windows-x64-Release
-        path: |
-          x64/${{ env.BUILD_CONFIGURATION }}/*.exe
-          x64/${{ env.BUILD_CONFIGURATION }}/*.dll
-          x64/${{ env.BUILD_CONFIGURATION }}/*.pdb
+        name: TCMT-Windows-x64-alpha
+        path: TCMT-Windows-x64-alpha.zip
+        retention-days: 14
 
   build-macos:
     name: macOS (CMake + Clang)
     runs-on: macos-14
+    env:
+      # ccache 4.x defaults to ~/Library/Caches/ccache on macOS, but the cache
+      # steps below use ~/.cache/ccache — pin it so restore/save actually hit.
+      CCACHE_DIR: ~/.cache/ccache
 
     steps:
     - name: Checkout repository
@@ -192,49 +210,16 @@ jobs:
         path: ~/.cache/ccache
         key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'cmake/**') }}
 
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v7
-      with:
-        name: TCMT-macOS-arm64-Release
-        path: build/src/TCMT-M
-
-  package-artifacts:
-    name: Package Artifacts
-    needs: [build-windows, build-macos]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Download Windows artifact
-      uses: actions/download-artifact@v7
-      with:
-        name: TCMT-Windows-x64-Release
-        path: artifacts/windows
-
-    - name: Download macOS artifact
-      uses: actions/download-artifact@v7
-      with:
-        name: TCMT-macOS-arm64-Release
-        path: artifacts/macos
-
-    - name: Package artifacts
+    - name: Package alpha build
       run: |
-        cd artifacts
-        chmod +x macos/TCMT-M
-        zip -r TCMT-Windows-x64-alpha.zip windows/
-        zip -r TCMT-macOS-arm64-alpha.zip macos/
+        chmod +x build/src/TCMT-M
+        cd build/src
+        zip "${GITHUB_WORKSPACE}/TCMT-macOS-arm64-alpha.zip" TCMT-M
 
-    # 不再发 release。这些是每次推 dev 都出的测试构建，没有 manifest.json 也没有签名，
-    # 自动更新器拿到也用不了；而且 draft/prerelease 根本不进 /releases/latest，
-    # 它连看都看不见。结果是每次推送往 releases 里转一圈、留下一个孤儿 tag —— 仓库里积了 6 个。
-    #
-    # 真正的发布走 tools/release-mac.sh（tag v<版本>、带 manifest 和签名），那条路才进 releases。
-    # 这里改成 workflow artifact：要下载的人去 Actions 页拿，过期自动清。
-    - name: Upload alpha build
+    - name: Upload alpha artifact
       uses: actions/upload-artifact@v7
       with:
-        name: TCMT-alpha-build-${{ github.run_number }}
-        path: |
-          artifacts/TCMT-Windows-x64-alpha.zip
-          artifacts/TCMT-macOS-arm64-alpha.zip
+        name: TCMT-macOS-arm64-alpha
+        path: TCMT-macOS-arm64-alpha.zip
         retention-days: 14
+
