@@ -68,6 +68,7 @@
 2. **退出崩溃**：`TuiApp::Stop()` 在 `running_==false` 时直接 return 不 join 线程，`q` 退出后 `~std::thread` 对仍 joinable 的线程 `std::terminate()`。改为无条件 join
 3. **退出延迟 26s → ~2s**：`TemperatureWrapper` powermetrics 后台线程退出时 join，卡在 30s sleep 或 10s 采集中。sleep 改为 condition_variable 可中断等待，Cleanup 时 notify；顺带修复 SIGALRM 处理器提前恢复导致 `alarm(15)` 超时会杀死进程的隐患
 4. **构建架构**：根 CMakeLists 硬编码 `arm64;x86_64` 通用架构，但 Homebrew ncurses 仅 arm64 → x86_64 切片链接失败。本地 build 目录改用 `-DCMAKE_OSX_ARCHITECTURES=arm64`
+   （2026-10-13：根 CMakeLists 的默认已直接改成 arm64，这条本地绕过不再需要；见本文件末尾的追补）
 
 ### 2026-08-11 追加 — 功能对齐 Windows + 原生日志窗口
 - **同进程 AppKit 日志窗口（`MacLogWindow.mm`，对应 Windows LogWindow）**：TUI 启动后同进程创建原生 “TCMT - Log” 窗口，读同一个内存 `LogBuffer`（新增 `Version()` 检测滚动/清空），0.5s 定时刷新。监控循环移到后台线程，主线程跑 `[NSApp run]` 事件循环，窗口完全可交互（滚动/选中/复制）；补齐最小主菜单（Edit → Copy/Select All）让 Cmd+C/Cmd+A 可用。无 WindowServer 会话（`CGMainDisplayID()==0`）自动回退 TUI 内日志页，不崩溃
@@ -86,8 +87,12 @@
 
 ### 待办/注意
 - 通用架构构建（`arm64;x86_64`）仍需 universal ncurses 或按机器覆盖架构
+  （2026-10-13：macOS 定为 arm64 only，根 CMakeLists 默认已是 arm64，此条作废）
 - `src/main_linux.cpp:466` 同款 `SetLogBuffer` 调用已由 TuiApp 修复覆盖，Linux 应能编译（未实测）
+  （2026-10-13 更正：编不过。`main_linux.cpp` 引用的 `WiFiInfo` / `BluetoothInfo` 没有 Linux 实现，
+  链接期必挂；Linux 现已定案为非目标，CMake 在配置期直接 FATAL_ERROR）
 - 上游 CPP-parsers 坏指针待上游修复（push `ed3ee062` 或回退）
+  （2026-10-13：`dev` 上该子模块早已移除；`main` 上仍挂着 gitlink，合并 dev → main 时才消失）
 
 ---
 
@@ -418,10 +423,53 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
   `__builtin_available`），还是承认 pragma 是既定做法。全仓另有 7 处 pragma 压制，口径要一次定。
 - `main` 落后 `dev` 303 个提交（合并 PR #98 才能止血 Dependabot）。
 - 两份 schema builder 合一、线格式能否表达列表（设计决策）。
-- Linux 还算不算支持目标；`127.0.0.1:9876/sensors/motion` 有没有消费者。
 - `docs/repo-directory.md` 是生成物（生成器 `tools/gen-repo-directory.mjs`），里面对 `AGENTS.md`
   的描述要重跑。
 - `ilammy/msvc-dev-cmd` 的 node20 弃用：只有替换 action 才能消掉。
+- Linux 已定案不支持（见下），但 33 个文件里的 `TCMT_LINUX` 分支没铲平，将来真做要重新捡起。
+
+## 2026-10-13 追补 — 两个门都定了，并修掉一个「全新构建就炸」的 bug（dev 上 491fc87f..754c7d22）
+
+### 门 1：Linux 不是支持目标
+
+用户原话：从来没想过 Linux 支持，因为**没有实体机保证数据准确性**。落地两条：
+
+- `cmake/Platform.cmake` 在配置期就 `FATAL_ERROR`（可 `-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON` 绕过），
+  不再让一个半登记的目标假装能编。它本来就编不过：`main_linux.cpp` 是登记的，但 `WiFiInfo` /
+  `BluetoothInfo` 没有 Linux 实现，链接期必挂。
+- 平台代码留在树里（`Platform_Linux.cpp` / `SharedMemoryManager_Linux.cpp`，由父文件 `#include` 进来），
+  `CLAUDE.md` 写明 Linux 不支持。
+
+### 门 2：9876 端点有人用，就是那个 3D 网页，而且消费方在仓库里
+
+`designs/attitude-3d.html` + `designs/attitude-3d.js` + `designs/ipc-client.js`（2026-09-10 那批）：
+`MotionClient` 每 200 ms `fetch('http://127.0.0.1:9876/sensors/motion')`，`attitude-3d.js` 吃
+`{ax,ay,az,gx,gy,gz,lidAngle,hb,imut}` 渲染姿态（`lidAngle` 还做了平滑）。所以这条侧信道不是没人用的实验。
+
+顺带两处偏差：`designs/ipc-client.js` 说用 `TCMT-M --http` 启动，**没有这个 flag**，实际是配置里的
+`motion_http.enabled`（已改）；`tools/mcp-http-bridge.mjs` 默认也用 9876，两者不能同时跑。
+
+### 推翻了 plan.md 的 C14（一半）
+
+`Platform.cpp` 与 `SharedMemoryManager.cpp` 用条件 `#include` 把平台实现拉进来（unity 写法）：
+
+    #ifdef TCMT_WINDOWS       #include "Platform_Windows.cpp"
+    #elif defined(TCMT_MACOS) #include "Platform_macOS.cpp"
+    #elif defined(TCMT_LINUX) #include "Platform_Linux.cpp"
+
+所以 plan.md 列的「5 个编译单元没人编译」里有 4 个其实一直在编（`Platform_macOS.cpp` 在 macOS 上、两个
+Linux 文件在 Linux 上）。真未编译的只有 `AccelSensor.mm`，而它也不是漏登记：`main_mac.cpp` 用的是
+`SpsManager`，`AccelSensor` 是被取代的旧设计、零引用。`CLAUDE.md` 的登记规则已补上「被父文件 include 的
+文件不许直接登记」这条。
+
+### 顺手修掉：全新 Release 构建链接失败
+
+用户报「release 失败，debug 就正常」。真因不在配置类型：根 `CMakeLists.txt` 把
+`CMAKE_OSX_ARCHITECTURES` 硬编码成 `arm64;x86_64`，而 Homebrew ncurses 与预编译的 `third_party/openssl`
+都是 arm64-only，x86_64 那一半在链接期报 `symbol(s) not found for architecture x86_64`
+（`_wgetch` / `_wmove` …）。本地 `build/` 的缓存早把 arch 钉成 arm64，所以一直藏着；CI 也显式传 `arm64`。
+已按用户口径（mac 只要 arm64）把默认改成 arm64，全量 Release 复验通过，产物是
+`Mach-O 64-bit executable arm64`。本文件早先把这件事记成「已知问题 + 本地绕过」，那个绕过往后不需要了。
 
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
