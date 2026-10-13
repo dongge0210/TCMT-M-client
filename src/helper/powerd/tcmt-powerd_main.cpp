@@ -89,10 +89,21 @@ int main() {
     ShmPower shm {};
     shm.magic = kShmMagic;
     uint64_t seq = 0;
+    int writeFailStreak = 0;
     auto WriteShm = [&]() {
-        if (lseek(fd, 0, SEEK_SET) < 0) return;
+        if (lseek(fd, 0, SEEK_SET) < 0) {
+            if (++writeFailStreak == 1)
+                Logger::Error("tcmt-powerd: lseek failed; readers will see a frozen value");
+            return;
+        }
         ssize_t w = ::write(fd, &shm, sizeof(shm));
-        (void)w;
+        if (w != static_cast<ssize_t>(sizeof(shm))) {
+            if (++writeFailStreak == 1)
+                Logger::Error("tcmt-powerd: write failed (" + std::to_string(w) + "/" +
+                              std::to_string(sizeof(shm)) + "); readers will see a frozen value");
+            return;
+        }
+        writeFailStreak = 0;
     };
 
     Logger::Info("tcmt-powerd: publishing on '" + std::string(kShmName) + "'");
