@@ -4,10 +4,15 @@
 cmake_minimum_required(VERSION 3.20)
 
 # macOS deployment target & architecture (must be set BEFORE project())
-# Supports macOS 15+ on arm64 (Apple Silicon) and x86_64 (Intel, until Apple drops support)
+# arm64 (Apple Silicon) only. Intel/x86_64 is not a target.
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS deployment target")
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+    # Deliberately arm64 only — do NOT go back to "arm64;x86_64". A universal build
+    # cannot link here anyway: Homebrew's ncurses and the prebuilt third_party/openssl
+    # are arm64-only, so a fresh `cmake -B build -DCMAKE_BUILD_TYPE=Release` died with
+    # "symbol(s) not found for architecture x86_64" (_wgetch, _wmove, ...). An existing
+    # build/ directory hid it, because its cache already pinned arm64. CI pins arm64 too.
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS architectures (arm64 only)")
 endif()
 
 project(TCMT-M
