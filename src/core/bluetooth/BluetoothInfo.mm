@@ -53,7 +53,10 @@ void BluetoothInfo::Clear() { data_ = BluetoothData{}; }
 const BluetoothData& BluetoothInfo::GetData() const { return data_; }
 
 #else
-void BluetoothInfo::Detect() {}
-void BluetoothInfo::Clear() { data_ = BluetoothData{}; }
-const BluetoothData& BluetoothInfo::GetData() const { return data_; }
+// File-level platform split: registered only under if(TCMT_MACOS) in
+// src/CMakeLists.txt, so this branch is unreachable. The non-macOS
+// implementation is core/bluetooth/BluetoothInfo.cpp (Windows, registered in
+// TCMT.vcxproj). A no-op stub here would make "collected nothing" and "not
+// implemented at all" indistinguishable, so fail loudly instead.
+#error "BluetoothInfo.mm is macOS-only. Do not add it to a non-Apple build."
 #endif

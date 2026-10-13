@@ -258,18 +258,11 @@ const WiFiData& WiFiInfo::GetData() const {
 }
 
 #else
-// ======================== Non-macOS stub ========================
-
-void WiFiInfo::Detect() {
-    Logger::Debug("WiFiInfo: not implemented on this platform");
-}
-
-void WiFiInfo::Clear() {
-    data_ = WiFiData{};
-}
-
-const WiFiData& WiFiInfo::GetData() const {
-    return data_;
-}
-
+// The platform split here is file-level: this file is registered only under
+// if(TCMT_MACOS) in src/CMakeLists.txt, so this branch is unreachable by any
+// build we have. The non-macOS implementation is core/wifi/WiFiInfo.cpp
+// (Windows, registered in TCMT.vcxproj). A stub here could only ever produce
+// silent zero readings, which is a failure mode this project has already been
+// bitten by, so fail loudly instead.
+#error "WiFiInfo.mm is macOS-only. Do not add it to a non-Apple build."
 #endif
