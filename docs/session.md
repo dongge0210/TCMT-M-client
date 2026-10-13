@@ -311,7 +311,7 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
 - 流程修复若干：`_archive/` 排除编译、进程页每 tick 重建导致的爆闪、重连后状态被上一代连接覆盖、
   字体能力标志与实现对齐、每 tick 的 SMART 日志清掉。
 
-## 2026-10-13 — plan.md 审计落地（12 commits on dev，ccb1a2d7..accfe874）
+## 2026-10-13 — plan.md 审计落地（dev 上 ccb1a2d7..8786b14a）
 
 2026-10-12 的审计报告 plan.md 是临时文件、不入库；此处记录其中「无需再决策」的部分已逐条落地。
 `cmake --build build -j8` 连续通过，只有既有的 ncurses ld 版本警告。
@@ -329,6 +329,14 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
 - **`tcmt-powerd` 的 `WriteShm` 吞掉 `write()` 返回值**。写盘失败时守护进程照常报「在发布」、客户端
   `shmValid_` 保持 true，界面是一个冻结的功耗值且无任何信号。现在检查 lseek/write，且一段连续失败里
   只记第一条。
+- **`acOnline` / `batteryPercent` 的旧读覆盖新事件**。三个写者（`PowerLoop` 的 2 秒轮询、ETW 电源/电池
+  回调、`SystemEventMonitor` 电源回调）纯 last-writer-wins，一次开始于事件之前的读可能落在事件之后，
+  把拔插电源的新状态盖回旧值。`PowerLoop` 现在在 `Detect()` 之后检查两个 dirty 标志，若事件在读取期间
+  落地就跳过本轮写入（事件回调存的就是变更后的状态，必然更新）。
+- **`Platform_macOS.cpp` 伪造 SMC**。`OpenSMCConnection()` 丢掉 `dlopen` 结果、把句柄设成 `(void*)1`
+  并 `return true`；`ReadSMCKey()` 对 `"TC0P"` 返回 45.0f、对 `"TG0P"` 返回 55.0f，都带成功返回；
+  `GetIOKitService()` 对任何名字给假句柄。调用方无法与真实读数区分。现在一律诚实失败（`false` /
+  `nullptr`）。该文件未进任何构建，所以是拆了引信的哑雷；`clang++ -fsyntax-only -DTCMT_MACOS` 干净。
 
 ### 平台与结构
 
@@ -371,22 +379,47 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
   默认 false）是实验性、不是产品面，免得下一个人再判它是死的。
 - 历史错误表新增 4 行。
 
-### 审计里被推翻的一条
+### 引用偏差（按「引用有偏差就更新」扫了一遍）
 
-- **A4「回调里的 `batteryPercent` 被丢掉」不成立**。`EtwMonitor` 的 `PowerEventCallback` 是
+脚本把 `src/`、`AvaloniaUI/`、`docs/`、`tools/`、`.github/` 里注释与文档提到的文件名逐个核对是否
+存在，剔除 SDK 系统头之后的真命中：
+
+- **`WMIManager.h` 被三处写成 `WmiManager.h`**（`PowerInfo.cpp:12`、`ModuleCoordinator_io.cpp:8`、
+  `GpuInfo.cpp:6`）。macOS / Windows 大小写不敏感，所以从没报错；Linux 大小写敏感会直接编译失败。
+  已改回正确大小写。
+- `tcmt-powerd_main.cpp:9` 的头注释仍写 `IOReportSampler.mm`（这次移动文件时漏改）。已改。
+- `docs/macos27-power-and-tcmt-powerd.md:62` 指向已不在仓库里的
+  `.claude/plans/encapsulated-gathering-cookie.md`。指针已删。
+- `.github/agents/tcmt-dev.agent.md` 提到的 `.notes/journal.md` / `.notes/insights.md` 是按设计由 agent
+  自建、且被 .gitignore 忽略的，不算偏差。
+
+### plan.md 自身的错处（读到哪个记哪个）
+
+- **A4**「回调里的 `batteryPercent` 被丢掉」不成立。`EtwMonitor` 的 `PowerEventCallback` 是
   `void(bool acOnline)`、`BatteryEventCallback` 是 `void(int percent)`，两条独立且都写了值；
   `SystemEventMonitor` 那条 `void(bool, int)` 也写了 percent。只有 `PowerLoop` 存 `batPct` 时不设下限
-  （可为 -1），这才是「缝法不一致」的真身。未改。
+  （可为 -1），这才是「缝法不一致」的真身。
+- **A1** 不是「每 2 秒 5 条」：identity / VID-DID / DVSEC 三条在 `if (!s_probed)` 一次性块内，只有
+  BAR0 magic 与 first PMT entry 是每轮，实际约 8.6 万行/天。
+- **A3** 说「错整整两秒」也偏高：事件路径会置 dirty 标志、而 `PowerLoop` 每轮结尾 `exchange(false)` 读到
+  就跳过 sleep 立刻重读，真实窗口只有一次 `Detect()`。
+- **C16** 说「三份 main 的 schema builder」，实际两份（`main_mac.cpp:78`、`main.cpp:635`）；
+  `main_linux.cpp`（749 行）里没有任何 schema 代码。
+- **D24** 括号里说 `HardwareSpecBuilder.cs` 提到不存在的 `NetworkAdapter.cpp`，但
+  `src/core/network/NetworkAdapter.cpp` 存在（31KB，登记在 `CMakeLists.txt:31`）。
+- **AC1** 说「升 v2」不可行：`ilammy/msvc-dev-cmd` 没有 v2，最新 tag `v1.13.0` 的 `action.yml` 仍是
+  `using: node20`。
 
 ### 仍未决策
 
-- `acOnline` 三写者无仲裁（`PowerLoop` / ETW / `SystemEventMonitor`），要选一种仲裁方式。
-- `Platform_macOS.cpp:544-600` 伪造 45.0f / 55.0f（该文件未进任何构建）：删掉，还是改成诚实 `return false`。
-- `tcmt_sensor_helper.c` 的 `kIOMasterPortDefault`：改 `kIOMainPortDefault` 加守卫，还是承认 pragma 是既定做法。
+- `tcmt_sensor_helper.c` 的 `kIOMasterPortDefault`：改 `kIOMainPortDefault` 加守卫（`.c` 里要用
+  `__builtin_available`），还是承认 pragma 是既定做法。全仓另有 7 处 pragma 压制，口径要一次定。
 - `main` 落后 `dev` 303 个提交（合并 PR #98 才能止血 Dependabot）。
-- 三份 main 的 schema builder 合一、线格式能否表达列表（设计决策）。
+- 两份 schema builder 合一、线格式能否表达列表（设计决策）。
 - Linux 还算不算支持目标；`127.0.0.1:9876/sensors/motion` 有没有消费者。
-- `docs/repo-directory.md` 是生成物，里面对 `AGENTS.md` 的描述要重跑生成器。
+- `docs/repo-directory.md` 是生成物（生成器 `tools/gen-repo-directory.mjs`），里面对 `AGENTS.md`
+  的描述要重跑。
+- `ilammy/msvc-dev-cmd` 的 node20 弃用：只有替换 action 才能消掉。
 
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
