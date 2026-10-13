@@ -1,5 +1,6 @@
 // TCMT IPC Client — motion data comes from the LOCAL TCMT-M motion HTTP
-// server (127.0.0.1:9876, started with `TCMT-M --http`). tcmt-server (8080)
+// server (127.0.0.1:9876). Enable it with `"motion_http": { "enabled": true }`
+// in system_monitor.json — there is no CLI flag. tcmt-server (8080)
 // is a separate backend for other things and is not needed by this page.
 
 const BASE = 'http://127.0.0.1:8080';           // tcmt-server (other features)

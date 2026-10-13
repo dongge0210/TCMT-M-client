@@ -26,7 +26,7 @@ and `2.0.0` (2026-06-17 merge) got in. There is no single source; change all six
 first.
 
 **Two separate build systems co-exist:**
-- **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64.
+- **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64. **Linux is deliberately not a supported target** (no machine to validate readings against; the `TCMT_LINUX` paths are a half-wired scaffold that fails at link). `cmake/Platform.cmake` refuses to configure for Linux unless `-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON` is passed.
 - **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with an AvaloniaUI .NET 10.0 frontend.
 
 **CRITICAL: When adding new source files (.cpp/.h/.c/.mm), you MUST register them in ALL build systems:**
@@ -35,17 +35,23 @@ first.
 3. **`src/CMakeLists.txt`** — `list(APPEND CORE_MODULES_SOURCES ...)` or appropriate variable
 Missing a build system causes linker errors on one platform while the other builds fine.
 
-Two exceptions / caveats (2026-10-13):
+Three exceptions / caveats (2026-10-13):
 
 - **`src/tools/` is deliberately unregistered.** Files there are on-demand, hand-compiled
   offline utilities (e.g. `sensor_recorder.mm` carries its own `clang++` command line in its
   header). Not registering them is intentional — do not "fix" it.
+- **Some files are compiled through a parent's `#include`, so registering them directly would
+  double-compile.** Every platform implementation is pulled in this way: `Platform.cpp`
+  includes `Platform_{Windows,macOS,Linux}.cpp`, and `SharedMemoryManager.cpp` includes
+  `SharedMemoryManager_{Windows,macOS,Linux}.cpp`, each behind an `#ifdef TCMT_*` block. Those
+  six files must not appear in any build list — the parent is what gets registered. (An audit
+  once listed four of them as "never compiled"; they are compiled, just not by a direct entry.)
 - **The stated symptom (a linker error) only appears when the symbol is referenced.** A file
   nothing calls is dropped silently, so a missing registration looks exactly like a clean
-  build. After registering a new file, also confirm something actually *references* it;
-  otherwise the omission stays invisible. Five such units (1636 lines) were found this way —
-  `Platform_macOS.cpp`, `Platform_Linux.cpp`, `SharedMemoryManager_macOS.cpp`,
-  `SharedMemoryManager_Linux.cpp`, `AccelSensor.mm`.
+  build. After registering a new file, also confirm something actually *references* it.
+  `AccelSensor.mm` is the one genuine case found this way: nothing includes `AccelSensor.h`
+  and `main_mac.cpp` uses `SpsManager` instead, so it is superseded code, not a missing
+  registration.
 
 ## Build Commands
 
@@ -108,11 +114,16 @@ IPCDataBlock (single schema-driven block, both platforms)
   - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
   - Config: `Config/ConfigManager.h/.cpp` — loads `system_monitor.json` from the project root at startup (nlohmann/json, header-only via `src/third_party/json/single_include/`). **Not wired into Windows `main.cpp` yet.**
   - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`, `LogBuffer.h` (TUI log ring; lives here, not in `src/tui/`, so `core` does not depend on the TUI)
-  - Experimental, macOS-only, **not** a product surface: `accel/` + `als/` (accelerometer / ambient
-    light) and a localhost HTTP side channel (`HTTPServer/MotionHTTPServer.cpp`). The endpoint is off
-    unless `motion_http.enabled=true` and serves `127.0.0.1:9876/sensors/motion`; no IPC field carries
-    accel / gyro / lid / motion data and nothing in AvaloniaUI or the TUI consumes it. `AccelSensor.mm`
-    is not registered in any build. Reverse-engineering reference: `docs/apple-silicon-private-apis.md`.
+  - Experimental, macOS-only motion/ALS line, **not** part of the shipped UI: `accel/` +
+    `als/` plus a localhost HTTP side channel (`HTTPServer/MotionHTTPServer.cpp`). Live path is
+    `SpsManager` (SPU HID sensors) with `ALSensor` as the ALS fallback; `AccelSensor.mm` is a
+    superseded earlier design and is called by nothing. The endpoint is off unless
+    `motion_http.enabled=true` in `system_monitor.json` (there is no CLI flag) and serves
+    `127.0.0.1:9876/sensors/motion` with `{ax,ay,az,gx,gy,gz,lidAngle,hb,imut}`. No IPC field
+    carries motion data, and the only consumer in this repo is the design prototype
+    `designs/attitude-3d.html` + `designs/ipc-client.js` (its `MotionClient` polls that URL every
+    200 ms). Note `tools/mcp-http-bridge.mjs` also defaults to port 9876 — they cannot run at the
+    same time. Reverse-engineering reference: `docs/apple-silicon-private-apis.md`.
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
 - `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
 - `src/tui/` — ncurses TUI (cross-platform; PDCurses on Windows, ncurses on macOS)
