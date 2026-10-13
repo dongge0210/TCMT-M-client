@@ -1,4 +1,4 @@
-// IPC Schema 定义 — 与 C++ src/core/IPC/IPCSchema.h 严格一致
+// IPC Schema 定义 — 与 C++ src/core/IPC/IPCData.h 严格一致
 namespace TCMT.Avalonia.Services.Hardware.IPC;
 
 public enum FieldType : byte

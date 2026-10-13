@@ -35,6 +35,18 @@ first.
 3. **`src/CMakeLists.txt`** — `list(APPEND CORE_MODULES_SOURCES ...)` or appropriate variable
 Missing a build system causes linker errors on one platform while the other builds fine.
 
+Two exceptions / caveats (2026-10-13):
+
+- **`src/tools/` is deliberately unregistered.** Files there are on-demand, hand-compiled
+  offline utilities (e.g. `sensor_recorder.mm` carries its own `clang++` command line in its
+  header). Not registering them is intentional — do not "fix" it.
+- **The stated symptom (a linker error) only appears when the symbol is referenced.** A file
+  nothing calls is dropped silently, so a missing registration looks exactly like a clean
+  build. After registering a new file, also confirm something actually *references* it;
+  otherwise the omission stays invisible. Five such units (1636 lines) were found this way —
+  `Platform_macOS.cpp`, `Platform_Linux.cpp`, `SharedMemoryManager_macOS.cpp`,
+  `SharedMemoryManager_Linux.cpp`, `AccelSensor.mm`.
+
 ## Build Commands
 
 ### macOS (Apple Silicon)
@@ -77,8 +89,8 @@ C++ Core (TCMT-M / TCMT.exe)
   │  Sources: WMI (Windows), IOKit/sysctl (macOS), PawnIO (Windows kernel),
   │           NVML/CUDA (Windows), CoreWLAN/IOBluetooth (macOS), WLAN API (Windows)
   ▼
-IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
-  │  Schema-driven field offsets broadcasted over Unix socket (macOS) / NamedPipe (Windows)
+IPCDataBlock (single schema-driven block, both platforms)
+  │  Same field layout everywhere; only the transport differs — Unix socket (macOS) / NamedPipe (Windows)
   │
   ├── AvaloniaUI (.NET 10.0, cross-platform) — connects via IPCPipeClient, reads via IPCMemoryReader
   ├── ncurses TUI (macOS-only) — reads directly in main_mac.cpp
@@ -91,7 +103,7 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
   - IPC: `IPC/IPCServer.cpp` (unified UDS+Windows), `IPC/IPCClient.cpp`, `IPC/IPCData.h` (schema/protocol)
   - MCP: `MCP/MCPServer.cpp` (JSON-RPC 2.0 over stdio, 8 tools)
   - Coordinator: `coordinator/ModuleCoordinator` — 6 background jthread loops (CPU/Memory/Disk/Network/Temp/Power), `Snapshot()` feeds main loop
-  - IOReport: `ioreport/IOReportSampler.mm` (macOS-only, private framework, no sudo)
+  - IOReport: `power/PowerMonitor_mac.mm` (macOS-only, private framework, no sudo; the macOS impl of `PowerMonitor`)
   - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
   - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
   - Config: `Config/ConfigManager.h/.cpp` — loads `system_monitor.json` from the project root at startup (nlohmann/json, header-only via `src/third_party/json/single_include/`). **Not wired into Windows `main.cpp` yet.**
@@ -99,8 +111,8 @@ IPCDataBlock (macOS) / SharedMemoryBlock (Windows)
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
 - `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
 - `src/tui/` — ncurses TUI (cross-platform; PDCurses on Windows, ncurses on macOS)
-- `src/DataStruct.h` — Packed `SharedMemoryBlock`. **`WCHAR`** = `char16_t` on macOS, `wchar_t` on Windows. Do NOT change.
-- `AvaloniaUI/Services/IPCServices/` — C# IPC pipeline (IPCPipeClient, IPCMemoryReader, IPCSchema, IPCSystemInfoMapper)
+- `src/core/DataStruct/DataStruct.h` — collector-side structs (`SystemInfo`, `DiskData`, `GPUData`, `TemperatureData`, `NetworkAdapterData`, `SmartAttributeData`, …). **`WCHAR`** = `char16_t` on macOS, `wchar_t` on Windows (`using WCHAR`, lines 23/25). Do NOT change.
+- `AvaloniaUI/Services/Hardware/IPC/` — C# IPC pipeline (IPCPipeClient, IPCMemoryReader, IPCSchema, IPCSystemInfoMapper)
 
 ### PawnIO Kernel Driver (Windows-only)
 
@@ -131,13 +143,24 @@ Some `.cpp` / `.mm` files are compiled on ONE platform only:
 - `BluetoothInfo.mm` — macOS only (IOBluetooth ObjC++). Windows: `BluetoothInfo.cpp`.
 - `TemperatureWrapper.cpp` — Cross-platform (PawnIO + NVML on Windows, SMC on macOS, sysfs on Linux).
 - `Platform_Windows.cpp` — Windows only.
-- `IOReportSampler.mm` — macOS only (private IOReport.framework + IOKit pmgr, no sudo).
+- `PowerMonitor_mac.mm` — macOS only (private IOReport.framework + IOKit pmgr, no sudo). The macOS impl of `PowerMonitor`; `PowerMonitor.cpp` is the non-macOS stub.
+- `DisplayInfo.mm` — macOS only (NSScreen / CGDisplay). No non-macOS implementation and no non-macOS caller.
+
+**Convention — do not put a platform guard inside these files.** Which platform compiles
+them is decided by the build system (`.mm` files sit under `if(TCMT_MACOS)` in
+`src/CMakeLists.txt`; their Windows counterparts are registered in `TCMT.vcxproj`), so an
+`#ifdef TCMT_MACOS` inside a `.mm` is tautological and its `#else` can never be reached.
+If you want a guard anyway, make it `#error`, never a stub. A stub turns "no
+implementation on this platform" into "the reading is zero", which is indistinguishable
+from a genuine zero and fails silently. This has already bitten us once (`WiFiInfo.mm`,
+`DisplayInfo.mm`, `BluetoothInfo.mm` each carried an unreachable stub branch until
+2026-10-12).
 
 ## IPC / Shared Memory Gotchas
 
 ### Cross-platform
 1. **macOS `wchar_t` is 4 bytes** — `DataStruct.h` uses `WCHAR` typedef (`char16_t` on non-Windows). Do NOT revert.
-2. **Two shared memory blocks**: `IPCDataBlock` (macOS, schema-driven) and `SharedMemoryBlock` (Windows, legacy). C# mapper reads BOTH; field names and offsets differ per platform.
+2. **One shared memory block, two transports**: `IPCDataBlock` (`src/core/IPC/IPCData.h`) is the only block on both platforms — there is no `SharedMemoryBlock`. The platform difference is *how the bytes are reached* (POSIX shm + Unix socket on macOS, NamedPipe + `MemoryMappedViewAccessor` on Windows), **not the field layout**. Names and offsets are identical everywhere because the schema is broadcast; never hand-align the two sides.
 3. **Schema MaxFields=300** (`IPC_MAX_FIELDS`) — must match in both `IPCData.h` and `IPCSchema.cs`. Bump both when adding fields. Going over the limit is **silent**: `IPCClient.cpp:184` drops the extras, so overflow shows up as *missing fields*, not as an error. (Was 200 until 2026-05-16, when WiFi's schema crossed index 257 and got cut.)
 
 ### Windows-specific (critical)
@@ -157,17 +180,6 @@ Some `.cpp` / `.mm` files are compiled on ONE platform only:
 13. **No `std::jthread` / `std::stop_token`** on Xcode < 16 (Apple Clang). Use `tcmt::compat::StopToken` / `tcmt::compat::JThread` from `src/core/Utils/JThreadCompat.h`. Native `std::` types are aliased on MSVC.
 14. **`.mm` files** are Objective-C++ (used for CoreWLAN, IOBluetooth). Compiled only on macOS via CMake. MSVC/vcxproj must NOT include them.
 
-### CsWin32 / P/Invoke Rules (CRITICAL)
-
-The LibreHardwareMonitor submodule uses **CsWin32 v0.3.275** to generate Windows API wrappers from `NativeMethods.txt`. This means:
-
-15. **NEVER manually write `[DllImport]` stubs** for functions already listed in `NativeMethods.txt`. CsWin32 will generate the correct signatures with safe `SafeHandle` return types, `in` ref params, and proper enum types. Manual stubs cause signature mismatches with callers written for CsWin32-generated overloads.
-16. **Callers MUST use `PInvoke.SetupDiXxx(...)` prefix**, not bare `using static` imports from a manually-written stub class.
-17. **Concrete SafeHandle types matter**: CsWin32 generates typed safe handles (e.g. `SetupDiDestroyDeviceInfoListSafeHandle`). Don't pass the base `SafeHandle` class — cast to the concrete type when needed.
-18. **Enums, not ints**: CsWin32 overloads accept `SETUP_DI_REGISTRY_PROPERTY` enum directly. Don't cast to `uint`.
-
-**What happened (2026-05-12)**: A manual `SetupApi.cs` was added with raw pointer DllImport signatures (`Guid*`, `SP_DEVINFO_DATA*`, returns `HDEVINFO`). This conflicted with `BatteryGroup.cs` and `Stm32PortFinder.cs`, which were written for CsWin32-generated safe wrappers (returns `SetupDiDestroyDeviceInfoListSafeHandle`, takes `Guid` by value, uses `ref`/`in`). Fix: deleted `SetupApi.cs` (functions already in `NativeMethods.txt`), switched callers to `PInvoke.` prefix, and fixed helper methods to match the generated overloads.
-
 ## vcxproj Include Paths
 
 Windows build requires these include directories (set in `TCMT.vcxproj`):
@@ -180,7 +192,7 @@ git submodule update --init --recursive
 ```
 
 ## Key Dependencies
-- **Windows**: CUDA 13.2, LibreHardwareMonitor (MPL-2.0, compiled DLL), WMI, PDH, WLAN API (wlanapi.lib), Bluetooth API (Bthprops.lib)
+- **Windows**: CUDA 13.2, WMI, PDH, WLAN API (wlanapi.lib), Bluetooth API (Bthprops.lib)
 - **macOS**: IOKit, CoreFoundation, CoreWLAN, IOBluetooth, ncurses
 - **AvaloniaUI**: Avalonia 12.0.1, CommunityToolkit.Mvvm 8.2.2, Serilog 3.1.1
 - **Config**: nlohmann/json (header-only submodule at `src/third_party/json`)
@@ -209,8 +221,10 @@ git submodule update --init --recursive
 | `src/third_party/` 有 9 个（后来改成 10 个）子模块 | 11 个。FFmpeg 只出现在 `.gitmodules` 的历史里，当前 checkout 从来没有过 | 2026-09-03 |
 | macOS 产物在 `build/bin/TCMT-M` | 在 `build/src/TCMT-M`，且运行要进 `.app` 包内那个（裸二进制拿不到 CoreLocation/SSID） | 2026-10-12 |
 | AGENTS.md 是一份独立的规则文件 | 它只是 CLAUDE.md 的并行副本，已经漂移出错误内容，现压成一行指针 | 2026-10-12 |
-
-**仍未清理**：子模块 `LibreHardwareMonitor` 已在 `d98e601f` 移除，但「CsWin32 / P/Invoke Rules」一节的引言和「Key Dependencies」都在提它，还把 CsWin32 挂在那个子模块名下。规则本身可能仍然成立（取决于现在谁生成 `NativeMethods`），但归属描述是错的。
+| `IPCDataBlock` (macOS) + `SharedMemoryBlock` (Windows) 两块，字段名与偏移随平台变 | 只有一块 `IPCDataBlock`；平台差异在传输方式（POSIX shm+UDS ↔ NamedPipe），布局全平台一致 | 2026-10-13 |
+| `src/DataStruct.h` — Packed `SharedMemoryBlock` | 真身 `src/core/DataStruct/DataStruct.h`，定义的是采集侧结构体（`SystemInfo` / `DiskData` / `GPUData` …），没有 `SharedMemoryBlock` | 2026-10-13 |
+| 「CsWin32 / P/Invoke Rules」整节（原 15-18 条 + `SetupApi.cs` 事件） | 整节作废。LibreHardwareMonitor 子模块已由 `d98e601f` 移除；全仓已无 CsWin32 包引用、无 `NativeMethods.txt`、无 `PInvoke.` 调用（手动 `DllImport` 另存 5 处，与本规则无关） | 2026-10-13 |
+| `AvaloniaUI/Services/IPCServices/` | 目录不存在，实际是 `AvaloniaUI/Services/Hardware/IPC/` | 2026-10-13 |
 
 ## Scope & Boundaries
 - **Stay focused**: When debugging, focus narrowly on the specific error or crash. Do NOT deep-dive into unrelated internals, propose tangential refactors, or expand the scope without asking.
