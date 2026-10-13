@@ -40,19 +40,19 @@ function(tcmt_detect_platform)
         message(STATUS "  Build host: macOS ${MACOS_VERSION}")
 
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        # Linux is NOT a supported target (decided 2026-10-13). There is no Linux
-        # machine to validate readings against, so accuracy cannot be guaranteed — and
-        # the tree is only half-wired anyway: main_linux.cpp is registered, but
-        # WiFiInfo and BluetoothInfo have no Linux implementation, so it fails at link.
-        # Fail at configure time instead of half-building. The platform code is still
-        # in the tree (Platform_Linux.cpp, SharedMemoryManager_Linux.cpp — pulled in by
-        # their parents' #include, so they are not registered separately).
-        # Reviving Linux means implementing WiFiInfo/BluetoothInfo for it and removing
-        # this guard; the opt-in below exists only so that work can start.
+        # Linux is NOT a supported target (decided 2026-10-13): there is no Linux
+        # machine to validate readings against, so accuracy cannot be guaranteed, and
+        # the TCMT_LINUX paths are a half-wired scaffold — main_linux.cpp is registered
+        # while WiFiInfo and BluetoothInfo have no Linux implementation, so a Linux
+        # build can fail at link. Warn loudly instead of blocking, because Linux builds
+        # are still useful for experiments. The platform code stays in the tree
+        # (Platform_Linux.cpp, SharedMemoryManager_Linux.cpp — pulled in by their
+        # parents' #include, so they are not registered separately).
         if(NOT TCMT_ALLOW_UNSUPPORTED_LINUX)
-            message(FATAL_ERROR
-                "Linux is not a supported target for TCMT-M (see CLAUDE.md). "
-                "Configure with -DTCMT_ALLOW_UNSUPPORTED_LINUX=ON to try anyway.")
+            message(WARNING
+                "Building for Linux, which is NOT a supported target for TCMT-M (see "
+                "CLAUDE.md). Expect gaps, especially at link time. Pass "
+                "-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON to silence this warning.")
         endif()
         set(TCMT_LINUX ON CACHE BOOL "Building for Linux platform")
         set(TCMT_PLATFORM_NAME "Linux" CACHE STRING "Platform name")

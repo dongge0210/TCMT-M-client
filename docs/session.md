@@ -434,9 +434,10 @@ Apple 签名的进程链里跑 `ifconfig` 拿到真值，而未签名的本地�
 
 用户原话：从来没想过 Linux 支持，因为**没有实体机保证数据准确性**。落地两条：
 
-- `cmake/Platform.cmake` 在配置期就 `FATAL_ERROR`（可 `-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON` 绕过），
-  不再让一个半登记的目标假装能编。它本来就编不过：`main_linux.cpp` 是登记的，但 `WiFiInfo` /
-  `BluetoothInfo` 没有 Linux 实现，链接期必挂。
+- `cmake/Platform.cmake` 在配置期 `message(WARNING ...)` 并把版本行标 `[UNSUPPORTED]`
+  （`-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON` 可静音），不再让一个半登记的目标假装是受支持的。
+  这里**不硬挡**：Linux 构建仍可用于实验。注意它可能链接失败——`main_linux.cpp` 是登记的，但
+  `WiFiInfo` / `BluetoothInfo` 没有 Linux 实现。
 - 平台代码留在树里（`Platform_Linux.cpp` / `SharedMemoryManager_Linux.cpp`，由父文件 `#include` 进来），
   `CLAUDE.md` 写明 Linux 不支持。
 
