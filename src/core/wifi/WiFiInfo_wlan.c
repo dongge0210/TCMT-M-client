@@ -245,9 +245,5 @@ bool WlanDetect(WlanData* out) {
 }
 
 #else
-// Stub for non-Windows
-bool WlanDetect(WlanData* out) {
-    (void)out;
-    return false;
-}
+#error "WiFiInfo_wlan.c is Windows-only (registered in TCMT.vcxproj, not CMake); there is no non-Windows implementation. Do not add a stub."
 #endif
