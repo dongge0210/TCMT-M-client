@@ -107,7 +107,12 @@ IPCDataBlock (single schema-driven block, both platforms)
   - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
   - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
   - Config: `Config/ConfigManager.h/.cpp` — loads `system_monitor.json` from the project root at startup (nlohmann/json, header-only via `src/third_party/json/single_include/`). **Not wired into Windows `main.cpp` yet.**
-  - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`
+  - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`, `LogBuffer.h` (TUI log ring; lives here, not in `src/tui/`, so `core` does not depend on the TUI)
+  - Experimental, macOS-only, **not** a product surface: `accel/` + `als/` (accelerometer / ambient
+    light) and a localhost HTTP side channel (`HTTPServer/MotionHTTPServer.cpp`). The endpoint is off
+    unless `motion_http.enabled=true` and serves `127.0.0.1:9876/sensors/motion`; no IPC field carries
+    accel / gyro / lid / motion data and nothing in AvaloniaUI or the TUI consumes it. `AccelSensor.mm`
+    is not registered in any build. Reverse-engineering reference: `docs/apple-silicon-private-apis.md`.
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
 - `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
 - `src/tui/` — ncurses TUI (cross-platform; PDCurses on Windows, ncurses on macOS)
