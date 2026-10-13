@@ -54,7 +54,7 @@ if(TCMT_MACOS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/ServerProbe.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/Updater.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/disk/SmartReader_mac.mm
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/ioreport/IOReportSampler.mm
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/power/PowerMonitor_mac.mm
     )
 endif()
 

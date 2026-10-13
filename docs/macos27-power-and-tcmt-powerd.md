@@ -36,7 +36,7 @@ TuiData.cpuPower/gpuPower/anePower + powerAvailable
 
 组件:
 - `src/helper/powerd/tcmt-powerd_main.cpp` — daemon;popen powermetrics(`-n 2 -i 1000`),sscanf 逐行解析 `CPU/GPU/ANE Power: N mW`,写 `/tmp/tcmt-power`(magic `TCMTPOWR` + seq + 3×double mW;`O_CREAT|O_EXCL` 防抢占,失败 unlink 重试;sticky /tmp 保证创建后不可被替换)。
-- `src/core/ioreport/IOReportSampler.mm` — 客户端:`ReadShmPower()` 每采样轮 open+read,fstat 校验属主 root,seq 变化才更新;`kEnergyModelAllowed = macOS major < 27` 门控能量提取(频率采样不受限)。
+- `src/core/power/PowerMonitor_mac.mm` — 客户端:`ReadShmPower()` 每采样轮 open+read,fstat 校验属主 root,seq 变化才更新;`kEnergyModelAllowed = macOS major < 27` 门控能量提取(频率采样不受限)。(2026-10-13 由 `src/core/ioreport/IOReportSampler.mm` 移入。)
 - `PowerMonitor::IsPowerAvailable()` — direct IOReport(≤26)或 SHM 有效读数时为 true。
 - `tools/install-powerd.sh` / `uninstall-powerd.sh` — sudo 安装/卸载(拷贝二进制 + LaunchDaemon plist + `launchctl bootstrap`)。注意:`bootout` 后需 sleep 再 `bootstrap`(launchd 竞态会报 EIO)。
 - 构建:CMake target `tcmt-powerd`(macOS only;源 = daemon main + Logger.cpp,不链 TCMTCore)。

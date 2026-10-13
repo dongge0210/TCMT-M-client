@@ -29,7 +29,8 @@ public:
     ~PowerMonitor();
 
     // Start monitoring. Returns true if direct IOReport mode succeeded.
-    // On failure, caller should start the legacy powermetrics thread.
+    // On failure, caller should start the legacy powermetrics thread
+    // (TemperatureWrapper.cpp, powermetrics_thread_func).
     bool Start();
     void Stop();
     bool IsRunning() const { return running_.load(); }
@@ -58,7 +59,7 @@ private:
     void SampleLoop();  // Runs on background thread in direct mode
     void ParsePowerDelta(void* deltaDict);  // Parse IOReport delta for power
     int64_t ExtractChannelValue(void* channel);  // Get value from IOReport channel
-    double EnergyToPower(void* channel, int64_t energyDelta);  // Convert energy delta to Watts
+    double EnergyJoules(void* channel, int64_t energyDelta);  // Convert a raw IOReport energy delta to Joules
     // macOS 27+ non-root client path: read powers published by tcmt-powerd.
     void ReadShmPower();
 
@@ -74,6 +75,12 @@ private:
     std::atomic<double> cpuPower_{0.0};
     std::atomic<double> gpuPower_{0.0};
     std::atomic<double> anePower_{0.0};
+
+    // Wall-clock interval between the two IOReport samples the current delta was
+    // computed from. Energy deltas span this interval, so power = energy / interval;
+    // 1.0 is only the fallback when no measurement is available.
+    std::atomic<double> lastIntervalSec_{1.0};
+    double IntervalSeconds() const { double d = lastIntervalSec_.load(); return d > 0.0 ? d : 1.0; }
 
     // Opaque handles (defined in .cpp)
     void* subs_{nullptr};    // IOReportSubscriptionRef

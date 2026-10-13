@@ -1,6 +1,7 @@
-// IOReportSampler.mm — Apple Silicon IOReport power/frequency/state sampling engine
+// PowerMonitor_mac.mm — Apple Silicon IOReport power/frequency/state sampling engine
+// The macOS implementation of the PowerMonitor class (see PowerMonitor.h).
 // Provides IOReport subscription, delta sampling, channel iteration, and data extraction.
-// Used by PowerMonitor module. Compiled only on macOS.
+// Compiled only on macOS (registered under if(TCMT_MACOS) in src/CMakeLists.txt).
 
 #include "power/PowerMonitor.h"
 #include "Utils/Logger.h"
@@ -11,6 +12,7 @@
 #include <thread>
 #include <cstring>
 #include <cstdint>
+#include <cstdlib>
 #include <chrono>
 #include <sys/sysctl.h>
 #include <sys/mman.h>
@@ -19,6 +21,15 @@
 #include <unistd.h>
 
 static FILE* dbg_ = nullptr;
+
+// Debug output is opt-in: set TCMT_IOREPORT_DEBUG=1. It writes unbuffered to a fixed
+// /tmp file, so leaving it always-on costs one write() syscall per fprintf — inside the
+// sampling loop — and inflates the very interval the power math divides by.
+static bool IoReportDebugOn() {
+    static const bool on = (::getenv("TCMT_IOREPORT_DEBUG") != nullptr);
+    return on;
+}
+#define DBG(...) do { if (dbg_) fprintf(dbg_, __VA_ARGS__); } while (0)
 
 // ====================================================================
 // IOReport private API — loaded via dlopen("/usr/lib/libIOReport.dylib")
@@ -208,22 +219,24 @@ bool PowerMonitor::Start() {
     eFreqCount_ = ReadPmgrFreqTable("voltage-states1-sram", eFreqTable_, 32);
     gpuFreqCount_ = ReadPmgrFreqTable("voltage-states9", gpuFreqTable_, 32);
 
-    dbg_ = fopen("/tmp/ioreport_debug.log", "w");
-    if (dbg_) setbuf(dbg_, nullptr); else dbg_ = stderr;
+    if (IoReportDebugOn()) {
+        dbg_ = fopen("/tmp/ioreport_debug.log", "w");
+        if (dbg_) setbuf(dbg_, nullptr); else dbg_ = stderr;
+    }
 
     // DEBUG: dump DVFS tables
-    fprintf(dbg_, "[IOReport] DVFS tables: P-core=%d E-core=%d GPU=%d\n",
-            pFreqCount_, eFreqCount_, gpuFreqCount_);
+    DBG("[IOReport] DVFS tables: P-core=%d E-core=%d GPU=%d\n",
+        pFreqCount_, eFreqCount_, gpuFreqCount_);
     auto dumpTable = [](const char* label, double* ft, int n) {
-        fprintf(dbg_, "[IOReport] %s:", label);
-        for (int i = 0; i < n; i++) fprintf(dbg_, " %.0f", ft[i]);
-        fprintf(dbg_, "\n");
+        DBG( "[IOReport] %s:", label);
+        for (int i = 0; i < n; i++) DBG( " %.0f", ft[i]);
+        DBG( "\n");
     };
     if (pFreqCount_ > 0) dumpTable("P-core", pFreqTable_, pFreqCount_);
     if (eFreqCount_ > 0) dumpTable("E-core", eFreqTable_, eFreqCount_);
     if (gpuFreqCount_ > 0) dumpTable("GPU   ", gpuFreqTable_, gpuFreqCount_);
-    // Scan ALL voltage-states* properties in pmgr
-    {
+    // Scan ALL voltage-states* properties in pmgr (debug only — 27 property reads)
+    if (dbg_) {
         double alt[64];
         const char* vsNames[] = {
             "voltage-states0","voltage-states1","voltage-states2",
@@ -240,9 +253,9 @@ bool PowerMonitor::Start() {
         for (auto n : vsNames) {
             int c = ReadPmgrFreqTable(n, alt, 64);
             if (c > 0) {
-                fprintf(dbg_, "[IOReport] VS '%s': %d entries", n, c);
-                for (int i = 0; i < c; i++) fprintf(dbg_, " %.0f", alt[i]);
-                fprintf(dbg_, "\n");
+                DBG( "[IOReport] VS '%s': %d entries", n, c);
+                for (int i = 0; i < c; i++) DBG( " %.0f", alt[i]);
+                DBG( "\n");
             }
         }
     }
@@ -294,6 +307,7 @@ void PowerMonitor::SampleLoop() {
         Logger::Error("PowerMonitor: first IOReportCreateSamples failed");
         return;
     }
+    auto tPrev = std::chrono::steady_clock::now();
     while (running_.load()) {
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
         while (running_.load() && std::chrono::steady_clock::now() < deadline)
@@ -301,6 +315,11 @@ void PowerMonitor::SampleLoop() {
         if (!running_.load()) break;
         CFDictionaryRef nextSample = g_CreateSamples(subs_, static_cast<CFDictionaryRef>(chan_), nullptr);
         if (!nextSample) break;
+        // Energy deltas span the real elapsed interval, not a nominal 1 s. Measure
+        // it so power = energy / interval is honest (the loop actually takes 1.00-1.10 s).
+        auto tNow = std::chrono::steady_clock::now();
+        lastIntervalSec_.store(std::chrono::duration<double>(tNow - tPrev).count());
+        tPrev = tNow;
         CFDictionaryRef delta = g_CreateDelta(prevSample, nextSample, nullptr);
         if (delta) { ParsePowerDelta((void*)delta); CFRelease((CFTypeRef)delta); }
         // macOS 27+ non-root: energy channels are zeroed, so power comes from
@@ -380,7 +399,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 else if (strncmp(name, "PCPU", 4) == 0) { if (dbgPCore < 3) { doDump = true; dbgPCore++; } }
                 else { if (dbgECore < 3) { doDump = true; dbgECore++; } }
                 if (doDump) {
-                    fprintf(dbg_, "[IOReport] chan=%s nStates=%d freqCount=%d\n",
+                    DBG( "[IOReport] chan=%s nStates=%d freqCount=%d\n",
                             name, nStates, freqCount);
                 }
                 // END DEBUG
@@ -401,7 +420,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                                    strncmp(snameBuf, "DOWN", 4) == 0 ||
                                    strncmp(snameBuf, "OFF", 3) == 0);
                     if (doDump) {
-                        fprintf(dbg_, "  [%d] state=%s res=%lld -> %.0f MHz (idx=%d)%s\n",
+                        DBG( "  [%d] state=%s res=%lld -> %.0f MHz (idx=%d)%s\n",
                                 si, snameBuf, (long long)r, freq,
                                 si < freqCount ? si : -1,
                                 isIdle ? " SKIP" : "");
@@ -412,7 +431,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 }
                 if (tres > 0) {
                     double mhz = wsum / static_cast<double>(tres);
-                    if (doDump) fprintf(dbg_, "  => weighted avg = %.1f MHz (wsum=%.0f tres=%lld)\n", mhz, wsum, (long long)tres);
+                    if (doDump) DBG( "  => weighted avg = %.1f MHz (wsum=%.0f tres=%lld)\n", mhz, wsum, (long long)tres);
                     if (isGpu) { gpuFreqSum += mhz; gpuFreqN++; }
                     else if (strncmp(name, "PCPU", 4) == 0) { pCoreFreqSum += mhz; pCoreFreqN++; }
                     else { eCoreFreqSum += mhz; eCoreFreqN++; }
@@ -423,11 +442,11 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
         }
 
         int64_t value = ExtractChannelValue((void*)channel);
-        if (value <= 0 || value == INT64_MIN) continue;
+        if (value <= 0) continue;  // energy deltas are non-negative; INT64_MIN is already covered
 
         if (kEnergyModelAllowed) {
             if (strcmp(group, "Energy Model") == 0) {
-                double power = EnergyToPower((void*)channel, value) * 1000.0;
+                double power = EnergyJoules((void*)channel, value) / IntervalSeconds() * 1000.0;  // J / s * 1000 = mW
                 if (power > 0.1 && power < 50000.0) {
                     if ((strncmp(name, "ECPU", 4) == 0 || strncmp(name, "PCPU", 4) == 0) && !strstr(name, "SRAM"))
                         cpuPower_.store(cpuPower_.load() + power);
@@ -436,7 +455,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                 }
             }
             else if (strcmp(group, "ANE") == 0) {
-                double power = EnergyToPower((void*)channel, value) * 1000.0;
+                double power = EnergyJoules((void*)channel, value) / IntervalSeconds() * 1000.0;  // J / s * 1000 = mW
                 if (power >= 0.0 && power < 50000.0) anePower_.store(power);
             }
         }
@@ -450,7 +469,7 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
     {
         static int debugN = 0;
         if (debugN < 10) {
-            fprintf(dbg_, "[IOReport] delta#%d: P-core=%.0f MHz  E-core=%.0f MHz  GPU=%.0f MHz\n",
+            DBG( "[IOReport] delta#%d: P-core=%.0f MHz  E-core=%.0f MHz  GPU=%.0f MHz\n",
                     debugN, pCoreFreq_.load(), eCoreFreq_.load(), gpuFreq_.load());
             debugN++;
         }
@@ -480,7 +499,7 @@ int64_t PowerMonitor::ExtractChannelValue(void* channelV) {
     return 0;
 }
 
-double PowerMonitor::EnergyToPower(void* channelV, int64_t energyDelta) {
+double PowerMonitor::EnergyJoules(void* channelV, int64_t energyDelta) {
     auto* channel = static_cast<CFDictionaryRef>(channelV);
     // Default to mJ (most IOReport energy channels report in millijoules)
     double scale = 1e3;
@@ -521,7 +540,8 @@ void PowerMonitor::ReadShmPower() {
     uint64_t seq = s.seq;
     if (seq == 0 || seq == lastShmSeq_) return;  // no new publish yet
     lastShmSeq_ = seq;
-    __sync_synchronize();
+    // No manual fence: the stores below are already sequentially-consistent
+    // std::atomic operations, and a fence could not validate the bytes read above.
     cpuPower_.store(s.cpuW);
     gpuPower_.store(s.gpuW);
     anePower_.store(s.aneW);
