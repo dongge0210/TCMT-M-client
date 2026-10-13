@@ -3,7 +3,7 @@
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
-#include "WmiManager.h"
+#include "WMIManager.h"
 #include <comutil.h>
 #include <algorithm>
 #include <cwctype>

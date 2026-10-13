@@ -9,7 +9,7 @@
 #include <wbemidl.h>
 #include <comdef.h>
 #include <powrprof.h>
-#include "../Utils/WmiManager.h"
+#include "../Utils/WMIManager.h"
 
 // NO_SUBTYPE_GUID may not be declared in newer SDKs; define it locally.
 // {fea3413e-7e05-4911-9a71-700331f1c294}

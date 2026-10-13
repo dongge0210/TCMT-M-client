@@ -5,7 +5,7 @@
 #include "Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
-#include "Utils/WmiManager.h"
+#include "Utils/WMIManager.h"
 #endif
 
 // ============================================================================
