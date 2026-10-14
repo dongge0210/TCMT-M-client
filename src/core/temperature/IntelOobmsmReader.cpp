@@ -108,14 +108,28 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
     magic[8] = '\0';
     Logger::Debug(std::string("IntelOobmsm: BAR0 magic=\"") + magic + "\"");
 
-    // Read first telemetry entry base offset from PMT discovery table
-    uint32_t entryBase = Bar0Read(s_pa, 12);
-    if (entryBase != 0 && entryBase != 0xFFFFFFFF)
-        Logger::Debug(std::string("IntelOobmsm: first PMT entry at 0x") + std::to_string(entryBase));
+    // ── PMT telemetry: why this stops short ────────────────────────────────────
+    // Deliberately not decoded. Two things are missing and neither may be guessed:
+    //
+    //  1. The OOBMSM BAR0 discovery-table layout. The Linux kernel's path does not
+    //     transfer: there each entry's header (base_offset / size / guid /
+    //     access_type — drivers/platform/x86/intel/pmt/class.h) is its OWN resource,
+    //     and num_entries / entry_size come from the PCI DVSEC, not from a table
+    //     inside BAR0. OOBMSM is a BAR0-based block with its own spec, which we have
+    //     not got. An intermediate version of this comment asserted a
+    //     "guid | num_entries | entry_size" header at BAR0+0/+12/+16; that was
+    //     inferred from the kernel, not verified against OOBMSM, and was removed.
+    //  2. A guid/offset → Celsius map. A telemetry entry is a raw counter, and the
+    //     guid names a namespace (PUNIT, crashlog, …), not a sensor. The kernel does
+    //     not decode it either — it exposes the raw buffer to userspace.
+    //
+    // Inventing either one would put manufactured degrees into the temperature list.
+    // That is the exact failure this codebase keeps fixing: Platform_macOS.cpp
+    // fabricated 45 °C / 55 °C until 2026-10-14. A missing temperature renders as N/A
+    // and prompts a question; a fabricated one looks like a reading and gets believed.
 
-    // TODO: full PMT telemetry enumeration
-    // Reference: Intel PMT spec
-
+    Logger::Debug("IntelOobmsm: PMT telemetry not decoded (no OOBMSM table layout, "
+                  "no guid->temperature map) — reporting no temperatures");
     return result;
 }
 #endif
