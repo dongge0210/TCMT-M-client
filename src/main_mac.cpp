@@ -942,6 +942,14 @@ int main(int argc, char* argv[]) {
     s_updater.CheckForUpdate();
     tuiApp.SetUpdateRequestHandler([] { s_updater.StartDownload(); });
 
+    // Language chosen on the settings page survives a restart: the TUI hands the
+    // new value back here, and startup feeds the saved one in (TCMT_LANG still wins).
+    tuiApp.SetConfiguredLanguage(g_cfg.GetString("ui.language", ""));
+    tuiApp.SetLanguageHandler([](tcmt::Lang lang) {
+        g_cfg.SetString("ui.language", lang == tcmt::Lang::ZhHans ? "zh-Hans" : "en");
+        g_cfg.Save();
+    });
+
     tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
         g_cfg.SetBool("server.enabled", s.enabled);
         g_cfg.SetString("server.url", s.url);

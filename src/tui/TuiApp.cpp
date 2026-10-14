@@ -1365,6 +1365,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
                 serverSettings_ = draftSettings_;
             }
             g_lang = draftLang_;   // keep the language chosen in this form
+            if (languageHandler_) languageHandler_(draftLang_);   // let main persist it
             settingsPage_ = false;
             curs_set(0);
             clear();
@@ -1455,9 +1456,8 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
               std::to_string(draftSettings_.sampleIntervalMs) + Tr("settings.sample_bounds"));
     drawField(5, y0 + 7, Tr("settings.language"),
               draftLang_ == Lang::ZhHans ? Tr("lang.name.zh") : Tr("lang.name.en"));
-    // TODO(i18n): persist the chosen language (e.g. ui.language in
-    // system_monitor.json) and read it at startup after TCMT_LANG; the
-    // in-form switch is session-only for now.
+    // Saved as ui.language via SetLanguageHandler (main persists it) and read back
+    // at startup; TCMT_LANG still takes priority.
 
     // Status + hints
     {
@@ -1845,8 +1845,12 @@ void TuiApp::Run() {
     const char* curLocale = std::setlocale(LC_ALL, nullptr);
     const bool utf8Locale = curLocale &&
         (std::strstr(curLocale, "UTF-8") != nullptr || std::strstr(curLocale, "utf-8") != nullptr);
-    // i18n: TCMT_LANG > active locale > en; non-UTF-8 forces en.
-    I18nSelect(std::getenv("TCMT_LANG"), curLocale, utf8Locale);
+    // i18n: TCMT_LANG > ui.language from config > active locale > en; non-UTF-8 forces en.
+    // I18nSelect only looks at the "zh" prefix, so the saved config value
+    // ("zh-Hans" / "en") rides the same slot as the locale.
+    I18nSelect(std::getenv("TCMT_LANG"),
+               configuredLang_.empty() ? curLocale : configuredLang_.c_str(),
+               utf8Locale);
     asciiMode_ = (asciiEnv != nullptr && std::strcmp(asciiEnv, "0") != 0) || !utf8Locale;
     if (asciiMode_) {
         sparkChars_ = " .:-=+*#";    // 8 ink-ascending levels, index 0 = empty

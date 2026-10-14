@@ -386,6 +386,15 @@ public:
         sampleIntervalHandler_ = std::move(h);
     }
 
+    // UI language. SetConfiguredLanguage seeds the startup choice from config:
+    // TCMT_LANG still wins, then this, then the system locale. The handler fires
+    // on the TUI thread when the settings page saves a new language, so main can
+    // persist it (ui.language in system_monitor.json).
+    void SetConfiguredLanguage(std::string lang) { configuredLang_ = std::move(lang); }
+    void SetLanguageHandler(std::function<void(Lang)> h) {
+        languageHandler_ = std::move(h);
+    }
+
     // Inject external log buffer (e.g. from Logger) for the in-TUI log page.
     // Inert on platforms without the inline page (caps_.inlineLogPage).
     void SetLogBuffer(LogBuffer* buf);
@@ -496,6 +505,8 @@ private:
     ServerSettings draftSettings_;         // edits in progress
     std::function<void(const ServerSettings&)> settingsHandler_;
     std::function<void(int)> sampleIntervalHandler_;   // settings page: sampling interval
+    std::function<void(Lang)> languageHandler_;        // settings page: UI language
+    std::string configuredLang_;                       // ui.language from config ("" = unset)
     bool settingsPage_ = false;
     bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
     bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)

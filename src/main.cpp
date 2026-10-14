@@ -2242,6 +2242,19 @@ int main(int argc, char* argv[]) {
             cfg.Save();
             Logger::Info("Sampling interval set to " + std::to_string(ms) + " ms");
         });
+        // 语言同样单独一个 handler：设置页选的语言以前只活在本次会话里，重启就回到默认。
+        // 启动时把存下来的值喂回去（TCMT_LANG 仍然优先）。
+        {
+            auto& cfg = GetServerCfg();
+            tuiApp.SetConfiguredLanguage(cfg.GetString("ui.language", ""));
+        }
+        tuiApp.SetLanguageHandler([](tcmt::Lang lang) {
+            auto& cfg = GetServerCfg();
+            cfg.SetString("ui.language", lang == tcmt::Lang::ZhHans ? "zh-Hans" : "en");
+            cfg.Save();
+            Logger::Info(std::string("UI language set to ")
+                         + (lang == tcmt::Lang::ZhHans ? "zh-Hans" : "en"));
+        });
         Logger::Info("TUI started");
 
         // Standalone log window (Win32, same process): shows the in-process
