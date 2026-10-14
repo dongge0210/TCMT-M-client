@@ -202,7 +202,7 @@ Windows build requires these include directories (set in `TCMT.vcxproj`):
 - `$(ProjectDir)src\third_party\json\single_include` — nlohmann/json (header-only)
 
 ## Submodules
-11 submodules in `src/third_party/` (incl. nlohmann/json at `src/third_party/json`). Always use `--recursive`:
+12 submodules in `src/third_party/` (incl. nlohmann/json at `src/third_party/json`, and `libusb_scsi_command` — a demo of SCSI vendor commands over USB Bulk-Only Transport, kept as reference for the JMS583 SMART work; it is **not built**). Always use `--recursive`:
 ```bash
 git submodule update --init --recursive
 ```
@@ -235,7 +235,7 @@ git submodule update --init --recursive
 | 曾经写过的错 | 真相 | 纠正时间 |
 |---|---|---|
 | Schema `MaxFields=200` | 300；超限是静默截断，不是报错 | 2026-05-16 |
-| `src/third_party/` 有 9 个（后来改成 10 个）子模块 | 11 个。FFmpeg 只出现在 `.gitmodules` 的历史里，当前 checkout 从来没有过 | 2026-09-03 |
+| `src/third_party/` 有 9 个（后来改成 10 个）子模块 | 12 个（2026-10-14 加 `libusb_scsi_command` 之前是 11）。FFmpeg 只出现在 `.gitmodules` 的历史里，当前 checkout 从来没有过 | 2026-09-03 |
 | macOS 产物在 `build/bin/TCMT-M` | 在 `build/src/TCMT-M`，且运行要进 `.app` 包内那个（裸二进制拿不到 CoreLocation/SSID） | 2026-10-12 |
 | AGENTS.md 是一份独立的规则文件 | 它只是 CLAUDE.md 的并行副本，已经漂移出错误内容，现压成一行指针 | 2026-10-12 |
 | `IPCDataBlock` (macOS) + `SharedMemoryBlock` (Windows) 两块，字段名与偏移随平台变 | 只有一块 `IPCDataBlock`；平台差异在传输方式（POSIX shm+UDS ↔ NamedPipe），布局全平台一致 | 2026-10-13 |

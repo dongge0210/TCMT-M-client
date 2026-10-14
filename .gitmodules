@@ -32,3 +32,6 @@
 [submodule "src/third_party/json"]
 	path = src/third_party/json
 	url = https://github.com/dongge0210/json.git
+[submodule "src/third_party/libusb_scsi_command"]
+	path = src/third_party/libusb_scsi_command
+	url = https://github.com/dongge0210/libusb_scsi_command.git

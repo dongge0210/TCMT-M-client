@@ -482,6 +482,24 @@ Linux 文件在 Linux 上）。真未编译的只有 `AccelSensor.mm`，而它�
 重跑生成器纹丝不动。已直接改 `docs/repo-directory.md` 那行文字，并把「改说明=改文档、别指望重跑」
 写进生成器的头注释和 `CLAUDE.md` 的 `structure` 条目，免得下一个人重复这个无效动作。
 
+### JMS583 USB→NVMe 桥的 SMART：新开一条线，参考代码已入子模块
+
+来源 `docs/jmicron_TEST.txt`（owner 2026-10-13 的实验记录）。这跟前面的审计项不同类：那些是**现有代码的毛病**，
+这条是**要落地的新能力** —— macOS 上经 USB 桥直接读它后面那块 NVMe 的 SMART。细节写在 `plan.md` 第八节。
+
+- **已通**：INQUIRY（`2.py`），USB SCSI 链路成立。**未通**：NVMe SMART（`1.py`），等硬盘接上。
+- **机制不需要 libusb**：macOS 侧走 IOKit 的 `IOBlockStorageDevice` + `SCSITaskDeviceInterface`
+  （`IOCreatePlugInInterfaceForService(..., kIOBlockStorageDeviceTypeID, ...)`），与 `SmartReader_mac.mm`
+  同族（那边用 `kIONVMeSMARTUserClientTypeID`）。IOKit 的 NVMe SMART user client 只对内置控制器存在，
+  USB 桥后面在 IOKit 树里没有 NVMe 控制器节点 —— 所以现有路径够不着，只能发 SCSI passthrough。这不是 bug。
+- **参考代码**：`KunYi/libusb_scsi_command` 的 `sb.c` 就是 USB 层本身（CBW/CSW + libusb 收发 + STALL 重试
+  + CSW tag 校验，纯 C，23KB）。已 fork 到 `dongge0210/libusb_scsi_command`，作为子模块加进
+  `src/third_party/libusb_scsi_command`（**仅参考，不参与构建**）。因此 `src/third_party/` 的子模块数
+  11 → 12，`CLAUDE.md` 的 `## Submodules` 与历史错误表都已同步。
+  **注意该仓库没有 LICENSE 文件**（默认即保留所有权利），法律面 owner 知情。
+- 仍未定位：smartmontools 的 `scsinvme.cpp`（`sntjmicron_device::nvme_pass_through` 在那儿），
+  它不在 `src/` 根下。
+
 ## Known Issues
 - openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
 
