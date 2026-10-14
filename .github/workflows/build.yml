@@ -124,9 +124,18 @@ jobs:
       with:
         path: |
           x64/${{ env.BUILD_CONFIGURATION }}/
-        key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
+        # Key on the *project*, not the sources. Hashing every source meant any commit
+        # changed the key, so the exact key could never be reused: restore fell back to
+        # the prefix match (cache-hit stays 'false'), the save therefore always ran, and
+        # every CI run pushed one more throwaway entry into the 10 GB pool — evicting the
+        # caches that do get exact hits (CUDA's 1.7 GB, key cuda-13.2.0). Source changes
+        # are MSBuild's own business: it compares .obj timestamps against the sources.
+        # Project/flag changes are not, which is why the project files stay in the key.
+        # The configuration is in the key too, so Debug intermediates can't be restored
+        # into a Release build (the old prefix matched any configuration).
+        key: msbuild-obj-${{ runner.os }}-${{ env.BUILD_CONFIGURATION }}-${{ hashFiles('**/*.vcxproj', '**/*.vcxproj.filters', '**/*.sln', '**/*.props', '**/*.targets') }}
         restore-keys: |
-          msbuild-obj-${{ runner.os }}-
+          msbuild-obj-${{ runner.os }}-${{ env.BUILD_CONFIGURATION }}-
 
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
@@ -146,7 +155,10 @@ jobs:
       with:
         path: |
           x64/${{ env.BUILD_CONFIGURATION }}/
-        key: msbuild-obj-${{ runner.os }}-${{ hashFiles('**/*.vcxproj', '**/*.cpp', '**/*.h', '**/*.hpp') }}
+        # Same key as the restore step above — that is what makes this cache reusable:
+        # with a stable key the first run writes it and later runs hit it exactly, so
+        # this step is skipped and no new entry is created.
+        key: msbuild-obj-${{ runner.os }}-${{ env.BUILD_CONFIGURATION }}-${{ hashFiles('**/*.vcxproj', '**/*.vcxproj.filters', '**/*.sln', '**/*.props', '**/*.targets') }}
 
     - name: Package alpha build
       shell: pwsh
