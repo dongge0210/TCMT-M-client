@@ -226,11 +226,7 @@ git submodule update --init --recursive
 - **sessions**: change `docs/session.md` when current status changed also you see current status from that file.
 - **read-scope**: **Always use `Read` with `offset` and `limit` parameters.** Never read entire files — read only the relevant range.
 - **no-section-sign**: **Never use the section sign (U+00A7, 节号) anywhere in this repository** — not in source, comments, docs, commit messages, or generated output. That character is not a project convention; it leaks in from generated documentation. Cite a section as `7.4 节` or the bare number `7.4`. The 4 occurrences under `src/third_party/` are upstream RFC citations inside submodules — leave those alone.
-- **banned-words**: Do not use the word `契约` anywhere in this repository (source, comments, docs, commit messages, generated output, agent notes). The owner never writes it; it is agent-introduced jargon that keeps reappearing. This list starts with the one word below and grows on request — check it before coining terminology:
-  | 禁用 | 改用 |
-  |---|---|
-
-*additional*: banned-words and elements are in `docs/elements_BAN_list.md`, you should offer to read and write when being hint.
+- **banned-words**: **The canonical list is `docs/elements_BAN_list.md` — single source, do not duplicate it here.** Read it before coining terminology, and offer to add a row whenever the owner says a word or element is off-limits. It currently bans `契约` (write `约定` / `接口约定` / `字段约定`) and the section sign U+00A7 (details in `no-section-sign` above). Words on it are ones the owner never writes: seeing one means an agent invented it, and they self-replicate across docs, commit messages and agent notes.
 
 ## 已更正的历史错误（别再写回去）
 
