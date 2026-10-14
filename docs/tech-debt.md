@@ -16,7 +16,7 @@ ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataB
 - `main.cpp` 移除冗余 WiFi/BT 直接写入
 - `IPCDataBlock` 补齐 WiFi band/gen + TPM + swapUsed/Total 字段
 
-**待清理：** `DataStruct.h` 中 `SharedMemoryBlock` struct 定义仍存在（无引用，可安全删除）。
+**待清理 → 已清理（2026-10-14 核对）：** `SharedMemoryBlock` 现在全仓**零命中**（`src` 与 `AvaloniaUI` 都搜过），struct 定义已删除。此条不再待办。
 
 ## P1 — `main.cpp` 拆层 ✅ DONE (2026-08-08)
 
@@ -41,6 +41,29 @@ ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataB
 | `main_linux.cpp` | 735 | Linux |
 
 每个都有自己的 Schema builder、格式化 helper、信号处理，同逻辑抄三份。
+
+**Schema builder 实测（2026-10-14，逐字段比过）**：**只有两份**，`main_linux.cpp` 现在一份都没有
+（本文件早先写「三份」，那是过期的）。两份分别是 `main_mac.cpp:79 BuildIPCDataBlockSchema`
+（函数体 169 行）与 `main.cpp:636 BuildWindowsIpcSchema`（180 行）：
+
+- **Windows 多**：8 个 `tpm/*` + 循环里的 `letter` / `letterCount`。反方向为 0。
+- **顺序不同**：从第 4 个共有字段起分叉。**不影响正确性** —— 消费方按名字查 offset
+  （`IPCMemoryReader.FindField` → `field.Offset`），这是 ADR-0001 定下的形态。
+- **size 写法不同（26 处）**：mac **手写数字**，win 用 `sizeof(B::x)`。抽 8 个核对过，当前值都对；
+  风险在 mac 侧 —— 结构体一改，数字不动也不报错，按旧尺寸静默截断。
+- **API 形状不同**：mac 是一组带类型的 lambda（`addS/addU8/addF/...`），win 是单个
+  `addField(name, offsetof, size, type)`，type 默认 `Float32`。
+- 一致的部分：动态片段两边都用 slot（`B::DiskSlot` / `B::NetSlot`）+ `base + offsetof(...)`；
+  `offsetof` 表达式 **0 处不同**；循环上界两边完全相同（4/4/8/6/16）。
+- 字段总数是**常量**（循环上界写死），两边都远低于 `IPC_MAX_FIELDS = 300`，今天不存在静默截断。
+
+**合并的形态文档里已经定过**：按 ADR-0005 的先例（`NamedPipeServer` + `IPCServer` → 单个
+`IPCServer.cpp`，文件级 `#ifdef _WIN32` 分块 + 公共逻辑共用），C16 也应当是一个文件、文件级守卫。
+**合并的坑**：`IPCData.h` 的 `IPCDataBlock` 两边是同一个结构体，`TpmSlot tpm` 在 macOS 上也存在
+（只是从不填）—— 所以一旦无条件合并，macOS 会广播出全零的 `tpm/*`，界面显示「TPM 不存在」，
+正是本项目被咬过的静默假读数。守卫必须留在表里（`tpm/*` 与 `letter`/`letterCount`），
+而且要下到**循环体内部**。尺寸统一到 `sizeof` 是行为变更（C# 按 size 决定字符串读多长），
+26 处里还有 18 处未核。
 
 ## P3 — SharedMemoryManager 双实现
 
