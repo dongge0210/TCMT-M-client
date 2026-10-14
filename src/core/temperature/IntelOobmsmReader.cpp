@@ -127,6 +127,21 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
     // That is the exact failure this codebase keeps fixing: Platform_macOS.cpp
     // fabricated 45 °C / 55 °C until 2026-10-14. A missing temperature renders as N/A
     // and prompts a question; a fabricated one looks like a reading and gets believed.
+    //
+    // Where to start when this is picked up again (researched 2026-10-14, parked):
+    // Intel publishes the telemetry definitions themselves — github.com/intel/Intel-PMT,
+    // xml/<PLATFORM>/. The datatype catalogue defines `ttemperature` and
+    // `tplatform_temperature`, both `celcius`, so a temperature channel is a documented
+    // concept rather than a guess:
+    //   - uses a platform-temperature channel : LNL, PTL, WCL (in their *_aggregator.xml)
+    //   - defines the datatypes but uses none: MTL (Core Ultra 1) — no temperature sample
+    //   - kernel cross-reference, not a source: its OOBMSM support is package id +
+    //     RMID energy/perf counters, no temperature
+    // Each aggregator gives the sample group, lsb/msb and datatype, from which the byte
+    // offset inside the telemetry region follows. What is still missing is the OOBMSM
+    // BAR0 discovery layout (how to find that region here), which those XMLs do not
+    // cover. Get that, then the channel table above makes this implementable and
+    // checkable against Intel's own files.
 
     Logger::Debug("IntelOobmsm: PMT telemetry not decoded (no OOBMSM table layout, "
                   "no guid->temperature map) — reporting no temperatures");
