@@ -235,6 +235,9 @@ PTY 冒烟（`script` 驱动，120×40）：默认色模式色码正常（黄/�
 `IPCClient.cpp:184` **静默截断**（无任何报错）。已在 `IPCServer::UpdateSchema` 加一行 DEBUG 记录字段数，
 下次加字段前先看这个数。
 
+> 2026-10-15 订正：这个 284 是 **macOS** 的数。两个 builder 的字段数不相等，Windows 后来一直是 326
+> （越限 26、在丢字段），拿 macOS 的数当 Windows 的正是漏看的原因。见下面 2026-10-15 那条。
+
 **未做**：磁盘「分区」在 macOS 侧需要 APFS 容器（`disk3`）→ 物理盘（`disk0`）映射，得走 IOKit 设备树
 或 `diskutil`；Windows 侧 `partitionLabels` 的填充；以及 Windows 本地构建验证（本机编不了，靠 CI）。
 
@@ -499,6 +502,55 @@ Linux 文件在 Linux 上）。真未编译的只有 `AccelSensor.mm`，而它�
   **注意该仓库没有 LICENSE 文件**（默认即保留所有权利），法律面 owner 知情。
 - 仍未定位：smartmontools 的 `scsinvme.cpp`（`sntjmicron_device::nvme_pass_through` 在那儿），
   它不在 `src/` 根下。
+
+## 2026-10-15 — schema 越限修复（逐核打包）+ 多 GPU 上到线上（C17）
+
+### 1 · Windows 的 schema 一直在丢字段
+
+做 C17 时先量了一次字段数，发现 **Windows 的 `BuildWindowsIpcSchema` 注册了 326 个字段**，
+上限 `IPC_MAX_FIELDS = 300`，客户端在 `IPCClient.cpp:184`（C# 侧 `IPCSchema.cs` 的 `Parse`）
+**静默截到 300**。也就是说最后 26 个字段从来读不到：`core/6..15` 的 temp/freq、`core/count`、
+以及整个 `system/loadAvg1/5/15`、`system/processCount`、`system/uptime`。
+`IPCSystemInfoMapper.cs` 先读 `core/count`、拿到 0 就跳过 —— **逐核那一段在 Windows 上从来没渲染过**。
+
+两个 builder 的字段数**不相等，不能互推**：同日实测 macOS 242、Windows 326。
+`docs/tech-debt.md` 与 `docs/session.md` 里「两边都远低于 300」的说法是错的，已订正。
+量法：跑一次 `--debug`，看日志里 `IPC: schema published, N fields` 那行。
+
+### 2 · 逐核 33 个字段打包成 `cpu/cores/json`
+
+沿用 `sensorsJson` / `processesJson` 那套（槽位 → 一行 JSON）。`IPCDataBlock` 里
+`perCoreTemp[16]` / `perCoreFreq[16]` / `perCoreCount` 三个成员换成 `cpuCoresJson[2048]`，
+形状 `[{"i":0,"temp":52.3,"freq":3200}, …]`（数组长度即核数），生成用新增的 `CoresToJson`。
+两个 builder 各换成一行注册（-33/+1）；Windows 写入端在 `SharedMemoryManager_Windows.cpp`，
+macOS 在 `main_mac.cpp`（macOS 侧本来就写 0，现在照实写空数组）。
+C# 侧 `IPCSystemInfoMapper` 先认 `cpu/cores/json`，读不到再回落到 `core/N/*` 的老路径。
+
+Windows 326 → **295**，macOS 242 → **211**。
+
+### 3 · C17：多 GPU 上到线上（`gpu/json`）
+
+线上格式原来只有单份 `gpu/0/*`（`gpuName[48]` / `gpuBrand[32]` / …），多卡机器上只挑一块
+（Windows 取第一个 `!isVirtual`，macOS 取列表第一块），其余的卡连痕迹都没有 —— 唯一线索是
+`main.cpp` 那句 "found N GPU(s)"，还是 DEBUG 级。新增 `gpuJson[2048]`，一行装完整份列表，
+形状 `[{"name":…,"brand":…,"memory":…,"memoryPercent":…,"coreClock":…,"usage":…,"temperature":…,"isVirtual":…,"unified":…}, …]`，
+第 0 项即主卡。
+
+- `SystemInfo::GPUData`（`WCHAR name[128]`）**改名并改型为 `GpuSpec`**（`std::string`）：它只喂
+  这条 JSON，窄串才合适；原来它也只在 `main.cpp` 里被填一个元素、读一次 `.empty()`。
+- Windows 的 GPU 缓存多存一份完整列表（主卡排第一），主卡的实时值每帧刷；其余卡是开机时的快照。
+- macOS 在共享内存填充处现取 `gpuInfo->GetGpuData()`，并补上主卡的 `coreClock`（那份里恒 0，
+  频率在 PowerMonitor 的 `data.gpuFreq` 上）。
+- C# 侧 `SystemInfo.Gpus` 与硬件页的多卡渲染**本来就有**，只是没数据；现在解析 `gpu/json`
+  填充，读不到再回落单卡。硬件页的「实时」仍只画主卡 —— 其余卡的读数不是每帧在刷，
+  画过去就是把快照当实时值。
+
+### 验证
+
+macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia.csproj -c Release -r osx-arm64`
+0 警告 0 错误。跑起来用 `IPCClient` 直连读线上 schema，确认 `gpu/json` 与 `cpu/cores/json`
+都在且形状正确（实测 `[{"name":"Apple M2","brand":"Apple","coreClock":444,…}]`、`cpu/cores/json` 为空数组）。
+**Windows 侧（builder 字段数、多卡路径、Avalonia 渲染）本机验不了，靠 CI。**
 
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，

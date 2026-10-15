@@ -144,6 +144,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("gpu/freq",              offsetof(B, gpuFreq));
     addB("gpu/0/isVirtual",       offsetof(B, gpuIsVirtual));
     addB("gpu/0/unified",         offsetof(B, gpuUnified));
+    // 整份 GPU 列表：gpu/0/* 只有主卡，多卡机器上其余的卡走这里
+    addS("gpu/json",              offsetof(B, gpuJson), sizeof(B::gpuJson));
 
     // Disks (up to 4)
     for (int i = 0; i < 4; ++i) {
@@ -230,13 +232,8 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addB("battery/isCharging",       offsetof(B, batteryIsCharging));
     addB("battery/isPresent",        offsetof(B, batteryIsPresent));
 
-    // ─── 6. Per-core sensor data (up to 16 cores) ───
-    for (int i = 0; i < 16; ++i) {
-        char p[32]; snprintf(p, sizeof(p), "core/%d/", i);
-        addF((std::string(p)+"temp").c_str(), offsetof(B, perCoreTemp) + i * sizeof(float));
-        addF((std::string(p)+"freq").c_str(), offsetof(B, perCoreFreq) + i * sizeof(float));
-    }
-    addU8("core/count", offsetof(B, perCoreCount));
+    // ─── 6. 逐核传感器：一个字段装完整份，形状见 IPCData.h 的 cpuCoresJson ───
+    addS("cpu/cores/json", offsetof(B, cpuCoresJson), sizeof(B::cpuCoresJson));
 
     // ─── System info (load avg, process count, uptime) ───
     addF("system/loadAvg1",    offsetof(B, loadAvg1));
@@ -1633,6 +1630,40 @@ int main(int argc, char* argv[]) {
                         b->gpuFreq = static_cast<float>(data.gpuFreq);
                         b->gpuIsVirtual = false;
                         b->gpuUnified = data.gpuUnified;
+                        // 整份 GPU 列表（第 0 项为主卡）。上面的单值字段只装得下主卡，
+                        // 多卡机器（Intel Mac 的核显 + 独显）其余几块只在这里留得下。
+                        {
+                            std::vector<GpuSpec> specs;
+                            if (gpuInfo) {
+                                for (const auto& g : gpuInfo->GetGpuData()) {
+                                    GpuSpec s;
+                                    s.name = std::string(g.name.begin(), g.name.end());
+                                    s.brand = GpuBrandFromName(s.name);
+                                    s.memory = g.dedicatedMemory;
+                                    s.coreClock = g.coreClock;
+                                    s.temperature = static_cast<double>(g.temperature);
+                                    s.isVirtual = g.isVirtual;
+                                    s.isUnified = g.isUnified;
+                                    s.usage = g.usage;
+                                    specs.push_back(s);
+                                }
+                            }
+                            if (!specs.empty()) {
+                                // 主卡换成这一帧的实时值 —— gpu/0/* 用的是同一批数。
+                                // coreClock 尤其要换：GpuInfo 那份里是 0，频率在 PowerMonitor 那边
+                                // （data.gpuFreq），不换就等于把「核心频率」这一行弄没了。
+                                specs[0].memoryPercent = data.gpuMemoryPercent;
+                                specs[0].usage = data.gpuUsage;
+                                specs[0].temperature = data.gpuTemp;
+                                if (data.gpuFreq > 0) specs[0].coreClock = data.gpuFreq;
+                                std::strncpy(b->gpuBrand, specs[0].brand.c_str(),
+                                             sizeof(b->gpuBrand) - 1);
+                                b->gpuBrand[sizeof(b->gpuBrand) - 1] = '\0';
+                            }
+                            const std::string gpuListJson = GpusToJson(specs);
+                            std::strncpy(b->gpuJson, gpuListJson.c_str(), sizeof(b->gpuJson) - 1);
+                            b->gpuJson[sizeof(b->gpuJson) - 1] = '\0';
+                        }
                         // Disks (up to 4)
                         b->diskCount = 0;
                         for (size_t di = 0; di < std::min(data.disks.size(), size_t(4)); ++di) {
@@ -1762,9 +1793,17 @@ int main(int argc, char* argv[]) {
                     b->batteryIsCharging = bd.isCharging;
                     b->batteryIsPresent = bd.present;
 
-                    // ─── 6. Per-core sensor data ───
-                    b->perCoreCount = 0;
-                    // Per-core data populated later (requires TemperatureWrapper expansion)
+                    // ─── 6. 逐核传感器：整份打包进一个字段 ───
+                    // macOS 侧还拿不到逐核数据（要等 TemperatureWrapper 扩出来），这里照实写空数组，
+                    // 不占位造数。
+                    {
+                        const std::string coresJson =
+                            CoresToJson(data.perCoreTemp, data.perCoreFreq,
+                                        static_cast<int>(data.perCoreCount));
+                        std::strncpy(b->cpuCoresJson, coresJson.c_str(),
+                                     sizeof(b->cpuCoresJson) - 1);
+                        b->cpuCoresJson[sizeof(b->cpuCoresJson) - 1] = '\0';
+                    }
 
                     // ─── System info (load avg, process count, uptime) ───
                     b->loadAvg1 = static_cast<float>(data.loadAvg1);

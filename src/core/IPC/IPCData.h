@@ -149,6 +149,12 @@ struct IPCDataBlock {
     bool     gpuIsVirtual            = false;
     // gpuMemory 是统一内存而非独立显存（Apple Silicon），界面据此不画「显存」那一行
     bool     gpuUnified              = false;
+    // 上面 gpu/0/* 那份是「主卡」：多卡机器上只挑了其中一块，另外几块完全没有痕迹。
+    // 整份 GPU 列表装成一行 JSON，槽位方案要 4 槽 × 8 字段 ≈ 32 个名额，这里只占 1 个。
+    // 形状：[{"name":"Apple M2","brand":"Apple","memory":17179869184,"memoryPercent":61.0,
+    //        "coreClock":1398,"usage":12.0,"temperature":48.0,"isVirtual":false,"unified":true}, ...]
+    // 数组第 0 项就是主卡，与上面的 gpu/0/* 一致。
+    char     gpuJson[2048]           = {};
 
     // Disks (up to 4)
     struct DiskSlot {
@@ -284,10 +290,14 @@ struct IPCDataBlock {
     bool     batteryIsCharging       = false;
     bool     batteryIsPresent        = false;
 
-    // ─── 6. Per-core sensor data (up to 16 cores) ───
-    float    perCoreTemp[16]         = {};     // temperature per core (Celsius), 0=unavailable
-    float    perCoreFreq[16]         = {};     // frequency per core (MHz), 0=unavailable
-    uint8_t  perCoreCount            = 0;
+    // ─── 6. 逐核传感器：整份打包成一行 JSON，不再按槽位开字段 ───
+    //
+    // 原来 16 槽 × 2 字段 + 1 个计数 = 33 个 schema 名额。Windows 侧的总字段数因此顶到 326，
+    // 越过 IPC_MAX_FIELDS = 300，排在后面的 core/* 尾巴和整个 system/* 被客户端静默截掉 ——
+    // 连 core/count 都读不到，逐核那一段从来没渲染过。装成一个字段后上限消失，schema 只占 1 个名额。
+    // 装法与解析沿用 sensorsJson 那套。
+    // 形状：[{"i":0,"temp":52.3,"freq":3200}, ...]，数组长度即核数。
+    char     cpuCoresJson[2048]      = {};
 
     // ─── System info ───
     float    loadAvg1                = 0;

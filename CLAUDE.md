@@ -127,7 +127,7 @@ IPCDataBlock (single schema-driven block, both platforms)
 - `src/main_mac.cpp` — macOS entry (pure C++, ncurses TUI, ObjC++ via .mm modules)
 - `src/main.cpp` — Windows entry (C++/CLI, Console app with SEH)
 - `src/tui/` — ncurses TUI (cross-platform; PDCurses on Windows, ncurses on macOS)
-- `src/core/DataStruct/DataStruct.h` — collector-side structs (`SystemInfo`, `DiskData`, `GPUData`, `TemperatureData`, `NetworkAdapterData`, `SmartAttributeData`, …). **`WCHAR`** = `char16_t` on macOS, `wchar_t` on Windows (`using WCHAR`, lines 23/25). Do NOT change.
+- `src/core/DataStruct/DataStruct.h` — collector-side structs (`SystemInfo`, `DiskData`, `GpuSpec`, `TemperatureData`, `NetworkAdapterData`, `SmartAttributeData`, …). **`WCHAR`** = `char16_t` on macOS, `wchar_t` on Windows (`using WCHAR`, lines 23/25). Do NOT change. `GpuSpec` 的字符串是 `std::string`，不是 `WCHAR[]`：它只喂 IPC 的 `gpu/json`（见下）。
 - `AvaloniaUI/Services/Hardware/IPC/` — C# IPC pipeline (IPCPipeClient, IPCMemoryReader, IPCSchema, IPCSystemInfoMapper)
 
 ### PawnIO Kernel Driver (Windows-only)
@@ -178,6 +178,7 @@ from a genuine zero and fails silently. This has already bitten us once (`WiFiIn
 1. **macOS `wchar_t` is 4 bytes** — `DataStruct.h` uses `WCHAR` typedef (`char16_t` on non-Windows). Do NOT revert.
 2. **One shared memory block, two transports**: `IPCDataBlock` (`src/core/IPC/IPCData.h`) is the only block on both platforms — there is no `SharedMemoryBlock`. The platform difference is *how the bytes are reached* (POSIX shm + Unix socket on macOS, NamedPipe + `MemoryMappedViewAccessor` on Windows), **not the field layout**. Names and offsets are identical everywhere because the schema is broadcast; never hand-align the two sides.
 3. **Schema MaxFields=300** (`IPC_MAX_FIELDS`) — must match in both `IPCData.h` and `IPCSchema.cs`. Bump both when adding fields. Going over the limit is **silent**: `IPCClient.cpp:184` drops the extras, so overflow shows up as *missing fields*, not as an error. (Was 200 until 2026-05-16, when WiFi's schema crossed index 257 and got cut.)
+   **量的口径要按平台分**：两个 builder 的字段数不一样（Windows 多 `tpm/*` 与 `letter`/`letterCount`）。2026-10-15 实测 macOS 211、Windows 295 —— 但在这之前 Windows 是 **326**，越限 26，被丢掉的是 `core/*` 的尾巴和整个 `system/*`（含 `core/count`，逐核那一段因此从来没渲染过）。**加字段前先跑一次 `--debug` 看 `IPC: schema published, N fields` 那行，不要拿 macOS 的数当 Windows 的。** 顺序也在变：字段按注册顺序排，插在中间会让后面全体后移，超限时被砍的就是另一批。
 
 ### Windows-specific (critical)
 4. **Shared memory name**: C++ creates `Global\SystemMonitorSharedMemory` (fallback `Local\` then no prefix). C# must try all 3.
@@ -239,7 +240,8 @@ git submodule update --init --recursive
 | macOS 产物在 `build/bin/TCMT-M` | 在 `build/src/TCMT-M`，且运行要进 `.app` 包内那个（裸二进制拿不到 CoreLocation/SSID） | 2026-10-12 |
 | AGENTS.md 是一份独立的规则文件 | 它只是 CLAUDE.md 的并行副本，已经漂移出错误内容，现压成一行指针 | 2026-10-12 |
 | `IPCDataBlock` (macOS) + `SharedMemoryBlock` (Windows) 两块，字段名与偏移随平台变 | 只有一块 `IPCDataBlock`；平台差异在传输方式（POSIX shm+UDS ↔ NamedPipe），布局全平台一致 | 2026-10-13 |
-| `src/DataStruct.h` — Packed `SharedMemoryBlock` | 真身 `src/core/DataStruct/DataStruct.h`，定义的是采集侧结构体（`SystemInfo` / `DiskData` / `GPUData` …），没有 `SharedMemoryBlock` | 2026-10-13 |
+| `src/DataStruct.h` — Packed `SharedMemoryBlock` | 真身 `src/core/DataStruct/DataStruct.h`，定义的是采集侧结构体（`SystemInfo` / `DiskData` / `GpuSpec` …），没有 `SharedMemoryBlock` | 2026-10-13 |
+| 「schema 字段数两边都远低于 300，不存在静默截断」 | Windows 侧 2026-10-15 实测 **326**，越限 26 且在丢字段；macOS 是 211。两个 builder 的数不可互推 | 2026-10-15 |
 | 「CsWin32 / P/Invoke Rules」整节（原 15-18 条 + `SetupApi.cs` 事件） | 整节作废。LibreHardwareMonitor 子模块已由 `d98e601f` 移除；全仓已无 CsWin32 包引用、无 `NativeMethods.txt`、无 `PInvoke.` 调用（手动 `DllImport` 另存 5 处，与本规则无关） | 2026-10-13 |
 | `AvaloniaUI/Services/IPCServices/` | 目录不存在，实际是 `AvaloniaUI/Services/Hardware/IPC/` | 2026-10-13 |
 

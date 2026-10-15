@@ -293,6 +293,9 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->gpuTemp = static_cast<float>(systemInfo.gpuTemperature);
         pBuffer->gpuFreq = static_cast<float>(systemInfo.gpuFreq);
         pBuffer->gpuIsVirtual = systemInfo.gpuIsVirtual;
+        // 整份 GPU 列表（第 0 项为主卡）。上面的单值字段只装得下主卡。
+        SafeCopyStr(pBuffer->gpuJson, sizeof(pBuffer->gpuJson),
+                    GpusToJson(systemInfo.gpus));
 
         // Network adapters
         pBuffer->adapterCount = 0;
@@ -422,12 +425,10 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         SafeCopyStr(pBuffer->processesJson, sizeof(pBuffer->processesJson),
                     ProcessesToJson(systemInfo.topProcesses));
 
-        // ─── 6. Per-core sensors ───
-        pBuffer->perCoreCount = systemInfo.perCoreCount;
-        for (int i = 0; i < 16; i++) {
-            pBuffer->perCoreTemp[i] = systemInfo.perCoreTemp[i];
-            pBuffer->perCoreFreq[i] = systemInfo.perCoreFreq[i];
-        }
+        // ─── 6. 逐核传感器：整份打包进一个字段，不再逐核开槽 ───
+        SafeCopyStr(pBuffer->cpuCoresJson, sizeof(pBuffer->cpuCoresJson),
+                    CoresToJson(systemInfo.perCoreTemp, systemInfo.perCoreFreq,
+                                systemInfo.perCoreCount));
 
         // ─── 7. Battery detail ───
         pBuffer->batteryCycleCount = systemInfo.batteryCycleCount;

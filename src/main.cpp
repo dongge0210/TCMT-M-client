@@ -551,6 +551,22 @@ static void PrintInfoItem(const std::string& label, const std::string& value, in
     SafeConsoleOutput(line);
 }
 
+// GpuInfo::GpuData → SystemInfo::GpuSpec。多卡机器上每一块都要过这一手，
+// 所以主卡和其余的卡走的是同一个转换，不会两处写法漂移。
+static GpuSpec MakeGpuSpec(const GpuInfo::GpuData& gpu) {
+    GpuSpec spec;
+    spec.name = WinUtils::WstringToString(gpu.name);
+    spec.brand = GetGpuBrand(gpu.name);
+    spec.memory = gpu.dedicatedMemory;
+    spec.memoryPercent = 0.0;   // 只有主卡能拿到 NVML 的 VRAM 占用，写入端再补
+    spec.coreClock = gpu.coreClock;
+    spec.temperature = static_cast<double>(gpu.temperature);
+    spec.isVirtual = gpu.isVirtual;
+    spec.isUnified = gpu.isUnified;
+    spec.usage = gpu.usage;
+    return spec;
+}
+
 // Thread-safe GPU info cache class
 class ThreadSafeGpuCache {
 private:
@@ -562,6 +578,9 @@ private:
     uint32_t cachedGpuCoreFreq_ = 0;
     bool cachedGpuIsVirtual_ = false;
     double cachedGpuUsage_ = 0.0;
+    // 识别到的全部 GPU，第 0 项为主卡。上面那组单值字段只装得下主卡，
+    // 多卡机器上其余的卡以前没有任何出口 —— 现在整份进 IPC 的 gpu/json。
+    std::vector<GpuSpec> cachedGpus_;
 
 public:
     void Initialize(WmiManager& wmiManager) {
@@ -596,9 +615,21 @@ public:
                 cachedGpuCoreFreq_ = static_cast<uint32_t>(selectedGpu->coreClock);
                 cachedGpuIsVirtual_ = selectedGpu->isVirtual;
                 cachedGpuUsage_ = selectedGpu->usage;  // Save GPU usage
-                
-                Logger::Info("Selected primary GPU: " + cachedGpuName_ + 
+
+                Logger::Info("Selected primary GPU: " + cachedGpuName_ +
                            " (Virtual: " + (cachedGpuIsVirtual_ ? "Yes" : "No") + ")");
+
+                // 主卡排第 0，其余按原顺序跟上 —— 与 schema 里 gpu/0/* 是主卡的约定一致。
+                cachedGpus_.clear();
+                cachedGpus_.push_back(MakeGpuSpec(*selectedGpu));
+                for (const auto& gpu : gpus) {
+                    if (&gpu == selectedGpu) continue;
+                    cachedGpus_.push_back(MakeGpuSpec(gpu));
+                }
+                if (cachedGpus_.size() > 1) {
+                    Logger::Info("GPU cache: carrying " + std::to_string(cachedGpus_.size()) +
+                                 " GPUs (primary first)");
+                }
             } else {
                 Logger::Warn("No GPU detected");
             }
@@ -621,6 +652,12 @@ public:
         coreFreq = cachedGpuCoreFreq_;
         isVirtual = cachedGpuIsVirtual_;
         usage = cachedGpuUsage_;
+    }
+
+    // 整份 GPU 列表（第 0 项为主卡）。返回副本：加锁期间把引用交出去没有意义。
+    std::vector<GpuSpec> GetCachedGpus() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return cachedGpus_;
     }
     
     bool IsInitialized() const {
@@ -695,6 +732,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("gpu/0/unified", offsetof(B, gpuUnified), 1, (uint8_t)FT::Bool);
     addField("gpu/0/temperature", offsetof(B, gpuTemp), 4);
     addField("gpu/freq", offsetof(B, gpuFreq), 4);
+    // 整份 GPU 列表：gpu/0/* 只有主卡，多卡机器上其余的卡走这里
+    addField("gpu/json", offsetof(B, gpuJson), sizeof(B::gpuJson), (uint8_t)FT::String);
 
     // Network adapters (up to 4)
     for (int i = 0; i < 4; i++) {
@@ -798,13 +837,8 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("battery/isCharging",     offsetof(B, batteryIsCharging), 1, (uint8_t)FT::Bool);
     addField("battery/isPresent",      offsetof(B, batteryIsPresent), 1, (uint8_t)FT::Bool);
 
-    // ─── 6. Per-core sensors (up to 16) ───
-    for (int i = 0; i < 16; i++) {
-        char pfx[32]; snprintf(pfx, sizeof(pfx), "core/%d/", i);
-        addField((std::string(pfx)+"temp").c_str(), offsetof(B, perCoreTemp) + i * sizeof(float), sizeof(float), (uint8_t)FT::Float32);
-        addField((std::string(pfx)+"freq").c_str(), offsetof(B, perCoreFreq) + i * sizeof(float), sizeof(float), (uint8_t)FT::Float32);
-    }
-    addField("core/count", offsetof(B, perCoreCount), 1, (uint8_t)FT::UInt8);
+    // ─── 6. 逐核传感器：一个字段装完整份，形状见 IPCData.h 的 cpuCoresJson ───
+    addField("cpu/cores/json", offsetof(B, cpuCoresJson), sizeof(B::cpuCoresJson), (uint8_t)FT::String);
 
     // ─── System info ───
     addField("system/loadAvg1",    offsetof(B, loadAvg1), sizeof(float), (uint8_t)FT::Float32);
@@ -1379,52 +1413,26 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
                 if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
 
-                // Fix GPU array population - add data validation and cleanup
-                sysInfo.gpus.clear();
-                if (!cachedGpuName.empty() && cachedGpuName != "No GPU detected") {
-                    GPUData gpu;
-                    
-                    // Initialize GPU struct to avoid garbage data
-                    memset(&gpu, 0, sizeof(GPUData));
-                    
-                    // Safely copy GPU name and brand to wchar_t arrays
-                    std::wstring gpuNameW = WinUtils::StringToWstring(cachedGpuName);
-                    std::wstring gpuBrandW = WinUtils::StringToWstring(cachedGpuBrand);
-                    
-                    // Limit string length to prevent buffer overflow
-                    if (gpuNameW.length() >= sizeof(gpu.name)/sizeof(wchar_t)) {
-                        gpuNameW = gpuNameW.substr(0, sizeof(gpu.name)/sizeof(wchar_t) - 1);
-                    }
-                    if (gpuBrandW.length() >= sizeof(gpu.brand)/sizeof(wchar_t)) {
-                        gpuBrandW = gpuBrandW.substr(0, sizeof(gpu.brand)/sizeof(wchar_t) - 1);
-                    }
-                    
-                    wcsncpy_s(gpu.name, sizeof(gpu.name)/sizeof(wchar_t), gpuNameW.c_str(), _TRUNCATE);
-                    wcsncpy_s(gpu.brand, sizeof(gpu.brand)/sizeof(wchar_t), gpuBrandW.c_str(), _TRUNCATE);
-                    
-                    // Validate and clean GPU data - avoid abnormal values
-                    gpu.memory = (cachedGpuMemory > 0 && cachedGpuMemory < UINT64_MAX) ? cachedGpuMemory : 0;
-                    
-                    // Fix GPU core clock - ensure it's in reasonable range
-                    if (cachedGpuCoreFreq > 0 && cachedGpuCoreFreq < 10000) {
-                        gpu.coreClock = cachedGpuCoreFreq;
-                    } else {
-                        gpu.coreClock = 0; // Set to 0 instead of abnormal value
+                // GPU 列表：整份从缓存搬过来（第 0 项为主卡），再把主卡的实时值刷上去。
+                sysInfo.gpus = gpuCache.GetCachedGpus();
+                if (!sysInfo.gpus.empty()) {
+                    // 主卡时钟只在合理区间里采纳，异常值退回 0 —— 见过 10000+ 的读数
+                    if (!(cachedGpuCoreFreq > 0 && cachedGpuCoreFreq < 10000)) {
                         if (isFirstRun && cachedGpuCoreFreq > 10000) {
                             Logger::Warn("GPU core clock abnormal: " + std::to_string(cachedGpuCoreFreq) + "MHz, reset to 0");
                         }
+                        sysInfo.gpus[0].coreClock = 0;
                     }
-                    
-                    gpu.isVirtual = cachedGpuIsVirtual;
-                    gpu.usage = cachedGpuUsage;  // GPU usage
-                    
-                    sysInfo.gpus.push_back(gpu);
-                    
+                    // 实时占用/温度/显存百分比只有主卡拿得到（NVML 只开了一块卡的句柄）
+                    sysInfo.gpus[0].usage = sysInfo.gpuUsage;
+                    sysInfo.gpus[0].temperature = sysInfo.gpuTemperature;
+                    if (nvmlVramPct >= 0) sysInfo.gpus[0].memoryPercent = nvmlVramPct;
+                    sysInfo.gpus[0].isVirtual = sysInfo.gpuIsVirtual;
+
                     if (isFirstRun) {
-                        Logger::Debug("Added GPU to array: " + cachedGpuName + 
-                                     " (Memory: " + FormatSize(cachedGpuMemory) + 
-                                     ", Clock: " + std::to_string(gpu.coreClock) + "MHz" +
-                                     ", Virtual: " + (cachedGpuIsVirtual ? "Yes" : "No") + ")");
+                        Logger::Debug("Added " + std::to_string(sysInfo.gpus.size()) +
+                                     " GPU(s), primary: " + cachedGpuName +
+                                     " (Memory: " + FormatSize(cachedGpuMemory) + ")");
                     }
                 } else {
                     if (isFirstRun) {

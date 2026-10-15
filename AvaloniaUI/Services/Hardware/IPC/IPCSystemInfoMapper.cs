@@ -154,15 +154,47 @@ public static class IPCSystemInfoMapper
                 }
             }
 
-            // ─── 6. Per-core sensors ───
-            var coreCount = reader.ReadUInt8("core/count") ?? 0;
-            for (int i = 0; i < coreCount && i < 16; i++)
+            // 逐核传感器。
+            // 新服务端整份打包成 cpu/cores/json；旧服务端是 core/N/temp|freq 槽位字段。
+            // 后者在 Windows 上其实一直读不到：schema 总字段数有 300 的上限，那边越限之后
+            // core/count 和 core/* 的尾巴会被静默截掉，逐核那一段就整块是空的。
+            // 两条都认 —— 服务端与客户端不一定同时升级。
+            if (reader.HasField("cpu/cores/json"))
             {
-                var temp = reader.ReadFloat32($"core/{i}/temp") ?? 0f;
-                var freq = reader.ReadFloat32($"core/{i}/freq") ?? 0f;
-                if (temp > 0 || freq > 0)
+                var coresJson = reader.ReadString("cpu/cores/json") ?? "";
+                if (!string.IsNullOrEmpty(coresJson))
                 {
-                    info.PerCores.Add(new PerCoreData { Index = i, Temperature = temp, Frequency = freq });
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(coresJson);
+                        foreach (var el in doc.RootElement.EnumerateArray())
+                        {
+                            var idx = el.TryGetProperty("i", out var iv) && iv.TryGetInt32(out var i32) ? i32 : 0;
+                            var temp = el.TryGetProperty("temp", out var tv) && tv.TryGetDouble(out var td) ? (float)td : 0f;
+                            var freq = el.TryGetProperty("freq", out var fv) && fv.TryGetDouble(out var fd) ? (float)fd : 0f;
+                            if (temp > 0 || freq > 0)
+                            {
+                                info.PerCores.Add(new PerCoreData { Index = idx, Temperature = temp, Frequency = freq });
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogFailureOnce("cores-json", "逐核传感器 JSON 解析失败", ex);
+                    }
+                }
+            }
+            else
+            {
+                var coreCount = reader.ReadUInt8("core/count") ?? 0;
+                for (int i = 0; i < coreCount && i < 16; i++)
+                {
+                    var temp = reader.ReadFloat32($"core/{i}/temp") ?? 0f;
+                    var freq = reader.ReadFloat32($"core/{i}/freq") ?? 0f;
+                    if (temp > 0 || freq > 0)
+                    {
+                        info.PerCores.Add(new PerCoreData { Index = i, Temperature = temp, Frequency = freq });
+                    }
                 }
             }
 
@@ -195,7 +227,40 @@ public static class IPCSystemInfoMapper
             // 老版本采集端没这个字段 —— 缺席就是「不是统一内存」，Windows 上也一直是 false
             info.GpuIsUnified = reader.ReadBool("gpu/0/unified") ?? false;
 
-            if (!string.IsNullOrEmpty(info.GpuName))
+            // GPU 列表。新服务端整份打包成 gpu/json —— 多卡机器上 gpu/0/* 只有主卡，
+            // 其余的卡只在这里留得下。旧服务端没这个字段，下面按单卡回落。
+            if (reader.HasField("gpu/json"))
+            {
+                var gpuJson = reader.ReadString("gpu/json") ?? "";
+                if (!string.IsNullOrEmpty(gpuJson))
+                {
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(gpuJson);
+                        foreach (var el in doc.RootElement.EnumerateArray())
+                        {
+                            info.Gpus.Add(new GpuData
+                            {
+                                Name = el.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+                                Brand = el.TryGetProperty("brand", out var b) ? b.GetString() ?? "" : "",
+                                Memory = el.TryGetProperty("memory", out var m) && m.TryGetUInt64(out var mu) ? mu : 0,
+                                MemoryPercent = el.TryGetProperty("memoryPercent", out var mp) && mp.TryGetDouble(out var mpd) ? mpd : 0,
+                                CoreClock = el.TryGetProperty("coreClock", out var c) && c.TryGetDouble(out var cd) ? cd : 0,
+                                Usage = el.TryGetProperty("usage", out var u) && u.TryGetDouble(out var ud) ? ud : 0,
+                                Temperature = el.TryGetProperty("temperature", out var t) && t.TryGetDouble(out var td) ? td : 0,
+                                IsVirtual = el.TryGetProperty("isVirtual", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True,
+                                IsUnified = el.TryGetProperty("unified", out var uf) && uf.ValueKind == System.Text.Json.JsonValueKind.True
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogFailureOnce("gpu-json", "GPU 列表 JSON 解析失败", ex);
+                    }
+                }
+            }
+
+            if (info.Gpus.Count == 0 && !string.IsNullOrEmpty(info.GpuName))
             {
                 info.Gpus = new List<GpuData>
                 {

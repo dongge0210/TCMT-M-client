@@ -199,11 +199,12 @@ public static class HardwareSpecBuilder
             .Select((g, i) => new SpecUnit(GpuRows(g), many ? $"GPU {i + 1}" : null))
             .ToArray();
 
-        // 实时那一块始终只有一组，不分卡 —— 线格式里只有 gpu/0 的占用 / 温度 / 显存，
-        // 逐卡各画一组等于把同一个数抄成好几份。
+        // 实时那一块只画主卡：采集端每帧刷新的只有主卡（Windows 靠 NVML，只开了一块卡的句柄；
+        // macOS 的逐卡刷新也只对主卡有意义），其余卡的读数停在开机那一刻。
+        // 逐卡各画一组等于把一份快照当成实时值，正是这个项目挨过的静默假读数。
         return new SpecSheet(
             [new SpecBlock("GPU", units), Block("实时", Unit(GpuLiveRows(info, info.Gpus[0])))],
-            many ? "实时读数只覆盖第一块显卡 —— IPC 里只有 gpu/0 的占用 / 温度 / 显存。" : "");
+            many ? "实时那一段只画主卡 —— 其余显卡的读数不是每帧都在刷。" : "");
     }
 
     /// <summary>

@@ -87,6 +87,54 @@ inline std::string ProcessesToJson(const std::vector<Proc>& procs) {
     return js.str();
 }
 
+// 逐核传感器打包成一行 JSON，形状 [{"i":0,"temp":52.3,"freq":3200}, …]。
+// 见 IPCData.h 的 cpuCoresJson。拿不到的项照写 0，不省略键 —— 解析方按固定键读更省事。
+inline std::string CoresToJson(const float* temps, const float* freqs, int count) {
+    std::ostringstream js;
+    js << "[";
+    for (int i = 0; i < count; ++i) {
+        if (i > 0) js << ",";
+        js << "{\"i\":" << i
+           << ",\"temp\":" << temps[i]
+           << ",\"freq\":" << freqs[i] << "}";
+    }
+    js << "]";
+    return js.str();
+}
+
+// GPU 列表打包成一行 JSON，形状见 IPCData.h 的 gpuJson。
+// 与 ProcessesToJson 同理用模板：写入点吃的是 SystemInfo::GpuSpec，字段名一致。
+// 从 GPU 名字里认厂商。Windows 有 GetGpuBrand（吃 wstring，见 main.cpp），这份给窄串用，
+// macOS 侧没有对应实现，所以两边现在都从这里出。
+inline std::string GpuBrandFromName(const std::string& name) {
+    if (name.find("NVIDIA") != std::string::npos) return "NVIDIA";
+    if (name.find("AMD") != std::string::npos ||
+        name.find("Radeon") != std::string::npos) return "AMD";
+    if (name.find("Intel") != std::string::npos) return "Intel";
+    if (name.find("Apple") != std::string::npos) return "Apple";
+    return "Unknown";
+}
+
+template <typename Gpu>
+inline std::string GpusToJson(const std::vector<Gpu>& gpus) {
+    std::ostringstream js;
+    js << "[";
+    for (size_t i = 0; i < gpus.size(); ++i) {
+        if (i > 0) js << ",";
+        js << "{\"name\":\"" << JsonEscape(gpus[i].name) << "\""
+           << ",\"brand\":\"" << JsonEscape(gpus[i].brand) << "\""
+           << ",\"memory\":" << gpus[i].memory
+           << ",\"memoryPercent\":" << gpus[i].memoryPercent
+           << ",\"coreClock\":" << gpus[i].coreClock
+           << ",\"usage\":" << gpus[i].usage
+           << ",\"temperature\":" << gpus[i].temperature
+           << ",\"isVirtual\":" << (gpus[i].isVirtual ? "true" : "false")
+           << ",\"unified\":" << (gpus[i].isUnified ? "true" : "false") << "}";
+    }
+    js << "]";
+    return js.str();
+}
+
 #pragma pack(push, 1) // Ensure memory alignment
 
 // SMART attribute info
@@ -164,13 +212,20 @@ struct TpmInfo {
 };
 
 // GPU information
-struct GPUData {
-    WCHAR name[128];    // GPU name
-    WCHAR brand[64];    // Brand
-    uint64_t memory;      // VRAM (bytes)
-    double coreClock;     // Core clock (MHz)
-    bool isVirtual;       // Is virtual GPU
-    double usage;         // GPU usage (0-100)
+//
+// 名字用 std::string 而不是 WCHAR[]：这份现在只喂 IPC 的 gpu/json（见 IPCData.h 的 gpuJson），
+// 那边要的是 UTF-8 窄串；多卡机器上整份列表都从这里出去，第 0 项就是主卡。
+// memory 是字节数，isUnified 为真时它是统一内存总量、不是显存（Apple Silicon）。
+struct GpuSpec {
+    std::string name;     // GPU name
+    std::string brand;    // Brand
+    uint64_t memory = 0;      // VRAM (bytes)
+    double memoryPercent = 0; // VRAM usage (0-100)
+    double coreClock = 0;     // Core clock (MHz)
+    double temperature = 0;   // Celsius
+    bool isVirtual = false;   // Is virtual GPU
+    bool isUnified = false;   // memory 报的其实是统一内存
+    double usage = 0;         // GPU usage (0-100)
 };
 
 // Network adapter info
@@ -226,7 +281,9 @@ struct SystemInfo {
     uint64_t swapTotal = 0;
     uint32_t ramSpeed = 0;          // RAM frequency in MHz (e.g., 6400)
     char ramType[32] = {};         // DDR generation (e.g., "DDR5", "LPDDR5")
-    std::vector<GPUData> gpus;
+    // 识别到的全部 GPU（第 0 项为主卡）。整份进 IPC 的 gpu/json —— 单值的
+    // gpuName/gpuBrand/… 只装得下主卡，多卡机器上其余几块以前是直接消失的。
+    std::vector<GpuSpec> gpus;
     std::vector<NetworkAdapterData> adapters;
     std::vector<DiskData> disks;
     std::vector<PhysicalDiskSmartData> physicalDisks; // Physical disk SMART data

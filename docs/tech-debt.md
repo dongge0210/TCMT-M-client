@@ -55,7 +55,11 @@ ADR-0001 决定退役 `SharedMemoryBlock`，迁移到 Schema 驱动的 `IPCDataB
   `addField(name, offsetof, size, type)`，type 默认 `Float32`。
 - 一致的部分：动态片段两边都用 slot（`B::DiskSlot` / `B::NetSlot`）+ `base + offsetof(...)`；
   `offsetof` 表达式 **0 处不同**；循环上界两边完全相同（4/4/8/6/16）。
-- 字段总数是**常量**（循环上界写死），两边都远低于 `IPC_MAX_FIELDS = 300`，今天不存在静默截断。
+- 字段总数是**常量**（循环上界写死），但**两边不相等，要分平台量**：2026-10-15 实测
+  macOS 211 / Windows 295。本文件早先写「两边都远低于 300，今天不存在静默截断」—— **那是错的**：
+  在把逐核 33 个字段打包成 `cpu/cores/json` 之前，Windows 是 **326**，越限 26，
+  被客户端静默丢掉的是 `core/*` 的尾巴与整个 `system/*`（含 `core/count`，逐核那一段因此
+  从来没渲染过）。量法是跑一次 `--debug` 看日志里 `IPC: schema published, N fields`。
 
 **合并的形态文档里已经定过**：按 ADR-0005 的先例（`NamedPipeServer` + `IPCServer` → 单个
 `IPCServer.cpp`，文件级 `#ifdef _WIN32` 分块 + 公共逻辑共用），C16 也应当是一个文件、文件级守卫。
