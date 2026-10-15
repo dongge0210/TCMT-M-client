@@ -501,7 +501,14 @@ Linux 文件在 Linux 上）。真未编译的只有 `AccelSensor.mm`，而它�
   它不在 `src/` 根下。
 
 ## Known Issues
-- openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)
+- （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
+  这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出
+  `libssl.a` / `libcrypto.a`，再以 `TCMT::OpenSSL_SSL` / `TCMT::OpenSSL_Crypto`（IMPORTED STATIC）链入；
+  当初的 `find_package(OpenSSL)` + Homebrew 三路径是**故意拆掉**的，因为 Homebrew 一升级目录名就变、
+  构建会断在 `openssl/ssl.h not found`（源码一行没动，报错却看着像代码坏了）。
+  唯一仍然为真的是：**TLS 只开在 macOS / Linux**（`TCMT_USE_TLS` 只在 `src/CMakeLists.txt:348/:359`
+  那两个 openssl 分支里定义），Windows 侧那些路径按设计编成空操作（见 `src/core/Updater.cpp:2`）。
+  这不是债，是现状。
 
 ## User Habits
 - Zero warnings policy
