@@ -1,4 +1,8 @@
 #include "ModuleCoordinator.h"
+// Snapshot() writes TuiData members, so this translation unit needs the full definition.
+// The header above only forward-declares it — that keeps the include out of every file
+// that includes ModuleCoordinator.h.
+#include "../../tui/TuiApp.h"
 #include "temperature/TemperatureWrapper.h"
 #include "Utils/Logger.h"
 #include "Utils/WinUtils.h"

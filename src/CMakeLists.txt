@@ -179,7 +179,6 @@ add_library(TCMTCore STATIC
 	    ${IPC_SOURCES}
     ${HISTORY_SOURCES}
     ${TEMP_SOURCES}
-    ${TUI_SOURCES}
 )
 
 set_target_properties(TCMTCore PROPERTIES
@@ -246,21 +245,26 @@ endif()
 tcmt_set_output_directories(TCMTCore)
 
 # Link curses on Windows and macOS
+#
+# PUBLIC, not PRIVATE: TuiApp.cpp is the only file in src/ that includes curses.h and it
+# now compiles into the TCMT-M executable, not into TCMTCore. With PRIVATE the executable
+# fell back to the SDK's older ncurses headers and failed on BUTTON5_PRESSED. Nothing in
+# src/core/ includes curses at all, so the whole dependency belongs to the executable.
 if(TCMT_WINDOWS)
     # Windows: PDCurses - link with prebuilt or skip for now
     # target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARY})
-    target_include_directories(TCMTCore PRIVATE
+    target_include_directories(TCMTCore PUBLIC
         ${CURSES_INCLUDE_PATH}
         ${CURSES_INCLUDE_PATH}/wincon
     )
-    
+
 elseif(TCMT_MACOS)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
-    target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
+    target_include_directories(TCMTCore PUBLIC ${CURSES_INCLUDE_DIR})
 
 elseif(TCMT_LINUX)
     target_link_libraries(TCMTCore PRIVATE ${CURSES_LIBRARIES})
-    target_include_directories(TCMTCore PRIVATE ${CURSES_INCLUDE_DIR})
+    target_include_directories(TCMTCore PUBLIC ${CURSES_INCLUDE_DIR})
 endif()
 
 # ── Optional TLS for ServerProbe (https upload to public internet) ──
@@ -519,6 +523,14 @@ endif()
 target_compile_definitions(TCMTCore PUBLIC TCMT_VERSION_STR="${TCMT_VERSION_DISPLAY}")
 target_compile_definitions(TCMT-M PRIVATE APP_VERSION="${TCMT_VERSION_DISPLAY}")
 target_link_libraries(TCMT-M PRIVATE TCMTCore)
+
+# TUI sources belong to the executable, not to TCMTCore. Nothing in core calls
+# TuiApp — ModuleCoordinator only needs the TuiData struct, which is a header — so
+# the core library has no business carrying 2.3k lines of ncurses rendering. This
+# is the precondition for ever shipping an MCP-only binary with no terminal
+# dependency. Note it does not by itself change today's binary: TCMT-M runs both the
+# TUI and --mcp, so it links ncurses either way.
+target_sources(TCMT-M PRIVATE ${TUI_SOURCES})
 
 set_target_properties(TCMT-M PROPERTIES
     CXX_STANDARD 20

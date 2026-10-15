@@ -5,8 +5,13 @@
 #include <vector>
 #include <string>
 #include "DataStruct/DataStruct.h"
-#include "../../tui/TuiApp.h"
 #include "Utils/JThreadCompat.h"
+
+// Forward declaration only — Snapshot takes TuiData by reference, so this header has no
+// business pulling in ../../tui/TuiApp.h. That include was the last remaining edge from
+// src/core to src/tui, and it dragged the whole TUI into every file including this header.
+// The definition lives in TuiApp.h, which ModuleCoordinator.cpp includes.
+namespace tcmt { struct TuiData; }
 #include "etw/EtwMonitor.h"
 #include "notifications/SystemEventMonitor.h"
 #include "power/PowerMonitor.h"
