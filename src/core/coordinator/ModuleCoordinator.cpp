@@ -286,6 +286,13 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.acOnline = data_.acOnline.load();
     sysInfo.batteryPercent = data_.batteryPercent.load();
     sysInfo.acOnline = data_.acOnline.load();
+    // 电池明细：schema 里那批 battery/* 字段一直在发，Windows 侧以前从来没人填。
+    sysInfo.batteryIsPresent = data_.batteryPresent.load();
+    sysInfo.batteryCycleCount = data_.batteryCycleCount.load();
+    sysInfo.batteryDesignCapacity = data_.batteryDesignCapacity.load();
+    sysInfo.batteryMaxCapacity = data_.batteryFullCapacity.load();
+    sysInfo.batteryVoltage = data_.batteryVoltage.load();
+    sysInfo.batteryHealthPercent = static_cast<float>(data_.batteryHealthPercent.load());
 
     // PowerMonitor (Apple Silicon — CPU/GPU/ANE power in mW)
     const bool pwrAvail = powerMonitor_.IsPowerAvailable();

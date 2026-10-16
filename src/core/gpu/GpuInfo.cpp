@@ -118,6 +118,9 @@ using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);  // v1: single fan
 using NvmlDeviceGetFanSpeedV2Fn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int, unsigned int*);  // v2: per-fan index
 using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
+// 功耗：毫瓦。这是 NVIDIA 卡上唯一不需要自己乘电压电流的功耗来源。
+using NvmlDeviceGetPowerUsageFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetEnforcedPowerLimitFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -135,6 +138,8 @@ struct NvmlApi {
     NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
     NvmlDeviceGetFanSpeedV2Fn getFanSpeedV2 = nullptr;  // v2: per-fan index
     NvmlDeviceGetCountFn getDeviceCount = nullptr;
+    NvmlDeviceGetPowerUsageFn getPowerUsage = nullptr;              // mW
+    NvmlDeviceGetEnforcedPowerLimitFn getEnforcedPowerLimit = nullptr;  // mW
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -183,6 +188,12 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
         api.getFanSpeedV2 = reinterpret_cast<NvmlDeviceGetFanSpeedV2Fn>(
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed_v2"));
+
+        // 功耗。老驱动 / 老卡可能没有这两个入口，取不到就保持 null，调用点看得到。
+        api.getPowerUsage = reinterpret_cast<NvmlDeviceGetPowerUsageFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetPowerUsage"));
+        api.getEnforcedPowerLimit = reinterpret_cast<NvmlDeviceGetEnforcedPowerLimitFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetEnforcedPowerLimit"));
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -266,6 +277,16 @@ double GpuInfo::GetGpuTemperature() {
     unsigned int temp = 0;
     if (NVML_SUCCESS != s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp)) return -1;
     return static_cast<double>(temp);
+}
+
+// 显卡功耗，毫瓦（与 SystemInfo::gpuPower 的单位一致）。取不到返回 -1。
+// 不用自己去乘电压电流：NVML 直接给这个数，而用户态也拿不到 VRM 的电压电流。
+double GpuInfo::GetGpuPower() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getPowerUsage) return -1;
+    unsigned int mw = 0;
+    if (NVML_SUCCESS != s.api->getPowerUsage(s.device, &mw)) return -1;
+    return static_cast<double>(mw);
 }
 
 bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
