@@ -1412,6 +1412,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 static double nvmlUsageCached = -1.0;
                 static double nvmlTempCached  = -1.0;
                 static double nvmlVramCached  = -1.0;
+                static double nvmlPowerCached = -1.0;
                 static std::chrono::steady_clock::time_point nvmlLastSample{};
                 {
                     const auto now = std::chrono::steady_clock::now();
@@ -1423,9 +1424,11 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         const double u = GpuInfo::GetGpuUsage();
                         const double t = GpuInfo::GetGpuTemperature();
                         const double v = GpuInfo::GetVramUsagePercent();
+                        const double p = GpuInfo::GetGpuPower();
                         if (u >= 0) nvmlUsageCached = u;
                         if (t >= 0) nvmlTempCached  = t;
                         if (v >= 0) nvmlVramCached  = v;
+                        if (p >= 0) nvmlPowerCached = p;
                     }
                 }
                 double nvmlUsage  = nvmlUsageCached;
@@ -1433,6 +1436,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 double nvmlVramPct = nvmlVramCached;
                 if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
                 if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
+                // 显卡功耗（毫瓦）。Windows 上只有 N 卡拿得到 —— 用户态没有别的功耗出口，
+                // A 卡/核显留 0，不估。
+                if (nvmlPowerCached >= 0) sysInfo.gpuPower = nvmlPowerCached;
                 if (nvmlVramPct >= 0) {
                     sysInfo.gpuCoreFreq = nvmlVramPct;       // 老字段被借去装 VRAM%，见下
                     // 显存占用要写进 gpuMemoryPercent —— 以前只写到了 tuiData 上，

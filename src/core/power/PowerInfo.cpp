@@ -9,6 +9,10 @@
 #include <wbemidl.h>
 #include <comdef.h>
 #include <powrprof.h>
+// 电池设备接口：SetupDi 枚举 + 三个电池 ioctl
+#include <setupapi.h>
+#include <devguid.h>
+#include <batclass.h>
 #include "../Utils/WMIManager.h"
 
 // NO_SUBTYPE_GUID may not be declared in newer SDKs; define it locally.
@@ -18,6 +22,110 @@ static const GUID kNoSubtypeGuid = {0xfea3413e, 0x7e05, 0x4911,
 #include "../Utils/WinUtils.h"
 
 #pragma comment(lib, "PowrProf.lib")
+#pragma comment(lib, "Setupapi.lib")
+
+// 电池设备接口。WMI 的 Win32_Battery 只给一部分属性（没有 Voltage、没有 CycleCount），
+// 真正的明细在设备本身：SetupDi 找到电池设备 → CreateFile → 三个 ioctl。
+// 这是 Windows 上唯一不靠驱动、也不靠 WMI 的电池明细来源。
+//
+// 拿不到就补不上，绝不编数：单位是设备自定义（BATTERY_CAPACITY_RELATIVE）时容量一律不报，
+// 因为那个数的单位不是 mWh，当成容量显示就是假的。
+static void AppendBatteryDeviceDetail(std::vector<BatteryInfo>& out, bool acOnline) {
+    HDEVINFO hdev = SetupDiGetClassDevs(&GUID_DEVCLASS_BATTERY, nullptr, nullptr,
+                                        DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (hdev == INVALID_HANDLE_VALUE) return;
+
+    for (DWORD idx = 0; ; ++idx) {
+        SP_DEVICE_INTERFACE_DATA did = {};
+        did.cbSize = sizeof(did);
+        if (!SetupDiEnumDeviceInterfaces(hdev, nullptr, &GUID_DEVCLASS_BATTERY, idx, &did)) break;
+
+        DWORD need = 0;
+        SetupDiGetDeviceInterfaceDetail(hdev, &did, nullptr, 0, &need, nullptr);
+        if (need == 0) continue;
+
+        std::vector<BYTE> raw(need);
+        auto* detail = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA>(raw.data());
+        detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
+        if (!SetupDiGetDeviceInterfaceDetail(hdev, &did, detail, need, &need, nullptr)) continue;
+
+        HANDLE h = CreateFile(detail->DevicePath, GENERIC_READ | GENERIC_WRITE,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) continue;
+
+        DWORD returned = 0;
+        ULONG tag = 0;
+        ULONG timeout = 0;
+        if (DeviceIoControl(h, IOCTL_BATTERY_QUERY_TAG, &timeout, sizeof(timeout),
+                            &tag, sizeof(tag), &returned, nullptr) && tag != 0) {
+            BATTERY_INFORMATION info = {};
+            BATTERY_QUERY_INFORMATION query = {};
+            query.BatteryTag = tag;
+            query.InformationLevel = BatteryInformation;
+            const bool haveInfo = DeviceIoControl(h, IOCTL_BATTERY_QUERY_INFORMATION,
+                                                  &query, sizeof(query),
+                                                  &info, sizeof(info), &returned, nullptr) != 0;
+
+            BATTERY_WAIT_STATUS wait = {};
+            wait.BatteryTag = tag;
+            BATTERY_STATUS status = {};
+            const bool haveStatus = DeviceIoControl(h, IOCTL_BATTERY_QUERY_STATUS,
+                                                    &wait, sizeof(wait),
+                                                    &status, sizeof(status), &returned, nullptr) != 0;
+
+            const bool relative = haveInfo && (info.Capabilities & BATTERY_CAPACITY_RELATIVE) != 0;
+
+            if (out.empty()) {
+                // WMI 一条都没给（查询失败或类不可用）：这份就是唯一来源
+                BatteryInfo bat;
+                bat.name = "Battery";
+                if (haveInfo && !relative) {
+                    bat.designCapacity = info.DesignedCapacity;
+                    bat.fullChargeCapacity = info.FullChargedCapacity;
+                    bat.cycleCount = info.CycleCount;
+                }
+                if (haveStatus) {
+                    bat.voltage = status.Voltage;
+                    if (!relative) bat.currentCapacity = status.Capacity;
+                    if (haveInfo && !relative && info.FullChargedCapacity > 0) {
+                        const uint64_t pct = static_cast<uint64_t>(status.Capacity) * 100 /
+                                             info.FullChargedCapacity;
+                        bat.chargePercent = static_cast<uint32_t>(pct > 100 ? 100 : pct);
+                    }
+                }
+                bat.acOnline = acOnline;
+                if (bat.designCapacity > 0 && bat.fullChargeCapacity > 0 &&
+                    bat.designCapacity > bat.fullChargeCapacity) {
+                    bat.wearLevel = 1.0 - static_cast<double>(bat.fullChargeCapacity) /
+                                          static_cast<double>(bat.designCapacity);
+                }
+                out.push_back(bat);
+            } else if (out.size() == 1) {
+                // 只有一块电池：把 WMI 缺的那几项补上，不新增一条，
+                // 否则同一块电池会在界面里出现两次
+                BatteryInfo& bat = out[0];
+                if (haveInfo && !relative) {
+                    if (bat.designCapacity == 0)     bat.designCapacity = info.DesignedCapacity;
+                    if (bat.fullChargeCapacity == 0) bat.fullChargeCapacity = info.FullChargedCapacity;
+                    if (bat.cycleCount == 0)         bat.cycleCount = info.CycleCount;
+                }
+                if (haveStatus) {
+                    if (bat.voltage == 0) bat.voltage = status.Voltage;
+                    if (bat.currentCapacity == 0 && !relative) bat.currentCapacity = status.Capacity;
+                }
+                if (bat.designCapacity > 0 && bat.fullChargeCapacity > 0 &&
+                    bat.designCapacity > bat.fullChargeCapacity) {
+                    bat.wearLevel = 1.0 - static_cast<double>(bat.fullChargeCapacity) /
+                                          static_cast<double>(bat.designCapacity);
+                }
+            }
+        }
+        CloseHandle(h);
+    }
+
+    SetupDiDestroyDeviceInfoList(hdev);
+}
 
 void PowerInfo::Detect() {
     Logger::Debug("PowerInfo: Detecting battery/power data via WMI + Power API");
@@ -61,12 +169,13 @@ void PowerInfo::Detect() {
         return;
     }
 
+    // 取全部属性，不挑字段。WQL 里写一个 Win32_Battery 没有的属性会让**整条查询**失败，
+    // 不是只丢那一列 —— 而 Voltage 和 CycleCount 就不是这个类的属性（它只有 DesignVoltage）。
+    // 一条查不到的 WQL 换来的结果是「这台机器没有电池」，比缺两列难查得多。
     IEnumWbemClassObject* pEnumerator = nullptr;
     HRESULT hres = pSvc->ExecQuery(
         _bstr_t("WQL"),
-        _bstr_t("SELECT Name, DesignCapacity, FullChargeCapacity, "
-                "EstimatedChargeRemaining, BatteryStatus, Voltage, "
-                "CycleCount, Chemistry FROM Win32_Battery"),
+        _bstr_t("SELECT * FROM Win32_Battery"),
         WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
         nullptr,
         &pEnumerator);
@@ -99,12 +208,13 @@ void PowerInfo::Detect() {
                 bat.chargePercent = static_cast<uint32_t>(vtProp.iVal);
             VariantClear(&vtProp);
 
-            // Voltage (mV) — WMI reports in millivolts
-            if (SUCCEEDED(pclsObj->Get(L"Voltage", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
+            // Voltage (mV)。这个类里叫 DesignVoltage，没有叫 Voltage 的属性；
+            // 读不到的字段（比如 CycleCount）在这里是空值，不影响别的列。
+            if (SUCCEEDED(pclsObj->Get(L"DesignVoltage", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
                 bat.voltage = static_cast<uint32_t>(vtProp.lVal);
             VariantClear(&vtProp);
 
-            // CycleCount (Windows 8+)
+            // CycleCount：Win32_Battery 没有这个属性，留给下面的设备接口补
             if (SUCCEEDED(pclsObj->Get(L"CycleCount", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
                 bat.cycleCount = static_cast<uint32_t>(vtProp.lVal);
             VariantClear(&vtProp);
@@ -147,6 +257,9 @@ void PowerInfo::Detect() {
         }
         pEnumerator->Release();
     }
+
+    // WMI 给不到的那几项（电压、循环次数、容量）从电池设备本身补
+    AppendBatteryDeviceDetail(batteries, acOnline);
 
     Logger::Debug("PowerInfo: acOnline=" + std::string(acOnline ? "yes" : "no") +
                   " plan=" + powerPlan +

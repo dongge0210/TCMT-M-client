@@ -62,6 +62,8 @@ public:
     static double GetGpuUsage();
     // Returns GPU temperature (C) via NVML, or -1 if unavailable
     static double GetGpuTemperature();
+    // Returns GPU power draw in mW via NVML, or -1 if unavailable
+    static double GetGpuPower();
     // GPU fan info (multi-fan support)
     struct GpuFanInfo {
         unsigned int index = 0;

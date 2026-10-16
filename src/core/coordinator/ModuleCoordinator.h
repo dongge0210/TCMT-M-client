@@ -66,6 +66,14 @@ struct ModuleData {
     // Power (2s)
     std::atomic<int> batteryPercent{-1};
     std::atomic<bool> acOnline{false};
+    // 电池明细（PowerLoop）。拿不到的项留 0，界面按「这台机器没有这一项」处理，不估。
+    // SystemInfo 侧的对应字段一直存在、schema 也一直在发，只是 Windows 上从来没人填。
+    std::atomic<bool> batteryPresent{false};
+    std::atomic<int>  batteryCycleCount{0};
+    std::atomic<int>  batteryDesignCapacity{0};   // mWh
+    std::atomic<int>  batteryFullCapacity{0};     // mWh（进 SystemInfo::batteryMaxCapacity）
+    std::atomic<int>  batteryVoltage{0};          // mV
+    std::atomic<double> batteryHealthPercent{0};  // 0-100
     std::atomic<double> cpuPower{0.0};
     std::atomic<double> gpuPower{0.0};
     std::atomic<double> anePower{0.0};

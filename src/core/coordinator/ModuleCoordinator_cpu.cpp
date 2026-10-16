@@ -183,6 +183,24 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
                         powerInfo.batteries[0].chargePercent);
                 }
                 data.batteryPercent.store(batPct);
+
+                // 电池明细。Windows 侧这些数来自电池设备接口（见 PowerInfo.cpp），
+                // macOS 侧来自 IOKit。读不出来的项就是 0，不代表真实值。
+                if (!powerInfo.batteries.empty()) {
+                    const auto& b = powerInfo.batteries[0];
+                    data.batteryPresent.store(true);
+                    data.batteryCycleCount.store(static_cast<int>(b.cycleCount));
+                    data.batteryDesignCapacity.store(static_cast<int>(b.designCapacity));
+                    data.batteryFullCapacity.store(static_cast<int>(b.fullChargeCapacity));
+                    data.batteryVoltage.store(static_cast<int>(b.voltage));
+                    // wearLevel 是磨损比例，健康度是它的补数；两个容量都拿不到时留 0
+                    data.batteryHealthPercent.store(
+                        (b.designCapacity > 0 && b.fullChargeCapacity > 0)
+                            ? (100.0 - b.wearLevel * 100.0)
+                            : 0.0);
+                } else {
+                    data.batteryPresent.store(false);
+                }
             }
         } catch (const std::exception& e) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
