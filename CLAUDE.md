@@ -183,7 +183,7 @@ from a genuine zero and fails silently. This has already bitten us once (`WiFiIn
 ### Windows-specific (critical)
 4. **Shared memory name**: C++ creates `Global\SystemMonitorSharedMemory` (fallback `Local\` then no prefix). C# must try all 3.
 5. **Float64 first**: `ReadFloat32` on an 8-byte field reads 4 garbage bytes and returns non-null, blocking `ReadFloat64` fallback via `??`. Always try `ReadFloat64` FIRST.
-6. **WString vs String**: Windows stores strings as `wchar_t` (UTF-16) in shared memory. Use `ReadWString` not `ReadString` for network, disk, temperature, SMART string fields.
+6. **宽窄由 schema 说了算，不按平台猜**：两平台都把字符串注册成 `String`（窄，UTF-8）。macOS 的 `IPCDataBlock` 用 `char[]`，Windows 的 `WriteToSharedMemory` 也走 `SafeCopyStr` 写窄串，**没有任何字段是 UTF-16**。`ReadWString` 现在会先查 schema 的字段类型，声明成 `String` 的一律按窄串读（见 `IPCMemoryReader.cs`）。下面那条旧规则是错的，已作废。
 7. **Windows NamedPipe**: fire-and-forget schema delivery (no handshake). C# skips HELLO/HELLO_ACK on Windows. macOS uses full handshake protocol.
 8. **MCP mode**: NEVER starts IPCServer. External IPC first, direct HW fallback. Non-blocking connect with 500ms timeout.
 
@@ -242,6 +242,7 @@ git submodule update --init --recursive
 | `IPCDataBlock` (macOS) + `SharedMemoryBlock` (Windows) 两块，字段名与偏移随平台变 | 只有一块 `IPCDataBlock`；平台差异在传输方式（POSIX shm+UDS ↔ NamedPipe），布局全平台一致 | 2026-10-13 |
 | `src/DataStruct.h` — Packed `SharedMemoryBlock` | 真身 `src/core/DataStruct/DataStruct.h`，定义的是采集侧结构体（`SystemInfo` / `DiskData` / `GpuSpec` …），没有 `SharedMemoryBlock` | 2026-10-13 |
 | 「schema 字段数两边都远低于 300，不存在静默截断」 | Windows 侧 2026-10-15 实测 **326**，越限 26 且在丢字段；macOS 是 211。两个 builder 的数不可互推 | 2026-10-15 |
+| 「Windows 上共享内存里的字符串是 `wchar_t`(UTF-16)，要用 `ReadWString` 读」 | 两平台都写窄串 UTF-8，没有 UTF-16 字段。照旧规则读会把每个字符串都解成乱码，而且非空，`?? ReadString` 的回退永不触发 | 2026-10-16 |
 | 「CsWin32 / P/Invoke Rules」整节（原 15-18 条 + `SetupApi.cs` 事件） | 整节作废。LibreHardwareMonitor 子模块已由 `d98e601f` 移除；全仓已无 CsWin32 包引用、无 `NativeMethods.txt`、无 `PInvoke.` 调用（手动 `DllImport` 另存 5 处，与本规则无关） | 2026-10-13 |
 | `AvaloniaUI/Services/IPCServices/` | 目录不存在，实际是 `AvaloniaUI/Services/Hardware/IPC/` | 2026-10-13 |
 

@@ -447,12 +447,21 @@ public class IPCMemoryReader : IDisposable
     public string? ReadWString(string fieldName)
     {
         var field = FindField(fieldName); if (field == null) return null;
+
+        // 宽窄由 schema 说了算，不按平台猜。
+        //
+        // 采集端两平台都把字符串注册成 String（窄，UTF-8）：macOS 的 IPCDataBlock 用 char[]，
+        // Windows 的 WriteToSharedMemory 也走 SafeCopyStr 写窄串。以前这里按平台判断
+        // （macOS 读窄、Windows 读宽），Windows 上就把 UTF-8 字节当 UTF-16 解 —— 每个字符串
+        // 都变成乱码，而且解出来非空，调用处 `ReadWString(...) ?? ReadString(...)` 的回退
+        // 永远不会触发。
+        //
+        // 声明成 WString 的字段才按 UTF-16 读；今天一个都没有，留着是为了 schema 说了算这件事成立。
+        if ((FieldType)field.Type != FieldType.WString)
+            return ReadString(fieldName);
+
         int maxBytes = (int)Math.Min(field.Size, _schema!.Header.TotalSize - field.Offset);
         if (maxBytes <= 0) return null;
-
-        // macOS: IPCDataBlock uses char[] not WCHAR, fall through to String read
-        if (OperatingSystem.IsMacOS())
-            return ReadString(fieldName);
 
         var buf = ReadBytes((int)field.Offset, maxBytes);
         if (buf == null) return null;
