@@ -17,6 +17,7 @@
 #ifdef TCMT_WINDOWS
 #include <psapi.h>
 #pragma comment(lib, "psapi.lib")
+#include "cpu/CpuPowerReader.h"
 #endif
 
 #ifdef TCMT_MACOS
@@ -201,6 +202,15 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 } else {
                     data.batteryPresent.store(false);
                 }
+
+#ifdef TCMT_WINDOWS
+                // CPU 功耗走 RAPL 能量差（Intel + PawnIO 才有）。取不到返回 -1 时保持原值，
+                // 不写 0 —— 0 会被界面当成「功耗是 0」这种真实读数。
+                {
+                    const double watts = CpuPowerReader::ReadPackagePowerW();
+                    if (watts >= 0.0) data.cpuPower.store(watts * 1000.0);  // W → mW
+                }
+#endif
             }
         } catch (const std::exception& e) {
             Logger::Error("PowerLoop: " + std::string(e.what()));

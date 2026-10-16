@@ -33,6 +33,9 @@
     <ClInclude Include="src\core\cpu\CpuTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\cpu\CpuPowerReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\cpu\RyzenSmuReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -165,6 +168,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\cpu\CpuTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\cpu\CpuPowerReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\cpu\RyzenSmuReader.cpp">
