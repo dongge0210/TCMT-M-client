@@ -552,6 +552,36 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
 都在且形状正确（实测 `[{"name":"Apple M2","brand":"Apple","coreClock":444,…}]`、`cpu/cores/json` 为空数组）。
 **Windows 侧（builder 字段数、多卡路径、Avalonia 渲染）本机验不了，靠 CI。**
 
+## 2026-10-16 — Windows 采集的七处问题
+
+用户报的七条，逐条核过代码后修掉。**全部在 Windows 侧；这台是 macOS，编不了也跑不了，
+只过了 macOS 与 C# 的构建，Windows 靠 CI。**
+
+1. **中文全乱码** —— 不只是中文，是所有字符串。两个平台都把字符串注册成 `String`（窄，
+   UTF-8），而 `IPCMemoryReader.ReadWString` 按平台猜（Windows 当 UTF-16 解），解出来非空，
+   调用处 `?? ReadString` 的回退永远不触发，30 个调用点全中。改成查 schema 的字段类型。
+   `CLAUDE.md` 里那条「Windows 上是 wchar_t」是错的，已作废并进更正表。
+2. **进程页恒空** —— 只填了 `tuiData.topProcesses`，而 IPC 写的是 `sysInfo.topProcesses`。
+3. **采样间隔只控界面** —— 六个采集循环的周期是写死的，现在从 `ModuleData::sampleIntervalMs`
+   派生（1×/2×/4×/10×，慢的那几路有下限兜底），设置页一改整条采集链跟着动。
+4. **独立日志窗口无条件弹** —— 改成跟 macOS 一样要 `TCMT_LOG_WINDOW=1` 才开。
+5. **温度过少** —— 盘温并进统一温度表（同样只填了 `tuiData` 那一份）；新增
+   `AcpiThermalZoneReader`（WMI `MSAcpi_ThermalZoneTemperature`，不依赖 PawnIO）。
+6. **无电源信息** —— `PowerInfo` 的 WQL 里写了 `Voltage` / `CycleCount`，这两个都不是
+   `Win32_Battery` 的属性，会让**整条查询**失败（症状是「这台机器没有电池」）。改成
+   `SELECT *`；新增电池设备接口路径（SetupDi + `IOCTL_BATTERY_QUERY_TAG` /
+   `QUERY_INFORMATION` / `QUERY_STATUS`）拿电压、循环次数与真实容量；电池明细接进
+   `SystemInfo`（schema 与写出端本来就有这批字段，只是没人填）。GPU 功耗用上 NVML 的
+   `nvmlDeviceGetPowerUsage`；CPU 功耗新增 `CpuPowerReader`（Intel RAPL 能量计数器，
+   走 PawnIO 的 MSR 通道）。
+7. **GPU 短时接近满载** —— NVML 读数跟着主循环跑（最快 100ms 一轮），把采样窗口切碎；
+   改成固定 1 秒采一次。顺带修掉 `sysInfo.gpuMemoryPercent` 从来没人填，`gpu/0/memoryPercent`
+   一路是 0，界面上就是一条永远 0.0% 的假读数。
+
+**没做的**：A 卡与核显的温度和功耗在用户态没有出口（要 ADLX / IGCL 这类厂商 SDK），
+留空不估；AMD 的 CPU 功耗走 `RyzenSmuReader` 那条路，本次没动。
+`hardware` 页「实时」那一段仍只画主卡（其余卡的读数不是每帧在刷）。
+
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
   这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出
