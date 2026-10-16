@@ -150,6 +150,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\memory\PawnIOWrapper.h" />
     <ClInclude Include="src\core\memory\MemoryTempReader.h" />
     <ClInclude Include="src\core\cpu\CpuTempReader.h" />
+    <ClInclude Include="src\core\cpu\CpuPowerReader.h" />
     <ClInclude Include="src\core\cpu\RyzenSmuReader.h" />
     <ClInclude Include="src\core\temperature\BoardTempReader.h" />
     <ClInclude Include="src\core\temperature\AcpiThermalZoneReader.h" />
@@ -204,6 +205,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\memory\PawnIOWrapper.cpp" />
     <ClCompile Include="src\core\memory\MemoryTempReader.cpp" />
     <ClCompile Include="src\core\cpu\CpuTempReader.cpp" />
+    <ClCompile Include="src\core\cpu\CpuPowerReader.cpp" />
     <ClCompile Include="src\core\cpu\RyzenSmuReader.cpp" />
     <ClCompile Include="src\core\temperature\BoardTempReader.cpp" />
     <ClCompile Include="src\core\temperature\AcpiThermalZoneReader.cpp" />
