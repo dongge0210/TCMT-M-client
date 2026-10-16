@@ -1405,13 +1405,41 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 sysInfo.gpuIsVirtual = cachedGpuIsVirtual;
                 sysInfo.gpuUsage = cachedGpuUsage;
 
-                // Override with NVML real-time data (NVIDIA GPUs only)
-                double nvmlUsage  = GpuInfo::GetGpuUsage();
-                double nvmlTemp   = GpuInfo::GetGpuTemperature();
-                double nvmlVramPct = GpuInfo::GetVramUsagePercent();
+                // NVML 实时读数（只有 NVIDIA 有）。按固定 1 秒采一次，不跟着主循环跑：
+                // NVML 的 utilization 报的是「上一段采样窗口内的占用」，窗口由驱动维护（约 1 秒）。
+                // 主循环最快 100ms 一轮，跟着它读是把窗口切碎，一次短促的 GPU 突发就会被报成
+                // 接近满载。固定 1 秒采一次，报出来的才是完整一秒的平均。
+                static double nvmlUsageCached = -1.0;
+                static double nvmlTempCached  = -1.0;
+                static double nvmlVramCached  = -1.0;
+                static std::chrono::steady_clock::time_point nvmlLastSample{};
+                {
+                    const auto now = std::chrono::steady_clock::now();
+                    const bool first = (nvmlLastSample.time_since_epoch().count() == 0);
+                    const bool due = first ||
+                        std::chrono::duration_cast<std::chrono::milliseconds>(now - nvmlLastSample).count() >= 1000;
+                    if (due) {
+                        nvmlLastSample = now;
+                        const double u = GpuInfo::GetGpuUsage();
+                        const double t = GpuInfo::GetGpuTemperature();
+                        const double v = GpuInfo::GetVramUsagePercent();
+                        if (u >= 0) nvmlUsageCached = u;
+                        if (t >= 0) nvmlTempCached  = t;
+                        if (v >= 0) nvmlVramCached  = v;
+                    }
+                }
+                double nvmlUsage  = nvmlUsageCached;
+                double nvmlTemp   = nvmlTempCached;
+                double nvmlVramPct = nvmlVramCached;
                 if (nvmlUsage  >= 0) sysInfo.gpuUsage = nvmlUsage;
                 if (nvmlTemp   >= 0) sysInfo.gpuTemperature = nvmlTemp;
-                if (nvmlVramPct >= 0) sysInfo.gpuCoreFreq = nvmlVramPct; // VRAM % via coreClock slot
+                if (nvmlVramPct >= 0) {
+                    sysInfo.gpuCoreFreq = nvmlVramPct;       // 老字段被借去装 VRAM%，见下
+                    // 显存占用要写进 gpuMemoryPercent —— 以前只写到了 tuiData 上，
+                    // sysInfo 这一份从来没人填，IPC 出去的 gpu/0/memoryPercent 恒 0，
+                    // 界面上就是一条永远 0.0% 的假读数。
+                    sysInfo.gpuMemoryPercent = nvmlVramPct;
+                }
 
                 // GPU 列表：整份从缓存搬过来（第 0 项为主卡），再把主卡的实时值刷上去。
                 sysInfo.gpus = gpuCache.GetCachedGpus();
@@ -1727,6 +1755,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                       try { s_procMon.Refresh(); } catch (...) {}
                   }
                   tuiData.topProcesses.clear();
+                  // IPC 写出去的是 sysInfo.topProcesses，不是 tuiData 这一份。
+                  // 以前只填了 TUI，Avalonia 的进程页因此恒空（proc/json 一直是 []）。
+                  sysInfo.topProcesses.clear();
                   for (const auto& e : s_procMon.GetTop()) {
                       tcmt::TuiData::ProcessTopEntry pe;
                       pe.pid = e.pid;
@@ -1739,6 +1770,13 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                       pe.state = e.state;
                       pe.user = e.user;
                       tuiData.topProcesses.push_back(pe);
+
+                      SystemInfo::ProcData sd;
+                      sd.pid = e.pid;
+                      sd.name = e.name;
+                      sd.memoryBytes = e.memoryBytes;
+                      sd.cpuPercent = e.cpuPercent;
+                      sysInfo.topProcesses.push_back(std::move(sd));
                   }
                 }
 
@@ -2218,6 +2256,8 @@ int main(int argc, char* argv[]) {
             g_sampleIntervalMs.store(
                 (std::max)(tcmt::kSampleIntervalMinMs,
                            (std::min)(tcmt::kSampleIntervalMaxMs, ms)));
+            // 采集循环的周期也从这个值派生，不然设置改了只有界面刷新变快、读数纹丝不动
+            coordinator.SetSampleIntervalMs(g_sampleIntervalMs.load());
             Logger::Info("Sampling interval: " + std::to_string(g_sampleIntervalMs.load()) +
                          " ms");
         }
@@ -2241,10 +2281,12 @@ int main(int argc, char* argv[]) {
         });
         // 采样间隔单独一个 handler（TuiApp 保存时会两个都调）。以前这台机器上没注册它，
         // 所以设置页里那个输入框改了不生效 —— 主循环读的是写死的 1000ms。
-        tuiApp.SetSampleIntervalHandler([](int ms) {
+        tuiApp.SetSampleIntervalHandler([&coordinator](int ms) {
             if (ms < tcmt::kSampleIntervalMinMs) ms = tcmt::kSampleIntervalMinMs;
             if (ms > tcmt::kSampleIntervalMaxMs) ms = tcmt::kSampleIntervalMaxMs;
             g_sampleIntervalMs.store(ms);
+            // 采集循环也按这个周期跑，否则改了设置只有界面刷新变快
+            coordinator.SetSampleIntervalMs(ms);
             auto& cfg = GetServerCfg();
             cfg.SetInt("sampling.intervalMs", ms);
             cfg.Save();
@@ -2265,10 +2307,18 @@ int main(int argc, char* argv[]) {
         });
         Logger::Info("TUI started");
 
-        // Standalone log window (Win32, same process): shows the in-process
-        // Logger buffer in its own window — no IPC, no log file, no child process.
+        // 独立日志窗口（Win32，同进程）是可选的，跟 macOS 那边一样要 TCMT_LOG_WINDOW=1 才开。
+        // 以前 Windows 无条件弹一个额外窗口，而 TUI 自带日志页（按 L），等于每次都多一个。
         tcmt::LogWindow logWindow;
-        logWindow.Create(&Logger::GetTuiBuffer());
+        if (std::getenv("TCMT_LOG_WINDOW") != nullptr) {
+            if (logWindow.Create(&Logger::GetTuiBuffer())) {
+                Logger::Info("Log window opened (in-process Win32)");
+            } else {
+                Logger::Warn("TCMT_LOG_WINDOW=1 but window creation failed — using in-TUI log page (L)");
+            }
+        } else {
+            Logger::Info("Single-window log: in-TUI log page (press L)");
+        }
 
         // Initial USB detection (startup scan)
         try {

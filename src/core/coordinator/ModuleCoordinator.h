@@ -80,7 +80,25 @@ struct ModuleData {
     std::atomic<bool> diskDirty{false};
     std::atomic<bool> sysPowerDirty{false};  // sleep/wake events
     std::atomic<bool> thermalDirty{false};
+
+    // 采样基周期（毫秒），设置页「采样间隔」改的就是它。默认值与
+    // `tcmt::kSampleIntervalDefaultMs`（src/tui/TuiApp.h）一致 —— 那边是设置页的
+    // 取值范围，取值时已经夹过一次，这里只是给个初值。
+    //
+    // 六个采集循环各自按倍率从它派生周期（CPU 1×、内存与网络 2×、温度与电源 4×、磁盘 10×，
+    // 默认 500ms 时正好等于改动前的写死值）。以前这个值只喂主循环的 sleep，
+    // 采集周期全写死，所以改设置只看得出界面刷新变快，读数纹丝不动。
+    std::atomic<int> sampleIntervalMs{500};
 };
+
+// 从一个采集循环的倍率算出该睡多久。floorMs 是下限：温度/电源/磁盘那几路单次采集不便宜，
+// 间隔调小时不能让它们跟着一起变得很密。
+inline int ScaledSampleIntervalMs(const ModuleData& data, int multiplier, int floorMs) {
+    int base = data.sampleIntervalMs.load();
+    if (base <= 0) base = 500;
+    const int v = base * multiplier;
+    return v < floorMs ? floorMs : v;
+}
 
 // Free function thread loops (implemented in ModuleCoordinator_cpu.cpp)
 void CpuLoop(ModuleData& data, tcmt::compat::StopToken st);
@@ -93,6 +111,11 @@ public:
     ~ModuleCoordinator();
     void Start();
     void Stop();
+    // 设置页改了采样间隔就调这个（线程安全，六个采集循环下一轮生效）。
+    // 传进来的值应当已经夹过取值范围，这里只做一次防御性下限。
+    void SetSampleIntervalMs(int ms) {
+        data_.sampleIntervalMs.store(ms > 0 ? ms : 500);
+    }
     void Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData);
     static void SleepFor(tcmt::compat::StopToken st, int ms);
     bool IsWifiDirty() { return data_.wifiDirty.exchange(false); }

@@ -414,6 +414,7 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
             Logger::Error("TemperatureLoop: " + std::string(e.what()));
         }
 
-        SleepFor(st, 2000);
+        // 4× 采样基周期，下限 1000ms —— 温度那一路单次采集不便宜
+        SleepFor(st, ScaledSampleIntervalMs(data_, 4, 1000));
     }
 }

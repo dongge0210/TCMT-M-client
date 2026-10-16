@@ -31,9 +31,9 @@ void ModuleCoordinator::DiskLoop(tcmt::compat::StopToken st) {
             Logger::Error("DiskLoop: unknown exception");
         }
 
-        // Skip sleep if a system event triggered a re-scan
+        // Skip sleep if a system event triggered a re-scan；平时 10× 采样基周期，下限 2000ms
         if (!data_.diskDirty.exchange(false)) {
-            SleepFor(st, 5000);
+            SleepFor(st, ScaledSampleIntervalMs(data_, 10, 2000));
         }
     }
 
@@ -102,9 +102,9 @@ void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
             Logger::Error("NetworkLoop: unknown exception");
         }
 
-        // Skip sleep if a system/ETW event triggered a re-scan
+        // Skip sleep if a system/ETW event triggered a re-scan；平时 2× 采样基周期，下限 500ms
         if (!data_.networkDirty.exchange(false)) {
-            SleepFor(st, 1000);
+            SleepFor(st, ScaledSampleIntervalMs(data_, 2, 500));
         }
     }
 

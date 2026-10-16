@@ -62,12 +62,13 @@ void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
                           + std::string(e.what()));
         }
 
-        // Sleep for the remainder of the 500 ms cycle
+        // Sleep for the remainder of the cycle（1× 采样基周期，下限 200ms）
         auto elapsed = std::chrono::steady_clock::now() - cycleStart;
         auto elapsedMs =
             std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
                 .count();
-        int sleepMs = 500 - static_cast<int>(elapsedMs);
+        int sleepMs = ScaledSampleIntervalMs(data, 1, 200) -
+                      static_cast<int>(elapsedMs);
         if (sleepMs > 0) {
             ModuleCoordinator::SleepFor(st, sleepMs);
         }
@@ -145,7 +146,8 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
             Logger::Error("MemoryLoop: " + std::string(e.what()));
         }
 
-        ModuleCoordinator::SleepFor(st, 1000);
+        // 2× 采样基周期，下限 500ms
+        ModuleCoordinator::SleepFor(st, ScaledSampleIntervalMs(data, 2, 500));
     }
 
     Logger::Info("MemoryLoop: stopped");
@@ -186,9 +188,9 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
         }
 
-        // Respond faster to ETW/system power events
+        // Respond faster to ETW/system power events；平时按 4× 采样基周期，下限 1000ms
         if (!data.powerDirty.exchange(false) && !data.sysPowerDirty.exchange(false)) {
-            ModuleCoordinator::SleepFor(st, 2000);
+            ModuleCoordinator::SleepFor(st, ScaledSampleIntervalMs(data, 4, 1000));
         }
     }
 
