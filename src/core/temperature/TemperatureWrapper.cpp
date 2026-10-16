@@ -9,6 +9,7 @@
 #include "BoardTempReader.h"
 #include "IntelOobmsmReader.h"
 #include "IntelMchbarReader.h"
+#include "AcpiThermalZoneReader.h"
 
 bool TemperatureWrapper::initialized = false;
 
@@ -92,6 +93,17 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
             temps.push_back({rs.name, rs.value});
     } catch (...) {
         Logger::Debug("RyzenSmuReader: exception");
+    }
+
+    // ACPI 热区 —— 上面那几条全都要 PawnIO（要装驱动），这条不要。
+    // 覆盖很一般（常常只有一两个区，台式机可能一个都没有，非管理员也可能拿不到），
+    // 但它是没装 PawnIO 的机器上唯一还能多出来的来源。
+    try {
+        auto zones = AcpiThermalZoneReader::ReadAll();
+        for (const auto& z : zones)
+            temps.push_back({z.name, z.temperature});
+    } catch (...) {
+        Logger::Debug("AcpiThermalZoneReader: exception");
     }
 
     return temps;

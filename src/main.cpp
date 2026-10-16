@@ -1857,15 +1857,17 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     tuiData.clientTypes.clear();
                     for (auto t : ct) tuiData.clientTypes.push_back(static_cast<uint8_t>(t));
                 }
-                tuiData.temperatures = sysInfo.temperatures;
-                // Add physical disk temps to unified temperature list
-                for (size_t di = 0; di < tuiData.physicalDisks.size(); ++di) {
-                    if (tuiData.physicalDisks[di].temperature > 0) {
-                        std::string label = tuiData.physicalDisks[di].model;
+                // 磁盘温度并进统一温度表。要并进 sysInfo 那一份 —— IPC 写的是
+                // systemInfo.temperatures（见 SharedMemoryManager_Windows），
+                // 以前只 append 给了 tuiData，所以 TUI 里看得到、界面上一条都没有。
+                for (const auto& pd : tuiData.physicalDisks) {
+                    if (pd.temperature > 0) {
+                        std::string label = pd.model;
                         if (label.empty()) label = "Disk";
-                        tuiData.temperatures.push_back({label, tuiData.physicalDisks[di].temperature});
+                        sysInfo.temperatures.push_back({label, pd.temperature});
                     }
                 }
+                tuiData.temperatures = sysInfo.temperatures;
                 if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
                     auto& tpm = sysInfo.tpms[0];
                     tuiData.tpmInfo = WinUtils::WstringToString(tpm.manufacturer)

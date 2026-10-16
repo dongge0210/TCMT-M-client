@@ -132,6 +132,9 @@
     <ClInclude Include="src\core\temperature\BoardTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\temperature\AcpiThermalZoneReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Utils\Logger.cpp">
@@ -276,6 +279,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\temperature\BoardTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\temperature\AcpiThermalZoneReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
