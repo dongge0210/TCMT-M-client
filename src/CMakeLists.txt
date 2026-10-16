@@ -64,6 +64,7 @@ if(TCMT_WINDOWS)
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/etw/EtwMonitor.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessMonitor.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/temperature/AcpiThermalZoneReader.cpp
     )
 endif()
 

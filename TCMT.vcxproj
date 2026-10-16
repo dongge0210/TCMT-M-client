@@ -152,6 +152,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClInclude Include="src\core\cpu\CpuTempReader.h" />
     <ClInclude Include="src\core\cpu\RyzenSmuReader.h" />
     <ClInclude Include="src\core\temperature\BoardTempReader.h" />
+    <ClInclude Include="src\core\temperature\AcpiThermalZoneReader.h" />
     <ClInclude Include="src\core\temperature\IntelOobmsmReader.h" />
     <ClInclude Include="src\core\temperature\IntelMchbarReader.h" />
     <ClInclude Include="src\core\network\NetworkAdapter.h" />
@@ -205,6 +206,7 @@ _WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefiniti
     <ClCompile Include="src\core\cpu\CpuTempReader.cpp" />
     <ClCompile Include="src\core\cpu\RyzenSmuReader.cpp" />
     <ClCompile Include="src\core\temperature\BoardTempReader.cpp" />
+    <ClCompile Include="src\core\temperature\AcpiThermalZoneReader.cpp" />
     <ClCompile Include="src\core\temperature\IntelOobmsmReader.cpp" />
     <ClCompile Include="src\core\temperature\IntelMchbarReader.cpp" />
     <ResourceCompile Include="src\resources.rc" />
