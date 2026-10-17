@@ -34,7 +34,7 @@ bool UserNotifier::ShowNotification(const std::string& title, const std::string&
 #else
     (void)title;
     (void)message;
-    Logger::Warn("UserNotifier::ShowNotification: notifications not supported on this platform");
+    Logger::Debug("UserNotifier::ShowNotification: notifications not supported on this platform");
     return false;
 #endif
 }

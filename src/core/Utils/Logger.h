@@ -13,12 +13,32 @@
 #include <windows.h>
 #endif
 
-// Include LogBuffer for TUI support (macOS, Linux, and Windows)
+// Include LogBuffer for TUI support (macOS, Linux, and Windows).
+// It lives in this directory (Utils/) on purpose: it used to sit in src/tui/, which
+// made every one of the ~55 files that include Logger.h transitively depend on src/tui.
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(TCMT_WINDOWS)
-#include "../tui/LogBuffer.h"
+#include "LogBuffer.h"
 #endif
 
-// Log level enumeration
+// Log level enumeration.
+//
+// Level semantics (keep every call site aligned with this table):
+//   FATAL    process is about to die / unrecoverable (top-level exception,
+//            out of memory)
+//   ERROR    a feature is actually broken and has not recovered; unexpected
+//   WARN     transient runtime condition, degraded but still working
+//   INFO     process lifecycle events / user-visible state changes only
+//            (low frequency — never inside sampling or per-tick loops)
+//   DEBUG    probing and capability-absence detail, per-tick/per-round detail
+//   TRACE    reserved for future per-tick spam (never on by default)
+//
+// Messages that describe detection of missing optional capabilities
+// ("not found" / "not installed" / "not available" / "not supported" /
+// "needs root" / "expected" / "skipping") are DEBUG, not INFO/WARN/ERROR —
+// unless the absence disables the core feature entirely, in which case WARN.
+// The app starts at LOG_INFO — the in-app log page needs it, and a WARN-only
+// gate left that page permanently empty. system_monitor.json logging.level
+// (info / warning / debug) and --debug / --verbose move the level from there.
 enum LogLevel {
     LOG_TRACE = 0,
     LOG_DEBUG = 1,

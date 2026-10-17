@@ -12,7 +12,15 @@ namespace tcmt::mcp {
 
 static const char* PROTOCOL_VERSION = "2024-11-05";
 static const char* SERVER_NAME    = "tcmt-mcp";
-static const char* SERVER_VERSION = "alpha-0.2";
+
+// 用 CMake 注入的那个宏（带上 git 短 SHA），别在这儿再硬编码一份 ——
+// 之前是硬编码的，结果同一个进程里采集端报 ALPHA_0.0.79-<sha>、MCP 报 ALPHA_0.0.79，
+// 两个消费者看到两个版本串。TCMTCore 把它定义成 PUBLIC，这个文件就编在里面。
+// 兜底值只在没经过 CMake 的构建（Windows 的 vcxproj）里用得上，改版本时也要跟着改。
+#ifndef TCMT_VERSION_STR
+#define TCMT_VERSION_STR "ALPHA_0.0.79"
+#endif
+static const char* SERVER_VERSION = TCMT_VERSION_STR;
 
 MCPServer::MCPServer()  = default;
 MCPServer::~MCPServer() { Stop(); }

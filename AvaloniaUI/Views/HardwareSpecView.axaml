@@ -1,0 +1,174 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:models="clr-namespace:TCMT.Avalonia.Models"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.HardwareSpecView"
+             x:DataType="vm:HardwareSpecViewModel">
+
+  <UserControl.Styles>
+    <!-- N/A 的值压低一档，一眼能和真读数分开 -->
+    <Style Selector="TextBlock.na">
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.val">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+      <Setter Property="TextAlignment" Value="Right"/>
+    </Style>
+    <Style Selector="TextBlock.kvlabel">
+      <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+    </Style>
+    <Style Selector="TextBlock.th">
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+
+    <!-- 页顶提示条：数据不成立时先把原因说清楚，而不是让满页的「—」自己解释自己 -->
+    <Style Selector="Border.banner">
+      <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12,9"/>
+    </Style>
+    <Style Selector="Border.banner TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="32,28,32,0">
+      <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+      <TextBlock Text="{Binding PageSubtitle}"
+                 FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0"/>
+
+      <!-- 没连上时整页都是占位符，这里得先说清楚为什么 -->
+      <Border Classes="banner" IsVisible="{Binding !IsOnline}" Margin="0,14,0,0">
+        <TextBlock Text="{Binding OfflineBanner}"/>
+      </Border>
+    </StackPanel>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" Margin="32,20,32,32">
+      <StackPanel Spacing="16">
+
+        <!--
+          规格行直接落在页面上，不套卡片。这一页只有一个部件，卡片的边界就只能圈住它自己 ——
+          内容越少越像个漂在大片空白里的小框（电池只有四行，最明显）。
+          块与块之间用一条细线分隔；单块页只有一块，两头都被 first/last 规则吃掉，等于没有线。
+        -->
+        <ItemsControl ItemsSource="{Binding Sheet.Blocks}">
+          <ItemsControl.Styles>
+            <Style Selector="ContentPresenter:first-child Border.blk">
+              <Setter Property="Margin" Value="0"/>
+            </Style>
+            <Style Selector="ContentPresenter:last-child Border.blk">
+              <Setter Property="BorderThickness" Value="0"/>
+              <Setter Property="Padding" Value="0"/>
+            </Style>
+          </ItemsControl.Styles>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:SpecBlock">
+              <Border Classes="blk"
+                      BorderThickness="0,0,0,1"
+                      BorderBrush="{StaticResource BorderBrush}"
+                      Padding="0,0,0,18"
+                      Margin="0,18,0,0">
+                <StackPanel Spacing="12">
+                  <!-- 首块不写标题（它就是页标题），只有第二块起才有这一行 -->
+                  <TextBlock Text="{Binding Title}"
+                             IsVisible="{Binding HasTitle}"
+                             Theme="{StaticResource SectionHeader}"/>
+
+                  <ItemsControl ItemsSource="{Binding Units}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="models:SpecUnit">
+                        <StackPanel Spacing="6" Margin="0,0,0,8">
+
+                          <!-- 多于一个实例时才写小标题（多 GPU / 多盘 / 多网卡） -->
+                          <TextBlock Text="{Binding Subtitle}"
+                                     IsVisible="{Binding HasSubtitle}"
+                                     FontSize="12" FontWeight="SemiBold"
+                                     Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                          <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="models:SpecRow">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                                  <TextBlock Grid.Column="0"
+                                             Classes="kvlabel"
+                                             Text="{Binding Label}"
+                                             FontSize="13"
+                                             Margin="0,0,16,0"/>
+                                  <TextBlock Grid.Column="1"
+                                             Classes="val"
+                                             Classes.na="{Binding IsNa}"
+                                             Text="{Binding Value}"
+                                             FontSize="13"/>
+                                </Grid>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+
+                          <!-- SMART 属性表：全项目只有这一张，表头写死 -->
+                          <StackPanel IsVisible="{Binding HasTable}" Spacing="2" Margin="0,8,0,0">
+                            <!-- 表头挂在页面的 VM 上，而这里的作用域是 SpecUnit —— 得往上走一层拿 -->
+                            <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,0,0,2"
+                                  DataContext="{Binding $parent[UserControl].DataContext}">
+                              <TextBlock Grid.Column="0" Classes="th" Text="ID"/>
+                              <TextBlock Grid.Column="1" Classes="th" Text="{Binding ColumnAttribute}"/>
+                              <TextBlock Grid.Column="2" Classes="th" Text="{Binding ColumnCurrent}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="3" Classes="th" Text="{Binding ColumnWorst}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="4" Classes="th" Text="{Binding ColumnThreshold}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="5" Classes="th" Text="{Binding ColumnRaw}" TextAlignment="Right"/>
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Table.Rows}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:SpecTableRow">
+                                  <Grid ColumnDefinitions="40,*,60,60,60,90" Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding Id}" FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Current}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Worst}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Threshold}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding Raw}" FontSize="12" TextAlignment="Right"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                  </Grid>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 页底说明：讲清这块数据的口径，以及缺项为什么缺 -->
+        <TextBlock Text="{Binding Sheet.Note}"
+                   IsVisible="{Binding Sheet.HasNote}"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   LineHeight="18"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Margin="4,0,0,8"/>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

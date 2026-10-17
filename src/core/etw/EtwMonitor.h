@@ -6,7 +6,7 @@
 #include <memory>
 #include "../Utils/JThreadCompat.h"
 
-namespace tcmt { namespace etw {
+namespace tcmt::etw {
 
 using PowerEventCallback   = std::function<void(bool acOnline)>;
 using BatteryEventCallback = std::function<void(int percent)>;
@@ -87,5 +87,4 @@ private:
 
 #endif
 
-} // namespace etw
-} // namespace tcmt
+} // namespace tcmt::etw

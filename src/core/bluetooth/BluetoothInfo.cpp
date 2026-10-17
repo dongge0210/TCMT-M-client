@@ -215,17 +215,12 @@ void BluetoothInfo::Detect() {
 }
 
 // ============================================================================
-// macOS stub
-// ============================================================================
 #else
-void BluetoothInfo::Clear() {
-    data_ = BluetoothData{};
-}
-
-void BluetoothInfo::Detect() {
-    Clear();
-    Logger::Debug("BluetoothInfo: no-op on non-Windows platform");
-}
+// Unreachable: this file is registered only under if(TCMT_WINDOWS) in
+// src/CMakeLists.txt. macOS uses BluetoothInfo.mm, and the TCMT_LINUX branch above is
+// kept as a starting point but is not registered either. A no-op stub here would turn
+// "no Bluetooth support on this platform" into "no devices", so fail loudly instead.
+#error "BluetoothInfo.cpp is Windows-only. Do not add it to a non-Windows build."
 #endif
 
 const BluetoothData& BluetoothInfo::GetData() const {

@@ -5,6 +5,12 @@ on:
     branches:
       - T1-F-P  # 监听 T1-F-P 分支的更新
 
+# 这条工作流只读仓库：检出代码，然后用它自己的 GITEE_TOKEN / GITLAB_TOKEN 推到别的托管。
+# 不写这个块的话 GITHUB_TOKEN 拿的是仓库默认权限（可能是可写）。
+# 这个 job 里同时躺着两个第三方凭据，还引了一个第三方 action，权限给到最小不是形式。
+permissions:
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest

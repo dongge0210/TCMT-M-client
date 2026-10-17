@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Services.Hardware.IPC;
 
@@ -33,30 +34,36 @@ public class IPCPipeClient : IAsyncDisposable
     public bool IsConnected { get; private set; }
     public string LastError { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// 采集端推来的配置快照，JSON 对象文本。握手一过就到一次，之后每次配置变更再推。
+    /// 参数是原始 JSON，解析交给上层 —— 这一层不知道有哪些键，也不该知道。
+    /// </summary>
+    public Action<string>? OnConfigSnapshot { get; set; }
+
+    // 握手之后唯一往服务端写的东西。协议里一条消息 = 4 字节头 + payload 两段写，
+    // 两次写插到一起对端就把 payload 当成下一条的头了，所以写要串行。
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private Stream? _stream;
+
     public async Task StartAsync(CancellationToken ct = default)
     {
         if (_disposed) return;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         int retryCount = 0;
+        bool everConnected = false;
         const int maxRetries = 10;
 
         while (!_cts.Token.IsCancellationRequested)
         {
             if (_serverShutdown || _schemaReceived) break;
-            if (retryCount >= maxRetries)
-            {
-                Log.Error("IPC: Max retries ({Max}) reached, giving up", maxRetries);
-                IsConnected = false;
-                OnConnectionChanged?.Invoke(false, "连接失败：已达最大重试次数");
-                break;
-            }
+
+            bool connected;
             try
             {
-                if (OperatingSystem.IsWindows())
-                    await ConnectWindowsAsync(_cts.Token);
-                else
-                    await ConnectUnixAsync(_cts.Token);
+                connected = OperatingSystem.IsWindows()
+                    ? await ConnectWindowsAsync(_cts.Token)
+                    : await ConnectUnixAsync(_cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -64,20 +71,62 @@ public class IPCPipeClient : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                retryCount++;
-                int delayMs = Math.Min(1000 * (1 << retryCount), 30000); // 1s,2s,4s,...,30s max
+                // Windows 那条路连接失败是抛出来的，这里接住；Unix 那条自己接，回 false
                 LastError = ex.Message;
-                Log.Warning(ex, "Pipe connection lost, retry {Count}/{Max} in {Delay}ms...",
-                    retryCount, maxRetries, delayMs);
-                IsConnected = false;
-                OnConnectionChanged?.Invoke(false, LastError);
-                await Task.Delay(delayMs, _cts.Token);
+                connected = false;
             }
+
+            if (connected)
+            {
+                // 连上过又断了：重试计数从头算，下一轮从最短的退避重新开始。
+                // 但这里必须先停一下 —— 回 true 只说明"这次握手过了"，服务端如果是
+                // 接受完立刻关闭，不歇就接等于换了个地方空转。
+                everConnected = true;
+                retryCount = 0;
+                await Task.Delay(1000, _cts.Token);
+                continue;
+            }
+
+            retryCount++;
+            if (retryCount >= maxRetries)
+            {
+                Log.Error("IPC: Max retries ({Max}) reached, giving up", maxRetries);
+                IsConnected = false;
+                OnConnectionChanged?.Invoke(false, Translator.T("连接失败：已达最大重试次数"));
+                break;
+            }
+
+            var delayMs = Math.Min(1000 * (1 << retryCount), 30000); // 2s,4s,8s,...,30s max
+            IsConnected = false;
+            OnConnectionChanged?.Invoke(false, LastError);
+
+            // 曾经连上过又断了是状态变化，值得说一声；从没连上过时的重试只是细节 ——
+            // 状态栏本来就写着「已断开」，硬件页也画着「未连接采集端」，
+            // 这里再按次刷屏只会把日志页淹掉（之前就是一秒几十行）。
+            if (everConnected)
+            {
+                Log.Warning("IPC: Connection lost, retry {Count}/{Max} in {Delay}ms",
+                    retryCount, maxRetries, delayMs);
+            }
+            else
+            {
+                Log.Debug("IPC: Connect attempt {Count}/{Max} failed, retrying in {Delay}ms",
+                    retryCount, maxRetries, delayMs);
+            }
+
+            await Task.Delay(delayMs, _cts.Token);
         }
     }
 
     // --- Windows: Named Pipe ---
-    private async Task ConnectWindowsAsync(CancellationToken ct)
+
+    /// <summary>
+    /// 连上并跑完接收循环返回 true；连不上返回 false，退避交给调用方。
+    /// 返回值是必需的：之前这两个方法把异常吞在内部、对外只回 Task，
+    /// 于是 <see cref="StartAsync"/> 那个 while 里的退避与重试计数**从来没执行过** ——
+    /// 连接失败会以每秒几十次的速度空转（macOS 侧尤其明显，EADDRNOTAVAIL 是立刻返回的）。
+    /// </summary>
+    private async Task<bool> ConnectWindowsAsync(CancellationToken ct)
     {
         var pipeName = IPCConstants.PipeName;
         Log.Debug("IPC: Connecting to Windows pipe: {Name}", pipeName);
@@ -90,14 +139,16 @@ public class IPCPipeClient : IAsyncDisposable
         await client.ConnectAsync(5000, ct);
 
         IsConnected = true;
-        OnConnectionChanged?.Invoke(true, "已连接");
+        OnConnectionChanged?.Invoke(true, Translator.T("已连接"));
         Log.Information("IPC: Connected to Windows pipe: {Name}", pipeName);
 
-        await ReceiveLoopAsync(client, ct);
+        return await ReceiveLoopAsync(client, ct);
     }
 
     // --- macOS/Linux: Unix Domain Socket ---
-    private async Task ConnectUnixAsync(CancellationToken ct)
+
+    /// <summary>见 <see cref="ConnectWindowsAsync"/> 关于返回值的那段说明。</summary>
+    private async Task<bool> ConnectUnixAsync(CancellationToken ct)
     {
         var socketPath = IPCConstants.UnixSocketPath;
         try
@@ -110,28 +161,38 @@ public class IPCPipeClient : IAsyncDisposable
             await client.ConnectAsync(ep, cts.Token);
 
             IsConnected = true;
-            OnConnectionChanged?.Invoke(true, "已连接");
+            OnConnectionChanged?.Invoke(true, Translator.T("已连接"));
             Log.Information("IPC: Connected to Unix socket: {Path}", socketPath);
 
             await using var ns = new NetworkStream(client, ownsSocket: false);
-            await ReceiveLoopAsync(ns, ct);
+            return await ReceiveLoopAsync(ns, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            LastError = Translator.T("连接超时");
             Log.Debug("IPC: Unix socket connect timeout");
+            return false;
         }
         catch (Exception ex)
         {
+            LastError = ex.Message;
             Log.Debug("IPC: Unix socket connect failed: {Msg}", ex.Message);
+            return false;
         }
     }
 
     private const int MsgHeaderSize = 4;  // PipeMessage: type(1) + version(1) + payloadSize(2)
 
-    private async Task ReceiveLoopAsync(Stream stream, CancellationToken ct)
+    /// <summary>
+    /// 跑完一次会话。返回 true 表示握手走通了（这次是真连上过），false 表示在握手阶段就断了。
+    /// 调用方靠这个值决定要不要退避重试 —— 一律回 true 的话，握手失败会被当成"连上又断开"，
+    /// 退避就被跳过了。
+    /// </summary>
+    private async Task<bool> ReceiveLoopAsync(Stream stream, CancellationToken ct)
     {
         int n;
         var msgBuf = new byte[MsgHeaderSize];
+        _stream = stream;
 
         if (!OperatingSystem.IsWindows())
         {
@@ -151,7 +212,8 @@ public class IPCPipeClient : IAsyncDisposable
             if (n == 0 || msgBuf[0] != 0x02) // HelloAck
             {
                 Log.Warning("IPC: Expected HELLO_ACK, got type={Type}", msgBuf[0]);
-                return;
+                _stream = null;
+                return false;
             }
             Log.Debug("IPC: HELLO_ACK received");
         }
@@ -163,7 +225,7 @@ public class IPCPipeClient : IAsyncDisposable
         int fieldDefSize = IPCConstants.FieldDefSize;
         var headerBuf = new byte[schemaHeaderSize];
         n = await ReadFullAsync(stream, headerBuf, schemaHeaderSize, ct);
-        if (n < schemaHeaderSize) { Log.Warning("IPC: Incomplete schema header"); return; }
+        if (n < schemaHeaderSize) { Log.Warning("IPC: Incomplete schema header"); _stream = null; return false; }
 
         ushort fieldCount = BitConverter.ToUInt16(headerBuf, 6);
         uint totalSize = BitConverter.ToUInt32(headerBuf, 8);
@@ -181,14 +243,16 @@ public class IPCPipeClient : IAsyncDisposable
         if (schema.Header.Magic != IPCConstants.Magic)
         {
             Log.Warning("IPC: Invalid magic 0x{Actual:X}", schema.Header.Magic);
-            return;
+            _stream = null;
+            return false;
         }
         Log.Information("IPC: Schema received: {Count} fields, totalSize={Size}", schema.Header.FieldCount, schema.Header.TotalSize);
 
         if (!(OnSchemaReceived?.Invoke(schema) ?? true))
         {
             Log.Warning("IPC: Schema rejected");
-            return;
+            _stream = null;
+            return false;
         }
 
         // === Phase 3: Send ACK (macOS/Linux only — Windows skips handshake) ===
@@ -226,7 +290,7 @@ public class IPCPipeClient : IAsyncDisposable
                     else if (msgType == 0x07) // Shutdown
                     {
                         Log.Information("IPC: Server shutting down");
-                        OnConnectionChanged?.Invoke(false, "服务器已关闭");
+                        OnConnectionChanged?.Invoke(false, Translator.T("服务器已关闭"));
                         _serverShutdown = true;
                         break;
                     }
@@ -245,19 +309,86 @@ public class IPCPipeClient : IAsyncDisposable
                         if (newSchema.IsValid)
                             OnSchemaReceived?.Invoke(newSchema);
                     }
+                    else if (msgType == 0x0B) // ConfigSnapshot
+                    {
+                        int payloadSize = BitConverter.ToUInt16(msgBuf, 2);
+                        var cfgBuf = new byte[payloadSize];
+                        if (payloadSize > 0 &&
+                            await ReadFullAsync(stream, cfgBuf, payloadSize, ct) < payloadSize)
+                        {
+                            break;   // 半个 payload 留在流里，后面全是对不上的，只能断
+                        }
+                        OnConfigSnapshot?.Invoke(System.Text.Encoding.UTF8.GetString(cfgBuf));
+                    }
                 }
                 catch (IOException) { break; }
                 catch (OperationCanceledException) { break; }
             }
             // Keep-alive ended — treat as disconnect
-            if (!_serverShutdown)
+            //
+            // 但 `_disposed` 为真表示是我们自己关的（Reset / 退出），那不是"连接断开"，不该往外报：
+            // 一来语义不对，二来这条通知是异步到的 —— 会在新连接已经报过"已连接"之后才喊出来，
+            // 把状态盖回"已断开"。表现就是状态栏说断开、数据却照流。
+            if (!_serverShutdown && !_disposed)
             {
                 Log.Warning("IPC: Connection lost (timeout/eof)");
-                OnConnectionChanged?.Invoke(false, "连接已断开");
+                OnConnectionChanged?.Invoke(false, Translator.T("连接已断开"));
             }
             Log.Debug("IPC: Keep-alive loop ended");
         }
+
+        // 会话结束，_stream 顺手清掉 —— 它也是 SendConfigSetAsync 判断还能不能写的依据
+        _stream = null;
+        return true;
     }
+
+    /// <summary>
+    /// 把一串键值（JSON 对象文本）发给采集端。返回 false 表示当前没连着，没发出去。
+    ///
+    /// 这里不等回执：采集端应用完会把新的 ConfigSnapshot 推给所有客户端，那一条就是回执。
+    /// 再单独设计一个 ack 只会多一条可能对不上的路径。
+    /// </summary>
+    public async Task<bool> SendConfigSetAsync(string json, CancellationToken ct = default)
+    {
+        var stream = _stream;
+        if (stream is null || _disposed) return false;
+
+        var payload = System.Text.Encoding.UTF8.GetBytes(json);
+        if (payload.Length > ConfigPayloadMax)
+        {
+            Log.Warning("IPC: 配置请求 {Size} 字节，超过上限，未发送", payload.Length);
+            return false;
+        }
+
+        var frame = new byte[MsgHeaderSize + payload.Length];
+        frame[0] = 0x0A; // ConfigSet
+        frame[1] = IPCConstants.CurrentVersion;
+        frame[2] = (byte)(payload.Length & 0xFF);
+        frame[3] = (byte)((payload.Length >> 8) & 0xFF);
+        Buffer.BlockCopy(payload, 0, frame, MsgHeaderSize, payload.Length);
+
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            // 头和 payload 一次写完：分两次写的话，中间插进别的消息就错位了
+            await stream.WriteAsync(frame, ct);
+            await stream.FlushAsync(ct);
+            Log.Debug("IPC: ConfigSet sent ({Size} bytes)", payload.Length);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("IPC: ConfigSet 发送失败: {Msg}", ex.Message);
+            return false;
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    /// <summary>与采集端的 IPC_CONFIG_PAYLOAD_MAX 对齐</summary>
+    private const int ConfigPayloadMax = 8192;
 
     private static async Task<int> ReadFullAsync(Stream stream, byte[] buf, int len, CancellationToken ct)
     {

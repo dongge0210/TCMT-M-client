@@ -3,7 +3,7 @@
 
 #ifdef TCMT_WINDOWS
 // ======================== Windows Implementation ========================
-#include "WmiManager.h"
+#include "WMIManager.h"
 #include <comutil.h>
 #include <algorithm>
 #include <cwctype>
@@ -36,7 +36,76 @@ constexpr nvmlReturn_t NVML_SUCCESS = 0;
 constexpr int NVML_CLOCK_GRAPHICS = 1;
 constexpr int NVML_TEMPERATURE_GPU = 0;
 
-// Function pointer types for NVML API
+// ======================== NVAPI Dynamic Loading (fan RPM) ========================
+// NVML only gives fan speed as % of max. NVAPI returns actual RPM.
+
+using NvAPI_Status = int;
+using NvPhysicalGpuHandle = void*;
+#define NVAPI_OK 0
+#define NV_MAX_PHYSICAL_GPUS 64
+
+static constexpr unsigned int NVAPI_Initialize_ID        = 0x0150E828;
+static constexpr unsigned int NVAPI_EnumPhysicalGPUs_ID  = 0xE5AC921F;
+static constexpr unsigned int NVAPI_GPU_GetCoolerSettings_ID = 0xDA141340;
+static constexpr unsigned int NVAPI_GPU_ClientFanCoolersGetStatus_ID = 0x35AED5E8;
+
+struct NvapiCooler {
+    unsigned int type;       // 1=RPM, 2=duty%
+    unsigned int controller;
+    unsigned int currentRpm; // RPM if type==1, duty% if type==2
+    unsigned int defaultMin;
+    unsigned int defaultMax;
+    unsigned int currentMin;
+    unsigned int currentMax;
+    unsigned int targetLevel;
+    unsigned int policy;
+};
+struct NvapiCoolerSettings { unsigned int version; unsigned int count; NvapiCooler coolers[8]; };
+
+// NVAPI ClientFanCoolers (consumer GPU fan status — returns actual RPM)
+struct NvapiClientCooler {
+    unsigned int currentRpm;
+    unsigned int targetMin;
+    unsigned int targetMax;
+    unsigned int controlMode;
+    unsigned int softwareBased;
+};
+struct NvapiClientCoolerStatus { unsigned int version; unsigned int count; unsigned int flags; NvapiClientCooler coolers[8]; };
+
+using NvapiQueryFn = void* (*)(unsigned int id);
+
+struct NvapiState {
+    HMODULE module = nullptr;
+    NvapiQueryFn query = nullptr;
+    bool ready = false;
+    NvPhysicalGpuHandle gpus[NV_MAX_PHYSICAL_GPUS] = {};
+    unsigned int gpuCount = 0;
+};
+
+static NvapiState& GetNvapi() {
+    static NvapiState ns;
+    static bool tried = false;
+    if (!tried) { tried = true;
+        ns.module = LoadLibraryW(L"nvapi64.dll");
+        if (!ns.module) { Logger::Debug("GPU_FAN: nvapi64.dll not found"); return ns; }
+        ns.query = (NvapiQueryFn)GetProcAddress(ns.module, "nvapi_QueryInterface");
+        if (!ns.query) { Logger::Debug("GPU_FAN: nvapi_QueryInterface not found"); return ns; }
+        auto initFn = (NvAPI_Status(*)())ns.query(NVAPI_Initialize_ID);
+        if (!initFn || initFn() != NVAPI_OK) { Logger::Debug("GPU_FAN: NVAPI Init failed"); return ns; }
+        ns.gpuCount = NV_MAX_PHYSICAL_GPUS;
+        auto enumFn = (NvAPI_Status(*)(NvPhysicalGpuHandle*,unsigned int*))ns.query(NVAPI_EnumPhysicalGPUs_ID);
+        NvAPI_Status rc = enumFn ? enumFn(ns.gpus, &ns.gpuCount) : -1;
+        if (rc != NVAPI_OK || ns.gpuCount == 0) {
+            Logger::Debug("GPU_FAN: NVAPI EnumPhysicalGPUs rc=" + std::to_string(rc) + " count=" + std::to_string(ns.gpuCount));
+            return ns;
+        }
+        ns.ready = true;
+        Logger::Debug("NVAPI: " + std::to_string(ns.gpuCount) + " GPU(s)");
+    }
+    return ns;
+}
+
+// ======================== NVML Dynamic Loading ========================
 using NvmlInitFn = nvmlReturn_t (*)();
 using NvmlShutdownFn = nvmlReturn_t (*)();
 using NvmlDeviceGetHandleByIndexFn = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
@@ -45,6 +114,13 @@ using NvmlDeviceGetUtilizationRatesFn = nvmlReturn_t (*)(nvmlDevice_t, nvmlUtili
 using NvmlDeviceGetTemperatureFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
 using NvmlDeviceGetClockInfoFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
 using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
+using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);  // v1: single fan
+using NvmlDeviceGetFanSpeedV2Fn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int, unsigned int*);  // v2: per-fan index
+using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
+// 功耗：毫瓦。这是 NVIDIA 卡上唯一不需要自己乘电压电流的功耗来源。
+using NvmlDeviceGetPowerUsageFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetEnforcedPowerLimitFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -58,6 +134,12 @@ struct NvmlApi {
     NvmlDeviceGetTemperatureFn getTemperature = nullptr;
     NvmlDeviceGetClockInfoFn getClockInfo = nullptr;
     NvmlDeviceGetCudaComputeCapabilityFn getCudaComputeCapability = nullptr;
+    NvmlDeviceGetNumFansFn getNumFans = nullptr;
+    NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
+    NvmlDeviceGetFanSpeedV2Fn getFanSpeedV2 = nullptr;  // v2: per-fan index
+    NvmlDeviceGetCountFn getDeviceCount = nullptr;
+    NvmlDeviceGetPowerUsageFn getPowerUsage = nullptr;              // mW
+    NvmlDeviceGetEnforcedPowerLimitFn getEnforcedPowerLimit = nullptr;  // mW
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -70,7 +152,7 @@ static NvmlApi& GetNvmlApi() {
         attempted = true;
         api.module = LoadLibraryW(L"nvml.dll");
         if (!api.module) {
-            Logger::Info("NVML not available (nvml.dll not found) -- skipping NVIDIA GPU details");
+            Logger::Debug("NVML not available (nvml.dll not found) -- skipping NVIDIA GPU details");
             return api;
         }
 
@@ -99,9 +181,28 @@ static NvmlApi& GetNvmlApi() {
         api.getCudaComputeCapability = reinterpret_cast<NvmlDeviceGetCudaComputeCapabilityFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCudaComputeCapability"));
 
+        // Optional NVML functions (may not exist on older drivers)
+        api.getNumFans = reinterpret_cast<NvmlDeviceGetNumFansFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetNumFans"));
+        api.getFanSpeed = reinterpret_cast<NvmlDeviceGetFanSpeedFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
+        api.getFanSpeedV2 = reinterpret_cast<NvmlDeviceGetFanSpeedV2Fn>(
+            GetProcAddress(api.module, "nvmlDeviceGetFanSpeed_v2"));
+
+        // 功耗。老驱动 / 老卡可能没有这两个入口，取不到就保持 null，调用点看得到。
+        api.getPowerUsage = reinterpret_cast<NvmlDeviceGetPowerUsageFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetPowerUsage"));
+        api.getEnforcedPowerLimit = reinterpret_cast<NvmlDeviceGetEnforcedPowerLimitFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetEnforcedPowerLimit"));
+        api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
+        if (!api.getDeviceCount)
+            api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
+                GetProcAddress(api.module, "nvmlDeviceGetCount"));
+
         // Validate mandatory functions -- if any are missing, treat as unavailable
         if (!api.init || !api.shutdown || !api.getHandleByIndex) {
-            Logger::Warn("NVML loaded but missing required functions -- disabling NVML");
+            Logger::Debug("NVML loaded but missing required functions -- disabling NVML");
             FreeLibrary(api.module);
             api = NvmlApi{};
         }
@@ -124,7 +225,7 @@ struct NvmlSession {
         r = api->getHandleByIndex(0, &device);
         if (NVML_SUCCESS != r) { api->shutdown(); Logger::Debug("NVML: getHandleByIndex failed"); return; }
         ok = true;
-        Logger::Info("NVML: persistent session initialized");
+        Logger::Debug("NVML: persistent session initialized");
     }
 
     ~NvmlSession() {
@@ -176,6 +277,16 @@ double GpuInfo::GetGpuTemperature() {
     unsigned int temp = 0;
     if (NVML_SUCCESS != s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp)) return -1;
     return static_cast<double>(temp);
+}
+
+// 显卡功耗，毫瓦（与 SystemInfo::gpuPower 的单位一致）。取不到返回 -1。
+// 不用自己去乘电压电流：NVML 直接给这个数，而用户态也拿不到 VRM 的电压电流。
+double GpuInfo::GetGpuPower() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getPowerUsage) return -1;
+    unsigned int mw = 0;
+    if (NVML_SUCCESS != s.api->getPowerUsage(s.device, &mw)) return -1;
+    return static_cast<double>(mw);
 }
 
 bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
@@ -305,6 +416,82 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
 
+std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
+    std::vector<GpuFanInfo> result;
+    auto& nvs = GetNvmlSession();
+
+    // ── Try NVAPI for actual RPM first ──
+    auto& napi = GetNvapi();
+    if (napi.ready && napi.gpuCount > 0 && nvs.ok) {
+        unsigned int nvapiIdx = 0;
+        if (nvapiIdx < napi.gpuCount) {
+            NvapiCoolerSettings cs = {};
+            cs.version = sizeof(NvapiCoolerSettings) | 0x20000;  // v2
+            // Also try bare sizeof (some drivers expect this)
+            auto coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
+                napi.query(NVAPI_GPU_GetCoolerSettings_ID);
+            if (!coolerFn || coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) != NVAPI_OK) {
+                cs.version = sizeof(NvapiCoolerSettings);  // bare size fallback
+                coolerFn = (NvAPI_Status(*)(NvPhysicalGpuHandle,unsigned int,NvapiCoolerSettings*,unsigned int))
+                    napi.query(NVAPI_GPU_GetCoolerSettings_ID);
+            }
+            if (coolerFn && coolerFn(napi.gpus[nvapiIdx], 0, &cs, sizeof(cs)) == NVAPI_OK && cs.count > 0) {
+                for (unsigned int i = 0; i < cs.count && i < 6; ++i) {
+                    GpuFanInfo fi;
+                    fi.index = i;
+                    if (cs.coolers[i].type == 1) {
+                        fi.speedRpm = static_cast<int>(cs.coolers[i].currentRpm);
+                        fi.isRpm = true;
+                    } else {
+                        fi.speedRpm = static_cast<int>(cs.coolers[i].currentRpm); // duty%
+                    }
+                    result.push_back(fi);
+                }
+                if (!result.empty()) return result;
+            }
+            // ── NVAPI fallback: ClientFanCoolersGetStatus ──
+            result.clear();
+            NvapiClientCoolerStatus fcs = {};
+            fcs.version = sizeof(NvapiClientCoolerStatus) | 0x10000;  // v1
+            auto fanFn = (NvAPI_Status(*)(NvPhysicalGpuHandle, NvapiClientCoolerStatus*))
+                napi.query(NVAPI_GPU_ClientFanCoolersGetStatus_ID);
+            if (fanFn && fanFn(napi.gpus[nvapiIdx], &fcs) == NVAPI_OK && fcs.count > 0) {
+                for (unsigned int i = 0; i < fcs.count && i < 6; ++i) {
+                    GpuFanInfo fi;
+                    fi.index = i;
+                    fi.speedRpm = static_cast<int>(fcs.coolers[i].currentRpm);
+                    fi.isRpm = true;
+                    result.push_back(fi);
+                }
+                if (!result.empty()) return result;
+            }
+        }
+    } else if (napi.ready && napi.gpuCount == 0) {
+        Logger::Debug("GPU fans: NVAPI initialized but 0 GPUs enumerated");
+    } else if (!napi.ready) {
+        Logger::Debug("GPU fans: NVAPI not available, using NVML duty% only");
+    }
+
+    // ── Fallback: NVML only (percentage) ──
+    if (!nvs.ok || !nvs.api->getNumFans) return result;
+    unsigned int numFans = 0;
+    if (NVML_SUCCESS != nvs.api->getNumFans(nvs.device, &numFans) || numFans == 0) return result;
+    for (unsigned int i = 0; i < numFans && i < 6; ++i) {
+        unsigned int speed = 0;
+        nvmlReturn_t rc = NVML_SUCCESS + 1;
+        if (nvs.api->getFanSpeedV2)
+            rc = nvs.api->getFanSpeedV2(nvs.device, i, &speed);
+        if (rc != NVML_SUCCESS && i == 0 && nvs.api->getFanSpeed)
+            rc = nvs.api->getFanSpeed(nvs.device, &speed);
+        if (rc != NVML_SUCCESS) break;
+        GpuFanInfo fi;
+        fi.index = i;
+        fi.speedRpm = static_cast<int>(speed);
+        result.push_back(fi);
+    }
+    return result;
+}
+
 #elif defined(TCMT_MACOS)
 // ======================== macOS Implementation ========================
 #include <sys/sysctl.h>
@@ -428,8 +615,12 @@ void GpuInfo::DetectGpusViaMetal() {
             if (vram > 0) {
                 data.dedicatedMemory = vram * 1024 * 1024;
             } else if (isAppleSilicon && totalMem > 0) {
-                // Apple Silicon uses unified memory: GPU uses a portion of system RAM
-                data.dedicatedMemory = totalMem / 4; // rough estimate
+                // Apple Silicon 没有独立显存：GPU 和 CPU 共用同一块物理内存，能寻址到全部。
+                // 这里以前报的是 totalMem / 4 —— 一个凭空的四分之一，被界面当成「显存」显示，
+                // 也被 MCP 当成 VRAM 报给 AI。改成报真实总量，并打上 unified 标记，
+                // 让上层知道这个数不是显存。
+                data.dedicatedMemory = totalMem;
+                data.isUnified = true;
             } else {
                 data.dedicatedMemory = 0;
             }
@@ -485,8 +676,10 @@ void GpuInfo::DetectGpusViaMetal() {
         data.isVirtual = false;
         data.coreClock = 0.0;
         data.temperature = 0;
-        if (totalMem > 0) {
-            data.dedicatedMemory = isAppleSilicon ? (totalMem / 4) : 0;
+        if (isAppleSilicon && totalMem > 0) {
+            // 同上：统一内存报真实总量，不编四分之一
+            data.dedicatedMemory = totalMem;
+            data.isUnified = true;
         }
         gpuList.push_back(data);
     }
@@ -494,7 +687,15 @@ void GpuInfo::DetectGpusViaMetal() {
     Logger::Debug("GpuInfo: detected " + std::to_string(gpuList.size()) + " GPU(s)");
 }
 
+// Cached IOAccelerator service entries (file-static: GpuInfo is effectively
+// a singleton on macOS). IOServiceGetMatchingServices enumeration is the
+// expensive part of RefreshUsage; we enumerate once and keep the entries
+// retained, reading PerformanceStatistics directly on later calls. Entries
+// are released on re-enumeration and never leak for the process lifetime.
+static std::vector<io_registry_entry_t> g_gpuEntries;
+
 void GpuInfo::RefreshUsage() {
+    if (gpuList.empty()) return;
     mach_port_t masterPort;
     if (@available(macOS 12.0, *)) {
         masterPort = kIOMainPortDefault;
@@ -502,36 +703,42 @@ void GpuInfo::RefreshUsage() {
         masterPort = 0;
     }
 
-    io_iterator_t iter = 0;
-    kern_return_t kr = IOServiceGetMatchingServices(
-        masterPort,
-        IOServiceMatching("IOAccelerator"),
-        &iter);
-    if (kr != KERN_SUCCESS) return;
+    // (Re)enumerate only when we have no cached entries yet.
+    if (g_gpuEntries.empty()) {
+        io_iterator_t iter = 0;
+        kern_return_t kr = IOServiceGetMatchingServices(
+            masterPort,
+            IOServiceMatching("IOAccelerator"),
+            &iter);
+        if (kr != KERN_SUCCESS) return;
+        io_registry_entry_t entry;
+        while ((entry = IOIteratorNext(iter)) != 0) {
+            IOObjectRetain(entry);  // keep alive across RefreshUsage calls
+            g_gpuEntries.push_back(entry);
+        }
+        IOObjectRelease(iter);
+    }
+    if (g_gpuEntries.empty()) return;
 
     size_t gpuIdx = 0;
-    io_registry_entry_t entry;
-    while ((entry = IOIteratorNext(iter)) != 0) {
-        if (gpuIdx < gpuList.size()) {
-            CFTypeRef perfStatsRef = IORegistryEntryCreateCFProperty(
-                entry, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
-            if (perfStatsRef && CFGetTypeID(perfStatsRef) == CFDictionaryGetTypeID()) {
-                CFDictionaryRef perfDict = static_cast<CFDictionaryRef>(perfStatsRef);
-                CFNumberRef utilRef = static_cast<CFNumberRef>(
-                    CFDictionaryGetValue(perfDict, CFSTR("Device Utilization %")));
-                if (utilRef && CFGetTypeID(utilRef) == CFNumberGetTypeID()) {
-                    int utilVal = 0;
-                    if (CFNumberGetValue(utilRef, kCFNumberIntType, &utilVal)) {
-                        gpuList[gpuIdx].usage = static_cast<double>(utilVal);
-                    }
+    for (io_registry_entry_t entry : g_gpuEntries) {
+        if (gpuIdx >= gpuList.size()) break;
+        CFTypeRef perfStatsRef = IORegistryEntryCreateCFProperty(
+            entry, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
+        if (perfStatsRef && CFGetTypeID(perfStatsRef) == CFDictionaryGetTypeID()) {
+            CFDictionaryRef perfDict = static_cast<CFDictionaryRef>(perfStatsRef);
+            CFNumberRef utilRef = static_cast<CFNumberRef>(
+                CFDictionaryGetValue(perfDict, CFSTR("Device Utilization %")));
+            if (utilRef && CFGetTypeID(utilRef) == CFNumberGetTypeID()) {
+                int utilVal = 0;
+                if (CFNumberGetValue(utilRef, kCFNumberIntType, &utilVal)) {
+                    gpuList[gpuIdx].usage = static_cast<double>(utilVal);
                 }
             }
-            if (perfStatsRef) CFRelease(perfStatsRef);
-            gpuIdx++;
         }
-        IOObjectRelease(entry);
+        if (perfStatsRef) CFRelease(perfStatsRef);
+        gpuIdx++;
     }
-    IOObjectRelease(iter);
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }

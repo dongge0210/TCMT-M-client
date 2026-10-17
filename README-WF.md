@@ -6,11 +6,6 @@
 
 本项目使用了以下仓库：
 
-- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)  
-  - **协议**: [Mozilla Public License v2.0 (MPL-2.0)](https://mozilla.org/MPL/2.0/)  
-  - **使用方式**: 本项目直接使用了 LibreHardwareMonitor 的 `net8` 版本编译后的库（动态链接库 DLL 文件），未对其源代码进行修改。  
-  - **源代码获取**: 您可以在其 [GitHub 仓库](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) 中找到完整的源代码及其协议文件。
-
 - [curl](https://github.com/curl/curl)  
   - **协议**: 没有  
   - **使用方式**: 本项目将其作为 Git 子模块引入，用于处理 URL 数据传输。  

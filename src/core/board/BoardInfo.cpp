@@ -372,7 +372,7 @@ void BoardInfo::Detect() {
     }
 
     if (manufacturer.empty() && product.empty()) {
-        Logger::Warn("BoardInfo: DMI sysfs not available (not x86?)");
+        Logger::Debug("BoardInfo: DMI sysfs not available (not x86?)");
     }
 
     Logger::Debug("BoardInfo: manufacturer=" + manufacturer +

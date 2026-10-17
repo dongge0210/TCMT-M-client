@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             xmlns:services="clr-namespace:TCMT.Avalonia.Services"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.LogView"
+             x:DataType="vm:LogViewModel">
+
+  <Design.DataContext>
+    <vm:LogViewModel Title="{loc:Tr 日志}" />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- TopBar matching pen design -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{loc:Tr 日志}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="{Binding CountText}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+          <!-- Follow mode: the state is written out in words, it does not rely on colour -->
+          <TextBlock Text="{loc:Tr 跟随最新}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+                     IsVisible="{Binding IsFollowing}"/>
+          <TextBlock Text="{loc:Tr 已暂停跟随}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+                     IsVisible="{Binding IsPaused}"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <ScrollViewer Grid.Row="1" Name="LogScroll" Background="{StaticResource BackgroundBrush}" Padding="20"
+                  ScrollChanged="OnLogScrollChanged">
+      <StackPanel Spacing="2">
+
+        <ItemsControl ItemsSource="{Binding Entries}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="services:LogEntry">
+              <Grid ColumnDefinitions="70,62,*" Margin="0,0,0,6">
+                <TextBlock Grid.Column="0" Text="{Binding TimeText}" FontSize="11"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+
+                <!-- Level is one wide colour block. Colour is only ever applied to the level,
+                     never to the message text. -->
+                <TextBlock Grid.Column="1" Text="{Binding LevelText}" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           IsVisible="{Binding IsInfo}"/>
+                <TextBlock Grid.Column="1" Text="{Binding LevelText}" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{StaticResource WarningBrush}"
+                           IsVisible="{Binding IsWarn}"/>
+                <TextBlock Grid.Column="1" Text="{Binding LevelText}" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{StaticResource DangerBrush}"
+                           IsVisible="{Binding IsError}"/>
+
+                <StackPanel Grid.Column="2" Spacing="1">
+                  <TextBlock Text="{Binding Message}" FontSize="12" TextWrapping="Wrap"
+                             Foreground="{StaticResource TextPrimaryBrush}"/>
+                  <TextBlock Text="{Binding Source}" FontSize="10"
+                             Foreground="{StaticResource TextMutedBrush}"/>
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Empty state explains itself rather than showing a blank page -->
+        <StackPanel Spacing="4" Margin="0,12,0,0" IsVisible="{Binding IsEmpty}">
+          <TextBlock Text="{loc:Tr 暂无日志条目}" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"/>
+          <TextBlock Text="{loc:Tr 把 LogStream 挂到 Serilog 上之后，这里会出现运行时事件。}" FontSize="11"
+                     TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"/>
+        </StackPanel>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

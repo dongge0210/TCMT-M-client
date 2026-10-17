@@ -30,6 +30,11 @@ void DiskInfo::QueryDrives() {
         if (totalBytes.QuadPart == 0) continue;
         DriveInfo info{};
         info.letter = driveLetter;
+        // 挂载点就是卷根。"C:\" 是 Win32 定义的三种 volume mount point 之一
+        // （另两种是卷 GUID 路径和挂载文件夹），所以同一个字段在 macOS 上
+        // 装 "/System/Volumes/Data" 也成立。卷名不必再取一次 ——
+        // 下面 GetVolumeInformationW 给的已经是真卷标。
+        info.mountPoint = WinUtils::WstringToString(rootPath);
         info.totalSize = totalBytes.QuadPart;
         info.freeSpace = totalFreeBytes.QuadPart;
         info.usedSpace = (totalBytes.QuadPart >= totalFreeBytes.QuadPart)
@@ -61,6 +66,7 @@ std::vector<DiskData> DiskInfo::GetDisks() {
     for (const auto& drive : drives) {
         DiskData d;
         d.letter = drive.letter;
+        d.mountPoint = drive.mountPoint;
         d.label = drive.label;
         d.fileSystem = drive.fileSystem;
         d.totalSize = drive.totalSize;
@@ -89,9 +95,87 @@ static bool ParseDiskPartition(const std::wstring& text, int& diskIndexOut) {
 }
 
 // 使用 WMI 关联查询获取物理磁盘到逻辑驱动器的映射
-void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo) {
+// Fast, non-blocking physical disk list (single Win32_DiskDrive query).
+// No ASSOCIATORS letter mapping and no SMART reads — those can be slow or
+// block on unresponsive drives, so callers publish this list first and read
+// SMART per disk separately.
+void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
     IWbemServices* svc = wmi.GetWmiService();
-    if (!svc) { Logger::Warn("WMI service invalid, skipping physical disk enumeration"); return; }
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
+
+    std::map<int, PhysicalDiskSmartData> tempDisks;
+    IEnumWbemClassObject* pEnum = nullptr;
+    HRESULT hr = svc->ExecQuery(bstr_t(L"WQL"),
+        bstr_t(L"SELECT Index,Model,SerialNumber,InterfaceType,Size,MediaType FROM Win32_DiskDrive"),
+        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnum);
+    if (SUCCEEDED(hr) && pEnum) {
+        IWbemClassObject* obj = nullptr;
+        ULONG ret = 0;
+        while (pEnum->Next(WBEM_INFINITE, 1, &obj, &ret) == S_OK) {
+            VARIANT vIndex, vModel, vSerial, vIface, vSize, vMedia;
+            VariantInit(&vIndex); VariantInit(&vModel); VariantInit(&vSerial);
+            VariantInit(&vIface); VariantInit(&vSize); VariantInit(&vMedia);
+            if (SUCCEEDED(obj->Get(L"Index", 0, &vIndex, 0, 0))
+                && (vIndex.vt == VT_I4 || vIndex.vt == VT_UI4)) {
+                int idx = (vIndex.vt == VT_I4) ? vIndex.intVal : static_cast<int>(vIndex.uintVal);
+                PhysicalDiskSmartData data{};
+                data.physicalIndex = idx;
+                if (SUCCEEDED(obj->Get(L"Model", 0, &vModel, 0, 0)) && vModel.vt == VT_BSTR)
+                    wcsncpy_s(data.model, vModel.bstrVal, _TRUNCATE);
+                if (SUCCEEDED(obj->Get(L"SerialNumber", 0, &vSerial, 0, 0)) && vSerial.vt == VT_BSTR)
+                    wcsncpy_s(data.serialNumber, vSerial.bstrVal, _TRUNCATE);
+                if (SUCCEEDED(obj->Get(L"InterfaceType", 0, &vIface, 0, 0)) && vIface.vt == VT_BSTR)
+                    wcsncpy_s(data.interfaceType, vIface.bstrVal, _TRUNCATE);
+                if (SUCCEEDED(obj->Get(L"Size", 0, &vSize, 0, 0))) {
+                    if (vSize.vt == VT_UI8) data.capacity = vSize.ullVal;
+                    else if (vSize.vt == VT_BSTR) data.capacity = _wcstoui64(vSize.bstrVal, nullptr, 10);
+                }
+                if (SUCCEEDED(obj->Get(L"MediaType", 0, &vMedia, 0, 0)) && vMedia.vt == VT_BSTR) {
+                    std::wstring media = vMedia.bstrVal;
+                    if (media.find(L"SSD") != std::wstring::npos || media.find(L"Solid State") != std::wstring::npos)
+                        wcsncpy_s(data.diskType, L"SSD", _TRUNCATE);
+                    else
+                        wcsncpy_s(data.diskType, L"HDD", _TRUNCATE);
+                } else {
+                    // MediaType missing — infer from model name (case-insensitive)
+                    bool isSSD = false;
+                    if (vModel.vt == VT_BSTR) {
+                        std::wstring mdl = vModel.bstrVal;
+                        isSSD = (mdl.find(L"SSD") != std::wstring::npos ||
+                                 mdl.find(L"ssd") != std::wstring::npos ||
+                                 mdl.find(L"Solid State") != std::wstring::npos ||
+                                 mdl.find(L"NVMe") != std::wstring::npos ||
+                                 mdl.find(L"MZ") != std::wstring::npos ||
+                                 mdl.find(L"mz") != std::wstring::npos);
+                    }
+                    wcsncpy_s(data.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
+                }
+                data.smartSupported = false;
+                data.smartEnabled = false;
+                data.healthPercentage = 100;
+                data.temperature = -1;
+                data.logicalDriveCount = 0;
+                tempDisks[idx] = data;
+            }
+            VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
+            VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
+            obj->Release();
+        }
+        pEnum->Release();
+    }
+
+    sysInfo.physicalDisks.clear();
+    for (auto& kv : tempDisks) {
+        sysInfo.physicalDisks.push_back(kv.second);
+        if (sysInfo.physicalDisks.size() >= 8) break;
+    }
+    Logger::Debug("Physical disk info enumeration complete: " + std::to_string(sysInfo.physicalDisks.size()));
+}
+
+void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
+                                    SystemInfo& sysInfo, bool readSmart) {
+    IWbemServices* svc = wmi.GetWmiService();
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
     std::map<int, std::vector<char>> physicalIndexToLetters;
     IEnumWbemClassObject* pEnum = nullptr;
 
@@ -184,6 +268,7 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 && (vIndex.vt == VT_I4 || vIndex.vt == VT_UI4)) {
                 int idx = (vIndex.vt == VT_I4) ? vIndex.intVal : static_cast<int>(vIndex.uintVal);
                 PhysicalDiskSmartData data{};
+                data.physicalIndex = idx;
                 if (SUCCEEDED(obj->Get(L"Model", 0, &vModel, 0, 0)) && vModel.vt == VT_BSTR)
                     wcsncpy_s(data.model, vModel.bstrVal, _TRUNCATE);
                 if (SUCCEEDED(obj->Get(L"SerialNumber", 0, &vSerial, 0, 0)) && vSerial.vt == VT_BSTR)
@@ -201,7 +286,18 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                     else
                         wcsncpy_s(data.diskType, L"HDD", _TRUNCATE);
                 } else {
-                    wcsncpy_s(data.diskType, L"Unknown", _TRUNCATE);
+                    // MediaType missing — infer from model name (case-insensitive)
+                    bool isSSD = false;
+                    if (vModel.vt == VT_BSTR) {
+                        std::wstring mdl = vModel.bstrVal;
+                        isSSD = (mdl.find(L"SSD") != std::wstring::npos ||
+                                 mdl.find(L"ssd") != std::wstring::npos ||
+                                 mdl.find(L"Solid State") != std::wstring::npos ||
+                                 mdl.find(L"NVMe") != std::wstring::npos ||
+                                 mdl.find(L"MZ") != std::wstring::npos ||
+                                 mdl.find(L"mz") != std::wstring::npos);
+                    }
+                    wcsncpy_s(data.diskType, isSSD ? L"SSD" : L"HDD", _TRUNCATE);
                 }
                 data.smartSupported = false;
                 data.smartEnabled = false;
@@ -209,8 +305,10 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                 data.temperature = -1;
                 data.logicalDriveCount = 0;
                 tempDisks[idx] = data;
-                // Try DeviceIoControl SMART
-                SmartReader::Read(idx, tempDisks[idx]);
+                // Try DeviceIoControl SMART — skip when caller wants a non-blocking
+                // WMI-only enumeration (SMART can hang on unresponsive drives).
+                if (readSmart)
+                    SmartReader::Read(idx, tempDisks[idx]);
             }
             VariantClear(&vIndex); VariantClear(&vModel); VariantClear(&vSerial);
             VariantClear(&vIface); VariantClear(&vSize); VariantClear(&vMedia);
@@ -253,6 +351,42 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
 #include <dirent.h>
 #include <algorithm>
 #include <set>
+#include <cstring>
+#include <sys/attr.h>    // getattrlist / ATTR_VOL_NAME
+#include <sys/param.h>   // MAXPATHLEN
+
+// 取挂载点的真实卷名（ATTR_VOL_NAME）。读不到返回空串。
+// 纯 C 路径，不需要 ObjC++，也就不必为此新增 .mm 文件。
+//
+// 返回布局（实测，见下面注释的字节）不是"长度 + 字符串"，而是：
+//   u_int32_t        属性缓冲总长
+//   attrreference_t  ATTR_VOL_NAME 的引用：attr_dataoffset 相对 attrreference 自身，
+//                    attr_length 才是名字长度
+//   <名字本体>        不带结尾 NUL，长度精确
+// 把整块当"长度 + 字符串"读会切进两个长度字段和补零区，拿到夹着控制字符的串。
+// 实测 /System/Volumes/Data：14 00 00 00 | 08 00 00 00 | 05 00 00 00 | "Data"
+static std::string VolumeNameAt(const std::string& mountPoint) {
+    struct attrlist attrs = {};
+    attrs.bitmapcount = ATTR_BIT_MAP_COUNT;
+    attrs.volattr = ATTR_VOL_INFO | ATTR_VOL_NAME;
+
+    char buf[sizeof(uint32_t) + sizeof(attrreference_t) + MAXPATHLEN] = {};
+    if (getattrlist(mountPoint.c_str(), &attrs, buf, sizeof(buf), 0) != 0) return {};
+
+    attrreference_t ref = {};
+    std::memcpy(&ref, buf + sizeof(uint32_t), sizeof(ref));
+    if (ref.attr_dataoffset < 0 || ref.attr_length == 0) return {};
+
+    const size_t base = sizeof(uint32_t);
+    const size_t nameOffset = base + static_cast<size_t>(ref.attr_dataoffset);
+    if (nameOffset + ref.attr_length > sizeof(buf)) return {};   // 越界守卫
+
+    std::string name(buf + nameOffset, static_cast<size_t>(ref.attr_length));
+    // attr_length 把结尾 NUL 也算在内（实测 "Data" 报 5、"Macintosh HD" 报 13）。
+    // 不剥掉的话日志里会混进 NUL 字节，把整份日志变成 grep 认定的大二进制文件。
+    if (!name.empty() && name.back() == '\0') name.pop_back();
+    return name;
+}
 
 DiskInfo::DiskInfo() { QueryDrives(); }
 
@@ -269,86 +403,74 @@ void DiskInfo::QueryDrives() {
     std::vector<struct statfs> mounts(mountCount);
     getfsstat(mounts.data(), (int)(mounts.size() * sizeof(struct statfs)), MNT_NOWAIT);
 
-    // Track physical disks to deduplicate APFS volumes on same device
-    std::set<std::string> seenPhysicalDisks;
-
     for (const auto& fs : mounts) {
         std::string mountpoint(fs.f_mntonname);
         std::string fstype(fs.f_fstypename);
-        std::string devname(fs.f_mntfromname);
 
-        // Skip non-physical volumes, root, and macOS system snapshots
+        // 文件系统层面：这些根本不是磁盘卷
         if (fstype == "autofs" || fstype == "devfs" || fstype == "fdesc"
             || fstype == "procfs" || fstype == "devpts" || fstype == "overlay"
-            || fstype == "nullfs" || fstype == "simfs"
-            || mountpoint == "/"  // root is not a user-facing volume
-            || mountpoint == "/System/Volumes/VM"
-            || mountpoint == "/System/Volumes/Preboot"
-            || mountpoint == "/System/Volumes/Update"
-            || mountpoint == "/System/Volumes/xarts"
-            || mountpoint == "/System/Volumes/iSCPreboot"
-            || mountpoint == "/System/Volumes/Hardware"
-            || mountpoint.find("/System/Volumes/Update/") == 0
-            || mountpoint.find("/private/var/folders/") == 0
-            || mountpoint.find("/Volumes/ProNTFSDrive") == 0) {
+            || fstype == "nullfs" || fstype == "simfs") {
             continue;
         }
 
-        // Get BSD name (e.g. disk0s1)
-        std::string bsdName = devname;
-        if (bsdName.find("/dev/") == 0)
-            bsdName = bsdName.substr(5);
+        // 卷层面改用挂载标志，不再靠一张越加越长的路径名单：
+        //   MNT_LOCAL       排掉网络挂载
+        //   MNT_DONTBROWSE  "Finder 不列它"。Preboot / VM / Update / xarts /
+        //                   iSCPreboot / Hardware、/Volumes/Recovery、CoreSimulator
+        //                   的 cryptex 挂载和模拟器卷全带这个标志 ——
+        //                   原来那张名单漏掉了后面三类。
+        // 两个例外，都是启动卷组：
+        //   "/"                      密封只读系统快照，可用空间恒为 0，报了是废数
+        //   "/System/Volumes/Data"   带 DONTBROWSE，但数据都在这儿，
+        //                            是这台机器上唯一有真实可用空间的卷
+        // 所以启动盘只报 Data 卷，卷组关系交给设计稿那行说明去讲。
+        const bool isBootData = (mountpoint == "/System/Volumes/Data");
+        if (!(fs.f_flags & MNT_LOCAL) || mountpoint == "/" ||
+            ((fs.f_flags & MNT_DONTBROWSE) && !isBootData)) {
+            continue;
+        }
 
         // Get capacity and free space
         uint64_t total = (uint64_t)fs.f_blocks * (uint64_t)fs.f_bsize;
         uint64_t free = (uint64_t)fs.f_bfree * (uint64_t)fs.f_bsize;
         uint64_t used = total - free;
 
-        // Only include significant volumes (skip small system volumes)
-        if (total < 100 * 1024 * 1024) continue; // skip < 100MB
-
-        // Skip boot partition
-        if (bsdName.find("s1") != std::string::npos && mountpoint == "/") {
-            // Root volume
-        }
+        // 随本次改动清掉两处死代码：
+        //   1. 一个 <100MB 的过滤，本意跳过系统小卷 —— 新规则已覆盖，
+        //      留着只会误伤用户挂的小镜像；
+        //   2. 一个空壳的 "Skip boot partition" 判断，花括号里只有一句注释。
+        // 配套去掉了 devname / bsdName 两个变量：它们只服务于上面那两处。
 
         DriveInfo info{};
         info.totalSize = total;
         info.freeSpace = free;
         info.usedSpace = used;
         info.fileSystem = fstype;
+        info.mountPoint = mountpoint;
 
-        // Volume name from last path component
-        size_t lastSlash = mountpoint.find_last_of('/');
-        info.label = (lastSlash != std::string::npos && lastSlash + 1 < mountpoint.size())
-                     ? mountpoint.substr(lastSlash + 1) : mountpoint;
-        if (info.label.empty()) info.label = "Untitled";
-
-        // Derive letter: use '/' for root, 'A'+index for others
-        if (mountpoint == "/") {
-            info.letter = '/'; // root indicator
-        } else {
-            info.letter = 0; // no drive letter on macOS
+        // 真实卷名走 getattrlist(ATTR_VOL_NAME)。原来取挂载路径末段，
+        // 那只对 /Volumes/MyDisk 这类碰巧成立；系统卷和模拟器卷会得到
+        // "Data" 或一长串 UUID，都不是卷名。
+        info.label = VolumeNameAt(mountpoint);
+        if (info.label.empty()) {
+            // 属性读不到才回落路径末段
+            size_t lastSlash = mountpoint.find_last_of('/');
+            info.label = (lastSlash != std::string::npos && lastSlash + 1 < mountpoint.size())
+                         ? mountpoint.substr(lastSlash + 1) : mountpoint;
+            if (info.label.empty()) info.label = "Untitled";
         }
 
-        // Deduplicate: extract physical disk name (e.g. "disk3s1s1" -> "disk3")
-        // Skip if we've already seen this physical disk
-        std::string physicalDisk = bsdName;
-        // Remove partition suffixes: keep only up to first 's' after "diskN"
-        auto diskPrefixEnd = physicalDisk.find('s', 4); // skip "disk"
-        if (diskPrefixEnd != std::string::npos) {
-            physicalDisk = physicalDisk.substr(0, diskPrefixEnd);
-        }
-        if (!seenPhysicalDisks.insert(physicalDisk).second) {
-            // Already have a volume from this physical disk
-            Logger::Debug("DiskInfo: skipping duplicate APFS volume " + mountpoint
-                        + " on " + physicalDisk);
-            continue;
-        }
+        info.letter = 0;   // macOS 没有盘符；落点看 mountPoint
 
-        drives.push_back(std::move(info));
+        // 不再按物理盘去重。原做法是"同一物理盘只留 getfsstat 里的第一个卷"：
+        // 对系统盘毫无作用（新过滤规则已经滤掉了其余卷），却会误伤同盘的第二卷
+        // —— 外置 SSD 上放两个 APFS 卷时只报一个。
+        // 先记日志再 move —— move 之后 info.label 的值就不再保证了
         Logger::Debug("DiskInfo: found volume " + mountpoint
+                    + " name=\"" + info.label + "\""
                     + " (" + fstype + ") size=" + std::to_string(total));
+        drives.push_back(std::move(info));
     }
 }
 
@@ -361,6 +483,7 @@ std::vector<DiskData> DiskInfo::GetDisks() {
     for (const auto& drive : drives) {
         DiskData d;
         d.letter = drive.letter;
+        d.mountPoint = drive.mountPoint;
         d.label = drive.label;
         d.fileSystem = drive.fileSystem;
         d.totalSize = drive.totalSize;
@@ -495,6 +618,7 @@ void DiskInfo::QueryDrives() {
                      ? mountpoint.substr(lastSlash + 1) : mountpoint;
         if (info.label.empty()) info.label = "Unnamed";
         info.fileSystem = fstype;
+        info.mountPoint = mountpoint;   // Linux 侧同口径：落点就是挂载点
         info.letter = 0;
 
         drives.push_back(std::move(info));
@@ -510,6 +634,7 @@ std::vector<DiskData> DiskInfo::GetDisks() {
     for (const auto& drive : drives) {
         DiskData d;
         d.letter = drive.letter;
+        d.mountPoint = drive.mountPoint;
         d.label = drive.label;
         d.fileSystem = drive.fileSystem;
         d.totalSize = drive.totalSize;

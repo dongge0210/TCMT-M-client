@@ -17,6 +17,15 @@
 void DisplayInfo::Detect() {
     Clear();
 
+    // [NSScreen screens] aborts (SIGABRT via HIServices _RegisterApplication)
+    // in sessions without a WindowServer connection (degraded/background
+    // contexts). CGMainDisplayID() returns 0 there, so probe first and report
+    // no displays instead of crashing the whole monitor.
+    if (CGMainDisplayID() == 0) {
+        Logger::Debug("DisplayInfo: no WindowServer connection, skipping");
+        return;
+    }
+
     @autoreleasepool {
         NSArray<NSScreen*>* screens = [NSScreen screens];
         if (!screens || screens.count == 0) {
@@ -104,17 +113,10 @@ const std::vector<DisplayInfoData>& DisplayInfo::GetDisplays() const {
 }
 
 #else
-// ======================== Non-macOS stub ========================
-
-void DisplayInfo::Detect() {
-    Logger::Debug("DisplayInfo: not implemented on this platform");
-}
-
-void DisplayInfo::Clear() {}
-
-const std::vector<DisplayInfoData>& DisplayInfo::GetDisplays() const {
-    static std::vector<DisplayInfoData> empty;
-    return empty;
-}
-
+// File-level platform split: registered only under if(TCMT_MACOS) in
+// src/CMakeLists.txt, so this branch is unreachable. DisplayInfo has no
+// non-macOS implementation and no non-macOS caller (only main_mac.cpp uses
+// it), so it needs no stub either. Fail loudly rather than silently return
+// an empty display list.
+#error "DisplayInfo.mm is macOS-only. Do not add it to a non-Apple build."
 #endif

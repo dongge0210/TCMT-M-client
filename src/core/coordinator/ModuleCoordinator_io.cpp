@@ -5,7 +5,7 @@
 #include "Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
-#include "Utils/WmiManager.h"
+#include "Utils/WMIManager.h"
 #endif
 
 // ============================================================================
@@ -31,9 +31,9 @@ void ModuleCoordinator::DiskLoop(tcmt::compat::StopToken st) {
             Logger::Error("DiskLoop: unknown exception");
         }
 
-        // Skip sleep if a system event triggered a re-scan
+        // Skip sleep if a system event triggered a re-scan；平时 10× 采样基周期，下限 2000ms
         if (!data_.diskDirty.exchange(false)) {
-            SleepFor(st, 5000);
+            SleepFor(st, ScaledSampleIntervalMs(data_, 10, 2000));
         }
     }
 
@@ -79,6 +79,14 @@ void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
                     ns.name  = a.name;
                     ns.ip    = a.ip;
                     ns.mac   = a.mac;
+#ifdef TCMT_MACOS
+                    // macOS 取不到当前链路地址（系统按"责任进程"的签名状态限制），保持为空。
+                    // 不拿硬件地址冒充 —— 那两个值其实是不同的，只是我们读不到。
+                    ns.currentMac = a.currentMac;
+#else
+                    // Windows / Linux 上本就相同，没填就与硬件地址同值
+                    ns.currentMac = a.currentMac.empty() ? a.mac : a.currentMac;
+#endif
                     ns.type  = a.adapterType;
                     ns.speed = a.speed;
                     ns.dl    = a.downloadSpeed;
@@ -94,9 +102,9 @@ void ModuleCoordinator::NetworkLoop(tcmt::compat::StopToken st) {
             Logger::Error("NetworkLoop: unknown exception");
         }
 
-        // Skip sleep if a system/ETW event triggered a re-scan
+        // Skip sleep if a system/ETW event triggered a re-scan；平时 2× 采样基周期，下限 500ms
         if (!data_.networkDirty.exchange(false)) {
-            SleepFor(st, 1000);
+            SleepFor(st, ScaledSampleIntervalMs(data_, 2, 500));
         }
     }
 

@@ -94,6 +94,10 @@ int main(int argc, char* argv[]) {
     try {
         Logger::Initialize("system_monitor.log");
         Logger::EnableConsoleOutput(false);
+        // Start at INFO, not WARN: the in-app log page is a diagnostic surface,
+        // and a WARN-only gate meant INFO never reached g_tuiLogBuffer at all —
+        // the page looked permanently empty. config logging.level (below) and
+        // --debug/--verbose refine the level from here.
         Logger::SetLogLevel(LOG_INFO);
         Logger::Info("TCMT Linux Client starting (TUI mode)...");
     } catch (const std::exception& e) {
@@ -110,6 +114,10 @@ int main(int argc, char* argv[]) {
                 Logger::SetLogLevel(LOG_DEBUG);
             else if (logLevel == "warning")
                 Logger::SetLogLevel(LOG_WARNING);
+            else if (logLevel == "error")
+                Logger::SetLogLevel(LOG_ERROR);
+            else
+                Logger::SetLogLevel(LOG_INFO);   // "info", or an unrecognised value
         } else {
             Logger::Warn("No config file found, using defaults");
         }
@@ -122,6 +130,8 @@ int main(int argc, char* argv[]) {
             jsonMode = true;
             break;
         }
+        else if (std::string(argv[i]) == "--debug") Logger::SetLogLevel(LOG_DEBUG);
+        else if (std::string(argv[i]) == "--verbose") Logger::SetLogLevel(LOG_INFO);
     }
 
     if (jsonMode) {
@@ -231,7 +241,7 @@ int main(int argc, char* argv[]) {
             Logger::Info("MCP: connected to running TCMT-M via IPC");
             ipc.ClosePipe();
         } else {
-            Logger::Info("MCP: IPC unavailable, using direct hardware reads");
+            Logger::Debug("MCP: IPC unavailable, using direct hardware reads");
         }
 
         server.RegisterTool("get_cpu_status", "CPU usage, cores, frequency, temperature",
@@ -239,13 +249,13 @@ int main(int argc, char* argv[]) {
             nlohmann::json j;
             if (useIpc) {
                 j["name"]    = ipc.ReadString("cpu/name").value_or("");
-                j["usage"]   = ipc.ReadFloat64("cpu/usage").value_or(0.0);
+                j["usage"]   = ipc.ReadFloat("cpu/usage").value_or(0.0);
                 j["cores"]["physical"]    = ipc.ReadInt32("cpu/cores/physical").value_or(0);
                 j["cores"]["performance"] = ipc.ReadInt32("cpu/cores/performance").value_or(0);
                 j["cores"]["efficiency"]  = ipc.ReadInt32("cpu/cores/efficiency").value_or(0);
-                j["frequencies"]["pCore"] = ipc.ReadFloat64("cpu/freq/pCore").value_or(0.0);
-                j["frequencies"]["eCore"] = ipc.ReadFloat64("cpu/freq/eCore").value_or(0.0);
-                j["temperature"] = ipc.ReadFloat64("cpu/temperature").value_or(0.0);
+                j["frequencies"]["pCore"] = ipc.ReadFloat("cpu/freq/pCore").value_or(0.0);
+                j["frequencies"]["eCore"] = ipc.ReadFloat("cpu/freq/eCore").value_or(0.0);
+                j["temperature"] = ipc.ReadFloat("cpu/temperature").value_or(0.0);
             } else {
                 CpuInfo cpu;
                 j["name"] = cpu.GetName();
@@ -285,9 +295,9 @@ int main(int argc, char* argv[]) {
             nlohmann::json j;
             if (useIpc) {
                 j["name"]  = ipc.ReadString("gpu/0/name").value_or("");
-                j["usage"] = ipc.ReadFloat64("gpu/0/usage").value_or(0.0);
+                j["usage"] = ipc.ReadFloat("gpu/0/usage").value_or(0.0);
                 j["memory"] = ipc.ReadUInt64("gpu/0/memory").value_or(0);
-                j["temperature"] = ipc.ReadFloat64("gpu/0/temperature").value_or(0.0);
+                j["temperature"] = ipc.ReadFloat("gpu/0/temperature").value_or(0.0);
             } else {
                 GpuInfo gpu;
                 const auto& gpus = gpu.GetGpuData();
@@ -386,11 +396,15 @@ int main(int argc, char* argv[]) {
         [&ipc, useIpc]() -> nlohmann::json {
             nlohmann::json j;
             if (useIpc) {
-                for (int i = 0; i < 10; i++) {
-                    auto name = ipc.ReadString("sensor/" + std::to_string(i) + "/name");
-                    if (!name || name->empty()) continue;
-                    auto val = ipc.ReadFloat32("sensor/" + std::to_string(i) + "/value");
-                    if (val) j["sensors"].push_back({{"name", *name}, {"value", *val}});
+                // sensors/json 是整份打包好的数组，形状与下面本地分支一致。
+                // 解析失败就当没有，保持和以前"读不到就不放 sensors 键"一样的行为 ——
+                // 这是给 AI 消费的工具，宁可少给也不能给个形状不对的东西。
+                const std::string raw = ipc.ReadString("sensors/json").value_or("");
+                if (!raw.empty()) {
+                    auto parsed = nlohmann::json::parse(raw, nullptr, false);
+                    if (!parsed.is_discarded() && parsed.is_array()) {
+                        j["sensors"] = std::move(parsed);
+                    }
                 }
             } else {
                 for (const auto& [name, value] : TemperatureWrapper::GetTemperatures())

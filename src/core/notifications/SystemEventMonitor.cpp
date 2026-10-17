@@ -32,7 +32,7 @@ bool SystemEventMonitor::Start()
 #elif defined(TCMT_WINDOWS)
     return StartWindows();
 #else
-    Logger::Warn("SystemEventMonitor::Start: not supported on this platform");
+    Logger::Debug("SystemEventMonitor::Start: not supported on this platform");
     return false;
 #endif
 }

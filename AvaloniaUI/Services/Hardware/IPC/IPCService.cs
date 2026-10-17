@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Serilog;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Services.Hardware.IPC;
 
@@ -14,8 +15,9 @@ namespace TCMT.Avalonia.Services.Hardware.IPC;
 /// </summary>
 public class IPCService : IDisposable
 {
-    private readonly IPCPipeClient _pipeClient = new();
-    private readonly IPCMemoryReader _memoryReader = new();
+    // 不是 readonly：Reset() 要把它们整个换成新实例（见下面的说明）
+    private IPCPipeClient _pipeClient = new();
+    private IPCMemoryReader _memoryReader = new();
     private CancellationTokenSource? _cts;
     private bool _disposed;
 
@@ -37,7 +39,19 @@ public class IPCService : IDisposable
     /// </summary>
     public event Action? DataReady;
 
+    /// <summary>
+    /// 采集端推来的配置快照（JSON 对象文本）。握手后一次，之后每次变更再推。
+    /// 参数是原始 JSON —— 有哪些键、键怎么解释，是设置页的事。
+    /// </summary>
+    public event Action<string>? ConfigSnapshotReceived;
+
     public bool IsConnected => _pipeClient.IsConnected;
+
+    /// <summary>
+    /// 把配置改动发给采集端。返回 false 表示没送出去（没连着，或写失败）。
+    /// 采集端应用完会推一份新快照回来，那才是这次改动的确认。
+    /// </summary>
+    public Task<bool> SendConfigAsync(string json) => _pipeClient.SendConfigSetAsync(json);
     public bool IsMemoryOpen => _memoryReader.IsOpen;
     public IPCMemoryReader Reader => _memoryReader;
 
@@ -49,8 +63,14 @@ public class IPCService : IDisposable
         if (_disposed) return;
         _cts = new CancellationTokenSource();
 
-        _pipeClient.OnConnectionChanged = (connected, msg) =>
+        // 回调绑到"这一代"客户端，并核对它还是不是当前那一个。
+        // Reset() 换掉 _pipeClient 之后，旧客户端的异步通知仍可能晚到 —— 让它去改当前状态，
+        // 就会把新连接刚报的"已连接"盖成"已断开"（数据照流，状态却是错的）。
+        // schema 也一样：旧客户端递过来的 schema 会去开当前这个 reader。
+        var client = _pipeClient;
+        client.OnConnectionChanged = (connected, msg) =>
         {
+            if (!ReferenceEquals(client, _pipeClient)) return;
             if (!connected)
             {
                 // Server shutdown → close memory reader so timer stops reading stale data
@@ -62,10 +82,18 @@ public class IPCService : IDisposable
             });
         };
 
-        _pipeClient.OnSchemaReceived = OnSchemaReceived;
+        client.OnSchemaReceived = schema =>
+            ReferenceEquals(client, _pipeClient) && OnSchemaReceived(schema);
+
+        // 配置快照同样认代：旧客户端晚到的那份反映的是上一个连接的状态
+        client.OnConfigSnapshot = json =>
+        {
+            if (!ReferenceEquals(client, _pipeClient)) return;
+            Dispatcher.UIThread.Post(() => ConfigSnapshotReceived?.Invoke(json));
+        };
 
         // 后台运行 Pipe 客户端
-        Task.Run(() => _pipeClient.StartAsync(_cts.Token));
+        Task.Run(() => client.StartAsync(_cts.Token));
     }
 
     private bool OnSchemaReceived(SchemaMessage schema)
@@ -75,7 +103,7 @@ public class IPCService : IDisposable
             Log.Warning("IPC: Invalid schema received");
             Dispatcher.UIThread.Post(() =>
             {
-                VersionMismatch?.Invoke($"Schema 无效：magic=0x{schema.Header.Magic:X}");
+                VersionMismatch?.Invoke(Translator.T("Schema 无效：magic=0x{0}", schema.Header.Magic.ToString("X")));
             });
             return false;
         }
@@ -86,11 +114,10 @@ public class IPCService : IDisposable
                 schema.Header.Version, IPCConstants.CurrentVersion);
             Dispatcher.UIThread.Post(() =>
             {
-                VersionMismatch?.Invoke(
-                    $"Schema 版本不匹配\n" +
-                    $"服务端版本: {schema.Header.Version}\n" +
-                    $"客户端版本: {IPCConstants.CurrentVersion}\n" +
-                    $"请联系开发者更新");
+                // 整段一条。原来拆成四行拼，翻译时没法把语序整过来，也没法只翻一半。
+                VersionMismatch?.Invoke(Translator.T(
+                    "Schema 版本不匹配\n服务端版本: {0}\n客户端版本: {1}\n请联系开发者更新",
+                    schema.Header.Version, IPCConstants.CurrentVersion));
             });
             // 不断开，等待服务端推送新版本
             return true;
@@ -142,6 +169,27 @@ public class IPCService : IDisposable
     /// 检查 Schema 中是否包含指定字段
     /// </summary>
     public bool HasField(string name) => _fieldCache.ContainsKey(name);
+
+    /// <summary>
+    /// 丢弃当前连接对象并重建，为下一次 <see cref="Start"/> 做准备。用于界面上的「重新连接」。
+    ///
+    /// 为什么不直接 Dispose 再 Start：<see cref="Dispose"/> 会把 <c>_disposed</c> 置位，
+    /// 而 <see cref="Start"/> 的第一行就是 <c>if (_disposed) return;</c> —— 于是点了刷新反而
+    /// 变成空操作，定时器还在跑但 <c>IsMemoryOpen</c> 永远是 false，界面再也回不来。
+    /// 另外 <c>_pipeClient</c> / <c>_memoryReader</c> 被 Dispose 之后也无法复用，必须换新的。
+    /// </summary>
+    public void Reset()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _ = _pipeClient.DisposeAsync();
+        _memoryReader.Dispose();
+
+        _pipeClient = new IPCPipeClient();
+        _memoryReader = new IPCMemoryReader();
+        _disposed = false;
+    }
 
     public void Dispose()
     {

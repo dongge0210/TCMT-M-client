@@ -8,7 +8,6 @@
 
 #import <CoreWLAN/CoreWLAN.h>
 #import <CoreLocation/CoreLocation.h>
-#import <AppKit/NSApplication.h>
 #include <nlohmann/json.hpp>
 #include <atomic>
 #include <mutex>
@@ -129,6 +128,16 @@ static void RunSystemProfiler() {
 // Shared CLLocationManager retained across Detect() calls for auth polling.
 static CLLocationManager* s_locMgr = nil;
 
+void WiFiInfo::RequestLocationAuthorization() {
+    static dispatch_once_t s_onceToken;
+    dispatch_once(&s_onceToken, ^{
+        @autoreleasepool {
+            s_locMgr = [[CLLocationManager alloc] init];
+            [s_locMgr requestWhenInUseAuthorization];
+        }
+    });
+}
+
 void WiFiInfo::Detect() {
     Clear();
 
@@ -137,20 +146,27 @@ void WiFiInfo::Detect() {
         data_.bssid.clear();
 
         // --- CoreLocation authorization (needed for SSID on macOS 15+) ---
-        // Must run inside an NSApplication context (even minimal, via NSApplicationLoad())
-        // for requestWhenInUseAuthorization to actually present the dialog.
-        static dispatch_once_t s_onceToken;
-        dispatch_once(&s_onceToken, ^{
-            [NSApplication sharedApplication];
-            s_locMgr = [[CLLocationManager alloc] init];
-            [s_locMgr requestWhenInUseAuthorization];
-        });
+        // NOTE: authorization is NEVER requested automatically — the TUI
+        // shows a judgment first and the user triggers the request (see
+        // RequestLocationAuthorization). Also do NOT force an NSApplication
+        // context here ([NSApplication sharedApplication] SIGABRTs in
+        // degraded LaunchServices sessions).
 
         CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
         bool locationOK = (auth == kCLAuthorizationStatusAuthorized);
+        if (auth == kCLAuthorizationStatusDenied || auth == kCLAuthorizationStatusRestricted) {
+            data_.locationStatus = 1;
+            data_.locationDenied = true;
+        } else if (locationOK) {
+            data_.locationStatus = 2;
+        } else {
+            data_.locationStatus = 0;
+        }
 
         // --- Primary: CoreWLAN (fast, non-blocking) ---
-        // SSID/BSSID require Location Services on macOS 15+.
+        // SSID/BSSID require Location Services on macOS 15+. Run the
+        // authorization judgment FIRST; only request the SSID field after
+        // the user has granted Location Services.
         CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
         if (iface) {
             data_.powerOn = [iface powerOn];
@@ -165,7 +181,26 @@ void WiFiInfo::Detect() {
                 if (cwRssi != 0) data_.rssi = cwRssi;
                 data_.noise = static_cast<int>([iface noiseMeasurement]);
                 CWChannel* wlanChannel = [iface wlanChannel];
-                if (wlanChannel) data_.channel = static_cast<int>([wlanChannel channelNumber]);
+                if (wlanChannel) {
+                    data_.channel = static_cast<int>([wlanChannel channelNumber]);
+                    switch ([wlanChannel channelBand]) {
+                        case kCWChannelBand2GHz: data_.band = "2.4GHz"; break;
+                        case kCWChannelBand5GHz: data_.band = "5GHz"; break;
+                        case kCWChannelBand6GHz: data_.band = "6GHz"; break;
+                        default: break;
+                    }
+                }
+                switch ([iface activePHYMode]) {
+                    case kCWPHYMode11ax: data_.wifiGen = "WiFi 6"; break;
+                    case kCWPHYMode11ac: data_.wifiGen = "WiFi 5"; break;
+                    case kCWPHYMode11n:  data_.wifiGen = "WiFi 4"; break;
+                    case kCWPHYMode11g:
+                    case kCWPHYMode11a:  data_.wifiGen = "WiFi 3"; break;
+                    case kCWPHYMode11b:  data_.wifiGen = "WiFi 2"; break;
+                    default: break;
+                }
+                if (data_.band == "6GHz" && data_.wifiGen == "WiFi 6")
+                    data_.wifiGen = "WiFi 6E";
                 CWSecurity secType = [iface security];
                 std::string secStr = SecurityToString(secType);
                 if (secStr != "Unknown") data_.security = secStr;
@@ -176,8 +211,9 @@ void WiFiInfo::Detect() {
 
         // --- Fallback: system_profiler (async, non-blocking) ---
         // system_profiler SPAirPortDataType bypasses the LS gate for RSSI/etc.
-        // SSID is optional and is filtered for "<redacted>".
-        if (!locationOK && (data_.ssid.empty() || data_.bssid.empty())) {
+        // SSID is optional and is filtered for "<redacted>". Still gated on
+        // Location Services authorization — the judgment comes first.
+        if (locationOK && (data_.ssid.empty() || data_.bssid.empty())) {
             int state = s_profilerState.load(std::memory_order_acquire);
             if (state == 2) {
                 std::lock_guard<std::mutex> lk(s_cacheMutex);
@@ -222,18 +258,11 @@ const WiFiData& WiFiInfo::GetData() const {
 }
 
 #else
-// ======================== Non-macOS stub ========================
-
-void WiFiInfo::Detect() {
-    Logger::Debug("WiFiInfo: not implemented on this platform");
-}
-
-void WiFiInfo::Clear() {
-    data_ = WiFiData{};
-}
-
-const WiFiData& WiFiInfo::GetData() const {
-    return data_;
-}
-
+// The platform split here is file-level: this file is registered only under
+// if(TCMT_MACOS) in src/CMakeLists.txt, so this branch is unreachable by any
+// build we have. The non-macOS implementation is core/wifi/WiFiInfo.cpp
+// (Windows, registered in TCMT.vcxproj). A stub here could only ever produce
+// silent zero readings, which is a failure mode this project has already been
+// bitten by, so fail loudly instead.
+#error "WiFiInfo.mm is macOS-only. Do not add it to a non-Apple build."
 #endif

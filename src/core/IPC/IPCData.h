@@ -34,7 +34,13 @@ enum class PipeMsgType : uint8_t {
     Shutdown     = 0x07,  // C++ → C#:  server shutting down (SIGINT/SIGTERM)
     SchemaUpdate = 0x08,  // C++ → C#: schema changed, re-open shared memory
     ConfigUpdate = 0x09,  // C++ → C#: config file changed, client should reload
+    ConfigSet      = 0x0A,  // C# → C++: 改配置，payload = JSON 对象，键必须在白名单里
+    ConfigSnapshot = 0x0B,  // C++ → C#: 当前配置值，payload = JSON 对象（同一份白名单）
 };
+
+// 配置消息的 payload 上限。它是几个键值对，不是数据面 —— 卡住上限是防止
+// 对端发一个超大 payloadSize 把服务端的内存拉爆。
+static constexpr uint16_t IPC_CONFIG_PAYLOAD_MAX = 8192;
 
 #pragma pack(push, 1)
 struct PipeMessage {
@@ -103,9 +109,12 @@ struct IPCDataBlock {
     float    pCoreFreq               = 0;
     float    eCoreFreq               = 0;
     float    cpuTemp                 = 0;
+    float    cpuPcoreTemp            = 0;
+    float    cpuEcoreTemp            = 0;
     bool     hyperThreading          = false;
     bool     virtualization          = false;
     float    cpuSampleIntervalMs     = 500;
+    float    cpuBaseFreq             = 0;     // nominal base clock in MHz
     char     timestamp[20]           = {};
 
     // Memory
@@ -138,9 +147,22 @@ struct IPCDataBlock {
     float    gpuTemp                 = 0;
     float    gpuFreq                 = 0;
     bool     gpuIsVirtual            = false;
+    // gpuMemory 是统一内存而非独立显存（Apple Silicon），界面据此不画「显存」那一行
+    bool     gpuUnified              = false;
+    // 上面 gpu/0/* 那份是「主卡」：多卡机器上只挑了其中一块，另外几块完全没有痕迹。
+    // 整份 GPU 列表装成一行 JSON，槽位方案要 4 槽 × 8 字段 ≈ 32 个名额，这里只占 1 个。
+    // 形状：[{"name":"Apple M2","brand":"Apple","memory":17179869184,"memoryPercent":61.0,
+    //        "coreClock":1398,"usage":12.0,"temperature":48.0,"isVirtual":false,"unified":true}, ...]
+    // 数组第 0 项就是主卡，与上面的 gpu/0/* 一致。
+    char     gpuJson[2048]           = {};
 
     // Disks (up to 4)
     struct DiskSlot {
+        char     letter              = '\0';   // Windows 盘符；macOS 恒为 0
+        // 挂载点。Win32 把盘符、卷 GUID 路径、挂载文件夹都算 volume mount point，
+        // macOS 的 "/" 与 "/Volumes/X" 同样落得进去 —— 一个字段两边都装得下。
+        // 见 https://learn.microsoft.com/windows/win32/fileio/naming-a-volume
+        char     mountPoint[64]      = {};
         char     label[32]           = {};
         uint64_t totalSize           = 0;
         uint64_t usedSpace           = 0;
@@ -154,8 +176,15 @@ struct IPCDataBlock {
     struct NetSlot {
         char     name[32]            = {};
         char     ip[16]              = {};
+        // 硬件 MAC：这块网卡出厂的那个，不随网络变。
         char     mac[18]             = {};
-        char     type[16]            = {};
+        // 当前生效的链路层地址。macOS 的「私有 Wi-Fi 地址」按 SSID 轮换，所以它会与 mac 不同；
+        // Windows / Linux 上通常与 mac 相同。采集端给不出时写空串。
+        char     macCurrent[18]      = {};
+        // 24 而不是 16 —— 采集端产出的两个标准值 "Wireless adapter" 与 "Ethernet adapter"
+        // 都恰好是 16 个字符，装进 char[16] 只剩 15 个位置，界面上显示成 "Wireless adapte"。
+        // 缓冲区至少要能装下自己写进去的字符串。
+        char     type[24]            = {};
         uint64_t speed               = 0;
         uint64_t downloadSpeed       = 0;
         uint64_t uploadSpeed         = 0;
@@ -163,13 +192,14 @@ struct IPCDataBlock {
     NetSlot  adapters[4]             = {};
     uint8_t  adapterCount            = 0;
 
-    // Temperatures (up to 10)
-    struct TempSlot {
-        char     name[64]            = {};
-        float    value               = 0;
-    };
-    TempSlot temperatures[10]        = {};
-    uint8_t  tempCount               = 0;
+    // 温度传感器：整份打包成一行 JSON，不再按槽位开字段。
+    //
+    // 原来开 10 个 TempSlot，每个占 2 个 schema 字段 —— 而采集端实际产出 20 个传感器，
+    // 一半被截掉，且槽位一满就没救；schema 总字段数还有硬上限（IPC_MAX_FIELDS）。
+    // 装成一个字段后上限消失，schema 也只占 1 个名额。
+    // 装法与解析沿用 SMART 属性表那套（PhysDiskSlot::attrsJson）。
+    // 形状：[{"name":"CPU P-core","value":68},{"name":"GPU","value":46}, ...]
+    char     sensorsJson[4096]       = {};
 
     // Physical disks + SMART (up to 2)
     struct PhysDiskSlot {
@@ -182,6 +212,8 @@ struct IPCDataBlock {
         bool     smartSupported      = false;
         int32_t  attrCount           = 0;
         char     attrsJson[4096]     = {}; // SMART attributes as JSON array
+        char     logicalDriveLetters[8] = {}; // e.g., "CD"
+        int32_t  logicalDriveCount   = 0;
     };
     PhysDiskSlot physicalDisks[8]    = {};
     uint8_t  physDiskCount           = 0;
@@ -192,6 +224,8 @@ struct IPCDataBlock {
         int32_t  rssi                = 0;
         int32_t  channel             = 0;
         char     security[16]        = {};
+        char     band[8]             = {};
+        char     wifiGen[12]         = {};
         bool     powerOn             = false;
         bool     isConnected         = false;
     };
@@ -204,6 +238,73 @@ struct IPCDataBlock {
         char     name[64]            = {};
     };
     BtSlot bluetooth                  = {};
+
+    // TPM
+    struct TpmSlot {
+        char     manufacturer[32]    = {};
+        char     firmwareVersion[32] = {};
+        uint16_t vendorId            = 0;
+        uint8_t  firmwareVersionMajor = 0;
+        uint8_t  firmwareVersionMinor = 0;
+        uint8_t  firmwareVersionBuild = 0;
+        bool     isPresent           = false;
+        bool     isEnabled           = false;
+        bool     isActive            = false;
+        uint8_t  selfTestStatus      = 0;
+        uint8_t  status              = 0;
+    };
+    TpmSlot tpm                       = {};
+    uint8_t  tpmCount                 = 0;
+
+    // App version string (e.g. "0.14.0")
+    // 32 而不是 16：版本串现在是 ALPHA_0.0.79-<git 短 SHA>，20 个字符。
+    // 原来 16（写入截到 15）会把后缀吃掉一半，而且截断后看着还像个正常版本号。
+    char     appVersion[32]          = {};
+
+    // ─── 4. Fan speeds (up to 6 fans) ───
+    struct FanSlot {
+        char     name[32]            = {};
+        float    rpm                 = 0;
+    };
+    FanSlot  fanSpeeds[6]            = {};
+    uint8_t  fanCount                = 0;
+
+    // ─── 5. 进程列表：整份打包成一行 JSON，不再按槽位开字段 ───
+    //
+    // 原来只开 7 个槽位、每槽占 4 个 schema 字段。采集端明明枚举了全部进程，却在写入时被砍到 7，
+    // 进程页也就只能显示 7 行；而 schema 总字段数有硬上限（IPC_MAX_FIELDS = 300，超了客户端
+    // 静默截断），照槽位往上抬是抬不动的 —— 抬到 64 个进程就要 256 个字段。
+    // 装成一个字段后上限消失，schema 反而省下 27 个名额。
+    // 形状：[{"pid":1234,"name":"Google Chrome Helper","mem":1620,"cpu":54.1}, …]
+    char     processesJson[16384]    = {};
+
+    // ─── 7. Battery detail (health, cycle count, etc.) ───
+    int32_t  batteryCycleCount       = 0;
+    int32_t  batteryDesignCapacity   = 0;      // mAh
+    int32_t  batteryMaxCapacity      = 0;      // mAh (current max)
+    float    batteryHealthPercent    = 0;      // 0-100
+    float    batteryTemp             = 0;      // Celsius
+    int32_t  batteryAmperage         = 0;      // mA
+    int32_t  batteryVoltage          = 0;      // mV
+    float    batteryChargerWatts     = 0;      // connected charger W
+    bool     batteryIsCharging       = false;
+    bool     batteryIsPresent        = false;
+
+    // ─── 6. 逐核传感器：整份打包成一行 JSON，不再按槽位开字段 ───
+    //
+    // 原来 16 槽 × 2 字段 + 1 个计数 = 33 个 schema 名额。Windows 侧的总字段数因此顶到 326，
+    // 越过 IPC_MAX_FIELDS = 300，排在后面的 core/* 尾巴和整个 system/* 被客户端静默截掉 ——
+    // 连 core/count 都读不到，逐核那一段从来没渲染过。装成一个字段后上限消失，schema 只占 1 个名额。
+    // 装法与解析沿用 sensorsJson 那套。
+    // 形状：[{"i":0,"temp":52.3,"freq":3200}, ...]，数组长度即核数。
+    char     cpuCoresJson[2048]      = {};
+
+    // ─── System info ───
+    float    loadAvg1                = 0;
+    float    loadAvg5                = 0;
+    float    loadAvg15               = 0;
+    int32_t  processCount            = 0;
+    uint64_t uptimeSeconds           = 0;
 };
 
 #pragma pack(pop)

@@ -45,7 +45,11 @@ class NetworkAdapter {
 public:
     struct AdapterInfo {
         std::string name;
+        // 硬件地址：这块网卡出厂的那个，不随网络变化。规格页要的是它。
         std::string mac;
+        // 当前生效的链路层地址。macOS 的「私有 Wi-Fi 地址」按 SSID 轮换，所以它会变；
+        // Windows/Linux 上通常与 mac 相同。取不到就是空串。
+        std::string currentMac;
         std::string ip;
         std::string description;
         std::string adapterType; // Wireless/Ethernet

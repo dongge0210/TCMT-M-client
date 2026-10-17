@@ -57,20 +57,20 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
         s_probed = true;
         if (!s_pa.Open()) { Logger::Debug("IntelOobmsm: PawnIO not available"); return result; }
         auto data = LoadRes(OOBMSM_RES);
-        if (data.empty()) { Logger::Info("IntelOobmsm: resource not found"); return result; }
+        if (data.empty()) { Logger::Debug("IntelOobmsm: resource not found"); return result; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "IntelOOBMSM")) {
-            Logger::Info("IntelOobmsm: module load failed"); return result;
+            Logger::Debug("IntelOobmsm: module load failed"); return result;
         }
 
         uint64_t idOut[4] = {0};
         if (!s_pa.Execute("ioctl_identity", nullptr, 0, idOut, 4, nullptr)) {
-            Logger::Info("IntelOobmsm: identity probe failed"); return result;
+            Logger::Debug("IntelOobmsm: identity probe failed"); return result;
         }
         uint16_t vid = (uint16_t)(idOut[0] & 0xFFFF);
         uint16_t did = (uint16_t)((idOut[0] >> 16) & 0xFFFF);
         s_bar0Base = idOut[2];
         s_bar0Size = idOut[3];
-        Logger::Info(std::string("IntelOobmsm: VID=0x") + std::to_string(vid) +
+        Logger::Debug(std::string("IntelOobmsm: VID=0x") + std::to_string(vid) +
                      " DID=0x" + std::to_string(did) +
                      " BAR0=0x" + std::to_string(s_bar0Base));
 
@@ -86,7 +86,7 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
                 uint32_t dvsec1 = PciConfigRead(s_pa, capOff + 4);
                 if ((uint16_t)(dvsec1 & 0xFFFF) == INTEL_DVSEC_VENDOR_ID &&
                     (uint16_t)((dvsec1 >> 16) & 0xFFFF) == INTEL_PMT_DVSEC_ID) {
-                    Logger::Info(std::string("IntelOobmsm: PMT DVSEC at 0x") + std::to_string(capOff));
+                    Logger::Debug(std::string("IntelOobmsm: PMT DVSEC at 0x") + std::to_string(capOff));
                     s_hasPmt = true;
                     break;
                 }
@@ -106,16 +106,45 @@ std::vector<OobmsmTemp> IntelOobmsmReader::ReadAll() {
     for (int i = 0; i < 4; i++) { magic[i] = (char)((magic0 >> (i * 8)) & 0xFF); }
     for (int i = 0; i < 4; i++) { magic[i + 4] = (char)((magic1 >> (i * 8)) & 0xFF); }
     magic[8] = '\0';
-    Logger::Info(std::string("IntelOobmsm: BAR0 magic=\"") + magic + "\"");
+    Logger::Debug(std::string("IntelOobmsm: BAR0 magic=\"") + magic + "\"");
 
-    // Read first telemetry entry base offset from PMT discovery table
-    uint32_t entryBase = Bar0Read(s_pa, 12);
-    if (entryBase != 0 && entryBase != 0xFFFFFFFF)
-        Logger::Info(std::string("IntelOobmsm: first PMT entry at 0x") + std::to_string(entryBase));
+    // ── PMT telemetry: why this stops short ────────────────────────────────────
+    // Deliberately not decoded. Two things are missing and neither may be guessed:
+    //
+    //  1. The OOBMSM BAR0 discovery-table layout. The Linux kernel's path does not
+    //     transfer: there each entry's header (base_offset / size / guid /
+    //     access_type — drivers/platform/x86/intel/pmt/class.h) is its OWN resource,
+    //     and num_entries / entry_size come from the PCI DVSEC, not from a table
+    //     inside BAR0. OOBMSM is a BAR0-based block with its own spec, which we have
+    //     not got. An intermediate version of this comment asserted a
+    //     "guid | num_entries | entry_size" header at BAR0+0/+12/+16; that was
+    //     inferred from the kernel, not verified against OOBMSM, and was removed.
+    //  2. A guid/offset → Celsius map. A telemetry entry is a raw counter, and the
+    //     guid names a namespace (PUNIT, crashlog, …), not a sensor. The kernel does
+    //     not decode it either — it exposes the raw buffer to userspace.
+    //
+    // Inventing either one would put manufactured degrees into the temperature list.
+    // That is the exact failure this codebase keeps fixing: Platform_macOS.cpp
+    // fabricated 45 °C / 55 °C until 2026-10-14. A missing temperature renders as N/A
+    // and prompts a question; a fabricated one looks like a reading and gets believed.
+    //
+    // Where to start when this is picked up again (researched 2026-10-14, parked):
+    // Intel publishes the telemetry definitions themselves — github.com/intel/Intel-PMT,
+    // xml/<PLATFORM>/. The datatype catalogue defines `ttemperature` and
+    // `tplatform_temperature`, both `celcius`, so a temperature channel is a documented
+    // concept rather than a guess:
+    //   - uses a platform-temperature channel : LNL, PTL, WCL (in their *_aggregator.xml)
+    //   - defines the datatypes but uses none: MTL (Core Ultra 1) — no temperature sample
+    //   - kernel cross-reference, not a source: its OOBMSM support is package id +
+    //     RMID energy/perf counters, no temperature
+    // Each aggregator gives the sample group, lsb/msb and datatype, from which the byte
+    // offset inside the telemetry region follows. What is still missing is the OOBMSM
+    // BAR0 discovery layout (how to find that region here), which those XMLs do not
+    // cover. Get that, then the channel table above makes this implementable and
+    // checkable against Intel's own files.
 
-    // TODO: full PMT telemetry enumeration
-    // Reference: Intel PMT spec, LHM IntelOobmsm.cs
-
+    Logger::Debug("IntelOobmsm: PMT telemetry not decoded (no OOBMSM table layout, "
+                  "no guid->temperature map) — reporting no temperatures");
     return result;
 }
 #endif

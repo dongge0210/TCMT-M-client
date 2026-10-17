@@ -206,10 +206,8 @@ void WiFiInfo::Detect() {
 const WiFiData& WiFiInfo::GetData() const { return data_; }
 
 #else
-// ==================== Stub for macOS ====================
-void WiFiInfo::Detect() {
-    Clear();
-}
-void WiFiInfo::Clear() { data_ = WiFiData{}; }
-const WiFiData& WiFiInfo::GetData() const { return data_; }
+// Unreachable: this file is registered only in TCMT.vcxproj (Windows). macOS uses
+// WiFiInfo.mm and Linux has no implementation. A no-op stub here would turn "no WiFi
+// support on this platform" into "WiFi reads as disconnected", so fail loudly instead.
+#error "WiFiInfo.cpp is Windows-only. Do not add it to a non-Windows build."
 #endif

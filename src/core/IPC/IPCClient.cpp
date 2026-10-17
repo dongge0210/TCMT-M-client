@@ -268,6 +268,24 @@ std::optional<float> IPCClient::ReadFloat32(const std::string& name) {
     return ReadNumeric<float>(f, shmPtr_, shmSize_);
 }
 
+// 按字段实际宽度读浮点。schema 里 float 和 double 都算"浮点"，调用点往往不知道自己是哪一种。
+//
+// 为什么必须有这个：用 ReadFloat64 去读一个 4 字节的 float 不会失败 —— ReadNumeric 里是
+// `memcpy(&val, …, min(sizeof(T), f->size))`，只覆盖低 4 字节、高 4 字节留 0，拼出来是个
+// 非规格化 double（float 的 5.0 会读成 1e-314 那个量级）。它既不是 null 也不是合理值，
+// 是"看起来像数"的垃圾，`value_or()` 之类的兜底完全拦不住。
+// 之前 MCP 的 get_cpu_status / get_gpu_status 报给 AI 的就是这么来的数。
+std::optional<double> IPCClient::ReadFloat(const std::string& name) {
+    auto* f = Find(fields_, name);
+    if (!f) return std::nullopt;
+    if (f->size >= sizeof(double)) return ReadNumeric<double>(f, shmPtr_, shmSize_);
+    if (f->size >= sizeof(float)) {
+        auto v = ReadNumeric<float>(f, shmPtr_, shmSize_);
+        if (v) return std::optional<double>(static_cast<double>(*v));
+    }
+    return std::nullopt;
+}
+
 std::optional<uint64_t> IPCClient::ReadUInt64(const std::string& name) {
     auto* f = Find(fields_, name);
     return ReadNumeric<uint64_t>(f, shmPtr_, shmSize_);

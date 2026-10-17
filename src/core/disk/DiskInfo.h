@@ -14,11 +14,12 @@
 class WmiManager;
 
 struct DriveInfo {
-    char letter;
+    char letter;              // Windows 盘符；macOS/Linux 恒为 0（那边没有这个概念）
+    std::string mountPoint;   // 平台中性的落点：Windows "C:\"，macOS "/" 或 "/Volumes/X"
     uint64_t totalSize;
     uint64_t freeSpace;
     uint64_t usedSpace;
-    std::string label;
+    std::string label;        // 卷名（macOS 取 ATTR_VOL_NAME，不是挂载路径末段）
     std::string fileSystem;
 };
 
@@ -30,7 +31,15 @@ public:
     std::vector<DiskData> GetDisks();
 
 #ifdef TCMT_WINDOWS
-    static void CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks, SystemInfo& sysInfo);
+    // readSmart=false: WMI-only enumeration (fast, never blocks). SMART reads can
+    // hang on unresponsive drives, so callers can publish the list first and read
+    // SMART per disk separately.
+    static void CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
+                                     SystemInfo& sysInfo, bool readSmart = true);
+    // Fast, non-blocking physical disk list: a single Win32_DiskDrive query.
+    // No ASSOCIATORS mapping, no SMART reads. SMART is filled in separately
+    // (per disk) by the caller via SmartReader.
+    static void CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo);
 #endif
 
     // Collect SMART data (DeviceIoControl on Windows, IOKit on macOS)

@@ -27,15 +27,33 @@ function(tcmt_detect_platform)
         set(TCMT_PLATFORM "macos" CACHE STRING "Platform identifier")
         add_definitions(-DTCMT_MACOS)
 
+        # macOS deployment target & architectures set in root CMakeLists.txt (before project())
+        message(STATUS "  Minimum deployment target: macOS ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        message(STATUS "  Architectures: ${CMAKE_OSX_ARCHITECTURES}")
+
         # macOS version detection
         execute_process(
             COMMAND sw_vers -productVersion
             OUTPUT_VARIABLE MACOS_VERSION
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        message(STATUS "  Target: macOS ${MACOS_VERSION}")
+        message(STATUS "  Build host: macOS ${MACOS_VERSION}")
 
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # Linux is NOT a supported target (decided 2026-10-13): there is no Linux
+        # machine to validate readings against, so accuracy cannot be guaranteed, and
+        # the TCMT_LINUX paths are a half-wired scaffold — main_linux.cpp is registered
+        # while WiFiInfo and BluetoothInfo have no Linux implementation, so a Linux
+        # build can fail at link. Warn loudly instead of blocking, because Linux builds
+        # are still useful for experiments. The platform code stays in the tree
+        # (Platform_Linux.cpp, SharedMemoryManager_Linux.cpp — pulled in by their
+        # parents' #include, so they are not registered separately).
+        if(NOT TCMT_ALLOW_UNSUPPORTED_LINUX)
+            message(WARNING
+                "Building for Linux, which is NOT a supported target for TCMT-M (see "
+                "CLAUDE.md). Expect gaps, especially at link time. Pass "
+                "-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON to silence this warning.")
+        endif()
         set(TCMT_LINUX ON CACHE BOOL "Building for Linux platform")
         set(TCMT_PLATFORM_NAME "Linux" CACHE STRING "Platform name")
         set(TCMT_PLATFORM "linux" CACHE STRING "Platform identifier")
@@ -46,7 +64,7 @@ function(tcmt_detect_platform)
             OUTPUT_VARIABLE LINUX_KERNEL
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL})")
+        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL}) [UNSUPPORTED]")
 
     else()
         message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")

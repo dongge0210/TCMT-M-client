@@ -274,6 +274,11 @@ static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters)
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <net/if_dl.h>
+#include <CoreFoundation/CoreFoundation.h>
+// 硬件 MAC 的唯一可用来源，见 HardwareMacByName 的说明。
+// 注意这个 SDK 里没有独立的 SCNetworkInterface.h —— SCNetworkInterface* 的声明被并进了
+// SCNetworkConfiguration.h（伞头 SystemConfiguration.h 也是 include 它）。
+#include <SystemConfiguration/SCNetworkConfiguration.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
@@ -343,6 +348,58 @@ std::string NetworkAdapter::FormatSpeed(uint64_t bitsPerSecond) const {
     return FormatSpd(bitsPerSecond);
 }
 
+// 向 SystemConfiguration 要一份「BSD 名 -> 硬件 MAC」。
+//
+// 为什么非它不可：macOS 27 起 getifaddrs(3) 的 AF_LINK 项不再携带链路层地址 ——
+// 所有接口一律返回 02:00:00:00:00:00，LLADDR 取出来是空的（同版本上 SIOCGIFLLADDR
+// 已从 SDK 移除，IOKit 的 IOMACAddress 属性也不再提供，三条路只剩这一条）。
+//
+// 另外注意它给的是**硬件地址**，与 ifconfig 显示的「私有 Wi-Fi 地址」不是一回事：
+// 后者按 SSID 轮换、带本地管理位；前者是这块网卡出厂的那个。规格页要的是前者。
+// 统一转成大写十六进制，与 FormatMacAddr 同口径。
+static std::map<std::string, std::string> HardwareMacByName() {
+    std::map<std::string, std::string> out;
+    CFArrayRef ifaces = SCNetworkInterfaceCopyAll();
+    if (ifaces == nullptr) return out;
+
+    for (CFIndex i = 0; i < CFArrayGetCount(ifaces); ++i) {
+        SCNetworkInterfaceRef itf =
+            static_cast<SCNetworkInterfaceRef>(CFArrayGetValueAtIndex(ifaces, i));
+        CFStringRef bsdName = SCNetworkInterfaceGetBSDName(itf);
+        CFStringRef hwAddr  = SCNetworkInterfaceGetHardwareAddressString(itf);
+        if (bsdName == nullptr || hwAddr == nullptr) continue;
+
+        char nb[64] = {0};
+        char hb[64] = {0};
+        if (!CFStringGetCString(bsdName, nb, sizeof(nb), kCFStringEncodingUTF8)) continue;
+        if (!CFStringGetCString(hwAddr,  hb, sizeof(hb),  kCFStringEncodingUTF8)) continue;
+
+        std::string mac(hb);
+        std::transform(mac.begin(), mac.end(), mac.begin(), ::toupper);
+        out[nb] = mac;
+    }
+    CFRelease(ifaces);
+    return out;
+}
+
+// 关于「当前链路地址」（macOS 的私有 Wi-Fi 地址）—— 这里**不再尝试**读取，原因如下。
+//
+// 能拿到的六条路实测下来只有一条通，而且通的那条没用：
+//   getifaddrs(3)            → 02:00:00:00:00:00
+//   sysctl(NET_RT_IFLIST)    → 02:00:00:00:00:00
+//   SIOCGIFADDR              → 给的是 IP，不是链路地址
+//   IOKit IOMACAddress       → 属性不存在
+//   SIOCGIFLLADDR            → 这版 SDK 里没有
+//   SystemConfiguration      → 给的是**硬件**地址（另一个值，不随 SSID 变）
+//
+// 最后试过 shell 到 ifconfig，但 macOS 26/27 是**按"责任进程"的签名状态**决定给不给这个值：
+// 同一条命令、同一时刻，Apple 签名的进程链里跑 ifconfig 拿到真值，而未签名的本地构建
+// （cc 出来的即席签名二进制，经 launchd 起也一样）调起 ifconfig 只会拿到 02:00:00:00:00:00。
+// TCMT 的采集端就是未签名的本地构建，所以这条路对本项目无效 —— 留着只是每 10 秒起一次
+// 进程换一个空值。真要这个值，得先把采集端签名。
+//
+// 于是 currentMac 在 macOS 上保持为空，界面按"取不到"处理，不拿硬件地址冒充。
+
 void NetworkAdapter::QueryAdapterInfo() {
     // Map BSD name -> AdapterInfo (for MAC addresses)
     struct ifaddrs* ifaddr = nullptr;
@@ -350,6 +407,10 @@ void NetworkAdapter::QueryAdapterInfo() {
         Logger::Error("NetworkAdapter: getifaddrs failed");
         return;
     }
+
+    // macOS 27 起 getifaddrs(3) 的 AF_LINK 项不再携带链路层地址（全是 02:00:00:00:00:00），
+    // 所以先要一份「BSD 名 -> 硬件 MAC」，循环里优先用它、取不到才回落到 LLADDR。
+    const auto hardwareMacs = HardwareMacByName();
 
     std::map<std::string, AdapterInfo> bsdMap;
 
@@ -367,7 +428,11 @@ void NetworkAdapter::QueryAdapterInfo() {
 
         AdapterInfo info;
         info.name = bsdName;
-        info.mac = FormatMacAddr(mac, 6);
+        // 优先取 SystemConfiguration 的硬件地址，取不到才回落到 getifaddrs 的 LLADDR
+        // （后者在这个系统版本上恒为空）
+        auto hwIt = hardwareMacs.find(bsdName);
+        info.mac = (hwIt != hardwareMacs.end()) ? hwIt->second : FormatMacAddr(mac, 6);
+        // currentMac 在这里**不填** —— macOS 拿不到，见上面的说明。界面按"取不到"处理。
         info.isEnabled = true;
         info.isConnected = (ifa->ifa_flags & IFF_UP) && (ifa->ifa_flags & IFF_RUNNING);
         info.speed = 0;

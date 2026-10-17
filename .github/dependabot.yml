@@ -3,22 +3,23 @@
 # Please see the documentation for all configuration options:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
+# PRs target the integration branch (dev); main only receives dev→main merges.
+# Note: Dependabot reads this file from the repository's DEFAULT branch (main),
+# so these settings take effect once dev is merged into main.
 version: 2
 updates:
-  # NuGet 自动依赖更新（适用于 .NET/C++ 项目，Visual Studio/VS Code）
+  # NuGet — the repo's only .NET project lives in /AvaloniaUI
   - package-ecosystem: "nuget"
-    directory: "/"             # 项目根目录
+    directory: "/AvaloniaUI"
+    target-branch: "dev"
     schedule:
       interval: "weekly"       # 每周自动检查，可以改成 daily/monthly
     open-pull-requests-limit: 10
-    # 可以加 ignore 或 allow 字段来定制包管理
-    # ignore:
-    #   - dependency-name: "某个包名"
-    #     versions: ["版本号"]
 
   # vcpkg 自动依赖更新（适用于 C++ 跨平台包管理器）
   - package-ecosystem: "vcpkg"
     directory: "/"             # 项目根目录
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
@@ -26,6 +27,7 @@ updates:
   # GitHub Actions 自动更新（适用于 CI/CD 工作流）
   - package-ecosystem: "github-actions"
     directory: "/"             # .github/workflows 目录下的action
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

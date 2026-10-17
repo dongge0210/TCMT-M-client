@@ -1,0 +1,133 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="TCMT.Avalonia.Views.CpuView"
+             x:DataType="vm:CpuViewModel">
+
+  <Design.DataContext>
+    <vm:CpuViewModel CpuName="Intel Core i7-13700K" CpuUsage="35" CpuTemperature="42" PhysicalCores="8" LogicalCores="16" PerformanceCores="8" EfficiencyCores="8" CpuBaseFreq="3400" CpuFrequency="3504 MHz" CpuEfficiencyFrequency="2424 MHz" CpuPowerDisplay="65 W" HyperThreading="True" Virtualization="True"/>
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- TitleBar_CPU matching pen design -->
+    <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="14,20">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center">
+          <Run Text="CPU · "/><Run Text="{Binding CpuName}"/>
+        </TextBlock>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+          <TextBlock Text="{Binding CpuTemperature, StringFormat='{}{0:F0}°C'}" FontSize="13" Foreground="{StaticResource PrimaryBrush}"/>
+          <TextBlock Text="Updated 2s ago" FontSize="10" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Content matching pen design -->
+    <ScrollViewer Grid.Row="1" Background="{StaticResource BackgroundBrush}" Padding="20">
+      <StackPanel Spacing="16">
+
+        <!-- Core Frequencies heading matching pen design -->
+        <TextBlock Text="核心频率" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" LetterSpacing="1"/>
+
+        <!-- CoreGrid matching pen design -->
+        <Grid ColumnDefinitions="*,*,*,*">
+          <!-- P-Core avg -->
+          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14,12" Margin="0,0,4,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="P-Core 平均" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuFrequency}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/>
+              <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                <Run Text="{Binding CpuPcoreTemperature, StringFormat='{}{0:F0}°C · '}"/><Run Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}"/>
+              </TextBlock>
+            </StackPanel>
+          </Border>
+          <!-- E-Core avg -->
+          <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14,12" Margin="4,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="E-Core 平均" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuEfficiencyFrequency}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource SecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuEcoreTemperature, StringFormat='{}{0:F0}°C'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+          </Border>
+          <!-- Usage summary -->
+          <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14,12" Margin="4,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="总使用率" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0:F1}%'}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+              <TextBlock Text="{Binding CpuPcoreTemperature, StringFormat='{}{0:F0}°C'}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+          </Border>
+          <!-- Base freq -->
+          <Border Grid.Column="3" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="14,12" Margin="4,0,0,0">
+            <StackPanel Spacing="4">
+              <TextBlock Text="基础频率" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+              <TextBlock Text="{Binding CpuBaseFreq, StringFormat='{}{0:F0} MHz'}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+              <TextBlock Text="{Binding CpuPowerDisplay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <!-- Divider -->
+        <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+
+        <!-- Details matching pen design -->
+        <Grid ColumnDefinitions="*,*" Grid.ColumnSpan="2">
+          <!-- Specifications card -->
+          <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="0,0,8,0">
+            <StackPanel Spacing="8">
+              <TextBlock Text="规格" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+              <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="物理核心" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding PhysicalCores}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="逻辑核心" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding LogicalCores}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="性能核心" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding PerformanceCores}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="效率核心" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding EfficiencyCores}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="基础频率" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding CpuBaseFreq, StringFormat='{}{0:F0} MHz'}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="功耗" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding CpuPowerDisplay}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Features card -->
+          <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" CornerRadius="8" Padding="16" Margin="8,0,0,0">
+            <StackPanel Spacing="8">
+              <TextBlock Text="特性" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+              <Rectangle Height="1" Fill="{StaticResource BorderBrush}"/>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="超线程" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding HyperThreadingText}" FontSize="12" Foreground="{Binding HyperThreading, Converter={StaticResource BoolToColorConverter}}"/>
+              </Grid>
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="虚拟化" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBlock Grid.Column="1" Text="{Binding VirtualizationText}" FontSize="12" Foreground="{Binding Virtualization, Converter={StaticResource BoolToColorConverter}}"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <!-- Bottom spacer -->
+        <Rectangle Height="24" Fill="Transparent"/>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -1,0 +1,1915 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TCMT-M · Avalonia 客户端高保真原型</title>
+<style>
+  /* ─── tokens ────────────────────────────────────────────────────────── */
+  :root {
+    --bg:      oklch(17% 0.012 250);
+    --surface: oklch(22% 0.012 250);
+    --fg:      oklch(88% 0.008 250);
+    --muted:   oklch(70% 0.01 250);
+    --border:  oklch(33% 0.012 250);
+    --accent:  oklch(88% 0.008 250);
+
+    --ok:      oklch(76% 0.14 150);
+    --warn:    oklch(79% 0.14 88);
+    --danger:  oklch(70% 0.18 25);
+    --info:    oklch(72% 0.11 255);
+
+    --raise:   color-mix(in oklab, var(--surface) 94%, var(--fg) 6%);
+    --sunken:  color-mix(in oklab, var(--surface) 80%, var(--bg) 20%);
+    --fg-soft: color-mix(in oklab, var(--fg) 8%, transparent);
+    /* --dim 承载 11px 文本，必须是能算准对比度的实色。原来的 color-mix 半透明合成
+       在 --surface 上只有 4.46:1，差一点点掉线；此值在 bg / surface / sunken 上
+       分别是 5.47 / 4.95 / 4.92。 */
+    --dim:        oklch(63% 0.01 250);
+    /* 交互件边界专用（输入框 / 分段控件 / 带框按钮 / 开关轨 / 弹出菜单）：
+       在 bg / surface / sunken 上是 3.78 / 3.42 / 3.40，过 WCAG 1.4.11 的 3:1。
+       面板与表格线仍用 --border——把装饰性分隔线也提上来，这套安静仪表就变成描边网格了。 */
+    --border-ctl: oklch(54% 0.012 250);
+
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+    --fs-micro: 11px; --fs-meta: 12px; --fs-body: 13px; --fs-lead: 14px;
+    --fs-lg: 16px; --fs-title: 20px; --fs-kpi: 28px;
+
+    --gap-1: 4px; --gap-2: 8px; --gap-3: 12px; --gap-4: 16px; --gap-5: 24px; --gap-6: 32px;
+    --radius: 4px; --radius-lg: 8px;
+    --side-w: 190px;
+  }
+  [data-theme="light"] {
+    --bg:      oklch(97.5% 0 0);
+    --surface: oklch(100% 0 0);
+    --fg:      oklch(18% 0 0);
+    --muted:   oklch(45% 0 0);
+    --border:  oklch(88% 0 0);
+    --accent:  oklch(18% 0 0);
+    --ok:      oklch(52% 0.14 150);
+    --warn:    oklch(52% 0.12 75);
+    --danger:  oklch(50% 0.19 27);
+    --info:    oklch(52% 0.13 255);
+    --raise:   oklch(99% 0 0);
+    --sunken:  oklch(96% 0 0);
+    /* 深浅各自达标，不由一方向另一方推演：浅色底的 --dim 要更暗才够对比（深色反而要更亮）。
+       bg / surface / sunken 上分别是 4.91 / 5.28 / 4.70。 */
+    --dim:        oklch(53% 0 0);
+    /* bg / surface / sunken 上 3.39 / 3.64 / 3.24 */
+    --border-ctl: oklch(62% 0 0);
+  }
+  /* 灰阶降级：语义色退为明度差，越界改由字重与下划线承载 */
+  .win.is-gray { --ok: var(--fg); --warn: var(--fg); --danger: var(--fg); --info: var(--muted); }
+  .win.is-gray .v-warn { text-decoration: underline; text-underline-offset: 2px; }
+  .win.is-gray .v-crit { text-decoration: underline; text-underline-offset: 2px; font-weight: 700; }
+
+  /* ─── base ──────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: var(--fs-body); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; }
+  :focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; border-radius: 2px; }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .rule { border: 0; border-top: 1px solid var(--border); margin: 0; }
+
+  /* ─── 视图头部动作区 ────────────────────────────────────────────────── */
+  .head-actions { display: flex; align-items: center; gap: var(--gap-2); }
+  .seg { display: inline-flex; border: 1px solid var(--border-ctl); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .seg button { padding: 5px 12px; font-size: var(--fs-meta); color: var(--muted); border-right: 1px solid var(--border-ctl); white-space: nowrap; }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: var(--fg-soft); color: var(--fg); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+
+  /* ─── app window ────────────────────────────────────────────────────── */
+  .win {
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--surface);
+  }
+  .win-bar { display: flex; align-items: center; gap: var(--gap-3); padding: 0 var(--gap-3); height: 38px; flex: none; background: var(--raise); border-bottom: 1px solid var(--border); }
+  .wb-brand { font-weight: 650; font-size: var(--fs-body); letter-spacing: -0.01em; }
+  .wb-spacer { flex: 1; }
+  .wb-ctl { width: 26px; height: 22px; display: grid; place-items: center; color: var(--muted); border-radius: var(--radius); font-size: 13px; }
+  .wb-ctl:hover { background: var(--fg-soft); color: var(--fg); }
+  .wb-ctl.is-close:hover { background: var(--danger); color: var(--surface); }
+  .win-bar.is-mac .wb-ctlgroup { order: -1; }
+  .win-bar.is-mac .wb-ctlgroup .wb-ctl:nth-child(3) { order: -1; }
+
+  /* 客户端只盯本机：机型是陈述，不是选择——顶栏那行是文本，没有下拉。 */
+  .wb-host { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-meta); }
+  .note-dim { margin: 0; color: var(--dim); font-size: var(--fs-micro); }
+
+  .win-body { flex: 1; display: flex; min-height: 0; }
+
+  .side { width: var(--side-w); flex: none; border-right: 1px solid var(--border); background: var(--sunken); display: flex; flex-direction: column; padding: var(--gap-3) var(--gap-2); gap: 2px; }
+  .side-label { font-size: var(--fs-micro); color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 8px 4px; }
+  .nav-item { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-2); padding: 7px 9px; border-radius: var(--radius); color: var(--muted); text-align: left; width: 100%; }
+  .nav-item:hover { background: var(--fg-soft); color: var(--fg); }
+  .nav-item[aria-current="true"] { background: var(--accent); color: var(--surface); font-weight: 600; }
+  .nav-item[aria-current="true"] .nav-count { color: var(--surface); opacity: 0.75; }
+  .nav-count { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-micro); color: var(--dim); }
+  /* 「硬件」是左栏里唯一可展开的一项：▾ 跟着 aria-expanded 转，子项缩进一级 */
+  .nav-caret { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--dim); transition: transform 0.15s ease; }
+  .nav-item[aria-expanded="true"] .nav-caret { transform: rotate(180deg); }
+  .nav-item[aria-current="true"] .nav-caret { color: var(--surface); opacity: 0.75; }
+  .side-sub { display: flex; flex-direction: column; gap: 2px; padding: 0 0 4px 12px; }
+  .side-sub[hidden] { display: none; }
+  .side-sub button { text-align: left; width: 100%; padding: 5px 9px; border-radius: var(--radius); color: var(--dim); }
+  .side-sub button:hover { background: var(--fg-soft); color: var(--fg); }
+  .side-sub button[aria-current="true"] { background: var(--fg-soft); color: var(--fg); font-weight: 600; }
+  .side-foot { margin-top: auto; padding: 8px 9px; border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-micro); display: flex; flex-direction: column; gap: 4px; }
+  .side-foot b { color: var(--fg); font-weight: 600; }
+
+  .views { flex: 1; min-width: 0; overflow-y: auto; padding: var(--gap-4) var(--gap-5) var(--gap-5); }
+  .view { display: none; }
+  .view.is-on { display: block; }
+
+  .view-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--gap-4); flex-wrap: wrap; margin-bottom: var(--gap-4); }
+  .vh-title { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 650; letter-spacing: -0.015em; margin: 0; }
+  .vh-sub { color: var(--muted); font-size: var(--fs-meta); margin: 2px 0 0; }
+  .vh-meta { color: var(--dim); font-size: var(--fs-micro); text-align: right; }
+
+  /* ─── panel ─────────────────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--gap-3); }
+  .span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; }
+  .span-5 { grid-column: span 5; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; min-width: 0; }
+  .panel-h { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--raise); }
+  .panel-h h3 { margin: 0; font-size: var(--fs-micro); font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; }
+  .panel-h .fill { flex: 1; height: 1px; background: var(--border); }
+  .panel-h .note { color: var(--dim); font-size: var(--fs-micro); font-family: var(--font-mono); }
+  /* 概览面板标题行即入口：点一下跳到该部件的规格页。跳转记号常驻，免得靠悬停才发现 */
+  .panel.is-link > .panel-h { cursor: pointer; }
+  .panel.is-link > .panel-h:hover { background: var(--fg-soft); }
+  .panel.is-link > .panel-h:hover h3 { color: var(--accent); }
+  .panel-h .jump { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--dim); }
+  .panel.is-link > .panel-h:hover .jump { color: var(--accent); }
+  .panel-b { padding: 12px; display: flex; flex-direction: column; gap: var(--gap-3); }
+
+  .kpi { display: flex; align-items: baseline; gap: var(--gap-2); }
+  .kpi-v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-kpi); font-weight: 500; letter-spacing: -0.02em; line-height: 1; }
+  .kpi-u { color: var(--muted); font-size: var(--fs-meta); }
+  .v-warn { color: var(--warn); } .v-crit { color: var(--danger); } .v-ok { color: var(--ok); }
+  .meter { height: 6px; border-radius: 3px; background: var(--fg-soft); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--info); border-radius: 3px; }
+  .meter.is-warn i { background: var(--warn); } .meter.is-crit i { background: var(--danger); }
+  .kv { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gap-3); font-size: var(--fs-body); }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .kv-list { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+  .cores { display: flex; gap: 3px; }
+  .core { flex: 1; height: 34px; background: var(--fg-soft); border-radius: 2px; display: flex; align-items: flex-end; }
+  .core i { display: block; width: 100%; background: var(--info); border-radius: 2px; }
+  .core.is-warn i { background: var(--warn); } .core.is-crit i { background: var(--danger); }
+  .spark { width: 100%; height: 40px; display: block; }
+  .spark .area { fill: var(--info); opacity: 0.18; }
+  .spark .line { fill: none; stroke: var(--info); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .spark.is-up .area { fill: var(--ok); } .spark.is-up .line { stroke: var(--ok); }
+  .empty { color: var(--dim); font-size: var(--fs-meta); padding: 18px 12px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+
+  /* ─── table ─────────────────────────────────────────────────────────── */
+  .table-wrap { overflow: hidden; }
+  table.data { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+  table.data th { text-align: left; font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data th.sortable { cursor: pointer; }
+  table.data th.sortable:hover { color: var(--fg); background: var(--fg-soft); }
+  table.data th .caret { opacity: 0; margin-left: 2px; }
+  table.data th[aria-sort] .caret { opacity: 1; color: var(--fg); }
+  table.data td { padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data tr:last-child td { border-bottom: 0; }
+  table.data tbody tr { cursor: pointer; }
+  table.data tbody tr:hover { background: var(--fg-soft); }
+  table.data tbody tr[aria-selected="true"] { background: var(--accent); color: var(--surface); }
+  table.data tbody tr[aria-selected="true"] .u { color: var(--surface); opacity: 0.7; }
+  table.data .r { text-align: right; }
+  table.data .u { color: var(--dim); font-size: var(--fs-meta); }
+  .pname { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .pname b { font-weight: 550; }
+  .pname span { color: var(--dim); font-size: var(--fs-micro); font-family: var(--font-mono); }
+
+  /* ─── 网络 ──────────────────────────────────────────────────────────── */
+  .t-static tbody tr { cursor: default; }          /* 只读行不给可点的假象 */
+  table.data td.name { font-weight: 550; }
+  .legend { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap-3); color: var(--dim); font-size: var(--fs-micro); }
+  .legend > span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { display: block; width: 14px; height: 2px; border-radius: 1px; background: var(--info); }
+  .legend i.up { background: var(--ok); }
+  .spark .up.area { fill: var(--ok); opacity: 0.18; }
+  .spark .up.line { stroke: var(--ok); }
+
+  /* ─── 日志：级别只在状态处着色，正文不着色 ──────────────────────────── */
+  .log-scroll { max-height: calc(100vh - 320px); min-height: 240px; overflow-y: auto; overscroll-behavior: contain; }
+  .log-scroll:focus-visible { outline-offset: -2px; }
+  .log-row { display: grid; grid-template-columns: 96px 52px 88px minmax(0, 1fr); gap: var(--gap-3); align-items: baseline; padding: 5px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: var(--fs-meta); }
+  .log-row:last-child { border-bottom: 0; }
+  .log-row:hover { background: var(--fg-soft); }
+  .log-time { color: var(--dim); }
+  .log-lv { display: block; text-align: center; font-size: var(--fs-micro); font-weight: 650; letter-spacing: 0.05em; padding: 1px 0; border-radius: 2px; border: 1px solid var(--border); color: var(--muted); }
+  .log-src { color: var(--muted); }
+  .log-msg { overflow-wrap: anywhere; }
+  .log-row.is-warn .log-lv { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, var(--border)); background: color-mix(in oklab, var(--warn) 12%, transparent); }
+  .log-row.is-err .log-lv { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border)); background: color-mix(in oklab, var(--danger) 12%, transparent); }
+  .win.is-gray .log-row.is-err .log-lv { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ─── split (processes / settings) ──────────────────────────────────── */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: var(--gap-3); align-items: start; }
+  .split-settings { grid-template-columns: 232px minmax(0, 1fr); }
+  .toolbar { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .input { flex: 1; min-width: 150px; padding: 6px 9px; background: var(--sunken); color: var(--fg); border: 1px solid var(--border-ctl); border-radius: var(--radius); font: inherit; font-size: var(--fs-meta); }
+  .input::placeholder { color: var(--dim); }
+  .input:focus { outline: none; border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg) inset; }
+  .input.is-bad { border-color: var(--danger); }
+  .count { color: var(--muted); font-size: var(--fs-meta); white-space: nowrap; }
+  .count b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg); font-weight: 500; }
+
+  /* ─── form ──────────────────────────────────────────────────────────── */
+  .group-list { display: flex; flex-direction: column; gap: 2px; padding: var(--gap-2); }
+  .group-list button { text-align: left; padding: 7px 9px; border-radius: var(--radius); color: var(--muted); display: flex; justify-content: space-between; gap: var(--gap-2); }
+  .group-list button:hover { background: var(--fg-soft); color: var(--fg); }
+  .group-list button[aria-current="true"] { background: var(--accent); color: var(--surface); font-weight: 600; }
+  .fields { display: flex; flex-direction: column; }
+  .frow { display: grid; grid-template-columns: 1fr 220px; gap: var(--gap-3); align-items: start; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .frow:last-child { border-bottom: 0; }
+  .frow > .fl { display: flex; flex-direction: column; gap: 2px; }
+  .fl label { font-size: var(--fs-body); }
+  .fl p { margin: 0; color: var(--muted); font-size: var(--fs-meta); }
+  .fctl { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+  .fctl .hint { color: var(--dim); font-size: var(--fs-micro); }
+  .fctl .hint.bad { color: var(--danger); }
+  .sw { display: inline-flex; align-items: center; gap: var(--gap-2); align-self: flex-start; }
+  .sw-track { width: 34px; height: 18px; border-radius: 9px; background: var(--fg-soft); border: 1px solid var(--border-ctl); position: relative; transition: background 0.15s ease; }
+  .sw-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: transform 0.15s ease, background 0.15s ease; }
+  .sw[aria-pressed="true"] .sw-track { background: var(--accent); border-color: var(--accent); }
+  .sw[aria-pressed="true"] .sw-track::after { transform: translateX(16px); background: var(--surface); }
+  .sw span { font-size: var(--fs-meta); color: var(--muted); }
+  .caps { display: flex; flex-direction: column; gap: 0; }
+  .cap { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-3); padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: var(--fs-body); }
+  .cap:last-child { border-bottom: 0; }
+  .cap span { color: var(--muted); font-size: var(--fs-meta); font-family: var(--font-mono); }
+
+  /* ─── 硬件规格：按部件分项，一项一块 ─────────────────────────────────── */
+  /* 值挂 data-reading，「未接收样本」时由 applyStale 一并盖「—」——静态字段与读数同源，
+     采集端没上线时客户端一样没有 CPU 型号和磁盘序列号，不搞例外。 */
+  .spec { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .spec:last-child { border-bottom: 0; }
+  .spec h4 { margin: 0 0 8px; font-size: var(--fs-body); font-weight: 650; }
+  .spec-u + .spec-u { margin-top: 10px; }
+  .spec-sub { margin: 0 0 5px; color: var(--muted); font-size: var(--fs-micro); font-family: var(--font-mono); }
+  .spec .kv dd { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .spec-na { color: var(--dim); }
+  .spec-note { margin: 8px 0 0; color: var(--dim); font-size: var(--fs-micro); }
+
+  /* ─── buttons ───────────────────────────────────────────────────────── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--border-ctl); font-size: var(--fs-meta); font-weight: 550; transition: background 0.15s ease, border-color 0.15s ease; }
+  .btn:hover { background: var(--fg-soft); border-color: var(--fg); }
+  .btn-solid { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+  .btn-solid:hover { background: color-mix(in oklab, var(--accent) 86%, var(--bg)); color: var(--surface); }
+  .btn-danger { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border-ctl)); }
+  .btn-danger:hover { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+  .btn-ghost { border-color: transparent; color: var(--muted); }
+  .btn-ghost:hover { color: var(--fg); background: var(--fg-soft); }
+
+  /* ─── banner ────────────────────────────────────────────────────────── */
+  .banner { display: flex; align-items: center; gap: var(--gap-2); padding: 8px 12px; border: 1px solid var(--warn); border-radius: var(--radius); color: var(--warn); font-size: var(--fs-meta); margin-bottom: var(--gap-3); }
+  .banner[hidden] { display: none; }
+
+  /* ─── status bar ────────────────────────────────────────────────────── */
+  .statusbar { flex: none; display: flex; align-items: center; gap: var(--gap-3); padding: 0 12px; height: 30px; border-top: 1px solid var(--border); background: var(--raise); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-micro); color: var(--muted); overflow: hidden; }
+  .statusbar .sb { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .statusbar .sep { color: var(--border); }
+  .statusbar .spacer { flex: 1; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .win.is-stale .dot { background: var(--warn); }
+  .win.is-stale .sb-src { color: var(--warn); }
+  .sb-src { padding: 2px 7px; margin-left: -7px; border-radius: var(--radius); }
+  .sb-src:hover { background: var(--fg-soft); color: var(--fg); }
+  .sb-src[aria-pressed="true"] { color: var(--warn); }
+  .sb.sample { color: var(--dim); }
+
+  /* ─── 减少动态 ──────────────────────────────────────────────────────── */
+  /* 状态切换照旧发生，只是不再缓动——信息仍然读得出来，只是没有过渡过程。 */
+  @media (prefers-reduced-motion: reduce) {
+    .sw-track, .sw-track::after, .btn { transition: none; }
+  }
+
+  @media (max-width: 920px) {
+    body { height: auto; overflow: auto; }
+    .win { height: auto; }
+    .win-body { flex-direction: column; }
+    .side { width: 100%; flex-direction: row; align-items: center; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: var(--gap-2); }
+    .side-label, .side-foot { display: none; }
+    .side-sub { display: none; }   /* 窄屏左栏横排，展开组塞不下，藏掉 */
+    .views { overflow: visible; padding: var(--gap-3); }
+    .grid { grid-template-columns: 1fr; }
+    .span-3, .span-4, .span-5, .span-8, .span-12 { grid-column: span 1; }
+    .split { grid-template-columns: 1fr; }
+    .frow { grid-template-columns: 1fr; }
+    table.data .hide-sm { display: none; }
+    .statusbar { flex-wrap: wrap; height: auto; padding: 6px 10px; gap: var(--gap-2); }
+    .statusbar .spacer { display: none; }
+    .log-row { grid-template-columns: 88px 48px minmax(0, 1fr); }
+    .log-src { display: none; }
+    .log-scroll { max-height: 70vh; }
+  }
+
+  /* ─── 未接收样本 ────────────────────────────────────────────────────── */
+  /* 脚本把能写成文字的读数盖成「—」；这里收掉只能靠图形表达的读数。 */
+  .win.is-offline .meter > i { width: 0 !important; }
+  .win.is-offline .cores,
+  .win.is-offline #cores-note,
+  .win.is-offline .spark { visibility: hidden; }
+</style>
+</head>
+<body>
+
+<div class="win" id="win" data-theme="dark">
+
+  <header class="win-bar" data-od-id="titlebar">
+    <span class="wb-brand">TCMT-M Monitor</span>
+    <span class="wb-host" data-od-id="label-host">
+      <span id="host-name">mbp-14-zhaoming</span><span>·</span><span id="host-spec">Apple M3 Pro · macOS 15.4</span>
+    </span>
+    <span class="wb-spacer"></span>
+    <span class="wb-ctlgroup">
+      <button class="wb-ctl" title="最小化" aria-label="最小化">–</button>
+      <button class="wb-ctl" title="最大化" aria-label="最大化">▢</button>
+      <button class="wb-ctl is-close" title="关闭" aria-label="关闭">✕</button>
+    </span>
+  </header>
+
+  <div class="win-body">
+    <nav class="side" data-od-id="sidenav" aria-label="主导航">
+      <span class="side-label">Views</span>
+      <button class="nav-item" data-view="overview" aria-current="true">
+        <span data-i18n="nav.overview">总览</span><span class="nav-count">DASH</span>
+      </button>
+      <button class="nav-item" data-view="processes" aria-current="false">
+        <span data-i18n="nav.processes">进程</span><span class="nav-count" id="nav-proc-count">16</span>
+      </button>
+      <button class="nav-item" data-view="network" aria-current="false">
+        <span data-i18n="nav.network">网络</span><span class="nav-count" id="nav-net-count">—</span>
+      </button>
+      <button class="nav-item" data-view="log" aria-current="false">
+        <span data-i18n="nav.log">日志</span><span class="nav-count" id="nav-log-count">—</span>
+      </button>
+      <button class="nav-item" data-view="hardware" id="nav-hw" aria-current="false" aria-expanded="false">
+        <span data-i18n="nav.hardware">硬件</span><span class="nav-caret">▾</span>
+      </button>
+      <div class="side-sub" id="nav-hw-sub" hidden></div>
+      <button class="nav-item" data-view="settings" aria-current="false">
+        <span data-i18n="nav.settings">设置</span><span class="nav-count">SET</span>
+      </button>
+      <div class="side-foot">
+        <span><b>Tick</b> <span class="num" id="side-tick">3.0 s</span></span>
+        <span><b>Uptime</b> <span class="num">6 d 04:21</span></span>
+        <span><b>Agent</b> <span class="num">v0.9.4</span></span>
+      </div>
+    </nav>
+
+    <main class="views" id="views">
+
+      <!-- ══════════════════ 总览 ══════════════════ -->
+      <section class="view is-on" id="view-overview" data-od-id="view-overview" aria-labelledby="ov-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="ov-title" data-i18n="view.overview">总览</h1>
+            <p class="vh-sub" data-i18n="ov.sub">本机硬件实时读数，越界值才着色</p>
+          </div>
+          <div class="vh-meta num" data-i18n="ov.meta">上次采样 0.8 s 前 · 间隔 3 s</div>
+        </div>
+
+        <div class="banner" id="stale-banner" data-stale hidden>
+          <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
+        </div>
+
+        <div class="banner" data-offline hidden>
+          <span data-i18n="offline.banner">尚未收到采集端的样本：读数显示为「—」，不按 0 计。</span>
+        </div>
+
+        <div class="grid">
+          <section class="panel span-4" data-od-id="panel-cpu">
+            <header class="panel-h"><h3>CPU</h3><span class="fill"></span><span class="note" id="cpu-note">// 12 核 · 3.05 GHz</span></header>
+            <div class="panel-b">
+              <div class="kpi">
+                <span class="kpi-v" id="cpu-total" data-reading>23.4</span><span class="kpi-u" data-reading-blank>% 总占用</span>
+                <span class="wb-spacer"></span>
+                <span class="kpi-u num" data-reading>负载 2.14 / 2.02 / 1.88</span>
+              </div>
+              <div class="meter" id="cpu-meter" role="img" aria-label="CPU 总占用 23.4%"><i style="width:23.4%"></i></div>
+              <div class="cores" id="cpu-cores" aria-label="逐核温度"></div>
+              <p class="note-dim" id="cores-note" data-i18n="cpu.cores.note">逐核温度，非占用：IPC 线格式没有逐核占用数据</p>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="cpu.user">用户 / 系统</dt><dd data-reading>17.2% / 6.2%</dd></div>
+                <div class="kv"><dt data-i18n="cpu.pcore">效能核频率</dt><dd data-reading>2.42 GHz</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <!-- GPU 紧挨 CPU：占用是实时读数，和 CPU 是一类东西。 -->
+          <section class="panel span-4" data-od-id="panel-gpu">
+            <header class="panel-h"><h3>GPU</h3><span class="fill"></span><span class="note" id="gpu-note">// Apple M2</span></header>
+            <div class="panel-b">
+              <div class="kpi">
+                <span class="kpi-v" id="gpu-total" data-reading>6.0</span><span class="kpi-u" data-reading-blank>% 占用</span>
+              </div>
+              <div class="meter" id="gpu-meter" role="img" aria-label="GPU 占用 6.0%"><i style="width:6%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="gpu.temp">温度</dt><dd data-reading>59 °C</dd></div>
+                <div class="kv"><dt data-i18n="gpu.vram">显存</dt><dd data-reading>4.0 GB</dd></div>
+              </dl>
+              <p class="note-dim">占用取自 IOAccelerator。Apple Silicon 是统一内存，显存按系统内存的四分之一估算，不是实测。</p>
+            </div>
+          </section>
+
+          <section class="panel span-4" data-od-id="panel-memory">
+            <header class="panel-h"><h3>Memory</h3><span class="fill"></span><span class="note">// 统一内存</span></header>
+            <div class="panel-b">
+              <div class="kpi"><span class="kpi-v v-warn" data-reading>17.8</span><span class="kpi-u" data-reading-blank>/ 24.0 GB</span></div>
+              <div class="meter is-warn" role="img" aria-label="内存占用 74%"><i style="width:74%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="mem.pressure">内存压力</dt><dd class="v-warn" data-reading>偏高</dd></div>
+                <div class="kv"><dt data-i18n="mem.wired">联动 / 已压缩</dt><dd data-reading>3.8 GB / 1.1 GB</dd></div>
+                <div class="kv"><dt>Swap</dt><dd data-reading>0 B</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-3" data-od-id="panel-power">
+            <header class="panel-h"><h3>Power</h3><span class="fill"></span></header>
+            <div class="panel-b" id="power-body">
+              <div class="kpi"><span class="kpi-v v-warn">47</span><span class="kpi-u">% 电量</span></div>
+              <div class="meter is-warn" role="img" aria-label="电量 47%"><i style="width:47%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="power.health">电池健康</dt><dd>84%</dd></div>
+                <div class="kv"><dt data-i18n="power.state">电源</dt><dd data-i18n="power.battery">电池供电</dd></div>
+                <div class="kv"><dt data-i18n="power.left">预计可用</dt><dd>2:41</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-3" data-od-id="panel-thermal">
+            <header class="panel-h"><h3>Thermal</h3><span class="fill"></span><span class="note">// 阈值 60 / 80 °C</span></header>
+            <div class="panel-b" id="thermal-body">
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="th.pcore">CPU 性能核</dt><dd class="v-warn">68 °C</dd></div>
+                <div class="kv"><dt data-i18n="th.ecore">CPU 效能核</dt><dd>54 °C</dd></div>
+                <div class="kv"><dt>GPU</dt><dd>46 °C</dd></div>
+                <div class="kv"><dt>SSD</dt><dd>41 °C</dd></div>
+              </dl>
+              <hr class="rule" />
+              <div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title)">1993</span><span class="kpi-u">RPM 风扇 1 / 2</span></div>
+            </div>
+          </section>
+
+          <section class="panel span-3" data-od-id="panel-network">
+            <header class="panel-h"><h3>Network</h3><span class="fill"></span><span class="note" id="net-note">// en0 · Wi-Fi</span></header>
+            <div class="panel-b">
+              <div class="kpi">
+                <span class="kpi-v" style="font-size:var(--fs-title)" data-reading>1.24</span><span class="kpi-u" data-reading-blank="↓">MB/s ↓</span>
+                <span class="wb-spacer"></span>
+                <span class="kpi-v" style="font-size:var(--fs-title)" data-reading>126</span><span class="kpi-u" data-reading-blank="↑">KB/s ↑</span>
+              </div>
+              <svg class="spark" id="spark-down" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="下行流量 60 秒走势"></svg>
+              <svg class="spark is-up" id="spark-up" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="上行流量 60 秒走势"></svg>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="net.peak">窗口峰值</dt><dd data-reading>4.86 MB/s</dd></div>
+                <div class="kv"><dt>IPv4</dt><dd id="net-ip" data-reading>192.168.31.24</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-3" data-od-id="panel-disk">
+            <header class="panel-h"><h3>Disks</h3><span class="fill"></span><span class="note">// SMART</span></header>
+            <div class="panel-b" id="disk-body">
+              <div class="kv"><dt>Macintosh HD</dt><dd>412 / 512 GB</dd></div>
+              <div class="meter" role="img" aria-label="磁盘占用 80%"><i style="width:80%"></i></div>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="disk.smart">SMART 状态</dt><dd class="v-ok" data-i18n="disk.pass">已通过</dd></div>
+                <div class="kv"><dt data-i18n="disk.temp">盘温</dt><dd>41 °C</dd></div>
+                <div class="kv"><dt data-i18n="disk.power">通电时长</dt><dd>1,842 h</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-12" data-od-id="panel-top-processes">
+            <header class="panel-h"><h3>Top Processes</h3><span class="fill"></span><span class="note">// 按 CPU 排序 · 单进程阈值 20 / 50 %</span></header>
+            <div class="table-wrap">
+              <table class="data" id="top-table">
+                <thead>
+                  <tr>
+                    <th class="r" style="width:74px">PID</th>
+                    <th data-i18n="th.process">进程</th>
+                    <th class="r hide-sm" style="width:110px" data-i18n="th.user">用户</th>
+                    <th class="r" style="width:96px">CPU</th>
+                    <th class="r" style="width:106px" data-i18n="th.mem">内存</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ══════════════════ 进程 ══════════════════ -->
+      <section class="view" id="view-processes" data-od-id="view-processes" aria-labelledby="pr-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="pr-title" data-i18n="view.processes">进程</h1>
+            <p class="vh-sub" data-i18n="pr.sub">选中一行查看详情，越界占用按阈值着色</p>
+          </div>
+        </div>
+
+        <div class="banner" id="stale-banner-2" data-stale hidden>
+          <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
+        </div>
+
+        <div class="banner" id="offline-banner-2" data-offline hidden>
+          <span data-i18n="offline.banner">尚未收到采集端的样本：读数显示为「—」，不按 0 计。</span>
+        </div>
+
+        <div class="split">
+          <section class="panel" data-od-id="panel-process-table">
+            <div class="toolbar">
+              <input class="input" id="proc-filter" type="search" placeholder="过滤进程名或 PID" data-i18n-ph="pr.filter" aria-label="过滤进程" />
+              <span class="count"><span data-i18n="pr.shown">显示</span> <b id="proc-shown">16</b> / <b id="proc-total">16</b></span>
+            </div>
+            <div class="table-wrap">
+              <table class="data" id="proc-table">
+                <thead>
+                  <tr>
+                    <th class="r sortable" data-sort="pid" style="width:74px">PID<span class="caret">▾</span></th>
+                    <th data-sort="name" class="sortable"><span data-i18n="th.process">进程</span><span class="caret">▾</span></th>
+                    <th class="r hide-sm" style="width:118px" data-i18n="th.user">用户</th>
+                    <th class="r sortable" data-sort="cpu" style="width:96px" aria-sort="descending">CPU<span class="caret">▾</span></th>
+                    <th class="r sortable" data-sort="mem" style="width:104px" data-i18n="th.mem">内存<span class="caret">▾</span></th>
+                    <th class="r hide-sm" style="width:78px" data-i18n="th.threads">线程</th>
+                    <th class="hide-sm" style="width:88px" data-i18n="th.state">状态</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="note-dim" style="padding:0 12px 10px" data-i18n="pr.wire.note">用户 · 线程 · 状态 · 路径 · CPU 时间 · 启动时刻为示意值：IPC 线格式现只有 PID · 名称 · CPU · 内存</p>
+          </section>
+
+          <aside class="panel" data-od-id="panel-process-detail" aria-live="polite">
+            <header class="panel-h"><h3 data-i18n="pr.detail">Process Detail</h3><span class="fill"></span></header>
+            <div class="panel-b" id="detail-body"></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ══════════════════ 网络 ══════════════════ -->
+      <section class="view" id="view-network" data-od-id="view-network" aria-labelledby="nw-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="nw-title" data-i18n="view.network">网络</h1>
+            <p class="vh-sub" data-i18n="nw.sub">逐接口读数与无线状态；缺能力的位置保留并说明原因</p>
+          </div>
+          <div class="vh-meta num" data-i18n="nw.meta">窗口 60 点 · 双序列按窗口峰值归一</div>
+        </div>
+
+        <div class="banner" data-stale hidden>
+          <span data-i18n="stale.banner">数据停摆：距上次采样已超过 3 s，读数可能已过期。</span>
+        </div>
+
+        <div class="banner" data-offline hidden>
+          <span data-i18n="offline.banner">尚未收到采集端的样本：读数显示为「—」，不按 0 计。</span>
+        </div>
+
+        <div class="grid">
+          <section class="panel span-12" data-od-id="panel-interfaces">
+            <header class="panel-h"><h3>Interfaces</h3><span class="fill"></span><span class="note" id="iface-note">// —</span></header>
+            <div class="table-wrap">
+              <table class="data t-static" id="iface-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="nw.th.name">接口</th>
+                    <th class="hide-sm" data-i18n="nw.th.type">类型</th>
+                    <th class="hide-sm" style="width:132px">IPv4</th>
+                    <th class="hide-sm" style="width:168px">MAC</th>
+                    <th class="r" style="width:104px">↓</th>
+                    <th class="r" style="width:104px">↑</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel span-4" data-od-id="panel-wireless">
+            <header class="panel-h"><h3>Wi-Fi · Bluetooth</h3><span class="fill"></span><span class="note">// 状态即能力</span></header>
+            <div class="panel-b" id="wireless-body"></div>
+          </section>
+
+          <section class="panel span-8" data-od-id="panel-traffic">
+            <header class="panel-h"><h3>Traffic</h3><span class="fill"></span><span class="note" id="traffic-note">// 60 s</span></header>
+            <div class="panel-b">
+              <div class="legend">
+                <span><i></i><span data-i18n="nw.down">下行</span></span>
+                <span><i class="up"></i><span data-i18n="nw.up">上行</span></span>
+                <span data-i18n="nw.norm">两条线共用一个刻度</span>
+              </div>
+              <svg class="spark" id="traffic-spark" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="收发行量 60 秒走势"></svg>
+              <dl class="kv-list">
+                <div class="kv"><dt data-i18n="nw.now">当前</dt><dd id="traffic-now">—</dd></div>
+                <div class="kv"><dt data-i18n="nw.peak">窗口峰值</dt><dd id="traffic-peak">—</dd></div>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel span-12" data-od-id="panel-connections">
+            <header class="panel-h"><h3>Connections</h3><span class="fill"></span><span class="note" id="conn-note">// —</span></header>
+            <div class="table-wrap">
+              <table class="data t-static" id="conn-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="nw.th.client">客户端</th>
+                    <th class="hide-sm" style="width:130px" data-i18n="nw.th.via">经由</th>
+                    <th style="width:104px" data-i18n="nw.th.state">状态</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ══════════════════ 日志 ══════════════════ -->
+      <section class="view" id="view-log" data-od-id="view-log" aria-labelledby="lg-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="lg-title" data-i18n="view.log">日志</h1>
+            <p class="vh-sub" data-i18n="lg.sub">客户端事件流：新条目在上，滚动离开顶部即暂停跟随</p>
+          </div>
+          <div class="head-actions">
+            <span class="count" id="log-follow-state"></span>
+            <div class="seg" id="log-level-seg" role="group" aria-label="日志级别"></div>
+          </div>
+        </div>
+
+        <section class="panel" data-od-id="panel-log">
+          <header class="panel-h">
+            <h3>Event Stream</h3><span class="fill"></span>
+            <span class="note" id="log-note">// —</span>
+            <button class="btn btn-ghost" id="log-resume" hidden data-i18n="lg.resume">恢复跟随</button>
+          </header>
+          <div class="log-scroll" id="log-scroll" role="log" aria-label="客户端事件流" tabindex="0"></div>
+        </section>
+      </section>
+
+      <!-- ══════════════════ 硬件 ══════════════════ -->
+      <!-- 左栏「硬件」展开后选一个部件，这里只画那一块。取哪一个由 state.hwPart 决定。 -->
+      <section class="view" id="view-hardware" data-od-id="view-hardware" aria-labelledby="hw-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="hw-title" data-i18n="view.hardware">硬件</h1>
+            <p class="vh-sub" data-i18n="hw.sub">静态规格：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值</p>
+          </div>
+        </div>
+
+        <section class="panel" data-od-id="panel-hw-spec">
+          <div id="hw-spec"></div>
+        </section>
+      </section>
+
+      <!-- ══════════════════ 设置 ══════════════════ -->
+      <section class="view" id="view-settings" data-od-id="view-settings" aria-labelledby="st-title">
+        <div class="view-head">
+          <div>
+            <h1 class="vh-title" id="st-title" data-i18n="view.settings">设置</h1>
+            <p class="vh-sub" data-i18n="st.sub">左选分组、右改字段，改动即时生效</p>
+          </div>
+          <div class="head-actions">
+            <span class="count" id="save-state"></span>
+            <button class="btn btn-solid" id="save-btn" data-od-id="btn-save" data-i18n="st.save">保存设置</button>
+          </div>
+        </div>
+
+        <div class="split split-settings">
+          <aside class="panel" data-od-id="panel-settings-groups">
+            <header class="panel-h"><h3>Groups</h3><span class="fill"></span></header>
+            <div class="group-list" id="group-list"></div>
+          </aside>
+
+          <section class="panel" data-od-id="panel-settings-fields">
+            <div id="field-groups"></div>
+          </section>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="statusbar" data-od-id="statusbar">
+    <button class="sb sb-src" id="src-chip" aria-pressed="false" title="数据源状态（点击切换）">
+      <span class="dot"></span><span id="sb-live" data-i18n="sb.live">实时</span>
+    </button>
+    <span class="sep">│</span>
+    <span class="sb">CPU <span class="num">23.4%</span></span>
+    <span class="sep">│</span>
+    <span class="sb">RAM <span class="num">74%</span></span>
+    <span class="spacer"></span>
+    <span class="sb">NET <span class="num">↓1.24MB/s ↑126KB/s</span></span>
+    <span class="sep">│</span>
+    <span class="sb">TICK <span class="num" id="sb-tick">3.0s</span></span>
+    <span class="sep">│</span>
+    <span class="sb sample" data-i18n="sb.sample">示意数据 · 非实机采样</span>
+    <span class="sep">│</span>
+    <span class="sb">TCMT-M <span class="num">v0.9.4</span></span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── 示意采样数据（非实机） ─────────────────────────────────────────── */
+  var PROCS = [
+    { pid: 1183, name: 'Google Chrome Helper', user: 'zhaoming', cpu: 54.1, mem: 1620, thr: 42, state: 'run', vmem: 8.4, cputime: '41:07', started: '09:12', path: '/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)' },
+    { pid: 218, name: 'WindowServer', user: '_windowserver', cpu: 22.8, mem: 912, thr: 24, state: 'run', vmem: 12.1, cputime: '184:52', started: '09:02', path: '/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/Resources/WindowServer' },
+    { pid: 902, name: 'Xcode', user: 'zhaoming', cpu: 18.3, mem: 3412, thr: 64, state: 'run', vmem: 21.7, cputime: '96:31', started: '09:40', path: '/Applications/Xcode.app/Contents/MacOS/Xcode' },
+    { pid: 733, name: 'node', user: 'zhaoming', cpu: 16.2, mem: 648, thr: 22, state: 'run', vmem: 4.2, cputime: '27:14', started: '10:05', path: '/opt/homebrew/bin/node' },
+    { pid: 0, name: 'kernel_task', user: 'root', cpu: 12.4, mem: 1843, thr: 186, state: 'run', vmem: 0.0, cputime: '512:40', started: '—', path: '/System/Library/Kernels/kernel' },
+    { pid: 441, name: 'mds_stores', user: 'root', cpu: 9.6, mem: 284, thr: 18, state: 'sleep', vmem: 1.8, cputime: '18:09', started: '09:02', path: '/System/Library/Frameworks/CoreServices.framework/Frameworks/Metadata.framework/Versions/A/Support/mds_stores' },
+    { pid: 655, name: 'Docker Desktop', user: 'zhaoming', cpu: 7.2, mem: 1204, thr: 38, state: 'run', vmem: 9.6, cputime: '34:18', started: '09:04', path: '/Applications/Docker.app/Contents/MacOS/Docker Desktop' },
+    { pid: 1204, name: 'com.apple.WebKit.WebContent', user: 'zhaoming', cpu: 6.4, mem: 736, thr: 26, state: 'sleep', vmem: 6.1, cputime: '12:52', started: '09:14', path: '/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent' },
+    { pid: 867, name: 'Photos', user: 'zhaoming', cpu: 3.9, mem: 512, thr: 14, state: 'sleep', vmem: 3.4, cputime: '04:22', started: '09:31', path: '/System/Applications/Photos.app/Contents/MacOS/Photos' },
+    { pid: 512, name: 'coreaudiod', user: '_coreaudiod', cpu: 2.8, mem: 46, thr: 9, state: 'run', vmem: 0.4, cputime: '06:41', started: '09:02', path: '/usr/sbin/coreaudiod' },
+    { pid: 1002, name: 'Terminal', user: 'zhaoming', cpu: 2.1, mem: 188, thr: 11, state: 'run', vmem: 1.2, cputime: '09:37', started: '09:08', path: '/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal' },
+    { pid: 1290, name: 'TCMT-M Agent', user: 'zhaoming', cpu: 1.8, mem: 96, thr: 9, state: 'run', vmem: 0.6, cputime: '22:15', started: '09:02', path: '/Applications/TCMT-M.app/Contents/MacOS/TCMT-M Agent' },
+    { pid: 1502, name: 'Spotlight', user: 'zhaoming', cpu: 1.1, mem: 264, thr: 12, state: 'sleep', vmem: 2.0, cputime: '03:48', started: '09:03', path: '/System/Library/CoreServices/Spotlight.app/Contents/MacOS/Spotlight' },
+    { pid: 311, name: 'loginwindow', user: 'zhaoming', cpu: 0.6, mem: 82, thr: 6, state: 'sleep', vmem: 0.3, cputime: '01:12', started: '09:02', path: '/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow' },
+    { pid: 148, name: 'backupd', user: 'root', cpu: 0.4, mem: 134, thr: 7, state: 'sleep', vmem: 0.9, cputime: '00:41', started: '09:05', path: '/System/Library/CoreServices/backupd.bundle/Contents/Resources/backupd' },
+    { pid: 1441, name: 'sshd', user: 'root', cpu: 0.1, mem: 18, thr: 3, state: 'sleep', vmem: 0.1, cputime: '00:03', started: '11:20', path: '/usr/sbin/sshd' }
+  ];
+
+  /* 客户端只盯本机：一台机器。同一套 IA，缺什么就报 N/A，不假装。 */
+  var HOSTS = [
+    { id: 'mbp', name: 'mbp-14-zhaoming', spec: 'Apple M3 Pro · macOS 15.4', mac: true, freq: '3.05 GHz',
+      cores: [31, 24, 46, 18, 62, 27, 12, 34, 21, 9, 41, 16],
+      battery: { pct: 47, health: '84%', left: '2:41' },
+      net: { iface: 'en0 · Wi-Fi', ip: '192.168.31.24' },
+      fans: 2, fanRpm: 1993,
+      sensors: [['CPU P-core', 68, 'warn'], ['CPU E-core', 54], ['GPU', 46], ['SSD', 41]],
+      disk: { vol: 'Macintosh HD', used: 412, size: 512, temp: 41, hours: '1,842 h', smart: 'ok' },
+      caps: { loc: 'ok', upd: 'ok', smart: 'ok', notif: 'no' } }
+  ];
+  var NET_DOWN = [12, 18, 26, 22, 34, 58, 44, 30, 26, 38, 52, 71, 64, 48, 39, 33, 29, 41, 55, 68, 82, 74, 61, 52, 44, 37, 31, 28, 35, 47, 59, 66, 58, 49, 42, 36, 30, 26, 24, 29, 38, 45, 52, 61, 70, 63, 54, 46, 40, 34, 30, 27, 25, 31, 39, 48, 56, 63, 57, 50];
+  var NET_UP = [6, 8, 12, 9, 14, 22, 17, 12, 10, 15, 19, 26, 23, 18, 14, 12, 11, 15, 20, 25, 30, 27, 22, 19, 16, 13, 11, 10, 13, 17, 21, 24, 21, 18, 15, 13, 11, 9, 8, 10, 14, 16, 19, 22, 26, 23, 20, 17, 15, 12, 11, 10, 9, 11, 14, 17, 20, 23, 21, 18];
+
+  /* 逐主机网络详情。缺什么就报 N/A 或说明原因，不编字段。 */
+  var MB_PER_UNIT = 0.0593;   /* NET_* 是 0–100 的相对序列；换算到 MB/s 后窗口峰值落在 4.86 */
+  var NET_DETAIL = {
+    mbp: {
+      ifaces: [
+        { n: 'en0', ty: 'Wi-Fi', ip: '192.168.31.24', mac: 'a8:5c:2c:1f:0d:41', dl: 1.24, ul: 0.123 },
+        // loopback 不列：采集端 NetworkAdapter.cpp 的虚拟网卡规则会把它滤掉，
+        // 列出来就是画一个永远拿不到的行。VPN(utun) 则放行 —— 用户看得见它才有意义。
+        { n: 'utun3', ty: 'VPN', ip: '10.8.0.6', mac: null, dl: 0.18, ul: 0.06 }
+      ],
+      wifi: { state: 'on', ssid: 'Studio-5G', band: '5 GHz', rssi: -52 },
+      bt: { state: 'on', device: 'AirPods Pro' },
+      conns: [
+        { who: '10.8.0.6 · zhaoming-mbp', via: 'sshd' },
+        { who: '127.0.0.1 · TCMT-M Agent', via: 'IPC' }
+      ]
+    }
+  };
+
+  /* 客户端事件流（示意）：新条目在上，与「跟随 = 贴顶」一致 */
+  var LOGS = [
+    { t: '12:11:02.550', lv: 'ERR', src: 'push', msg: 'push failed · 502 bad gateway · retry in 15s' },
+    { t: '12:10:58.114', lv: 'INF', src: 'settings', msg: 'settings saved · interval=3s stale=3s theme=dark lang=zh-Hans' },
+    { t: '12:10:47.108', lv: 'WRN', src: 'collector', msg: 'stale data · no sample for 3.2s · banner raised' },
+    { t: '12:10:44.006', lv: 'INF', src: 'collector', msg: 'host selected · linux-node-07 · caps location=off smart=root notif=off' },
+    { t: '12:10:43.812', lv: 'WRN', src: 'caps', msg: 'location services unavailable · SSID and signal strength cannot be read' },
+    { t: '12:10:41.330', lv: 'INF', src: 'collector', msg: 'history window reset · 60 points · host linux-node-07' },
+    { t: '12:09:57.204', lv: 'WRN', src: 'process', msg: 'process list capped · top 7 by cpu · full scan skipped' },
+    { t: '12:09:55.881', lv: 'INF', src: 'process', msg: 'process sample · 16 entries · sorted by cpu desc' },
+    { t: '12:08:12.640', lv: 'INF', src: 'collector', msg: 'sample · cpu 23.4% · ram 74.0% · p-core 68°C' },
+    { t: '12:07:59.017', lv: 'WRN', src: 'disk', msg: 'SMART requires root on /dev/nvme0n1p2 · shown as unavailable' },
+    { t: '12:07:31.442', lv: 'INF', src: 'collector', msg: 'collector connected · pipe tcmt-m · proto 2' },
+    { t: '12:06:48.905', lv: 'ERR', src: 'collector', msg: 'collector disconnected · pipe closed by peer' },
+    { t: '12:06:02.118', lv: 'INF', src: 'app', msg: 'theme variant applied · dark' },
+    { t: '12:05:44.773', lv: 'INF', src: 'app', msg: 'language applied · zh-Hans · prose layer only' },
+    { t: '12:05:12.306', lv: 'INF', src: 'collector', msg: 'sample · cpu 21.8% · ram 73.6% · p-core 66°C' },
+    { t: '12:04:18.402', lv: 'INF', src: 'app', msg: 'window shown · 1280×800 · scale 1.0' },
+    { t: '12:04:18.221', lv: 'INF', src: 'app', msg: 'TCMT-M client 0.9.4 starting · avalonia' },
+    { t: '12:04:17.880', lv: 'INF', src: 'app', msg: 'config loaded · ~/.config/tcmt-m/settings.json' }
+  ];
+
+  var GROUPS = [
+    { id: 'data', en: 'Data & Refresh', zh: '数据与刷新' },
+    { id: 'push', en: 'Server Push', zh: '服务器推送' },
+    { id: 'look', en: 'Appearance & Language', zh: '外观与语言' },
+    { id: 'caps', en: 'Platform Caps', zh: '平台能力' }
+  ];
+
+  /* 左栏「硬件」展开后的子项。id 同时是 renderSpec 的分派键和各块的小标题。 */
+  var HW_PARTS = [
+    { id: 'cpu',    en: 'CPU',     zh: 'CPU' },
+    { id: 'gpu',    en: 'GPU',     zh: 'GPU' },
+    { id: 'mem',    en: 'Memory',  zh: '内存' },
+    { id: 'disk',   en: 'Disk',    zh: '磁盘' },
+    { id: 'vol',    en: 'Volumes', zh: '卷' },
+    { id: 'net',    en: 'Network', zh: '网卡' },
+    { id: 'bat',    en: 'Battery', zh: '电池' },
+    { id: 'fan',    en: 'Fan',     zh: '风扇' },
+    { id: 'sensor', en: 'Sensors', zh: '传感器' },
+    { id: 'sys',    en: 'System',  zh: '系统' }
+  ];
+  function hwLabel(id) {
+    for (var i = 0; i < HW_PARTS.length; i++) {
+      if (HW_PARTS[i].id === id) return state.lang === 'zh' ? HW_PARTS[i].zh : HW_PARTS[i].en;
+    }
+    return id;
+  }
+  /* 概览哪块面板跳到哪个部件。Top Processes 不在列——它去的是进程页，不是规格页。 */
+  var PANEL_PART = [
+    ['panel-cpu', 'cpu'], ['panel-memory', 'mem'], ['panel-power', 'bat'],
+    ['panel-thermal', 'sensor'], ['panel-network', 'net'], ['panel-disk', 'disk']
+  ];
+
+  var I18N = {
+    'nav.overview': ['总览', 'Overview'],
+    'nav.processes': ['进程', 'Processes'],
+    'nav.hardware': ['硬件', 'Hardware'],
+    'nav.settings': ['设置', 'Settings'],
+    'view.overview': ['总览', 'Overview'],
+    'view.processes': ['进程', 'Processes'],
+    'view.hardware': ['硬件', 'Hardware'],
+    'view.settings': ['设置', 'Settings'],
+    'hw.sub': ['静态规格：采集端没提供、或这台机器没有的项，报 N/A 并说明原因，不编值',
+               'Static specs — anything the collector does not provide, or this machine does not have, reads N/A with a reason'],
+    'hw.jump': ['查看该部件的规格', 'Open this component’s spec'],
+    'hw.note.disk': ['macOS 把启动盘拆成两个卷：/ 是只读系统快照（每次系统更新重建），数据都在这个卷上。这里报的是数据卷——只有它带真实可用空间。「分区」在 macOS 侧还没接进采集端，故报 N/A。',
+                     'macOS splits the boot disk into two volumes: / is the read-only system snapshot (rebuilt on every OS update) and the data lives on this one. This is the data volume — the only one with real free space. “Partitions” is not wired up on macOS yet, hence N/A.'],
+    'hw.note.sensor': ['温度来自 SMC。IPC 线格式里没有逐核占用，所以这里画的是逐核温度。',
+                       'Readings come from the SMC. The IPC wire format carries no per-core utilisation, so these are per-core temperatures.'],
+    'ov.sub': ['本机硬件实时读数，越界值才着色', 'Live hardware readings — only out-of-range values are coloured'],
+    'ov.meta': ['上次采样 0.8 s 前 · 间隔 3 s', 'Last sample 0.8 s ago · interval 3 s'],
+    'pr.sub': ['选中一行查看详情，越界占用按阈值着色', 'Select a row for details — out-of-range load is coloured by threshold'],
+    'st.sub': ['左选分组、右改字段，改动即时生效', 'Pick a group on the left, edit fields on the right'],
+    'cpu.user': ['用户 / 系统', 'User / System'],
+    'gpu.temp': ['温度', 'Temperature'],
+    'gpu.vram': ['显存', 'VRAM'],
+    'cpu.pcore': ['效能核频率', 'E-core clock'],
+    'mem.pressure': ['内存压力', 'Memory pressure'],
+    'mem.wired': ['联动 / 已压缩', 'Wired / Compressed'],
+    'power.health': ['电池健康', 'Battery health'],
+    'power.state': ['电源', 'Power'],
+    'power.battery': ['电池供电', 'On battery'],
+    'power.left': ['预计可用', 'Time left'],
+    'th.pcore': ['CPU 性能核', 'CPU P-core'],
+    'th.ecore': ['CPU 效能核', 'CPU E-core'],
+    'net.peak': ['窗口峰值', 'Window peak'],
+    'disk.smart': ['SMART 状态', 'SMART status'],
+    'disk.pass': ['已通过', 'Verified'],
+    'disk.temp': ['盘温', 'Drive temp'],
+    'disk.power': ['通电时长', 'Power-on hours'],
+    'th.process': ['进程', 'Process'],
+    'th.user': ['用户', 'User'],
+    'th.mem': ['内存', 'Memory'],
+    'th.threads': ['线程', 'Threads'],
+    'th.state': ['状态', 'State'],
+    'pr.filter': ['过滤进程名或 PID', 'Filter by name or PID'],
+    'pr.shown': ['显示', 'Showing'],
+    'pr.detail': ['Process Detail', 'Process Detail'],
+    'pr.none': ['无匹配进程', 'No matching process'],
+    'pr.lv.warn': ['警示', 'Warning'],
+    'pr.lv.crit': ['临界', 'Critical'],
+    'pr.hint': ['选中左侧任意一行查看该进程详情。', 'Select any row on the left to inspect that process.'],
+    'pr.path': ['路径', 'Path'],
+    'pr.cputime': ['CPU 时间', 'CPU time'],
+    'pr.started': ['启动时刻', 'Started'],
+    'pr.vmem': ['虚拟内存', 'Virtual memory'],
+    'pr.rss': ['常驻内存', 'Resident memory'],
+    'pr.trend': ['近 60 s CPU 走势', 'CPU · last 60 s'],
+    'pr.state.run': ['运行', 'Running'],
+    'pr.state.sleep': ['休眠', 'Sleeping'],
+    'st.save': ['保存设置', 'Save settings'],
+    'st.saved': ['已保存', 'Saved'],
+    'sb.live': ['实时', 'Live'],
+    'cpu.cores.note': ['逐核温度，非占用：IPC 线格式没有逐核占用数据', 'Per-core temperature, not load: the IPC wire format carries no per-core utilisation'],
+    'pr.wire.note': ['用户 · 线程 · 状态 · 路径 · CPU 时间 · 启动时刻为示意值：IPC 线格式现只有 PID · 名称 · CPU · 内存', 'User · threads · state · path · CPU time · started are illustrative: the IPC wire format currently carries only PID · name · CPU · memory'],
+    'pr.end.note': ['结束进程待 host 实现——有 handler 才显示', 'End process awaits a host handler — shown only when one exists'],
+    'stale.banner': ['数据停摆：距上次采样已超过 3 s，读数可能已过期。', 'Data stalled: no sample for over 3 s — readings may be stale.'],
+    'offline.banner': ['尚未收到采集端的样本：读数显示为「—」，不按 0 计。', 'No sample has arrived from the collector yet — readings show “—” rather than 0.'],
+    'sb.offline': ['未接收样本', 'No samples'],
+    'pr.offline': ['尚未收到样本，进程列表在等待采集端。', 'No sample yet — the process list is waiting on the collector.'],
+    'pr.detail.offline': ['尚未收到样本，进程详情在等待采集端。', 'No sample yet — process detail is waiting on the collector.'],
+    'nw.iface.offline': ['尚未收到样本，逐接口读数在等待采集端。', 'No sample yet — per-interface readings are waiting on the collector.'],
+    'nw.conn.offline': ['尚未收到样本，连接列表在等待采集端。', 'No sample yet — the connection list is waiting on the collector.'],
+    'nw.wireless.offline': ['尚未收到样本，无线状态在等待采集端——不是没有无线网卡。', 'No sample yet — wireless state is waiting on the collector; this is not a missing adapter.'],
+    'sb.lost': ['数据源失联', 'Source lost'],
+    'sb.sample': ['示意数据 · 非实机采样', 'Illustrative data · not a real capture'],
+    'power.pct': ['电量', 'battery'],
+    'power.ac': ['交流供电', 'On AC power'],
+    'power.none': ['该主机未报告电池设备', 'This host reports no battery'],
+    'fan.none': ['该主机未暴露风扇转速', 'No fan tachometer exposed'],
+    'smart.root': ['需要 root 权限', 'Requires root'],
+    'st.caps.root': ['需要 root 权限', 'Requires root'],
+    'st.interval': ['采样间隔', 'Sample interval'],
+    'st.interval.h': ['1–60 秒，超界即钳制。终端与 GUI 共用同一数据源。', 'Clamped to 1–60 s. Terminal and GUI share one data source.'],
+    'st.staleAlert': ['数据停摆告警', 'Stale-data alert'],
+    'st.staleAlert.h': ['超过阈值未采到数据时，状态条与视图顶部同时提示。', 'Warns in the status bar and at the top of a view.'],
+    'st.staleAfter': ['停摆判定阈值', 'Stale threshold'],
+    'st.pushOn': ['启用推送', 'Enable push'],
+    'st.url': ['服务器地址', 'Server URL'],
+    'st.url.h': ['需以 https:// 开头。', 'Must start with https://.'],
+    'st.url.bad': ['地址需以 https:// 开头。', 'URL must start with https://.'],
+    'st.insecure': ['跳过 TLS 校验', 'Skip TLS verify'],
+    'st.insecure.h': ['开启后连接不校验证书，仅用于内网自签环境。', 'Certificate checks are skipped — self-signed intranet only.'],
+    'st.insecure.warn': ['已关闭证书校验，状态条将保留一条弱化告警。', 'Certificate verification is off; a muted warning stays in the status bar.'],
+    'st.pushInterval': ['上报间隔', 'Push interval'],
+    'st.theme': ['主题变体', 'Theme variant'],
+    'st.theme.system': ['跟随系统', 'System'],
+    'st.theme.dark': ['深色', 'Dark'],
+    'st.theme.light': ['浅色', 'Light'],
+    'st.lang': ['语言', 'Language'],
+    'st.gray': ['灰阶模式', 'Grayscale mode'],
+    'st.gray.h': ['对齐终端的 NO_COLOR：语义色退为明度差，越界改由字重与下划线承载。', 'Mirrors NO_COLOR: semantics fall back to weight and underline.'],
+    'st.on': ['已开启', 'On'],
+    'st.off': ['已关闭', 'Off'],
+    'st.caps.on': ['已接入', 'Available'],
+    'st.caps.off': ['不可用', 'Unavailable'],
+    'hw.cores': ['核心', 'Cores'],
+    'hw.pcore': ['性能核', 'P-cores'],
+    'hw.ecore': ['能效核', 'E-cores'],
+    'hw.baseclock': ['基频', 'Base clock'],
+    'hw.ht': ['超线程', 'Hyper-threading'],
+    'hw.virt': ['虚拟化', 'Virtualisation'],
+    'hw.model': ['型号', 'Model'],
+    'hw.brand': ['品牌', 'Brand'],
+    'hw.vram': ['显存', 'VRAM'],
+    'hw.unified': ['统一内存', 'unified'],
+    'hw.coreclock': ['核心频率', 'Core clock'],
+    'hw.isvirt': ['虚拟设备', 'Virtual device'],
+    'hw.yes': ['是', 'Yes'],
+    'hw.no': ['否', 'No'],
+    'hw.totalmem': ['总容量', 'Total'],
+    'hw.memtype': ['内存类型', 'Type'],
+    'hw.memspeed': ['内存速率', 'Speed'],
+    'hw.bus': ['接口', 'Interface'],
+    'hw.fw': ['固件', 'Firmware'],
+    'hw.serial': ['序列号', 'Serial'],
+    'hw.mac': ['MAC', 'MAC'],
+    'hw.linkspeed': ['链路速率', 'Link speed'],
+    'hw.os': ['系统', 'OS'],
+    'hw.hwmodel': ['主机型号', 'Hardware model'],
+    'hw.appver': ['应用版本', 'App version'],
+    'hw.disk.n': ['磁盘', 'Disk'],
+    'hw.net.n': ['网卡', 'Adapter'],
+    'hw.logical': ['逻辑核', 'Logical cores'],
+    'hw.capacity': ['容量', 'Capacity'],
+    'hw.systemdisk': ['系统盘', 'System disk'],
+    /* 「挂载点」不是生造的中性词：Win32 定义里盘符(local) / 卷 GUID 路径 / 挂载文件夹
+       都算 volume mount point，macOS 的 / 与 /Volumes/xxx 同样落得进去。
+       见 https://learn.microsoft.com/windows/win32/fileio/naming-a-volume */
+    'hw.mounts': ['挂载点', 'Mount points'],
+    'hw.partlabels': ['分区', 'Partitions'],
+    'hw.health': ['健康度', 'Health'],
+    'hw.wear': ['磨损', 'Wear'],
+    'hw.smartenabled': ['SMART 启用', 'SMART enabled'],
+    'hw.smartsupported': ['SMART 支持', 'SMART supported'],
+    'hw.poweron': ['通电时长', 'Power-on time'],
+    'hw.powercycles': ['通电次数', 'Power cycles'],
+    'hw.written': ['累计写入', 'Written'],
+    'hw.read': ['累计读取', 'Read'],
+    'hw.realloc': ['重映射扇区', 'Reallocated sectors'],
+    'hw.pending': ['待定扇区', 'Pending sectors'],
+    'hw.uncorrect': ['不可纠正错误', 'Uncorrectable errors'],
+    'hw.smart.attrs': ['原始属性', 'Raw attributes'],
+    'hw.smart.col.id': ['ID', 'ID'],
+    'hw.smart.col.attr': ['属性', 'Attribute'],
+    'hw.smart.col.cur': ['当前', 'Current'],
+    'hw.smart.col.worst': ['最差', 'Worst'],
+    'hw.smart.col.thr': ['阈值', 'Threshold'],
+    'hw.smart.col.raw': ['原始值', 'Raw'],
+    'hw.smart.offline': ['尚未收到样本，SMART 属性表在等待采集端。', 'No sample yet — the SMART attribute table is waiting on the collector.'],
+    'hw.vol.n': ['卷', 'Volume'],
+    'hw.label': ['名称', 'Label'],
+    'hw.fs': ['文件系统', 'Filesystem'],
+    'hw.used': ['已用', 'Used'],
+    'hw.free': ['可用', 'Free'],
+    'hw.batterycycles': ['循环次数', 'Cycle count'],
+    'hw.design': ['设计容量', 'Design capacity'],
+    'hw.maxcap': ['最大容量', 'Max capacity'],
+    'hw.rpm': ['转速', 'Speed'],
+    'hw.ip': ['IPv4', 'IPv4'],
+    'hw.tpmmanufacturer': ['厂商', 'Manufacturer'],
+    'hw.tpmstatus': ['状态', 'Status'],
+    'hw.tpmselftest': ['自检', 'Self-test'],
+    'hw.enabled': ['已启用', 'Enabled'],
+    'hw.active': ['已激活', 'Active'],
+    'hw.na.collector': ['采集端未上报此字段。', 'Not reported by the collector.'],
+    'nav.network': ['网络', 'Network'],
+    'nav.log': ['日志', 'Log'],
+    'view.network': ['网络', 'Network'],
+    'view.log': ['日志', 'Log'],
+    'nw.sub': ['逐接口读数与无线状态；缺能力的位置保留并说明原因', 'Per-interface readings and wireless state — missing capabilities stay, with a reason'],
+    'nw.meta': ['窗口 60 点 · 双序列按窗口峰值归一', '60-point window · both series normalised to the window peak'],
+    'nw.th.name': ['接口', 'Interface'],
+    'nw.th.type': ['类型', 'Type'],
+    'nw.th.client': ['客户端', 'Client'],
+    'nw.th.via': ['经由', 'Via'],
+    'nw.th.state': ['状态', 'State'],
+    'nw.iface.unit': ['个接口', 'interfaces'],
+    'nw.iface.none': ['no interfaces', 'no interfaces'],
+    'nw.conn.unit': ['个连接', 'connections'],
+    'nw.conn.none': ['此刻无客户端连接', 'No clients connected right now'],
+    'nw.conn.active': ['活动', 'Active'],
+    'nw.down': ['下行', 'Down'],
+    'nw.up': ['上行', 'Up'],
+    'nw.norm': ['两条线共用一个刻度', 'One shared scale for both lines'],
+    'nw.window': ['窗口 60 s', '60 s window'],
+    'nw.now': ['当前', 'Now'],
+    'nw.peak': ['窗口峰值', 'Window peak'],
+    'nw.wifi.on': ['已连接', 'Connected'],
+    'nw.wifi.on.note': ['SSID 与信号强度已读取，无需操作。', 'SSID and signal strength available — nothing to do.'],
+    'nw.wifi.off': ['未连接', 'Disconnected'],
+    'nw.wifi.off.note': ['用系统 Wi-Fi 菜单连接任一网络，此面板会自动更新。', 'Join a network from the system Wi-Fi menu; this panel updates on its own.'],
+    'nw.wifi.loc': ['SSID 读不到', 'SSID unreadable'],
+    'nw.wifi.loc.note': ['该主机未提供定位服务，SSID 与信号强度读不到——不是没连上。', 'This host exposes no location service, so SSID and signal strength cannot be read — this is not a disconnection.'],
+    'nw.wifi.denied': ['定位权限被拒绝', 'Location access denied'],
+    'nw.wifi.denied.note': ['在 系统设置 › 隐私与安全性 › 定位服务 里为本应用勾选允许，才会显示 SSID。', 'Allow this app under Location Services (System Settings › Privacy & Security) to see the SSID.'],
+    'nw.wifi.nohw': ['未检测到无线网卡', 'No wireless adapter'],
+    'nw.wifi.nohw.note': ['该主机没有无线网卡，无线信息不可读。', 'This host has no wireless adapter, so wireless information cannot be read.'],
+    'nw.bt.on': ['已连接', 'Connected'],
+    'nw.bt.nohw': ['未检测到蓝牙适配器', 'No Bluetooth adapter'],
+    'nw.bt.device': ['设备', 'Device'],
+    'nw.bt.none': ['未连接设备', 'No device connected'],
+    'lg.sub': ['客户端事件流：新条目在上，滚动离开顶部即暂停跟随', 'Client event stream — newest first; scrolling away from the top pauses follow'],
+    'lg.resume': ['恢复跟随', 'Resume follow'],
+    'lg.follow': ['跟随中', 'Following'],
+    'lg.paused': ['已暂停跟随', 'Follow paused'],
+    'lg.level.all': ['全部', 'All'],
+    'lg.unit': ['条', 'entries'],
+    'lg.empty': ['采集侧连上后事件流会出现在这里。', 'Events appear here once the collector connects.'],
+    'lg.empty.level': ['当前级别下没有事件——屏幕是空的，是因为级别挡住了它，不是没写。', 'No events at this level — the filter is hiding them; the stream is not empty.']
+  };
+
+  var root = document.getElementById('win');
+  var state = {
+    view: read('tcmt.view', 'overview'),
+    theme: read('tcmt.theme', 'dark'),
+    lang: read('tcmt.lang', 'zh'),
+    host: 0,   /* 客户端只盯本机，没有机型切换；旧存档里的 tcmt.host 不再读取 */
+    /* 数据源三态，点状态条芯片轮换：live 实时 · stale 停摆 · offline 还没收到过样本 */
+    src: 'live',
+    gray: false,
+    group: 'data',
+    /* 左栏「硬件」展开组：hwOpen 管展不展开，hwPart 是当前在看哪个部件 */
+    hwOpen: false,
+    hwPart: 'cpu',
+    selected: 1183,
+    filter: '',
+    sortKey: 'cpu',
+    sortDir: 'desc',
+    logLevel: 'all',
+    logFollow: true
+  };
+
+  function read(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function write(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function t(key) { var e = I18N[key]; return e ? (state.lang === 'zh' ? e[0] : e[1]) : key; }
+
+  /* ── 阈值口径（TUI #5 表） ──────────────────────────────────────────── */
+  function level(value, warn, crit, lowerIsWorse) {
+    if (lowerIsWorse) {
+      if (value <= crit) return 'crit';
+      if (value <= warn) return 'warn';
+      return 'ok';
+    }
+    if (value >= crit) return 'crit';
+    if (value >= warn) return 'warn';
+    return 'ok';
+  }
+  function meterClass(lv) { return lv === 'crit' ? 'is-crit' : (lv === 'warn' ? 'is-warn' : ''); }
+  function valueClass(lv) { return lv === 'crit' ? 'v-crit' : (lv === 'warn' ? 'v-warn' : ''); }
+  function fmtMem(mb) { return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb + ' MB'; }
+
+  /* ── 语言：只翻散文层，面板名与指标名保持英文 ───────────────────────── */
+  function applyLang() {
+    document.documentElement.lang = state.lang === 'zh' ? 'zh-Hans' : 'en';
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      var k = el.getAttribute('data-i18n');
+      if (I18N[k]) el.textContent = t(k);
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+      var k = el.getAttribute('data-i18n-ph');
+      if (I18N[k]) el.placeholder = t(k);
+    });
+    /* 概览面板那个跳转记号的提示语跟着语言走 */
+    document.querySelectorAll('.panel.is-link > .panel-h').forEach(function (h) { h.title = t('hw.jump'); });
+  }
+
+  /* ── 视图 ───────────────────────────────────────────────────────────── */
+  function setView(name) {
+    state.view = name; write('tcmt.view', name);
+    document.querySelectorAll('.view').forEach(function (v) { v.classList.toggle('is-on', v.id === 'view-' + name); });
+    document.querySelectorAll('.nav-item').forEach(function (b) { b.setAttribute('aria-current', String(b.dataset.view === name)); });
+    renderNavHw(); renderHwView();
+    var views = document.getElementById('views');
+    views.scrollTop = 0;
+  }
+
+  /* ── 主题 / 灰阶 / 停摆 ─────────────────────────────────────────────── */
+  function applyTheme() {
+    root.dataset.theme = state.theme;
+    document.querySelectorAll('[data-theme-opt]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.themeOpt === state.theme));
+    });
+  }
+  function applyGray() { root.classList.toggle('is-gray', state.gray); }
+  /* 数据源三态。offline = 还没收到过样本：读数一律「—」，不按 0 计——空窗不是 0 读数，
+     判据落在「有没有样本」而不是「数值是不是 0」，跟客户端 HasSample 一致。 */
+  function applyStale() {
+    var offline = state.src === 'offline';
+    var stale = state.src === 'stale';
+
+    root.classList.toggle('is-stale', stale);
+    root.classList.toggle('is-offline', offline);
+    document.querySelectorAll('[data-stale]').forEach(function (b) { b.hidden = !stale; });
+    document.querySelectorAll('[data-offline]').forEach(function (b) { b.hidden = !offline; });
+
+    /* 能写成文字的读数：offline 时盖成「—」，实时值记在 dataset.live 里。
+       渲染函数刚写进来的新值会被重新记下，所以换过主机再回到实时也不会还原成旧数。 */
+    document.querySelectorAll('[data-reading], [data-reading-blank]').forEach(function (el) {
+      if (!offline) {
+        if (el.dataset.live !== undefined) { el.textContent = el.dataset.live; }
+        el.dataset.live = el.textContent;
+        return;
+      }
+      var placeholder = '—';
+      if (el.hasAttribute('data-reading-blank')) { placeholder = el.getAttribute('data-reading-blank') || ''; }
+      if (el.textContent !== placeholder) { el.dataset.live = el.textContent; }
+      el.textContent = placeholder;
+    });
+
+    document.getElementById('sb-live').textContent =
+      offline ? t('sb.offline') : (stale ? t('sb.lost') : t('sb.live'));
+    document.getElementById('sb-tick').textContent = (offline || stale) ? '—' : '3.0s';
+    document.getElementById('src-chip').setAttribute('aria-pressed', String(offline || stale));
+  }
+
+  /* ── 图表：填充面积 + 折线 ──────────────────────────────────────────── */
+  function spark(el, series) {
+    var W = 100, H = 40;
+    var pts = series.map(function (v, i) {
+      return [i * (W / (series.length - 1)), H - (v / 100) * (H - 4) - 2];
+    });
+    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(2) + ',' + p[1].toFixed(2); }).join(' ');
+    var area = line + ' L' + W + ',' + H + ' L0,' + H + ' Z';
+    el.innerHTML = '<path class="area" d="' + area + '"></path><path class="line" d="' + line + '"></path>';
+  }
+
+  /* 双序列：两条线共用一个刻度（窗口峰值归一），否则上下行无法互相比较 */
+  function spark2(el, down, up) {
+    var W = 100, H = 40;
+    var peak = Math.max(Math.max.apply(null, down), Math.max.apply(null, up)) || 1;
+    function path(series) {
+      var pts = series.map(function (v, i) {
+        return [i * (W / (series.length - 1)), H - (v / peak) * (H - 4) - 2];
+      });
+      var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(2) + ',' + p[1].toFixed(2); }).join(' ');
+      return { line: line, area: line + ' L' + W + ',' + H + ' L0,' + H + ' Z' };
+    }
+    var d = path(down), u = path(up);
+    el.innerHTML =
+      '<path class="area" d="' + d.area + '"></path><path class="line" d="' + d.line + '"></path>' +
+      '<path class="up area" d="' + u.area + '"></path><path class="up line" d="' + u.line + '"></path>';
+  }
+
+  /* ── 进程表 ─────────────────────────────────────────────────────────── */
+  function visibleProcs() {
+    var q = state.filter.trim().toLowerCase();
+    var rows = PROCS.filter(function (p) {
+      return !q || p.name.toLowerCase().indexOf(q) >= 0 || String(p.pid).indexOf(q) === 0;
+    });
+    var dir = state.sortDir === 'asc' ? 1 : -1;
+    rows.sort(function (a, b) {
+      var k = state.sortKey, x = a[k], y = b[k];
+      if (typeof x === 'string') return x.localeCompare(y) * dir;
+      return (x - y) * dir;
+    });
+    return rows;
+  }
+  function procRow(p, withUser) {
+    var lv = level(p.cpu, 20, 50, false);
+    var tr = document.createElement('tr');
+    tr.dataset.pid = p.pid;
+    tr.setAttribute('aria-selected', String(p.pid === state.selected));
+    tr.tabIndex = 0;
+    tr.innerHTML =
+      '<td class="r num u">' + p.pid + '</td>' +
+      '<td><span class="pname"><b>' + p.name + '</b><span>' + p.path.split('/').slice(-1)[0] + '</span></span></td>' +
+      (withUser ? '' : '<td class="r u">' + p.user + '</td>') +
+      '<td class="r num ' + valueClass(lv) + '">' + p.cpu.toFixed(1) + '%</td>' +
+      '<td class="r num">' + fmtMem(p.mem) + '</td>' +
+      (withUser ? '' :
+        '<td class="r num u">' + p.thr + '</td>' +
+        '<td class="u">' + t(p.state === 'run' ? 'pr.state.run' : 'pr.state.sleep') + '</td>');
+    tr.addEventListener('click', function () { state.selected = p.pid; renderProcs(); renderDetail(); });
+    tr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.selected = p.pid; renderProcs(); renderDetail(); } });
+    return tr;
+  }
+  function renderProcs() {
+    var offline = state.src === 'offline';
+    var rows = visibleProcs();
+    var body = document.querySelector('#proc-table tbody');
+    body.textContent = '';
+    if (offline) {
+      /* 还没收到样本：列表本身也是采样结果，整表清空给理由，不拿示意进程顶替。
+         这里不能早退——后面的计数、排序指示与 Top 表仍要渲染。 */
+      var off = document.createElement('tr');
+      off.innerHTML = '<td colspan="7"><div class="empty">' + t('pr.offline') + '</div></td>';
+      body.appendChild(off);
+    } else if (!rows.length) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="7"><div class="empty">' + t('pr.none') + '</div></td>';
+      body.appendChild(tr);
+    } else {
+      rows.forEach(function (p) { body.appendChild(procRow(p, false)); });
+    }
+    document.getElementById('proc-shown').textContent = offline ? '—' : rows.length;
+    document.getElementById('proc-total').textContent = offline ? '—' : PROCS.length;
+    document.getElementById('nav-proc-count').textContent = offline ? '—' : PROCS.length;
+    document.querySelectorAll('#proc-table th.sortable').forEach(function (th) {
+      if (th.dataset.sort === state.sortKey) th.setAttribute('aria-sort', state.sortDir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+
+    var top = document.querySelector('#top-table tbody');
+    top.textContent = '';
+    if (offline) {
+      /* 还没收到样本时列表为空——不是「0 个进程」，客户端同样是空列表加说明 */
+      var none = document.createElement('tr');
+      none.innerHTML = '<td colspan="5"><div class="empty">' + t('pr.offline') + '</div></td>';
+      top.appendChild(none);
+      return;
+    }
+    PROCS.slice().sort(function (a, b) { return b.cpu - a.cpu; }).slice(0, 5).forEach(function (p) {
+      var lv = level(p.cpu, 20, 50, false);
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="r num u">' + p.pid + '</td>' +
+        '<td><span class="pname"><b>' + p.name + '</b></span></td>' +
+        '<td class="r u">' + p.user + '</td>' +
+        '<td class="r num ' + valueClass(lv) + '">' + p.cpu.toFixed(1) + '%</td>' +
+        '<td class="r num">' + fmtMem(p.mem) + '</td>';
+      tr.addEventListener('click', function () {
+        state.selected = p.pid; state.filter = ''; document.getElementById('proc-filter').value = '';
+        renderProcs(); renderDetail(); setView('processes');
+      });
+      top.appendChild(tr);
+    });
+  }
+
+  function renderDetail() {
+    var host = document.getElementById('detail-body');
+    if (state.src === 'offline') {
+      /* 详情页每一行都是采样值：没样本时一个都不给，也不留上一轮的残影 */
+      host.innerHTML = '<p class="empty">' + t('pr.detail.offline') + '</p>';
+      return;
+    }
+    var p = PROCS.filter(function (x) { return x.pid === state.selected; })[0];
+    if (!p) {
+      host.innerHTML = '<p class="empty">' + t('pr.hint') + '</p>';
+      return;
+    }
+    var lv = level(p.cpu, 20, 50, false);
+    var trend = [];
+    for (var i = 0; i < 60; i++) {
+      trend.push(Math.max(2, Math.min(100, p.cpu * (0.55 + 0.45 * Math.sin(i / 4.1) + 0.18 * Math.sin(i / 1.7)))));
+    }
+    var lvTag = lv === 'ok'
+      ? '<span class="kpi-u">' + p.cpu.toFixed(1) + '%</span>'
+      : '<span class="kpi-u ' + valueClass(lv) + '">' + p.cpu.toFixed(1) + '% · ' + t(lv === 'crit' ? 'pr.lv.crit' : 'pr.lv.warn') + '</span>';
+    host.innerHTML =
+      '<div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title)">' + p.cpu.toFixed(1) + '</span>' + lvTag + '</div>' +
+      '<div class="meter ' + meterClass(lv) + '" role="img" aria-label="进程 CPU 占用"><i style="width:' + Math.min(100, p.cpu) + '%"></i></div>' +
+      '<svg class="spark" id="detail-spark" viewBox="0 0 100 40" preserveAspectRatio="none" aria-label="' + t('pr.trend') + '"></svg>' +
+      '<dl class="kv-list">' +
+      '<div class="kv"><dt>PID</dt><dd>' + p.pid + '</dd></div>' +
+      '<div class="kv"><dt>' + t('th.user') + '</dt><dd>' + p.user + '</dd></div>' +
+      '<div class="kv"><dt>' + t('th.state') + '</dt><dd>' + t(p.state === 'run' ? 'pr.state.run' : 'pr.state.sleep') + '</dd></div>' +
+      '<div class="kv"><dt>' + t('th.threads') + '</dt><dd>' + p.thr + '</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.rss') + '</dt><dd>' + fmtMem(p.mem) + '</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.vmem') + '</dt><dd>' + p.vmem.toFixed(1) + ' GB</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.cputime') + '</dt><dd>' + p.cputime + '</dd></div>' +
+      '<div class="kv"><dt>' + t('pr.started') + '</dt><dd>' + p.started + '</dd></div>' +
+      '</dl>' +
+      '<div class="kv" style="align-items:flex-start"><dt>' + t('pr.path') + '</dt></div>' +
+      '<p class="num" style="margin:0;font-size:var(--fs-micro);color:var(--dim);word-break:break-all;line-height:1.5">' + p.path + '</p>' +
+      '<p class="note-dim">' + t('pr.end.note') + '</p>';
+    spark(document.getElementById('detail-spark'), trend);
+  }
+
+  /* ── 平台能力：同一套 IA，按主机能力降级，不假装有 ─────────────────── */
+  function renderHost() {
+    var h = HOSTS[state.host];
+    document.getElementById('host-name').textContent = h.name;
+    document.getElementById('host-spec').textContent = h.spec;
+    document.querySelector('.win-bar').classList.toggle('is-mac', !!h.mac);
+    document.getElementById('cpu-note').textContent = '// ' + h.cores.length + ' 核 · ' + h.freq;
+    document.getElementById('cpu-cores').innerHTML = h.cores.map(function (v) {
+      return '<span class="core ' + meterClass(level(v, 60, 80, false)) + '"><i style="height:' + v + '%"></i></span>';
+    }).join('');
+    document.getElementById('net-note').textContent = '// ' + h.net.iface;
+    document.getElementById('net-ip').textContent = h.net.ip;
+
+    var power = document.getElementById('power-body');
+    if (h.battery) {
+      var blv = level(h.battery.pct, 50, 20, true);
+      power.innerHTML =
+        '<div class="kpi"><span class="kpi-v ' + valueClass(blv) + '">' + h.battery.pct + '</span><span class="kpi-u">% ' + t('power.pct') + '</span></div>' +
+        '<div class="meter ' + meterClass(blv) + '"><i style="width:' + h.battery.pct + '%"></i></div>' +
+        '<dl class="kv-list">' +
+        '<div class="kv"><dt>' + t('power.health') + '</dt><dd>' + h.battery.health + '</dd></div>' +
+        '<div class="kv"><dt>' + t('power.state') + '</dt><dd>' + t('power.battery') + '</dd></div>' +
+        '<div class="kv"><dt>' + t('power.left') + '</dt><dd>' + h.battery.left + '</dd></div>' +
+        '</dl>';
+    } else {
+      power.innerHTML =
+        '<div class="kpi"><span class="kpi-v" style="color:var(--dim)">N/A</span><span class="kpi-u">—</span></div>' +
+        '<div class="meter"><i style="width:0"></i></div>' +
+        '<dl class="kv-list">' +
+        '<div class="kv"><dt>' + t('power.health') + '</dt><dd>N/A</dd></div>' +
+        '<div class="kv"><dt>' + t('power.state') + '</dt><dd>' + t('power.ac') + '</dd></div>' +
+        '<div class="kv"><dt>' + t('power.left') + '</dt><dd>N/A</dd></div>' +
+        '</dl>' +
+        '<p class="note-dim">// ' + t('power.none') + '</p>';
+    }
+
+    var rows = h.sensors.map(function (s) {
+      return '<div class="kv"><dt>' + s[0] + '</dt><dd class="' + (s[2] ? valueClass(s[2]) : '') + '">' + s[1] + ' °C</dd></div>';
+    }).join('');
+    var fan = h.fans
+      ? '<div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title)">' + h.fanRpm + '</span><span class="kpi-u">RPM · ' + h.fans + '</span></div>'
+      : '<div class="kpi"><span class="kpi-v" style="font-size:var(--fs-title);color:var(--dim)">N/A</span><span class="kpi-u">' + t('fan.none') + '</span></div>';
+    document.getElementById('thermal-body').innerHTML = '<dl class="kv-list">' + rows + '</dl><hr class="rule" />' + fan;
+
+    var d = h.disk;
+    var smart = d.smart === 'ok'
+      ? '<dd class="v-ok">' + t('disk.pass') + '</dd>'
+      : '<dd>' + (d.smart === 'root' ? t('smart.root') : 'N/A') + '</dd>';
+    document.getElementById('disk-body').innerHTML =
+      '<div class="kv"><dt>' + d.vol + '</dt><dd>' + d.used + ' / ' + d.size + ' GB</dd></div>' +
+      '<div class="meter"><i style="width:' + Math.round(d.used / d.size * 100) + '%"></i></div>' +
+      '<dl class="kv-list">' +
+      '<div class="kv"><dt>' + t('disk.smart') + '</dt>' + smart + '</div>' +
+      '<div class="kv"><dt>' + t('disk.temp') + '</dt><dd>' + d.temp + ' °C</dd></div>' +
+      '<div class="kv"><dt>' + t('disk.power') + '</dt><dd>' + d.hours + '</dd></div>' +
+      '</dl>';
+
+    renderNetwork();
+  }
+
+  /* ── 网络：能力给到什么就显示什么，其余报 N/A 并说明原因 ────────────── */
+  function fmtRate(mbps) {
+    if (!mbps) return '0 B/s';
+    return mbps >= 1 ? mbps.toFixed(2) + ' MB/s' : Math.round(mbps * 1000) + ' KB/s';
+  }
+  function renderNetwork() {
+    var offline = state.src === 'offline';
+    var net = NET_DETAIL[HOSTS[state.host].id];
+
+    var body = document.querySelector('#iface-table tbody');
+    body.textContent = '';
+    if (offline) {
+      /* 还没收到样本：逐接口的地址与速率一个都没有，不拿示意值顶替 */
+      body.innerHTML = '<tr><td colspan="6"><div class="empty">' + t('nw.iface.offline') + '</div></td></tr>';
+    } else if (!net.ifaces.length) {
+      body.innerHTML = '<tr><td colspan="6"><div class="empty">' + t('nw.iface.none') + '</div></td></tr>';
+    } else {
+      net.ifaces.forEach(function (f) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num name">' + f.n + '</td>' +
+          '<td class="u hide-sm">' + f.ty + '</td>' +
+          '<td class="num u hide-sm">' + f.ip + '</td>' +
+          '<td class="num u hide-sm">' + (f.mac || '—') + '</td>' +
+          '<td class="r num">' + fmtRate(f.dl) + '</td>' +
+          '<td class="r num">' + fmtRate(f.ul) + '</td>';
+        body.appendChild(tr);
+      });
+    }
+    document.getElementById('iface-note').textContent = offline ? '// —' : '// ' + net.ifaces.length + ' ' + t('nw.iface.unit');
+
+    var wifi = net.wifi;
+    var key = { on: 'nw.wifi.on', off: 'nw.wifi.off', loc: 'nw.wifi.loc', denied: 'nw.wifi.denied', nohw: 'nw.wifi.nohw' }[wifi.state] || 'nw.wifi.nohw';
+    var live = wifi.state === 'on';
+    var rows;
+    if (offline) {
+      /* 没收到样本 ≠ 没有无线网卡。这里不渲染任何能力断言（on / off / nohw），
+         值位一律「—」，说明在等采集端——把「还没听说」画成「这机器没有」是编数据。 */
+      rows =
+        '<div class="kv"><dt>Wi-Fi</dt><dd>—</dd></div>' +
+        '<div class="kv"><dt>SSID</dt><dd>—</dd></div>' +
+        '<div class="kv"><dt>Bluetooth</dt><dd>—</dd></div>';
+    } else {
+      rows =
+        '<div class="kv"><dt>Wi-Fi</dt><dd class="' + (live ? 'v-ok' : '') + '">' + t(key) + '</dd></div>' +
+        '<div class="kv"><dt>SSID</dt><dd>' + (live ? wifi.ssid + ' · ' + wifi.band + ' · ' + wifi.rssi + ' dBm' : 'N/A') + '</dd></div>' +
+        '<div class="kv"><dt>Bluetooth</dt><dd>' + (net.bt.state === 'on' ? t('nw.bt.on') : t('nw.bt.nohw')) + '</dd></div>' +
+        (net.bt.state === 'on' ? '<div class="kv"><dt>' + t('nw.bt.device') + '</dt><dd>' + (net.bt.device || t('nw.bt.none')) + '</dd></div>' : '');
+    }
+    document.getElementById('wireless-body').innerHTML =
+      '<dl class="kv-list">' + rows + '</dl><p class="note-dim">' + (offline ? t('nw.wireless.offline') : t(key + '.note')) + '</p>';
+
+    var down = NET_DOWN.map(function (v) { return v * MB_PER_UNIT; });
+    var up = NET_UP.map(function (v) { return v * MB_PER_UNIT; });
+    var last = down.length - 1;
+    spark2(document.getElementById('traffic-spark'), down, up);
+    document.getElementById('traffic-note').textContent = '// ' + t('nw.window');
+    document.getElementById('traffic-now').textContent = offline ? '—' : '↓' + fmtRate(down[last]) + '  ↑' + fmtRate(up[last]);
+    document.getElementById('traffic-peak').textContent = offline ? '—' : '↓' + fmtRate(Math.max.apply(null, down)) + '  ↑' + fmtRate(Math.max.apply(null, up));
+
+    var cbody = document.querySelector('#conn-table tbody');
+    cbody.textContent = '';
+    if (offline) {
+      cbody.innerHTML = '<tr><td colspan="3"><div class="empty">' + t('nw.conn.offline') + '</div></td></tr>';
+    } else if (!net.conns.length) {
+      cbody.innerHTML = '<tr><td colspan="3"><div class="empty">' + t('nw.conn.none') + '</div></td></tr>';
+    } else {
+      net.conns.forEach(function (c) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num">' + c.who + '</td>' +
+          '<td class="num u hide-sm">' + c.via + '</td>' +
+          '<td class="u">' + t('nw.conn.active') + '</td>';
+        cbody.appendChild(tr);
+      });
+    }
+    document.getElementById('conn-note').textContent = offline ? '// —' : '// ' + net.conns.length + ' ' + t('nw.conn.unit');
+    document.getElementById('nav-net-count').textContent = offline ? '—' : net.ifaces.length;
+  }
+
+  /* ── 日志：新条目在上，跟随 = 贴顶；级别只给色块上色 ─────────────────── */
+  function renderLog() {
+    var box = document.getElementById('log-scroll');
+    var rows = LOGS.filter(function (e) { return state.logLevel === 'all' || e.lv === state.logLevel; });
+    box.textContent = '';
+    if (!rows.length) {
+      var p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = t(state.logLevel === 'all' ? 'lg.empty' : 'lg.empty.level');
+      box.appendChild(p);
+    } else {
+      rows.forEach(function (e) {
+        var d = document.createElement('div');
+        d.className = 'log-row' + (e.lv === 'WRN' ? ' is-warn' : (e.lv === 'ERR' ? ' is-err' : ''));
+        d.innerHTML =
+          '<span class="log-time num">' + e.t + '</span>' +
+          '<span class="log-lv">' + e.lv + '</span>' +
+          '<span class="log-src num">' + e.src + '</span>' +
+          '<span class="log-msg">' + e.msg + '</span>';
+        box.appendChild(d);
+      });
+    }
+    document.getElementById('log-note').textContent = '// level: ' + state.logLevel + ' · ' + rows.length + ' ' + t('lg.unit');
+    document.getElementById('nav-log-count').textContent = LOGS.length;
+    document.getElementById('log-level-seg').innerHTML = ['all', 'INF', 'WRN', 'ERR'].map(function (lv) {
+      return '<button data-lv="' + lv + '" aria-pressed="' + (state.logLevel === lv) + '">' + (lv === 'all' ? t('lg.level.all') : lv) + '</button>';
+    }).join('');
+    if (state.logFollow) box.scrollTop = 0;
+    applyFollow();
+  }
+  function applyFollow() {
+    document.getElementById('log-resume').hidden = state.logFollow;
+    document.getElementById('log-follow-state').textContent = state.logFollow ? t('lg.follow') : t('lg.paused');
+  }
+
+  /* ── 设置 ───────────────────────────────────────────────────────────── */
+  function field(labelKey, hintKey, controlHTML, withError) {
+    return '<div class="frow">' +
+      '<div class="fl"><label>' + t(labelKey) + '</label>' + (hintKey ? '<p>' + t(hintKey) + '</p>' : '') + '</div>' +
+      '<div class="fctl">' + controlHTML +
+      (withError ? '<span class="hint bad" id="url-hint" style="display:none">' + t('st.url.bad') + '</span>' : '') +
+      '</div></div>';
+  }
+  function sw(id, on) {
+    return '<button class="sw" id="' + id + '" aria-pressed="' + on + '"><span class="sw-track"></span><span class="sw-label">' + t(on ? 'st.on' : 'st.off') + '</span></button>';
+  }
+  /* ── 硬件规格：按部件分项 ───────────────────────────────────────────── */
+  /* 字段对应客户端 SystemInfo 里已有的静态项。整份是示意数据，与状态条那句
+     「示意数据 · 非实机采样」同一口径；线上没有的按既有口径报 N/A 并说明原因。 */
+  var SPEC = {
+    mbp: {
+      cpu: { model: 'Apple M3 Pro', cores: '11', logical: '11', pcore: '5', ecore: '6', base: '3.05 GHz', ht: false, virt: true },
+      gpu: [{ name: 'Apple M3 Pro', brand: 'Apple', vram: '18 GB', unified: true, clock: '1.38 GHz', isvirt: false }],
+      mem: { total: '18 GB', type: 'LPDDR5', speed: '6400 MT/s' },
+      /* 容量与卷对齐 HOSTS 里那台机的 512 GB / 已用 412 GB，不另编一套数 */
+      disk: [{
+        model: 'APPLE SSD AP0512Z', serial: '0BA0184F2C7D4E91', bus: 'NVMe', fw: '11.4',
+        type: 'SSD', capacity: '512 GB', system: true,
+        /* 采集端在 macOS 上只报数据卷（"/" 是只读快照，可用空间恒为 0，报了是废数），
+           所以这里只有一个挂载点。Windows 同一个位置填 C: —— 都是挂载点，不换字段。 */
+        mounts: '/System/Volumes/Data', labels: '',
+        health: '99%', wear: '1%', smartEnabled: true, smartSupported: true,
+        hours: '1,842 h', cycles: '612', written: '18.4 TB', read: '21.7 TB',
+        reallocated: '0', pending: '0', uncorrectable: '0',
+        attrs: [
+          ['05', 'Reallocated Sector Count',   '100', '100', '005', '0'],
+          ['09', 'Power-On Hours',             '99',  '99',  '—',   '1842'],
+          ['0C', 'Power Cycle Count',          '98',  '98',  '—',   '612'],
+          ['AB', 'Program Fail Count',         '100', '100', '—',   '0'],
+          ['AC', 'Erase Fail Count',           '100', '100', '—',   '0'],
+          ['AD', 'Average Block-Erase Count',  '99',  '99',  '—',   '31'],
+          ['AE', 'Unexpected Power Loss',      '99',  '99',  '—',   '9'],
+          ['C7', 'CRC Error Count',            '100', '100', '000', '0'],
+          ['E9', 'Media Wearout Indicator',    '99',  '99',  '—',   '0']
+        ]
+      }],
+      vol: [{ label: 'Macintosh HD', mount: '/', fs: 'APFS', total: '512 GB', used: '412 GB', free: '100 GB' }],
+      net: [{ name: 'en0', type: 'Wi-Fi', mac: 'a8:5c:2c:1f:0d:41', ip: '192.168.31.24', speed: '1.2 Gbps' }],
+      /* 设计/最大容量取 6078 / 5106 mAh，正好对上 HOSTS 里那句 health 84% */
+      battery: { cycles: '214', design: '6,078 mAh', max: '5,106 mAh', health: '84%' },
+      fan: [{ name: 'Left', rpm: '1,993 rpm' }, { name: 'Right', rpm: '2,041 rpm' }],
+      sensor: [['CPU P-core', '68 °C'], ['CPU E-core', '54 °C'], ['GPU', '46 °C'], ['SSD', '41 °C']],
+      sys: { os: 'macOS 15.4', model: 'Mac15,6',
+             tpm: null }
+    }
+  };
+  /* na 有值 = 报 N/A 并说明原因，该行不挂 data-reading（N/A 是恒定事实，与有没有样本无关） */
+  function specKV(labelKey, value, na) {
+    return '<div class="kv"><dt>' + t(labelKey) + '</dt><dd' + (na ? '' : ' data-reading') + '>' +
+      (na ? '<span class="spec-na">N/A</span>' : value) + '</dd></div>';
+  }
+  /* 传感器名、风扇名这类是数据不是标签，不走 t() 查表 */
+  function specRaw(label, value) {
+    return '<div class="kv"><dt>' + label + '</dt><dd data-reading>' + value + '</dd></div>';
+  }
+  /* 原始 SMART 属性表：只读表变体，复用既有 table.data.t-static。
+     表体是采样数据，离线态整表收成一行「—」加理由——逐格盖章没有意义。 */
+  function specTable(head, rows, offline) {
+    var body = offline
+      ? '<tr><td colspan="' + head.length + '"><div class="empty">' + t('hw.smart.offline') + '</div></td></tr>'
+      : rows.map(function (r) {
+          return '<tr>' + r.map(function (c, i) {
+            return '<td' + (i === 1 ? ' class="name"' : ' class="num"') + '>' + c + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+    return '<div class="table-wrap"><table class="data t-static"><thead><tr>' +
+      head.map(function (h) { return '<th>' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function specBlock(title, units) {
+    /* units: [{ sub, rows, table, note }]；只有一件时不写小标题 */
+    var many = units.length > 1;
+    return '<div class="spec"><h4>' + title + '</h4>' + units.map(function (u) {
+      return '<div class="spec-u">' +
+        (many && u.sub ? '<p class="spec-sub">' + u.sub + '</p>' : '') +
+        '<div class="kv-list">' + u.rows.join('') + '</div>' +
+        (u.table ? '<p class="spec-sub">' + t('hw.smart.attrs') + '</p>' + u.table : '') +
+        (u.note ? '<p class="spec-note">' + u.note + '</p>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  /* 一个部件一块：左栏选中哪个只渲染哪一块，不再一次拼十块 */
+  function renderSpec(part) {
+    var sp = SPEC[HOSTS[state.host].id];
+    var offline = state.src === 'offline';
+    var yn = function (v) { return t(v ? 'hw.yes' : 'hw.no'); };
+    var nth = function (label, i) { return label + ' ' + (i + 1); };
+    var title = hwLabel(part);   /* 块的小标题直接用左栏那个标签，不另写一套英文名 */
+    var parts = {
+      cpu: function () {
+        return specBlock(title, [{ rows: [
+          specKV('hw.model', sp.cpu.model),
+          specKV('hw.cores', sp.cpu.cores),
+          specKV('hw.logical', sp.cpu.logical),
+          specKV('hw.pcore', sp.cpu.pcore),
+          specKV('hw.ecore', sp.cpu.ecore),
+          specKV('hw.baseclock', sp.cpu.base),
+          specKV('hw.ht', yn(sp.cpu.ht)),
+          specKV('hw.virt', yn(sp.cpu.virt))
+        ] }]);
+      },
+      gpu: function () {
+        return specBlock(title, sp.gpu.map(function (g, i) {
+          return { sub: nth('GPU', i), rows: [
+            specKV('hw.model', g.name),
+            specKV('hw.brand', g.brand),
+            specKV('hw.vram', g.vram + (g.unified ? ' · ' + t('hw.unified') : '')),
+            specKV('hw.coreclock', g.clock),
+            specKV('hw.isvirt', yn(g.isvirt))
+          ] };
+        }));
+      },
+      mem: function () {
+        return specBlock(title, [{ rows: [
+          specKV('hw.totalmem', sp.mem.total),
+          specKV('hw.memtype', sp.mem.type),
+          specKV('hw.memspeed', sp.mem.speed)
+        ] }]);
+      },
+      disk: function () {
+        return specBlock(title, sp.disk.map(function (d, i) {
+          return { sub: nth(t('hw.disk.n'), i), rows: [
+            specKV('hw.model', d.model),
+            specKV('hw.serial', d.serial),
+            specKV('nw.th.type', d.type),
+            specKV('hw.capacity', d.capacity),
+            specKV('hw.bus', d.bus),
+            specKV('hw.fw', d.fw),
+            specKV('hw.systemdisk', yn(d.system)),
+            specKV('hw.mounts', d.mounts),
+            // 「分区」在 macOS 侧还没接进采集端：要把 APFS 容器(disk3)映射回物理盘(disk0)
+            // 得走 IOKit 设备树或 diskutil，本轮没做。按既有口径报 N/A 并说明，不编一个。
+            specKV('hw.partlabels', null, true),
+            specKV('hw.health', d.health),
+            specKV('hw.wear', d.wear),
+            specKV('hw.smartenabled', yn(d.smartEnabled)),
+            specKV('hw.smartsupported', yn(d.smartSupported)),
+            specKV('hw.poweron', d.hours),
+            specKV('hw.powercycles', d.cycles),
+            specKV('hw.written', d.written),
+            specKV('hw.read', d.read),
+            specKV('hw.realloc', d.reallocated),
+            specKV('hw.pending', d.pending),
+            specKV('hw.uncorrect', d.uncorrectable)
+          ], table: specTable(
+            [t('hw.smart.col.id'), t('hw.smart.col.attr'), t('hw.smart.col.cur'),
+             t('hw.smart.col.worst'), t('hw.smart.col.thr'), t('hw.smart.col.raw')],
+            d.attrs, offline), note: t('hw.note.disk') };
+        }));
+      },
+      vol: function () {
+        return specBlock(title, sp.vol.map(function (v, i) {
+          return { sub: nth(t('hw.vol.n'), i), rows: [
+            specKV('hw.label', v.label),
+            specKV('hw.mounts', v.mount),
+            specKV('hw.fs', v.fs),
+            specKV('hw.capacity', v.total),
+            specKV('hw.used', v.used),
+            specKV('hw.free', v.free)
+          ] };
+        }));
+      },
+      net: function () {
+        return specBlock(title, sp.net.map(function (n, i) {
+          return { sub: nth(t('hw.net.n'), i), rows: [
+            specKV('nw.th.name', n.name),
+            specKV('nw.th.type', n.type),
+            specKV('hw.mac', n.mac),
+            specKV('hw.ip', n.ip),
+            specKV('hw.linkspeed', n.speed)
+          ] };
+        }));
+      },
+      bat: function () {
+        return specBlock(title, [{ rows: [
+          specKV('hw.batterycycles', sp.battery.cycles),
+          specKV('hw.design', sp.battery.design),
+          specKV('hw.maxcap', sp.battery.max),
+          specKV('hw.health', sp.battery.health)
+        ] }]);
+      },
+      fan: function () {
+        return specBlock(title, sp.fan.map(function (f) {
+          return { sub: f.name, rows: [ specKV('hw.rpm', f.rpm) ] };
+        }));
+      },
+      sensor: function () {
+        return specBlock(title, [{ rows: sp.sensor.map(function (s) { return specRaw(s[0], s[1]); }),
+                                  note: t('hw.note.sensor') }]);
+      },
+      sys: function () {
+        /* 本机（macOS）不提供 TPM：六项照列但整组报 N/A 并说明，不编一个不存在的设备 */
+        var noTpm = !sp.sys.tpm;
+        var sysNotes = [];
+        if (noTpm) sysNotes.push(t('hw.na.collector'));
+        return specBlock(title, [{ rows: [
+          specKV('hw.os', sp.sys.os),
+          specKV('hw.hwmodel', sp.sys.model),
+          specKV('hw.tpmmanufacturer', noTpm ? null : sp.sys.tpm.manufacturer, noTpm),
+          specKV('hw.fw',              noTpm ? null : sp.sys.tpm.firmware,     noTpm),
+          specKV('hw.tpmstatus',       noTpm ? null : sp.sys.tpm.status,       noTpm),
+          specKV('hw.tpmselftest',     noTpm ? null : sp.sys.tpm.selftest,     noTpm),
+          specKV('hw.enabled',         noTpm ? null : yn(sp.sys.tpm.enabled),  noTpm),
+          specKV('hw.active',          noTpm ? null : yn(sp.sys.tpm.active),   noTpm),
+          specKV('hw.appver', 'TCMT-M 0.9.4')
+        ], note: sysNotes.join(' ') }]);
+      }
+    };
+    return parts[part] ? parts[part]() : '';
+  }
+  function renderSettings() {
+    var host = document.getElementById('field-groups');
+    var html = '';
+    if (state.group === 'data') {
+      html = field('st.interval', 'st.interval.h', '<input class="input num" id="f-interval" type="number" min="1" max="60" step="1" value="3" style="flex:none;width:110px">') +
+             field('st.staleAlert', 'st.staleAlert.h', sw('f-stale', true)) +
+             field('st.staleAfter', null, '<input class="input num" id="f-after" type="number" min="1" max="60" value="3" style="flex:none;width:110px">');
+    } else if (state.group === 'push') {
+      html = field('st.pushOn', null, sw('f-push', true)) +
+             field('st.url', 'st.url.h', '<input class="input num" id="f-url" type="text" value="https://tcmt.internal:8443/report" style="width:100%">', true) +
+             field('st.insecure', null, sw('f-insecure', false)) +
+             field('st.pushInterval', null, '<input class="input num" id="f-push-int" type="number" min="1" max="60" value="15" style="flex:none;width:110px">');
+    } else if (state.group === 'look') {
+      html = '<div class="frow"><div class="fl"><label>' + t('st.theme') + '</label></div><div class="fctl">' +
+               '<div class="seg" id="theme-seg"><button data-theme-opt="system">' + t('st.theme.system') + '</button><button data-theme-opt="dark">' + t('st.theme.dark') + '</button><button data-theme-opt="light">' + t('st.theme.light') + '</button></div>' +
+             '</div></div>' +
+             '<div class="frow"><div class="fl"><label>' + t('st.lang') + '</label></div><div class="fctl">' +
+               '<div class="seg" id="lang-seg"><button data-lang-opt="zh">简体中文</button><button data-lang-opt="en">English</button></div>' +
+             '</div></div>' +
+             field('st.gray', 'st.gray.h', sw('f-gray', state.gray));
+    } else {
+      var ch = HOSTS[state.host];
+      var capName = { loc: ['位置服务', 'Location services'], upd: ['更新检查', 'Update check'], smart: ['SMART', 'SMART'], notif: ['系统通知', 'System notifications'] };
+      var capState = function (v) { return t(v === 'ok' ? 'st.caps.on' : (v === 'root' ? 'st.caps.root' : 'st.caps.off')); };
+      html = '<div class="caps">' + Object.keys(ch.caps).map(function (k) {
+        return '<div class="cap">' + capName[k][state.lang === 'zh' ? 0 : 1] + '<span>' + capState(ch.caps[k]) + '</span></div>';
+      }).join('') +
+      '<div class="cap">' + (state.lang === 'zh' ? '版本' : 'Version') + '<span>TCMT-M 0.9.4</span></div></div>';
+    }
+    host.innerHTML = html;
+    wireSettings();
+    applyTheme();
+  }
+  function renderGroups() {
+    document.getElementById('group-list').innerHTML = GROUPS.map(function (g) {
+      return '<button data-group="' + g.id + '" aria-current="' + (g.id === state.group) + '"><span>' + (state.lang === 'zh' ? g.zh : g.en) + '</span></button>';
+    }).join('');
+    document.querySelectorAll('#group-list button').forEach(function (b) {
+      b.addEventListener('click', function () { state.group = b.dataset.group; renderGroups(); renderSettings(); });
+    });
+  }
+  function wireSettings() {
+    document.querySelectorAll('#field-groups .sw').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var on = b.getAttribute('aria-pressed') !== 'true';
+        b.setAttribute('aria-pressed', String(on));
+        b.querySelector('.sw-label').textContent = t(on ? 'st.on' : 'st.off');
+        if (b.id === 'f-gray') { state.gray = on; applyGray(); }
+        if (b.id === 'f-insecure') { document.getElementById('save-state').textContent = t('st.insecure.warn'); }
+      });
+    });
+    var themeSeg = document.getElementById('theme-seg');
+    if (themeSeg) themeSeg.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      state.theme = b.dataset.themeOpt; write('tcmt.theme', state.theme); applyTheme();
+    });
+    var langSeg = document.getElementById('lang-seg');
+    if (langSeg) {
+      langSeg.querySelectorAll('button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.dataset.langOpt === state.lang));
+        b.addEventListener('click', function () {
+          state.lang = b.dataset.langOpt; write('tcmt.lang', state.lang);
+          applyLang(); renderHost(); renderGroups(); renderSettings(); renderProcs(); renderDetail(); renderLog(); renderNavHw(); renderHwView(); applyStale();
+        });
+      });
+    }
+    var url = document.getElementById('f-url');
+    if (url) url.addEventListener('input', function () {
+      var ok = /^https:\/\//.test(url.value.trim());
+      url.classList.toggle('is-bad', !ok);
+      var hint = document.getElementById('url-hint');
+      if (hint) hint.style.display = ok ? 'none' : '';
+    });
+    ['f-interval', 'f-after', 'f-push-int'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('blur', function () {
+        var v = parseInt(el.value, 10);
+        if (isNaN(v)) v = 1;
+        el.value = String(Math.max(1, Math.min(60, v)));
+      });
+    });
+  }
+
+  /* ── 左栏「硬件」展开组 ─────────────────────────────────────────────── */
+  function renderNavHw() {
+    var btn = document.getElementById('nav-hw');
+    btn.setAttribute('aria-expanded', String(state.hwOpen));
+    var box = document.getElementById('nav-hw-sub');
+    box.hidden = !state.hwOpen;
+    if (!state.hwOpen) { box.innerHTML = ''; return; }
+    box.innerHTML = HW_PARTS.map(function (p) {
+      var on = state.view === 'hardware' && state.hwPart === p.id;
+      return '<button data-hw="' + p.id + '" aria-current="' + on + '">' +
+        (state.lang === 'zh' ? p.zh : p.en) + '</button>';
+    }).join('');
+    box.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.hwPart = b.dataset.hw;
+        setView('hardware');
+      });
+    });
+  }
+  function renderHwView() {
+    document.getElementById('hw-spec').innerHTML = renderSpec(state.hwPart);
+  }
+  /* 概览面板标题行 = 该部件规格页的入口。鼠标点得到，键盘也走得了（Enter / 空格）。 */
+  function wirePanelJumps() {
+    PANEL_PART.forEach(function (pair) {
+      var panel = document.querySelector('[data-od-id="' + pair[0] + '"]');
+      var head = panel && panel.querySelector('.panel-h');
+      if (!head) return;
+      panel.classList.add('is-link');
+      var mark = document.createElement('span');
+      mark.className = 'jump';
+      mark.textContent = '↗';
+      head.appendChild(mark);
+      head.setAttribute('role', 'button');
+      head.setAttribute('tabindex', '0');
+      var go = function () { state.hwPart = pair[1]; state.hwOpen = true; setView('hardware'); };
+      head.addEventListener('click', go);
+      head.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+      });
+    });
+  }
+
+  /* ── 事件绑定 ───────────────────────────────────────────────────────── */
+  document.querySelectorAll('.nav-item').forEach(function (b) {
+    if (b.id === 'nav-hw') return;   /* 「硬件」是可展开组，走下面那条 */
+    b.addEventListener('click', function () { setView(b.dataset.view); });
+  });
+  document.getElementById('nav-hw').addEventListener('click', function () {
+    state.hwOpen = !state.hwOpen;
+    renderNavHw();
+    if (state.hwOpen) setView('hardware');   /* 展开即进硬件页，省一次点击 */
+  });
+  document.querySelectorAll('#proc-table th.sortable').forEach(function (th) {
+    th.addEventListener('click', function () {
+      if (state.sortKey === th.dataset.sort) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      else { state.sortKey = th.dataset.sort; state.sortDir = th.dataset.sort === 'name' ? 'asc' : 'desc'; }
+      renderProcs();
+    });
+  });
+  document.getElementById('proc-filter').addEventListener('input', function (e) {
+    state.filter = e.target.value; renderProcs();
+  });
+  document.getElementById('src-chip').addEventListener('click', function () {
+    state.src = { live: 'stale', stale: 'offline', offline: 'live' }[state.src] || 'live';
+    /* 进程页/网络页的离线态靠重绘切换（整表清空），设置页的硬件规格同理
+       ——SMART 属性表在离线态要收成一行「—」，那是 renderSpec 的分支，不重绘不生效。
+       概览那侧的读数由 applyStale 统一盖章；先重绘后盖章，来回两个方向都落得对。 */
+    renderProcs(); renderDetail(); renderNetwork(); renderSettings(); renderHwView();
+    applyStale();
+  });
+  document.getElementById('log-level-seg').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    state.logLevel = b.dataset.lv;
+    renderLog();
+  });
+  var logScroll = document.getElementById('log-scroll');
+  logScroll.addEventListener('scroll', function () {
+    var atTop = logScroll.scrollTop <= 2;
+    if (atTop === state.logFollow) return;
+    state.logFollow = atTop;   /* 离开顶部即暂停，回到顶部自动恢复 */
+    applyFollow();
+  });
+  document.getElementById('log-resume').addEventListener('click', function () {
+    state.logFollow = true;
+    logScroll.scrollTop = 0;
+    applyFollow();
+  });
+  document.getElementById('save-btn').addEventListener('click', function () {
+    var url = document.getElementById('f-url');
+    if (url && !/^https:\/\//.test(url.value.trim())) {
+      url.classList.add('is-bad');
+      var hint = document.getElementById('url-hint'); if (hint) hint.style.display = '';
+      url.focus();
+      return;
+    }
+    var d = new Date();
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    var ss = String(d.getSeconds()).padStart(2, '0');
+    document.getElementById('save-state').textContent = t('st.saved') + ' · ' + hh + ':' + mm + ':' + ss;
+  });
+
+  /* ── 初始化 ─────────────────────────────────────────────────────────── */
+  var cpuLv = level(23.4, 70, 90, false);
+  document.getElementById('cpu-meter').className = 'meter ' + meterClass(cpuLv);
+  spark(document.getElementById('spark-down'), NET_DOWN);
+  spark(document.getElementById('spark-up'), NET_UP);
+
+  wirePanelJumps();   /* 先挂跳转，applyLang 才找得到 .is-link 去填提示语 */
+  applyLang();
+  applyTheme();
+  applyGray();
+  applyStale();
+  if (state.view === 'hardware') state.hwOpen = true;   /* 上次停在硬件页，左栏替它展开 */
+  setView(state.view);
+  renderHost();
+  renderProcs();
+  renderDetail();
+  renderLog();
+  renderGroups();
+  renderSettings();
+})();
+</script>
+</body>
+</html>

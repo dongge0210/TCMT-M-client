@@ -33,6 +33,9 @@
     <ClInclude Include="src\core\cpu\CpuTempReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\cpu\CpuPowerReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\cpu\RyzenSmuReader.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -66,6 +69,12 @@
     <ClInclude Include="src\core\Utils\stdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\Updater.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\ServerProbe.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\core\temperature\TemperatureWrapper.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -78,7 +87,10 @@
     <ClInclude Include="src\core\Config\ConfigManager.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\tui\LogBuffer.h">
+    <ClInclude Include="src\core\Utils\LogBuffer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\tui\LogWindow.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\tui\TuiApp.h">
@@ -117,6 +129,15 @@
     <ClInclude Include="src\core\power\PowerMonitor.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\process\ProcessMonitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\temperature\BoardTempReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\temperature\AcpiThermalZoneReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Utils\Logger.cpp">
@@ -149,6 +170,9 @@
     <ClCompile Include="src\core\cpu\CpuTempReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\cpu\CpuPowerReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\cpu\RyzenSmuReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -169,6 +193,12 @@
     </ClCompile>
     <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp">
       <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\Updater.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\ServerProbe.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\core\temperature\TemperatureWrapper.cpp">
       <Filter>源文件</Filter>
@@ -192,6 +222,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\tui\TuiApp.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tui\LogWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\usb\UsbInfo.cpp">
@@ -239,10 +272,22 @@
     <ClCompile Include="src\core\power\PowerMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\process\ProcessMonitor.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\etw\EtwMonitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\disk\SmartReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\third_party\sqlite-amalgamation\sqlite3.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\temperature\BoardTempReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\temperature\AcpiThermalZoneReader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

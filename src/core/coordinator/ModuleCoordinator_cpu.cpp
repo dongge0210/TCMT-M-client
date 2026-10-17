@@ -17,6 +17,7 @@
 #ifdef TCMT_WINDOWS
 #include <psapi.h>
 #pragma comment(lib, "psapi.lib")
+#include "cpu/CpuPowerReader.h"
 #endif
 
 #ifdef TCMT_MACOS
@@ -55,16 +56,20 @@ void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
             if (pf > 0) data.pCoreFreq.store(pf);
             if (ef > 0) data.eCoreFreq.store(ef);
         } catch (const std::exception& e) {
+            // Loop-body failures repeat every tick while the fault persists;
+            // stay at ERROR, but throttling repeated text is a later item
+            // (see Logger level conventions in Logger.h).
             Logger::Error("CpuLoop: collection error - "
                           + std::string(e.what()));
         }
 
-        // Sleep for the remainder of the 500 ms cycle
+        // Sleep for the remainder of the cycle（1× 采样基周期，下限 200ms）
         auto elapsed = std::chrono::steady_clock::now() - cycleStart;
         auto elapsedMs =
             std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
                 .count();
-        int sleepMs = 500 - static_cast<int>(elapsedMs);
+        int sleepMs = ScaledSampleIntervalMs(data, 1, 200) -
+                      static_cast<int>(elapsedMs);
         if (sleepMs > 0) {
             ModuleCoordinator::SleepFor(st, sleepMs);
         }
@@ -142,7 +147,8 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
             Logger::Error("MemoryLoop: " + std::string(e.what()));
         }
 
-        ModuleCoordinator::SleepFor(st, 1000);
+        // 2× 采样基周期，下限 500ms
+        ModuleCoordinator::SleepFor(st, ScaledSampleIntervalMs(data, 2, 500));
     }
 
     Logger::Info("MemoryLoop: stopped");
@@ -161,22 +167,58 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
             PowerInfo powerInfo;
             powerInfo.Detect();
 
-            data.acOnline.store(powerInfo.acOnline);
+            // An ETW (Windows) or SystemEventMonitor power callback may have landed
+            // while we were reading. Those callbacks store the state the change
+            // actually produced, so this read is older by definition: keep theirs and
+            // re-read next tick instead of overwriting a fresh value with a stale one.
+            // At most one iteration is skipped per event, because the flags are
+            // consumed below.
+            const bool supersededByEvent = data.powerDirty.load() || data.sysPowerDirty.load();
+            if (!supersededByEvent) {
+                data.acOnline.store(powerInfo.acOnline);
 
-            // Use the first battery's charge percentage; -1 means no battery
-            int batPct = -1;
-            if (!powerInfo.batteries.empty()) {
-                batPct = static_cast<int>(
-                    powerInfo.batteries[0].chargePercent);
+                // Use the first battery's charge percentage; -1 means no battery
+                int batPct = -1;
+                if (!powerInfo.batteries.empty()) {
+                    batPct = static_cast<int>(
+                        powerInfo.batteries[0].chargePercent);
+                }
+                data.batteryPercent.store(batPct);
+
+                // 电池明细。Windows 侧这些数来自电池设备接口（见 PowerInfo.cpp），
+                // macOS 侧来自 IOKit。读不出来的项就是 0，不代表真实值。
+                if (!powerInfo.batteries.empty()) {
+                    const auto& b = powerInfo.batteries[0];
+                    data.batteryPresent.store(true);
+                    data.batteryCycleCount.store(static_cast<int>(b.cycleCount));
+                    data.batteryDesignCapacity.store(static_cast<int>(b.designCapacity));
+                    data.batteryFullCapacity.store(static_cast<int>(b.fullChargeCapacity));
+                    data.batteryVoltage.store(static_cast<int>(b.voltage));
+                    // wearLevel 是磨损比例，健康度是它的补数；两个容量都拿不到时留 0
+                    data.batteryHealthPercent.store(
+                        (b.designCapacity > 0 && b.fullChargeCapacity > 0)
+                            ? (100.0 - b.wearLevel * 100.0)
+                            : 0.0);
+                } else {
+                    data.batteryPresent.store(false);
+                }
+
+#ifdef TCMT_WINDOWS
+                // CPU 功耗走 RAPL 能量差（Intel + PawnIO 才有）。取不到返回 -1 时保持原值，
+                // 不写 0 —— 0 会被界面当成「功耗是 0」这种真实读数。
+                {
+                    const double watts = CpuPowerReader::ReadPackagePowerW();
+                    if (watts >= 0.0) data.cpuPower.store(watts * 1000.0);  // W → mW
+                }
+#endif
             }
-            data.batteryPercent.store(batPct);
         } catch (const std::exception& e) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
         }
 
-        // Respond faster to ETW/system power events
+        // Respond faster to ETW/system power events；平时按 4× 采样基周期，下限 1000ms
         if (!data.powerDirty.exchange(false) && !data.sysPowerDirty.exchange(false)) {
-            ModuleCoordinator::SleepFor(st, 2000);
+            ModuleCoordinator::SleepFor(st, ScaledSampleIntervalMs(data, 4, 1000));
         }
     }
 

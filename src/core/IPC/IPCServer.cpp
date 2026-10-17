@@ -172,6 +172,9 @@ void IPCServer::HandlePipeClient(void* hPipe) {
         goto cleanup;
     }
 
+    // 客户端刚拿到 schema，顺手把当前配置也推过去（与 macOS 那段同理）
+    SendConfigSnapshotToPeer(h);
+
     // --- Phase 4: Keep-alive loop ---
     while (running_) {
         DWORD avail = 0;
@@ -184,6 +187,8 @@ void IPCServer::HandlePipeClient(void* hPipe) {
                 pong.type = static_cast<uint8_t>(PipeMsgType::Pong);
                 DWORD w = 0;
                 WriteFile(h, &pong, PIPE_MSG_HEADER_SIZE, &w, nullptr);
+            } else if (msg.type == static_cast<uint8_t>(PipeMsgType::ConfigSet)) {
+                HandleConfigSetPayload(h, msg.payloadSize);
             } else if (msg.type == static_cast<uint8_t>(PipeMsgType::Bye)) {
                 break;
             }
@@ -234,6 +239,10 @@ std::vector<uint8_t> IPCServer::SerializeSchema() {
 }
 
 void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields) {
+    // 字段数越过 IPC_MAX_FIELDS 时，客户端会在 IPCClient.cpp:184 静默裁掉多余的，
+    // 症状是"某些字段永远读不到"却全链路无报错。所以在发布点把数目记下来。
+    Logger::Debug("IPC: schema published, " + std::to_string(fields.size()) + " fields"
+                  + (fields.size() > IPC_MAX_FIELDS ? " —— 超过 IPC_MAX_FIELDS，客户端会静默截断" : ""));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         schemaHeader_ = header;
@@ -285,6 +294,115 @@ void IPCServer::NotifyConfigChange() {
     for (auto& c : clients_) {
         DWORD written = 0;
         WriteFile(static_cast<HANDLE>(c.hPipe), &msg, PIPE_MSG_HEADER_SIZE, &written, nullptr);
+    }
+}
+
+// ── 配置通道（Windows / NamedPipe）─────────────────────────────────────────
+// 与下面 macOS 那一段同构，只是读写走 WriteFile / ReadFile。
+
+void IPCServer::SetConfigBridge(ConfigSnapshotProvider provider, ConfigSetHandler handler) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    configProvider_ = std::move(provider);
+    configSetHandler_ = std::move(handler);
+}
+
+namespace {
+// 往管道写一整块。WriteFile 允许短写，短写没补上后面整条流都是错位的。
+bool WriteAll(HANDLE h, const void* data, size_t size) {
+    const char* p = static_cast<const char*>(data);
+    size_t sent = 0;
+    while (sent < size) {
+        DWORD n = 0;
+        if (!WriteFile(h, p + sent, static_cast<DWORD>(size - sent), &n, nullptr) || n == 0) return false;
+        sent += n;
+    }
+    return true;
+}
+} // namespace
+
+void IPCServer::SendConfigSnapshotToPeer(void* peerHandle) {
+    ConfigSnapshotProvider provider;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        provider = configProvider_;
+    }
+    if (!provider) return;
+
+    const std::string json = provider();
+    if (json.size() > IPC_CONFIG_PAYLOAD_MAX) {
+        Logger::Warn("IPC: 配置快照 " + std::to_string(json.size()) + " 字节，超过上限，未发送");
+        return;
+    }
+
+    PipeMessage msg{};
+    msg.type = static_cast<uint8_t>(PipeMsgType::ConfigSnapshot);
+    msg.version = IPC_VERSION;
+    msg.payloadSize = static_cast<uint16_t>(json.size());
+
+    // 头和 payload 连着写，理由同 macOS 那一段
+    HANDLE h = static_cast<HANDLE>(peerHandle);
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    if (!WriteAll(h, &msg, PIPE_MSG_HEADER_SIZE)) return;
+    if (!json.empty()) WriteAll(h, json.data(), json.size());
+}
+
+std::string IPCServer::ReadConfigPayload(void* peerHandle, uint16_t payloadSize) {
+    if (payloadSize == 0 || payloadSize > IPC_CONFIG_PAYLOAD_MAX) {
+        Logger::Warn("IPC: ConfigSet payload 长度不合法: " + std::to_string(payloadSize));
+        return {};
+    }
+
+    std::string buf(payloadSize, '\0');
+    HANDLE h = static_cast<HANDLE>(peerHandle);
+    size_t got = 0;
+    while (got < payloadSize) {
+        DWORD n = 0;
+        if (!ReadFile(h, buf.data() + got, static_cast<DWORD>(payloadSize - got), &n, nullptr) || n == 0) return {};
+        got += n;
+    }
+    return buf;
+}
+
+void IPCServer::HandleConfigSetPayload(void* peerHandle, uint16_t payloadSize) {
+    const std::string json = ReadConfigPayload(peerHandle, payloadSize);
+    if (json.empty()) return;
+
+    ConfigSetHandler handler;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        handler = configSetHandler_;
+    }
+    if (!handler) {
+        Logger::Debug("IPC: 收到 ConfigSet，但服务端没接 handler，丢弃");
+        return;
+    }
+    handler(json);
+}
+
+void IPCServer::BroadcastConfigSnapshot() {
+    ConfigSnapshotProvider provider;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        provider = configProvider_;
+    }
+    if (!provider) return;
+
+    const std::string json = provider();
+    if (json.size() > IPC_CONFIG_PAYLOAD_MAX) {
+        Logger::Warn("IPC: 配置快照超过上限，未广播");
+        return;
+    }
+
+    PipeMessage msg{};
+    msg.type = static_cast<uint8_t>(PipeMsgType::ConfigSnapshot);
+    msg.version = IPC_VERSION;
+    msg.payloadSize = static_cast<uint16_t>(json.size());
+
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    for (auto& c : clients_) {
+        HANDLE h = static_cast<HANDLE>(c.hPipe);
+        if (!WriteAll(h, &msg, PIPE_MSG_HEADER_SIZE)) continue;
+        if (!json.empty()) WriteAll(h, json.data(), json.size());
     }
 }
 
@@ -482,7 +600,11 @@ void IPCServer::HandleClient(int clientFd) {
         return;
     }
 
-    // Keep-alive loop: handle PING/PONG/BYE with non-blocking poll
+    // 客户端刚拿到 schema，顺手把当前配置也推过去 —— 设置页要显示的就是这些值，
+    // 让它握手完就有，不用再问一次。
+    SendConfigSnapshotToPeer(reinterpret_cast<void*>(static_cast<intptr_t>(clientFd)));
+
+    // Keep-alive loop: handle PING/PONG/BYE/CONFIG_SET with non-blocking poll
     while (running_) {
         struct pollfd pfd = {clientFd, POLLIN, 0};
         int ret = poll(&pfd, 1, 1000);
@@ -495,6 +617,8 @@ void IPCServer::HandleClient(int clientFd) {
             PipeMessage pong{};
             pong.type = static_cast<uint8_t>(PipeMsgType::Pong);
             write(clientFd, &pong, PIPE_MSG_HEADER_SIZE);
+        } else if (msg.type == static_cast<uint8_t>(PipeMsgType::ConfigSet)) {
+            HandleConfigSetPayload(reinterpret_cast<void*>(static_cast<intptr_t>(clientFd)), msg.payloadSize);
         } else if (msg.type == static_cast<uint8_t>(PipeMsgType::Bye)) {
             Logger::Info("IPC: client sent BYE, disconnecting");
             break;
@@ -552,6 +676,10 @@ std::vector<uint8_t> IPCServer::SerializeSchema() {
 }
 
 void IPCServer::UpdateSchema(const SchemaHeader& header, const std::vector<FieldDef>& fields) {
+    // 字段数越过 IPC_MAX_FIELDS 时，客户端会在 IPCClient.cpp:184 静默裁掉多余的，
+    // 症状是"某些字段永远读不到"却全链路无报错。所以在发布点把数目记下来。
+    Logger::Debug("IPC: schema published, " + std::to_string(fields.size()) + " fields"
+                  + (fields.size() > IPC_MAX_FIELDS ? " —— 超过 IPC_MAX_FIELDS，客户端会静默截断" : ""));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         schemaHeader_ = header;
@@ -575,6 +703,102 @@ void IPCServer::NotifyConfigChange() {
     std::lock_guard<std::mutex> lock(clientsMutex_);
     for (auto& c : clients_) {
         write(c.fd, &msg, PIPE_MSG_HEADER_SIZE);
+    }
+}
+
+// ── 配置通道 ────────────────────────────────────────────────────────────────
+
+void IPCServer::SetConfigBridge(ConfigSnapshotProvider provider, ConfigSetHandler handler) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    configProvider_ = std::move(provider);
+    configSetHandler_ = std::move(handler);
+}
+
+void IPCServer::SendConfigSnapshotToPeer(void* peerHandle) {
+    // 先把 provider 抄出来再调用：配置那边可能回头碰服务端（比如查客户端数），
+    // 握着 mutex_ 调用户代码迟早锁死。
+    ConfigSnapshotProvider provider;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        provider = configProvider_;
+    }
+    if (!provider) return;
+
+    const std::string json = provider();
+    if (json.size() > IPC_CONFIG_PAYLOAD_MAX) {
+        Logger::Warn("IPC: 配置快照 " + std::to_string(json.size()) + " 字节，超过上限，未发送");
+        return;
+    }
+
+    PipeMessage msg{};
+    msg.type = static_cast<uint8_t>(PipeMsgType::ConfigSnapshot);
+    msg.version = IPC_VERSION;
+    msg.payloadSize = static_cast<uint16_t>(json.size());
+
+    // 头和 payload 必须连着写：中间插进另一条消息，对端会把 payload 当成下一条的头，
+    // 之后整条流都是乱的。clientsMutex_ 在这里当写锁用（UpdateSchema 广播也拿它）。
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(peerHandle));
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    if (write(fd, &msg, PIPE_MSG_HEADER_SIZE) != PIPE_MSG_HEADER_SIZE) return;
+    if (!json.empty()) write(fd, json.data(), json.size());
+}
+
+std::string IPCServer::ReadConfigPayload(void* peerHandle, uint16_t payloadSize) {
+    if (payloadSize == 0 || payloadSize > IPC_CONFIG_PAYLOAD_MAX) {
+        Logger::Warn("IPC: ConfigSet payload 长度不合法: " + std::to_string(payloadSize));
+        return {};
+    }
+
+    std::string buf(payloadSize, '\0');
+    int fd = static_cast<int>(reinterpret_cast<intptr_t>(peerHandle));
+    size_t got = 0;
+    while (got < payloadSize) {
+        ssize_t n = read(fd, buf.data() + got, payloadSize - got);
+        if (n <= 0) return {};
+        got += static_cast<size_t>(n);
+    }
+    return buf;
+}
+
+void IPCServer::HandleConfigSetPayload(void* peerHandle, uint16_t payloadSize) {
+    const std::string json = ReadConfigPayload(peerHandle, payloadSize);
+    if (json.empty()) return;
+
+    ConfigSetHandler handler;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        handler = configSetHandler_;
+    }
+    if (!handler) {
+        Logger::Debug("IPC: 收到 ConfigSet，但服务端没接 handler，丢弃");
+        return;
+    }
+    handler(json);
+}
+
+void IPCServer::BroadcastConfigSnapshot() {
+    ConfigSnapshotProvider provider;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        provider = configProvider_;
+    }
+    if (!provider) return;
+
+    const std::string json = provider();
+    if (json.size() > IPC_CONFIG_PAYLOAD_MAX) {
+        Logger::Warn("IPC: 配置快照超过上限，未广播");
+        return;
+    }
+
+    PipeMessage msg{};
+    msg.type = static_cast<uint8_t>(PipeMsgType::ConfigSnapshot);
+    msg.version = IPC_VERSION;
+    msg.payloadSize = static_cast<uint16_t>(json.size());
+
+    std::lock_guard<std::mutex> lock(clientsMutex_);
+    for (auto& c : clients_) {
+        if (write(c.fd, &msg, PIPE_MSG_HEADER_SIZE) != PIPE_MSG_HEADER_SIZE) continue;
+        if (!json.empty()) write(c.fd, json.data(), json.size());
     }
 }
 

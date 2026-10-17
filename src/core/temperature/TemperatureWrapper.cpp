@@ -9,6 +9,7 @@
 #include "BoardTempReader.h"
 #include "IntelOobmsmReader.h"
 #include "IntelMchbarReader.h"
+#include "AcpiThermalZoneReader.h"
 
 bool TemperatureWrapper::initialized = false;
 
@@ -18,14 +19,14 @@ void TemperatureWrapper::Initialize() {
     if (MemoryTempReader::IsAvailable())
         Logger::Info("PawnIO: installed, DIMM/SMBus temperature reading enabled");
     else
-        Logger::Info("PawnIO: not installed, DIMM temperature unavailable");
+        Logger::Debug("PawnIO: not installed, DIMM temperature unavailable");
 }
 
 void TemperatureWrapper::Cleanup() {
     initialized = false;
 }
 
-std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesImpl() {
     std::vector<std::pair<std::string, double>> temps;
     if (!initialized) return temps;
 
@@ -94,6 +95,17 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures(
         Logger::Debug("RyzenSmuReader: exception");
     }
 
+    // ACPI 热区 —— 上面那几条全都要 PawnIO（要装驱动），这条不要。
+    // 覆盖很一般（常常只有一两个区，台式机可能一个都没有，非管理员也可能拿不到），
+    // 但它是没装 PawnIO 的机器上唯一还能多出来的来源。
+    try {
+        auto zones = AcpiThermalZoneReader::ReadAll();
+        for (const auto& z : zones)
+            temps.push_back({z.name, z.temperature});
+    } catch (...) {
+        Logger::Debug("AcpiThermalZoneReader: exception");
+    }
+
     return temps;
 }
 
@@ -115,8 +127,12 @@ bool TemperatureWrapper::IsInitialized() { return initialized; }
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
+#include <chrono>
 #include <vector>
 #include <string>
+#include <mutex>
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -292,7 +308,7 @@ static bool probe_smc(void) {
 
     kern_return_t kr = open_smc_service(&g_smc_conn);
     if (kr != kIOReturnSuccess) {
-        Logger::Info("TemperatureWrapper: AppleSMC not accessible (kr=0x"
+        Logger::Debug("TemperatureWrapper: AppleSMC not accessible (kr=0x"
                      + std::to_string(kr) + ")");
         return false;
     }
@@ -870,6 +886,10 @@ static std::mutex  g_pm_mutex;
 static std::atomic<bool> g_pm_running{false};
 static std::atomic<bool> g_pm_available{false};
 static std::thread g_pm_thread;
+// Interruptible stop for the powermetrics thread (wake from its idle sleep
+// immediately on shutdown instead of blocking quit for up to 30s).
+static std::mutex g_pm_stop_mutex;
+static std::condition_variable g_pm_stop_cv;
 std::atomic<double> g_pm_pCoreFreq{0.0};
 std::atomic<double> g_pm_eCoreFreq{0.0};
 std::atomic<double> g_pm_gpuFreq{0.0};
@@ -943,10 +963,10 @@ static void powermetrics_thread_func(void) {
     // Warm up: wait 5s before first run so system settles
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
-    // SIGALRM timeout helper: interrupt a blocking read
-    // Signal is process-wide but safe since only this thread uses it
+    // SIGALRM timeout helper: interrupt a blocking read. Keep the no-op
+    // handler installed for the whole thread lifetime — restoring the
+    // default handler would make alarm(15) kill the process on timeout.
     sig_t oldAlrm = signal(SIGALRM, [](int) {});
-    signal(SIGALRM, oldAlrm);  // restore; just want to test signal works
 
     while (g_pm_running.load()) {
         // Run powermetrics with default samplers (includes frequency + power on AS)
@@ -1012,9 +1032,14 @@ static void powermetrics_thread_func(void) {
         }
 
         if (g_pm_running.load()) {
-            std::this_thread::sleep_for(std::chrono::seconds(30));
+            // Sleep between samples, but wake immediately when Cleanup()
+            // signals shutdown so quit is not blocked for up to 30s.
+            std::unique_lock<std::mutex> lk(g_pm_stop_mutex);
+            g_pm_stop_cv.wait_for(lk, std::chrono::seconds(30),
+                                  [] { return !g_pm_running.load(); });
         }
     }
+    signal(SIGALRM, oldAlrm);
     Logger::Debug("TemperatureWrapper: powermetrics thread stopped");
 }
 
@@ -1033,7 +1058,7 @@ static void start_powermetrics_thread(void) {
         checked = true;
     }
     if (!available) {
-        Logger::Info("TemperatureWrapper: powermetrics not available (needs root)");
+        Logger::Debug("TemperatureWrapper: powermetrics not available (needs root)");
         return;
     }
 
@@ -1225,6 +1250,7 @@ void TemperatureWrapper::Cleanup() {
     // Stop powermetrics thread
     if (g_pm_running.load()) {
         g_pm_running = false;
+        g_pm_stop_cv.notify_all();
         if (g_pm_thread.joinable()) g_pm_thread.join();
     }
 
@@ -1249,7 +1275,7 @@ void TemperatureWrapper::Cleanup() {
     initialized = false;
 }
 
-std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesImpl() {
     std::vector<std::pair<std::string, double>> temps;
 
     if (!initialized) return temps;
@@ -1352,7 +1378,7 @@ static std::string ReadLine(const std::string& path) {
     return val;
 }
 
-std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesImpl() {
     std::vector<std::pair<std::string, double>> temps;
     if (!initialized) return temps;
 
@@ -1462,3 +1488,22 @@ double GetPmAnePower() { return 0.0; }
 #else
 #error "Unsupported platform"
 #endif
+
+// Shared throttling cache: hardware temperature reads are slow and the
+// PawnIO/SMC paths are not thread-safe — multiple callers (TUI sampling
+// loop, snapshot upload) must share ONE read cadence. Serializes on a
+// mutex and refreshes at most once per TTL window.
+std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperatures() {
+    static std::mutex m;
+    static std::vector<std::pair<std::string, double>> cache;
+    static std::chrono::steady_clock::time_point last = {};
+    static bool first = true;
+    std::lock_guard<std::mutex> lk(m);
+    const auto now = std::chrono::steady_clock::now();
+    if (first || now - last > std::chrono::seconds(2)) {
+        cache = GetTemperaturesImpl();
+        last = now;
+        first = false;
+    }
+    return cache;
+}

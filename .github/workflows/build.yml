@@ -1,14 +1,24 @@
 name: Build TCMT-M
 
+# 这些是每次推 dev / 开 PR 都出的测试构建，没有 manifest.json 也没有签名，自动更新器拿到也用不了；
+# 而且 draft/prerelease 根本不进 /releases/latest。所以不发 release，只上传 workflow artifact
+# （要下载的人去 Actions 页拿，过期自动清）。真正的发布走 tools/release-mac.sh。
+#
+# 每个 build job 自己打包并上传一个 zip（Windows: TCMT-Windows-x64-alpha，macOS: TCMT-macOS-arm64-alpha）。
+# 以前的 package-artifacts job 额外传了两个未打包的中间产物，既占体积又让 Actions 页面出现 3 个 artifact。
+
 on:
-  #push:
-    #branches: [ main, dev ]
+  # Cache scope: PR runs write to refs/pull/N/merge, which no other branch can read.
+  # Without a push run there is never a branch-level cache, so every new PR pays the
+  # full cold cost (~9 min extra). Pushing dev seeds the dev-scoped caches.
+  push:
+    branches: [ dev ]
   pull_request:
     branches: [ main, dev ]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -30,7 +40,7 @@ jobs:
 
     - name: Cache CUDA
       id: cache-cuda
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
         key: cuda-13.2.0
@@ -53,7 +63,7 @@ jobs:
 
     - name: Setup CUDA 13.2
       if: steps.check-cuda.outputs.cuda_found != 'true'
-      uses: Jimver/cuda-toolkit@v0.2.35
+      uses: Jimver/cuda-toolkit@v0.2.36
       with:
         cuda: '13.2.0'
 
@@ -76,7 +86,7 @@ jobs:
 
     - name: Save CUDA cache
       if: steps.check-cuda.outputs.cuda_found != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
         key: cuda-13.2.0
@@ -84,8 +94,16 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v3
 
+    - name: Cache NuGet packages
+      uses: actions/cache@v6
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.config', '**/nuget.config') }}
+        restore-keys: |
+          nuget-${{ runner.os }}-
+
     - name: Cache .NET tools
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.dotnet/tools
         key: dotnet-tools-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
@@ -96,16 +114,31 @@ jobs:
         arch: x64
 
     - name: Setup .NET Framework
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: '10.0.x'
 
+    - name: Restore MSBuild intermediates cache
+      uses: actions/cache/restore@v6
+      id: cache-msbuild-obj
+      with:
+        path: |
+          x64/${{ env.BUILD_CONFIGURATION }}/
+        # Key on the *project*, not the sources. Hashing every source meant any commit
+        # changed the key, so the exact key could never be reused: restore fell back to
+        # the prefix match (cache-hit stays 'false'), the save therefore always ran, and
+        # every CI run pushed one more throwaway entry into the 10 GB pool — evicting the
+        # caches that do get exact hits (CUDA's 1.7 GB, key cuda-13.2.0). Source changes
+        # are MSBuild's own business: it compares .obj timestamps against the sources.
+        # Project/flag changes are not, which is why the project files stay in the key.
+        # The configuration is in the key too, so Debug intermediates can't be restored
+        # into a Release build (the old prefix matched any configuration).
+        key: msbuild-obj-${{ runner.os }}-${{ env.BUILD_CONFIGURATION }}-${{ hashFiles('**/*.vcxproj', '**/*.vcxproj.filters', '**/*.sln', '**/*.props', '**/*.targets') }}
+        restore-keys: |
+          msbuild-obj-${{ runner.os }}-${{ env.BUILD_CONFIGURATION }}-
+
     - name: Restore NuGet packages
       run: nuget restore ${{ env.SOLUTION_FILE_PATH }}
-
-    - name: Build CPP-parsers
-      run: |
-        msbuild src/CPP-parsers/CPP-parsers/CPP-parsers.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
 
     - name: Build AvaloniaUI
       run: |
@@ -116,18 +149,37 @@ jobs:
       run: |
         msbuild ${{ env.SOLUTION_FILE_PATH }} /p:Configuration=${{ env.BUILD_CONFIGURATION }} /p:Platform=${{ env.BUILD_PLATFORM }} /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /p:LangVersion=preview /m
 
-    - name: Upload build artifacts
+    - name: Save MSBuild intermediates cache
+      if: always() && steps.cache-msbuild-obj.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: |
+          x64/${{ env.BUILD_CONFIGURATION }}/
+        # Same key as the restore step above — that is what makes this cache reusable:
+        # with a stable key the first run writes it and later runs hit it exactly, so
+        # this step is skipped and no new entry is created.
+        key: msbuild-obj-${{ runner.os }}-${{ env.BUILD_CONFIGURATION }}-${{ hashFiles('**/*.vcxproj', '**/*.vcxproj.filters', '**/*.sln', '**/*.props', '**/*.targets') }}
+
+    - name: Package alpha build
+      shell: pwsh
+      run: |
+        Compress-Archive -Path "x64/${{ env.BUILD_CONFIGURATION }}/*" `
+                         -DestinationPath "TCMT-Windows-x64-alpha.zip" -Force
+
+    - name: Upload alpha artifact
       uses: actions/upload-artifact@v7
       with:
-        name: TCMT-Windows-x64-Release
-        path: |
-          x64/${{ env.BUILD_CONFIGURATION }}/*.exe
-          x64/${{ env.BUILD_CONFIGURATION }}/*.dll
-          x64/${{ env.BUILD_CONFIGURATION }}/*.pdb
+        name: TCMT-Windows-x64-alpha
+        path: TCMT-Windows-x64-alpha.zip
+        retention-days: 14
 
   build-macos:
     name: macOS (CMake + Clang)
     runs-on: macos-14
+    env:
+      # ccache 4.x defaults to ~/Library/Caches/ccache on macOS, but the cache
+      # steps below use ~/.cache/ccache — pin it so restore/save actually hit.
+      CCACHE_DIR: ~/.cache/ccache
 
     steps:
     - name: Checkout repository
@@ -137,18 +189,49 @@ jobs:
         fetch-depth: 0
 
     - name: Install dependencies
-      run: brew install ncurses
+      run: |
+        brew install ncurses ccache
+
+    - name: Restore ccache
+      uses: actions/cache/restore@v6
+      id: cache-ccache
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'cmake/**') }}
+        restore-keys: |
+          ccache-${{ runner.os }}-
 
     - name: Configure CMake
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake -B build -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_OSX_ARCHITECTURES=arm64 \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
     - name: Build
       run: |
         cmake --build build -j$(sysctl -n hw.ncpu)
 
-    - name: Upload build artifact
+    - name: Show ccache stats
+      run: ccache -s
+
+    - name: Save ccache
+      if: always() && steps.cache-ccache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/CMakeLists.txt', 'cmake/**') }}
+
+    - name: Package alpha build
+      run: |
+        chmod +x build/src/TCMT-M
+        cd build/src
+        zip "${GITHUB_WORKSPACE}/TCMT-macOS-arm64-alpha.zip" TCMT-M
+
+    - name: Upload alpha artifact
       uses: actions/upload-artifact@v7
       with:
-        name: TCMT-macOS-arm64-Release
-        path: build/src/TCMT-M
+        name: TCMT-macOS-arm64-alpha
+        path: TCMT-macOS-arm64-alpha.zip
+        retention-days: 14
+

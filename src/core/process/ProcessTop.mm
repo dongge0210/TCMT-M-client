@@ -1,10 +1,26 @@
 // ProcessTop.mm — macOS top processes via proc_listallpids + proc_pidinfo
 #include "ProcessTop.h"
 #include "../Utils/Logger.h"
+#include <cstring>
+#include <pwd.h>
 
 #import <libproc.h>
 #import <mach/mach_time.h>
 #import <mach/mach.h>
+
+// The state word shown next to each process in the list, straight from
+// pbi_status. It stays English by design — status short words are part of the
+// label layer, like stale/FOLLOW/N/A.
+static const char* ProcStateWord(uint32_t status) {
+    switch (status) {
+        case 1:  return "idle";    // SIDL
+        case 2:  return "run";     // SRUN
+        case 3:  return "sleep";   // SSLEEP
+        case 4:  return "stop";    // SSTOP
+        case 5:  return "zombie";  // SZOMB
+        default: return "";
+    }
+}
 
 void ProcessTop::Refresh() {
     // Mach timebase (numerator/denominator for converting to nanoseconds)
@@ -51,7 +67,10 @@ void ProcessTop::Refresh() {
     std::sort(byMem.begin(), byMem.end(),
               [](const auto& a, const auto& b) { return a.second > b.second; });
 
-    int topN = std::min(7, (int)byMem.size());
+    // 128 足够让进程页的排序与过滤真正有用，又不至于每帧样本胀得太厉害。
+    // 这里对每个入选进程都要一次 proc_pidinfo，所以别无限抬；好在这个扫描本来就在后台线程上
+    // （main_mac.cpp 的 procRefreshing 守卫），拖长的是它自己那一轮，不会卡界面。
+    int topN = std::min(128, (int)byMem.size());
 
     // If we have a previous sample, compute CPU%
     std::unordered_map<pid_t, double> cpuPct;
@@ -72,8 +91,15 @@ void ProcessTop::Refresh() {
         }
     }
 
-    // Store previous samples for next cycle
+    // Store previous samples for next cycle, and collect the per-row context
+    // the list shows. Threads and CPU time come from the proc_taskinfo call this
+    // loop already makes; state and user cost one bsdinfo per top row (≤7 calls
+    // — never a scan-wide addition). Unreadable rows keep empty/-1 and the list
+    // renders N/A.
     prevSamples_.clear();
+    std::vector<int> thr(topN, -1);
+    std::vector<uint64_t> cpuMs(topN, 0);
+    std::vector<std::string> stateOf(topN), userOf(topN);
     for (int i = 0; i < topN; i++) {
         pid_t pid = byMem[i].first;
         proc_taskinfo taskInfo;
@@ -83,6 +109,29 @@ void ProcessTop::Refresh() {
             ProcSample& ps = prevSamples_[pid];
             ps.totalUser = taskInfo.pti_total_user;
             ps.totalSystem = taskInfo.pti_total_system;
+            thr[i] = static_cast<int>(taskInfo.pti_threadnum);
+            const uint64_t ticks = taskInfo.pti_total_user + taskInfo.pti_total_system;
+            cpuMs[i] = static_cast<uint64_t>(static_cast<double>(ticks) * timebase_ / 1e6);
+        }
+        proc_bsdinfo bi;
+        if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bi, sizeof(bi)) == sizeof(bi)) {
+            stateOf[i] = ProcStateWord(bi.pbi_status);
+            // uid -> name, cached: a handful of uids repeat across the rows and
+            // getpwuid_r can block on a directory service (LDAP/AD) on each call.
+            static std::unordered_map<uid_t, std::string> uidNames;
+            auto cached = uidNames.find(bi.pbi_uid);
+            if (cached == uidNames.end()) {
+                char pwBuf[256] = {};
+                struct passwd pwd;
+                struct passwd* res = nullptr;
+                std::string nm;
+                if (getpwuid_r(bi.pbi_uid, &pwd, pwBuf, sizeof(pwBuf), &res) == 0 &&
+                    res != nullptr && res->pw_name != nullptr) {
+                    nm = res->pw_name;
+                }
+                cached = uidNames.emplace(bi.pbi_uid, std::move(nm)).first;
+            }
+            if (!cached->second.empty()) userOf[i] = cached->second;
         }
     }
     prevTime_ = now;
@@ -96,6 +145,10 @@ void ProcessTop::Refresh() {
         e.pid = pid;
         e.memoryBytes = memMap[pid];
         e.cpuPercent = cpuPct[pid];
+        e.threads = thr[i];
+        e.cpuTimeMs = cpuMs[i];
+        e.state = stateOf[i];
+        e.user = userOf[i];
         // Get process name
         char nameBuf[PROC_PIDPATHINFO_MAXSIZE] = {};
         int nameLen = proc_name(pid, nameBuf, sizeof(nameBuf));
@@ -107,3 +160,5 @@ void ProcessTop::Refresh() {
         entries_.push_back(e);
     }
 }
+
+// ── Per-row context for the top N ────────────────────────────────────

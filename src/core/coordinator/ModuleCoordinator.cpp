@@ -1,4 +1,8 @@
 #include "ModuleCoordinator.h"
+// Snapshot() writes TuiData members, so this translation unit needs the full definition.
+// The header above only forward-declares it — that keeps the include out of every file
+// that includes ModuleCoordinator.h.
+#include "../../tui/TuiApp.h"
 #include "temperature/TemperatureWrapper.h"
 #include "Utils/Logger.h"
 #include "Utils/WinUtils.h"
@@ -98,7 +102,9 @@ void ModuleCoordinator::Start() {
 #ifdef TCMT_MACOS
     // PowerMonitor — direct IOReport (no sudo) with powermetrics fallback
     if (!powerMonitor_.Start()) {
-        Logger::Info("ModuleCoordinator: PowerMonitor direct mode unavailable, using powermetrics fallback");
+        // 能力探测，不是故障 —— powermetrics 那条路照样能出功耗。
+        // 真拿不到数据时界面会自己说（"Power unavailable"），日志里不必留一条 INFO。
+        Logger::Debug("ModuleCoordinator: PowerMonitor direct mode unavailable, using powermetrics fallback");
     } else {
         Logger::Info("ModuleCoordinator: PowerMonitor direct mode active (no sudo)");
         // Seed frequency immediately (before TemperatureLoop's first iteration)
@@ -205,10 +211,14 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
         std::lock_guard<std::mutex> lock(data_.tempMutex);
         sysInfo.temperatures = data_.temperatures;
         sysInfo.cpuTemperature = data_.cpuTemperature;
+        sysInfo.cpuPcoreTemperature = data_.cpuPcoreTemperature;
+        sysInfo.cpuEcoreTemperature = data_.cpuEcoreTemperature;
         sysInfo.gpuTemperature = data_.gpuTemperature;
         tuiData.temperatures = data_.temperatures;
     }
     tuiData.cpuTemp = sysInfo.cpuTemperature;
+    tuiData.cpuPcoreTemp = sysInfo.cpuPcoreTemperature;
+    tuiData.cpuEcoreTemp = sysInfo.cpuEcoreTemperature;
     tuiData.gpuTemp = sysInfo.gpuTemperature;
 
     // Disk
@@ -218,6 +228,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
         for (const auto& d : data_.disks) {
             tcmt::TuiData::DiskInfo di;
             di.letter = d.letter;
+            di.mountPoint = d.mountPoint;
             di.label = d.label;
             di.totalSize = d.totalSize;
             di.usedSpace = d.usedSpace;
@@ -238,6 +249,9 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
             memset(&sysAd, 0, sizeof(sysAd));
             wcsncpy_s(sysAd.name, WinUtils::StringToWstring(n.name).c_str(), _TRUNCATE);
             wcsncpy_s(sysAd.mac, WinUtils::StringToWstring(n.mac).c_str(), _TRUNCATE);
+            wcsncpy_s(sysAd.macCurrent,
+                      WinUtils::StringToWstring(n.currentMac.empty() ? n.mac : n.currentMac).c_str(),
+                      _TRUNCATE);
             wcsncpy_s(sysAd.ipAddress, WinUtils::StringToWstring(n.ip).c_str(), _TRUNCATE);
             wcsncpy_s(sysAd.adapterType, WinUtils::StringToWstring(n.type).c_str(), _TRUNCATE);
             sysAd.speed = n.speed;
@@ -249,6 +263,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
             ni.name = n.name;
             ni.ip = n.ip;
             ni.mac = n.mac;
+            ni.currentMac = n.currentMac;
             ni.type = n.type;
             ni.speed = n.speed;
             ni.downloadSpeed = n.dl;
@@ -271,17 +286,45 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.acOnline = data_.acOnline.load();
     sysInfo.batteryPercent = data_.batteryPercent.load();
     sysInfo.acOnline = data_.acOnline.load();
+    // 电池明细：schema 里那批 battery/* 字段一直在发，Windows 侧以前从来没人填。
+    sysInfo.batteryIsPresent = data_.batteryPresent.load();
+    sysInfo.batteryCycleCount = data_.batteryCycleCount.load();
+    sysInfo.batteryDesignCapacity = data_.batteryDesignCapacity.load();
+    sysInfo.batteryMaxCapacity = data_.batteryFullCapacity.load();
+    sysInfo.batteryVoltage = data_.batteryVoltage.load();
+    sysInfo.batteryHealthPercent = static_cast<float>(data_.batteryHealthPercent.load());
 
     // PowerMonitor (Apple Silicon — CPU/GPU/ANE power in mW)
+    const bool pwrAvail = powerMonitor_.IsPowerAvailable();
     tuiData.cpuPower = data_.cpuPower.load();
     tuiData.gpuPower = data_.gpuPower.load();
     tuiData.anePower = data_.anePower.load();
+    tuiData.powerAvailable = pwrAvail;
     tuiData.gpuFreq = data_.gpuFreq.load();
     tuiData.gpuMaxFreq = data_.gpuMaxFreq.load();
     sysInfo.cpuPower = data_.cpuPower.load();
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();
+    sysInfo.powerAvailable = pwrAvail;
     sysInfo.gpuFreq = data_.gpuFreq.load();
+
+    // ─── 4. Fan speeds (extracted from temperature list by "Fan" name) ───
+    sysInfo.fans.clear();
+    {
+        std::lock_guard<std::mutex> lock(data_.tempMutex);
+        for (const auto& [name, temp] : data_.temperatures) {
+            if (name.find("Fan") != std::string::npos ||
+                name.find("fan") != std::string::npos) {
+                SystemInfo::FanData fd;
+                fd.name = name;
+                fd.rpm = static_cast<float>(temp); // temp field reused for RPM
+                sysInfo.fans.push_back(fd);
+            }
+        }
+    }
+
+    // ─── 5+7+6: Process top, battery detail, per-core — populated by caller (main_mac/main) ───
+    // These are filled by the main loop, not by ModuleCoordinator
 }
 
 // =====================================================================
@@ -300,6 +343,8 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 tempLogged = true;
             }
             data_.cpuTemperature = 0.0;
+            data_.cpuPcoreTemperature = 0.0;
+            data_.cpuEcoreTemperature = 0.0;
             data_.gpuTemperature = 0.0;
 
             for (const auto& [name, temp] : temps) {
@@ -318,9 +363,30 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 if (isGpu) {
                     if (data_.gpuTemperature == 0.0)
                         data_.gpuTemperature = temp;
-                } else {
-                    if (data_.cpuTemperature == 0.0)
-                        data_.cpuTemperature = temp;
+                    continue;
+                }
+
+                // P-core / E-core cluster temperature detection
+                // Apple Silicon SMC reports separate sensors for each cluster:
+                //   "P-core", "pACC", "P cluster", "performance core", etc.
+                //   "E-core", "eACC", "E cluster", "efficiency core", etc.
+                bool isPcore = (lower.find("pcore") != std::string::npos ||
+                                lower.find("p_core") != std::string::npos ||
+                                lower.find("p-core") != std::string::npos ||
+                                lower.find("performance") != std::string::npos ||
+                                (lower.find("p") != std::string::npos && lower.find("acc") != std::string::npos));
+                bool isEcore = (lower.find("ecore") != std::string::npos ||
+                                lower.find("e_core") != std::string::npos ||
+                                lower.find("e-core") != std::string::npos ||
+                                lower.find("efficiency") != std::string::npos ||
+                                (lower.find("e") != std::string::npos && lower.find("acc") != std::string::npos));
+
+                if (isPcore && data_.cpuPcoreTemperature == 0.0) {
+                    data_.cpuPcoreTemperature = temp;
+                } else if (isEcore && data_.cpuEcoreTemperature == 0.0) {
+                    data_.cpuEcoreTemperature = temp;
+                } else if (data_.cpuTemperature == 0.0) {
+                    data_.cpuTemperature = temp;
                 }
             }
 
@@ -341,12 +407,21 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 double ef = GetPmECoreFreq();
                 if (pf > 0) data_.pCoreFreq.store(pf);
                 if (ef > 0) data_.eCoreFreq.store(ef);
+                // powermetrics globals (all mW — same unit as data_.*Power). Without
+                // these the UI showed 0 W whenever direct IOReport mode was unavailable.
+                double cp = GetPmCpuPower();
+                double gp = GetPmGpuPower();
+                double ap = GetPmAnePower();
+                if (cp > 0) data_.cpuPower.store(cp);
+                if (gp > 0) data_.gpuPower.store(gp);
+                if (ap > 0) data_.anePower.store(ap);
             }
 #endif
         } catch (const std::exception& e) {
             Logger::Error("TemperatureLoop: " + std::string(e.what()));
         }
 
-        SleepFor(st, 2000);
+        // 4× 采样基周期，下限 1000ms —— 温度那一路单次采集不便宜
+        SleepFor(st, ScaledSampleIntervalMs(data_, 4, 1000));
     }
 }

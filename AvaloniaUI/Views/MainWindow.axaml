@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:TCMT.Avalonia.Localization"
         xmlns:vm="clr-namespace:TCMT.Avalonia.ViewModels"
         xmlns:views="clr-namespace:TCMT.Avalonia.Views"
         x:Class="TCMT.Avalonia.Views.MainWindow"
@@ -14,51 +15,71 @@
     </Design.DataContext>
 
     <Window.DataTemplates>
+        <!-- Five views, matching the design draft. The merged views/VM:s live in _archive/. -->
         <DataTemplate DataType="vm:DashboardViewModel">
             <views:DashboardView />
         </DataTemplate>
-        <DataTemplate DataType="vm:CpuViewModel">
-            <views:CpuView />
-        </DataTemplate>
-        <DataTemplate DataType="vm:MemoryViewModel">
-            <views:MemoryView />
+        <DataTemplate DataType="vm:ProcessesViewModel">
+            <views:ProcessesView />
         </DataTemplate>
         <DataTemplate DataType="vm:NetworkViewModel">
             <views:NetworkView />
         </DataTemplate>
-        <DataTemplate DataType="vm:StorageViewModel">
-            <views:StorageView />
+        <DataTemplate DataType="vm:LogViewModel">
+            <views:LogView />
         </DataTemplate>
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>
+        <!-- 硬件那十页共用一个 VM 类型，所以一个模板就够 -->
+        <DataTemplate DataType="vm:HardwareSpecViewModel">
+            <views:HardwareSpecView />
+        </DataTemplate>
     </Window.DataTemplates>
 
-    <Grid ColumnDefinitions="72,*">
-        <!-- Sidebar -->
+    <Window.Styles>
+        <!-- 分组的箭头：展开时翻过来 -->
+        <Style Selector="PathIcon.chev">
+            <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+        </Style>
+        <Style Selector="PathIcon.chev.expanded">
+            <Setter Property="RenderTransform" Value="rotate(180deg)"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="200,*">
+        <!-- Sidebar (matching pen design: 200px, dark surface, nav items with text) -->
         <Border Grid.Column="0" 
                 Background="{StaticResource SurfaceBrush}" 
                 BorderThickness="0,0,1,0" 
                 BorderBrush="{StaticResource BorderBrush}">
-            <Grid RowDefinitions="Auto,*">
+            <Grid RowDefinitions="Auto,*,Auto">
                 <!-- Logo -->
                 <Border Grid.Row="0" 
-                        Height="72" 
+                        Height="56" 
                         BorderThickness="0,0,0,1" 
                         BorderBrush="{StaticResource BorderBrush}">
-                    <Border Width="36" 
-                            Height="36" 
-                            CornerRadius="10" 
-                            Background="{StaticResource PrimaryBrush}" 
-                            HorizontalAlignment="Center" 
-                            VerticalAlignment="Center">
-                        <TextBlock Text="T" 
-                                   FontSize="18" 
-                                   FontWeight="Bold" 
-                                   Foreground="White"
-                                   HorizontalAlignment="Center" 
+                    <StackPanel Orientation="Horizontal" 
+                                HorizontalAlignment="Center" 
+                                VerticalAlignment="Center" 
+                                Spacing="10">
+                        <Border Width="28" 
+                                Height="28" 
+                                CornerRadius="8" 
+                                Background="{StaticResource SecondaryBrush}">
+                            <TextBlock Text="T" 
+                                       FontSize="14" 
+                                       FontWeight="Bold" 
+                                       Foreground="White"
+                                       HorizontalAlignment="Center" 
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="TCMT" 
+                                   FontSize="16" 
+                                   FontWeight="SemiBold" 
+                                   Foreground="{StaticResource TextPrimaryBrush}"
                                    VerticalAlignment="Center"/>
-                    </Border>
+                    </StackPanel>
                 </Border>
 
                 <!-- Navigation -->
@@ -66,23 +87,64 @@
                          ItemsSource="{Binding NavigationItems}" 
                          SelectedItem="{Binding SelectedNavigationItem}"
                          Background="Transparent" 
-                         Margin="8,16,8,0" 
-                         BorderThickness="0"
-                         HorizontalAlignment="Center">
+                         Margin="8,12,8,0" 
+                         BorderThickness="0">
 
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:NavigationItem">
+                            <StackPanel>
+                                <Border CornerRadius="8"
+                                        Padding="12,10"
+                                        Margin="0,2"
+                                        Background="{Binding IsSelected, Converter={StaticResource NavSelectedToBgConverter}}">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Title}"
+                                                   FontSize="13"
+                                                   FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeightConverter}}"
+                                                   Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- 只有分组有箭头。点它只收起/展开，不动选中态 -->
+                                        <Button Grid.Column="1"
+                                                Command="{Binding ActivateCommand}"
+                                                IsVisible="{Binding HasChildren}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="2"
+                                                Height="18" Width="18"
+                                                VerticalAlignment="Center"
+                                                ToolTip.Tip="{loc:Tr 展开 / 收起}">
+                                            <PathIcon Width="11" Height="11"
+                                                      Classes="chev"
+                                                      Classes.expanded="{Binding IsExpanded}"
+                                                      Data="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"
+                                                      Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
 
-                            <Border Width="48" 
-                                    Height="48" 
-                                    CornerRadius="12" 
-                                    Margin="0,4"
-                                    Background="Transparent">
-                                <TextBlock Text="{Binding Icon}" 
-                                           FontSize="22" 
-                                           HorizontalAlignment="Center" 
-                                           VerticalAlignment="Center"/>
-                            </Border>
+                                <!-- 子项：不在 ListBox 的 Items 里，所以自己走命令切页 -->
+                                <ItemsControl ItemsSource="{Binding Children}"
+                                              IsVisible="{Binding IsExpanded}"
+                                              Margin="10,0,0,2">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:NavigationItem">
+                                            <Button Command="{Binding ActivateCommand}"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="12,5"
+                                                    CornerRadius="6"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left">
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="12"
+                                                           FontWeight="{Binding IsSelected, Converter={StaticResource NavSelectedToFontWeightConverter}}"
+                                                           Foreground="{Binding IsSelected, Converter={StaticResource NavSelectedToFgConverter}}"/>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                     <ListBox.Styles>
@@ -97,55 +159,68 @@
                             </Setter>
                         </Style>
                         <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                            <Setter Property="(Panel.Background)" Value="{StaticResource SurfaceLightBrush}"/>
-                        </Style>
-                        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-                            <Setter Property="(Panel.Background)" Value="{StaticResource BorderBrush}"/>
+                            <Setter Property="(Panel.Background)" Value="Transparent"/>
                         </Style>
                     </ListBox.Styles>
                 </ListBox>
+
+                <!-- Version at bottom -->
+                <Border Grid.Row="2" 
+                        Height="40" 
+                        BorderThickness="0,1,0,0" 
+                        BorderBrush="{StaticResource BorderBrush}">
+                    <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}" 
+                               FontSize="11" 
+                               Foreground="{StaticResource TextMutedBrush}"
+                               HorizontalAlignment="Center" 
+                               VerticalAlignment="Center"/>
+                </Border>
             </Grid>
         </Border>
 
         <!-- Main Content -->
         <Grid Grid.Column="1" RowDefinitions="Auto,*">
-            <!-- Status Bar -->
+            <!-- TopBar (matching pen design: connection status + refresh) -->
             <Border Grid.Row="0" 
-                    Height="40" 
+                    Height="36" 
                     Background="{StaticResource SurfaceBrush}"
                     BorderThickness="0,0,0,1"
                     BorderBrush="{StaticResource BorderBrush}"
-                    Padding="20,0">
-                <Grid ColumnDefinitions="*,Auto,Auto">
+                    Padding="16,0">
+                <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" 
                                 Orientation="Horizontal" 
                                 Spacing="8"
                                 VerticalAlignment="Center">
-                        <Ellipse Width="8" 
-                                 Height="8"
+                        <Ellipse Width="7" 
+                                 Height="7"
                                  Fill="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"/>
                         <TextBlock Text="{Binding ConnectionStatus}" 
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    FontSize="12"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
-                    
-                    <TextBlock Grid.Column="1" 
-                               Text="TCMT v2.0" 
-                               Foreground="{StaticResource TextMutedBrush}"
-                               FontSize="11"
-                               VerticalAlignment="Center"
-                               Margin="0,0,16,0"/>
-                    
-                    <Button Grid.Column="2" 
-                            Content="🔄" 
-                            Command="{Binding ReconnectCommand}"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Padding="4"
-                            FontSize="14"
-                            ToolTip.Tip="重新连接"
-                            VerticalAlignment="Center"/>
+
+                    <StackPanel Grid.Column="1" 
+                                Orientation="Horizontal" 
+                                Spacing="12"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="{Binding AppVersion, StringFormat='TCMT v{0}'}" 
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"/>
+                        <!-- 刷新用矢量图标而不是 emoji：emoji 靠系统字体渲染，不跟主题前景色，
+                             两个平台上还会长成两副样子。PathIcon 走 Foreground，两边一致。 -->
+                        <Button Command="{Binding ReconnectCommand}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="2"
+                                ToolTip.Tip="{loc:Tr 重新连接}"
+                                Height="24" Width="24">
+                            <PathIcon Width="13" Height="13"
+                                      Data="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Border>
 

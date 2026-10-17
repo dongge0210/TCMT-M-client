@@ -1,7 +1,7 @@
 #include "Logger.h"
 
 #if defined(TCMT_MACOS) || defined(TCMT_LINUX) || defined(_WIN32)
-#include "../../tui/LogBuffer.h"
+#include "LogBuffer.h"
 #endif
 
 #include <filesystem>
@@ -42,6 +42,7 @@ void Logger::WorkerThreadFunc() {
         for (const auto& entry : localQueue) {
             logFile.write(entry.c_str(), entry.size());
         }
+        logFile.flush();  // low-volume logs would otherwise sit in the stream buffer
         localQueue.clear();
 
         if (shutdownFlag.load()) {

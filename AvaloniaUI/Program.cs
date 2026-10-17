@@ -2,11 +2,15 @@ using Avalonia;
 using Serilog;
 using System;
 using System.IO;
+using TCMT.Avalonia.Services;
 
 namespace TCMT.Avalonia;
 
 internal sealed class Program
 {
+    /// <summary>In-memory tail of the log. Registered in DI so the log page binds to the same instance.</summary>
+    public static LogStream InMemoryLog { get; } = new();
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -15,6 +19,7 @@ internal sealed class Program
         
         var logConfig = new LoggerConfiguration()
             .MinimumLevel.Debug()
+            .WriteTo.Sink(InMemoryLog)
             .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7);
 #if DEBUG
         logConfig.WriteTo.Debug();

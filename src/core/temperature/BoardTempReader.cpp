@@ -92,9 +92,9 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         s_ready = true;
         if (!s_pa.Open()) return result;
         auto data = LoadResource(LPCIO_RES);
-        if (data.empty()) { Logger::Info("BoardTemp: LPCIO resource not found"); return result; }
+        if (data.empty()) { Logger::Debug("BoardTemp: LPCIO resource not found"); return result; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "LpcIO")) {
-            Logger::Info("BoardTemp: LpcIO module failed to load"); return result;
+            Logger::Debug("BoardTemp: LpcIO module failed to load"); return result;
         }
 
         // Step 1: SelectSlot — matches LpcPort constructor

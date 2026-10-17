@@ -2,6 +2,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('osx'))">osx-arm64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('windows'))">win-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('linux'))">linux-x64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -9,23 +12,38 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyTitle>TCMT - 系统硬件监视器</AssemblyTitle>
     <AssemblyDescription>实时硬件监控工具 Avalonia 版本</AssemblyDescription>
-    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <!-- 只能填数字，不能带 ALPHA_ 前缀 —— 跟根 CMakeLists 的 project(VERSION) 对齐。
+         改版本时六处一起改，清单见 AvaloniaUI/Core/Constants.cs 上面那段注释。 -->
+    <AssemblyVersion>0.0.79.0</AssemblyVersion>
     <RootNamespace>TCMT.Avalonia</RootNamespace>
+    <!-- OS support: Windows 10 22H2+ / Win11 24H2+, macOS 15+ (arm64 + Intel), Ubuntu 22.04 LTS+ -->
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::IsOSPlatform('osx'))">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::IsOSPlatform('windows'))">10.0.19041.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <!-- _archive/ 是已并进概览的旧五屏(CPU/GPU/内存/存储/温度)。_archive/README.md 声称
+       「不参与构建」,但 SDK 式工程默认通配把它们连同 .axaml 一起编了进来。
+       StorageViewModel 引用的 Letter / LogicalDriveLetters 正要改成挂载点,归档不该跟着改。
+       .axaml 与 .cs 必须成对排除 —— 只排一半会留下没有 code-behind 的 XAML,编译失败。 -->
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.0.4" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.4" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.17" Condition="'$(Configuration)' == 'Debug'" />
+    <Compile Remove="_archive\**\*.cs" />
+    <AvaloniaXaml Remove="_archive\**\*.axaml" />
+    <AvaloniaResource Remove="_archive\**\*.axaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.20" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
-    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using TCMT.Avalonia.Localization;
 using TCMT.Avalonia.Models;
 
 namespace TCMT.Avalonia.ViewModels;
@@ -43,28 +44,72 @@ public partial class NetworkViewModel : ViewModelBase
     [ObservableProperty]
     private int _btDeviceCount;
 
+    /// <summary>已连接设备名，多个用 " · " 连接。空表示服务端没提供（旧版本）或当前无已连接设备。</summary>
+    [ObservableProperty]
+    private string _btDeviceName = "";
+
     public string WifiDisplay
     {
         get
         {
-            if (!HasWiFi) return "WiFi：未检测到适配器";
+            if (!HasWiFi) return Translator.T("WiFi：未检测到适配器");
             var extra = "";
             if (!string.IsNullOrEmpty(WifiBand)) extra += "  " + WifiBand;
             if (!string.IsNullOrEmpty(WifiGen)) extra += "  " + WifiGen;
             if (!string.IsNullOrEmpty(WifiSSID))
-                return $"WiFi：{WifiSSID}  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
+                return Translator.T("WiFi：{0}  频道:{1}  信号:{2} dBm  {3}{4}", WifiSSID, WifiChannel, WifiRSSI, WifiSecurity, extra);
             if (WifiRSSI != 0 || WifiChannel != 0)
-                return $"WiFi：已连接  频道:{WifiChannel}  信号:{WifiRSSI} dBm  {WifiSecurity}{extra}";
-            return "WiFi：已断开";
+                return Translator.T("WiFi：已连接  频道:{0}  信号:{1} dBm  {2}{3}", WifiChannel, WifiRSSI, WifiSecurity, extra);
+            return Translator.T("WiFi：已断开");
         }
     }
 
-    public string BtDisplay => HasBluetooth ? $"蓝牙：{(BtPowerOn ? "已开启" : "已关闭")} ({BtDeviceCount} 台设备)" : "蓝牙未检测到";
+    // 有已连接设备名就报名字 —— 比"3 台设备"有用得多，也正是设计稿要显示的东西。
+    // 名字来自采集端的 JoinConnectedDeviceNames；旧服务端没这个字段时回落到数量。
+    public string BtDisplay => !HasBluetooth
+        ? Translator.T("蓝牙未检测到")
+        : Translator.T("蓝牙：{0}", Translator.T(BtPowerOn ? "已开启" : "已关闭")) +
+          (string.IsNullOrEmpty(BtDeviceName) ? Translator.T(" ({0} 台设备)", BtDeviceCount) : $" {BtDeviceName}");
+
+    /// <summary>Inverse of HasWiFi, for the "capability missing" note in NetworkView.
+    /// The section stays in place and explains itself instead of collapsing to nothing.</summary>
+    public bool HasNoWiFi => !HasWiFi;
+
+    /// <summary>
+    /// Degradation copy in the terminal's four-state wording. Shown only when it says something
+    /// the SSID row does not already say — a connected adapter with a readable SSID needs no note.
+    /// The state is written out in words, so it never depends on colour to be understood.
+    /// </summary>
+    public string WifiStateNote
+    {
+        get
+        {
+            if (!HasWiFi || !string.IsNullOrEmpty(WifiSSID))
+            {
+                return "";
+            }
+
+            return WifiRSSI != 0 || WifiChannel != 0
+                ? Translator.T("已连接，但 SSID 读不到——系统需要开启定位服务才会返回 SSID")
+                : Translator.T("未连接——在系统设置里选择网络，这里会跟着变");
+        }
+    }
+
+    public bool HasWifiNote => HasWiFi && WifiStateNote.Length > 0;
+
+    /// <summary>No adapter reported at all — the interface table says so instead of staying blank.</summary>
+    public bool HasNoAdapters => Adapters.Count == 0;
+
+    /// <summary>
+    /// 「3 适配器」那种带数字的短句。做成属性而不是 XAML 里的 StringFormat：
+    /// 数字和量词的顺序中英不一样，StringFormat 拼不出来。
+    /// </summary>
+    public string AdapterCountText => Translator.T("{0} 适配器", Adapters.Count);
 
     public NetworkViewModel()
     {
-        Title = "网络";
-        Icon = "🌐";
+        Title = Translator.T("网络");
+        Icon = "network";
     }
 
     public override void Update(SystemInfo info)
@@ -107,8 +152,14 @@ public partial class NetworkViewModel : ViewModelBase
         HasBluetooth = info.HasBluetooth;
         BtPowerOn = info.BtPowerOn;
         BtDeviceCount = info.BtDeviceCount;
+        BtDeviceName = info.BtDeviceName ?? "";
 
         OnPropertyChanged(nameof(WifiDisplay));
         OnPropertyChanged(nameof(BtDisplay));
+        OnPropertyChanged(nameof(HasNoWiFi));
+        OnPropertyChanged(nameof(WifiStateNote));
+        OnPropertyChanged(nameof(HasWifiNote));
+        OnPropertyChanged(nameof(HasNoAdapters));
+        OnPropertyChanged(nameof(AdapterCountText));
     }
 }

@@ -1,6 +1,7 @@
 // SmartReader.cpp — DeviceIoControl SMART reader for Windows physical disks
 
 #include "SmartReader.h"
+#include "NVMe_HealthLog.h"
 #include "../DataStruct/DataStruct.h"
 #include "../Utils/Logger.h"
 
@@ -213,12 +214,10 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     if (hDevice != INVALID_HANDLE_VALUE) {
         // Step 1: Get SMART version / capabilities
         GETVERSIONINPARAMS gvp{};
-        DWORD gvpErr = 0;
         bool gvpOk = DeviceIoControl(hDevice, SMART_GET_VERSION,
                                      nullptr, 0,
                                      &gvp, sizeof(gvp),
                                      &bytesReturned, nullptr);
-        if (!gvpOk) gvpErr = GetLastError();
         if (gvpOk &&
             bytesReturned >= sizeof(GETVERSIONINPARAMS) &&
             (gvp.fCapabilities & 1)) {  // SMART supported
@@ -240,12 +239,10 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
             BYTE outBuf[sizeof(SENDCMDOUTPARAMS) + 512 - 1] = {};
 
-            DWORD rcvErr = 0;
             bool rcvOk = DeviceIoControl(hDevice, SMART_RCV_DRIVE_DATA,
                                          sendBuf, sizeof(sendBuf),
                                          outBuf, sizeof(outBuf),
                                          &bytesReturned, nullptr);
-            if (!rcvOk) rcvErr = GetLastError();
 
             // Driver may return 528 bytes (16-byte header + 512 data) without padding
             if (rcvOk &&
@@ -311,8 +308,8 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                         }
                     }
 
-                    // Power-on hours (ID 9)
-                    if (id == 9 && rawVal < 100000000)
+                    // Power-on hours (ID 9) — tight limit catches ATA-translation garbage
+                    if (id == 9 && rawVal < 300000)
                         smartData.powerOnHours = rawVal;
 
                     // HDD-specific: spin-up time (3), start-stop count (4)
@@ -387,19 +384,22 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 // NVMe drives are always SSDs
                 wcsncpy_s(smartData.diskType, L"SSD", _TRUNCATE);
 
-                // NVMe SMART / Health Information Log layout (NVM Express 1.4 §5.14.1.2):
+                // NVMe SMART / Health Information Log layout (Log Page 02h):
                 // Offset 0:   CriticalWarning (1 byte)
                 // Offset 1:   Temperature[2] (composite temp, uint16 LE, Kelvin)
                 // Offset 3:   AvailableSpare
                 // Offset 4:   AvailableSpareThreshold
                 // Offset 5:   PercentageUsed
-                // Offset 32:  PowerOnHours[16] (first 8 bytes LE)
+                // Offset 128: PowerOnHours[16] (low 8 bytes LE)
+
+                // All counters are 128-bit (16-byte) LE values; the low 64
+                // bits hold the count. See NVMe_HealthLog.h for all offsets.
 
                 // Temperature: composite temp (2 bytes LE, Kelvin) → Celsius
                 USHORT tempKelvin = raw[1] | (raw[2] << 8);
                 if (tempKelvin > 273) {
                     int tempC = static_cast<int>(tempKelvin) - 273;
-                    if (tempC < 128) smartData.temperature = static_cast<double>(tempC);
+                    if (tempC <= 120) smartData.temperature = static_cast<double>(tempC);
                 }
 
                 // Health percentage (100 - PercentageUsed)
@@ -409,10 +409,11 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     smartData.wearLeveling = pctUsed / 100.0;
                 }
 
-                // Power-on hours (offset 32, first 8 bytes LE)
+                // Power-on hours (standard offset 128, low 64 bits LE;
+                // confirmed with DiskGenius: 0x37E3 = 14307 hours)
                 uint64_t hours = 0;
-                memcpy(&hours, raw + 32, sizeof(uint64_t));
-                if (hours > 0 && hours < 100000000)
+                memcpy(&hours, raw + NVMeHealthLog::kPowerOnHoursOffset, sizeof(uint64_t));
+                if (hours > 0 && hours < 300000)
                     smartData.powerOnHours = hours;
 
                 // AvailableSpare below threshold indicates degraded health
@@ -432,46 +433,45 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     wcsncpy_s(a.name, name, _TRUNCATE);
                     wcsncpy_s(a.description, desc, _TRUNCATE);
                 };
-                addAttr(0x01, raw[0], raw[0], L"严重警告标志",
-                    L"NVMe 关键警告：0=正常，非0表示存在严重问题");
+                addAttr(0x01, raw[0], raw[0], L"Critical Warning",
+                    L"NVMe critical warning flags: 0=OK, non-zero indicates serious issue");
                 addAttr(0x02, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,
-                            raw[1] | (raw[2] << 8), L"温度",
-                    L"NVMe 复合温度传感器（摄氏度）");
-                addAttr(0x03, raw[3], raw[3], L"可用备用空间",
-                    L"剩余可替换坏块的备用空间百分比");
-                addAttr(0x04, raw[4], raw[4], L"可用备用空间阈值",
-                    L"备用空间低于此阈值时触发警告");
-                addAttr(0x05, raw[5], raw[5], L"已用寿命百分比",
-                    L"已消耗的额定写入寿命百分比，100=寿命耗尽");
+                            raw[1] | (raw[2] << 8), L"Temperature",
+                    L"NVMe composite temperature sensor (Celsius)");
+                addAttr(0x03, raw[3], raw[3], L"Available Spare",
+                    L"Remaining spare space for bad block replacement");
+                addAttr(0x04, raw[4], raw[4], L"Available Spare Threshold",
+                    L"Spare threshold that triggers warning when breached");
+                addAttr(0x05, raw[5], raw[5], L"Percentage Used",
+                    L"Percentage of rated write endurance consumed (100=exhausted)");
                 uint64_t v6=0,v7=0,v8=0,v9=0,v10=0,v11=0,v12=0,v13=0,v14=0,v15=0;
-                memcpy(&v6,  raw + 32, 8);
-                memcpy(&v7,  raw + 48, 8);
-                memcpy(&v8,  raw + 64, 8);
-                memcpy(&v9,  raw + 80, 8);
-                memcpy(&v10, raw + 96, 8);
-                memcpy(&v11, raw + 112, 8);
-                memcpy(&v12, raw + 128, 8);
-                memcpy(&v13, raw + 144, 8);
-                memcpy(&v14, raw + 160, 8);
-                memcpy(&v15, raw + 176, 8);
-                addAttr(0x06, 0, v6,  L"主机总计读取", L"主机累计从 NVMe 盘读取的数据量（512字节单位）");
-                addAttr(0x07, 0, v7,  L"主机总计写入", L"主机累计向 NVMe 盘写入的数据量（512字节单位）");
-                addAttr(0x08, 0, v8,  L"主机读命令计数", L"主机发出的读取命令累计次数");
-                addAttr(0x09, 0, v9,  L"主机写命令计数", L"主机发出的写入命令累计次数");
-                addAttr(0x0A, 0, v10, L"控制器忙状态时间", L"控制器处理命令的累计忙碌时间（分钟）");
-                addAttr(0x0B, 0, v11, L"通电次数", L"NVMe 盘累计通电/断电循环次数");
-                addAttr(0x0C, 0, v12, L"通电时间", L"NVMe 盘累计通电运行小时数");
-                addAttr(0x0D, 0, v13, L"不安全关机计数", L"非正常断电/不安全关机的累计次数");
-                addAttr(0x0E, 0, v14, L"介质与数据完整性错误", L"检测到的介质错误和数据完整性错误总数");
-                addAttr(0x0F, 0, v15, L"错误日志项数", L"NVMe 错误信息日志中的条目数量");
+                memcpy(&v6,  raw + NVMeHealthLog::kDataUnitsReadOffset, 8);
+                memcpy(&v7,  raw + NVMeHealthLog::kDataUnitsWrittenOffset, 8);
+                memcpy(&v8,  raw + NVMeHealthLog::kHostReadCommandsOffset, 8);
+                memcpy(&v9,  raw + NVMeHealthLog::kHostWriteCommandsOffset, 8);
+                memcpy(&v10, raw + NVMeHealthLog::kControllerBusyTimeOffset, 8);
+                memcpy(&v11, raw + NVMeHealthLog::kPowerCyclesOffset, 8);
+                memcpy(&v12, raw + NVMeHealthLog::kPowerOnHoursOffset, 8);
+                memcpy(&v13, raw + NVMeHealthLog::kUnsafeShutdownsOffset, 8);
+                memcpy(&v14, raw + NVMeHealthLog::kMediaDataIntegrityErrorsOffset, 8);
+                memcpy(&v15, raw + NVMeHealthLog::kErrorLogEntriesOffset, 8);
+                addAttr(0x06, 0, v6,  L"Data Units Read", L"Total data read from NVMe drive (units of 512 bytes)");
+                addAttr(0x07, 0, v7,  L"Data Units Written", L"Total data written to NVMe drive (units of 512 bytes)");
+                addAttr(0x08, 0, v8,  L"Host Read Commands", L"Total read commands issued by host");
+                addAttr(0x09, 0, v9,  L"Host Write Commands", L"Total write commands issued by host");
+                addAttr(0x0A, 0, v10, L"Controller Busy Time", L"Total time controller was busy processing commands (minutes)");
+                addAttr(0x0B, 0, v11, L"Power Cycles", L"Total power on/off cycles");
+                addAttr(0x0C, 0, v12, L"Power On Hours", L"Total power-on hours");
+                addAttr(0x0D, 0, v13, L"Unsafe Shutdowns", L"Total unsafe/abnormal power-down events");
+                addAttr(0x0E, 0, v14, L"Media & Integrity Errors", L"Total media errors and data integrity errors");
+                addAttr(0x0F, 0, v15, L"Error Log Entries", L"Number of entries in the NVMe error information log");
             } else {
-                DWORD nvmeErr = GetLastError();
-                Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe IOCTL fail err=" +
-                    std::to_string(nvmeErr));
+                Logger::Debug("SMART disk" + std::to_string(diskIndex) + " NVMe IOCTL fail err=" +
+                    std::to_string(GetLastError()));
             }
             CloseHandle(hNvme);
         } else {
-            Logger::Info("SMART disk" + std::to_string(diskIndex) + " NVMe open fail err=" +
+            Logger::Debug("SMART disk" + std::to_string(diskIndex) + " NVMe open fail err=" +
                 std::to_string(GetLastError()));
         }
     }

@@ -56,9 +56,9 @@ std::vector<MchbarSensor> IntelMchbarReader::ReadAll() {
         s_probed = true;
         if (!s_pa.Open()) { Logger::Debug("IntelMchbar: PawnIO not available"); return result; }
         auto data = LoadRes(MCHBAR_RES);
-        if (data.empty()) { Logger::Info("IntelMchbar: resource not found"); return result; }
+        if (data.empty()) { Logger::Debug("IntelMchbar: resource not found"); return result; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "IntelMCHBAR")) {
-            Logger::Info("IntelMchbar: module load failed"); return result;
+            Logger::Debug("IntelMchbar: module load failed"); return result;
         }
         uint64_t addrOut[1] = {0};
         if (!s_pa.Execute("ioctl_get_mchbar_addr", nullptr, 0, addrOut, 1, nullptr)) {

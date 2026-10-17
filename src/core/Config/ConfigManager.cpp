@@ -1,23 +1,11 @@
 // ConfigManager.cpp - Application configuration manager
-// Routes file I/O through IConfigParser (cpp-parsers) interface.
-// Internal data manipulation still uses nlohmann/json for the rich typed API
-// (dotted-key resolution, arrays, typed getters/setters) which the simpler
-// IConfigParser string-based interface cannot express.
-//
-// The data is stored as UTF-8 text in JSON format with 2-space indent.
-// Key resolution supports dotted notation (e.g., "display.refreshRate").
+// File I/O is plain JSON: load parses the file into nlohmann::json, save
+// dumps it with 2-space indent. Dotted-key resolution ("display.refreshRate")
+// and the typed access API live directly on the nlohmann::json document.
 
 #include "ConfigManager.h"
 
-// CPP-parsers unified config interface — only IConfigParser and
-// JsonConfigParser are used; ConfigParserFactory is avoided because
-// it transitively pulls in YAML/XML/TOML/INI backends that are not
-// compiled in the current macOS cmake configuration.
-#include "IConfigParser.h"
-#include "JsonConfigParser.h"
-
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
@@ -43,56 +31,37 @@ static std::vector<std::string> SplitKey(const std::string& key) {
 ConfigManager::ConfigManager(const std::string& path)
     : path_(path)
 {
-    // Create the format-specific parser based on file extension.
-    // Currently only the JSON backend is available; fall back to
-    // JsonConfigParser for any unrecognised extension so that
-    // load/save still work for plain JSON files.
-    auto ext_pos = path_.find_last_of('.');
-    if (ext_pos != std::string::npos) {
-        std::string ext = path_.substr(ext_pos + 1);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext == "json") {
-            parser_ = std::make_unique<JsonConfigParser>();
-        }
-        // Future backends (YAML, TOML, XML, INI) would be created here
-        // when their libraries are compiled into the build.
-    }
-    if (!parser_) {
-        // Default to JSON parser
-        parser_ = std::make_unique<JsonConfigParser>();
-    }
 }
 
-ConfigManager::~ConfigManager() = default;
-
 // =========================================================================
-// Accessors to the internal nlohmann::json stored inside the parser
+// Accessors to the internal nlohmann::json document
 // =========================================================================
 
 nlohmann::json& ConfigManager::GetData() {
-    // The parser is always a JsonConfigParser in the current build.
-    return static_cast<JsonConfigParser*>(parser_.get())->GetData();
+    return data_;
 }
 
 const nlohmann::json& ConfigManager::GetData() const {
-    return static_cast<const JsonConfigParser*>(parser_.get())->GetData();
+    return data_;
 }
 
 // =========================================================================
-// Loading / Saving (delegated to IConfigParser)
+// Loading / Saving (plain JSON file I/O)
 // =========================================================================
 
 bool ConfigManager::Load() {
     try {
-        if (!parser_->load(path_)) {
+        std::ifstream in(path_);
+        if (!in) {
             // File doesn't exist yet — that's fine, start with empty config
-            GetData() = nlohmann::json::object();
+            data_ = nlohmann::json::object();
             loaded_ = true;
             return true;
         }
+        in >> data_;
     } catch (const nlohmann::json::parse_error&) {
-        // Corrupt JSON file — warn and reset
-        GetData() = nlohmann::json::object();
+        // Corrupt JSON file — reset to empty
+        data_ = nlohmann::json::object();
         loaded_ = true;
         return false;
     }
@@ -106,7 +75,10 @@ bool ConfigManager::Save() const {
         return false;
     }
     try {
-        return parser_->save(path_);
+        std::ofstream out(path_);
+        if (!out) return false;
+        out << data_.dump(2);
+        return out.good();
     } catch (...) {
         return false;
     }
@@ -269,6 +241,7 @@ std::vector<std::string> ConfigManager::Validate() const {
     Rule rules[] = {
         {"logging.level",         Rule::STR,    0, 0, logLevels, 4},
         {"display.refreshRate",   Rule::INT,   100, 5000},
+        {"sampling.intervalMs",   Rule::INT,   200, 5000},
     };
 
     for (auto& r : rules) {

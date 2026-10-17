@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
 using TCMT.Avalonia.Core;
+using TCMT.Avalonia.Localization;
 
 namespace TCMT.Avalonia.Models;
 
@@ -51,7 +52,14 @@ public class SystemInfo
     public string GpuBrand { get; set; } = string.Empty;
     public ulong GpuMemory { get; set; }
     public double GpuCoreFreq { get; set; }
+    public double GpuMemoryPercent { get; set; }
     public bool GpuIsVirtual { get; set; }
+
+    /// <summary>
+    /// GPU 和 CPU 共用同一块物理内存（Apple Silicon）。为真时 <c>GpuMemory</c> 报的是统一内存
+    /// 总量，不是显存 —— 那种机器没有独立显存。
+    /// </summary>
+    public bool GpuIsUnified { get; set; }
     
     public List<NetworkAdapterData> Adapters { get; set; } = new();
     public string NetworkAdapterName { get; set; } = string.Empty;
@@ -66,14 +74,35 @@ public class SystemInfo
     public List<TemperatureData> Temperatures { get; set; } = new();
     public TpmData? Tpm { get; set; }
     public string OsVersion { get; set; } = string.Empty;
+    /// <summary>主机型号标识（采集端 os/model，如 Mac15,6）。静态信息，只随首个样本到达。</summary>
+    public string HardwareModel { get; set; } = string.Empty;
     public int BatteryPercent { get; set; } = -1;
     public bool AcOnline { get; set; }
+    public int BatteryCycleCount { get; set; }
+    public int BatteryDesignCapacity { get; set; }
+    public int BatteryMaxCapacity { get; set; }
+    public double BatteryHealthPercent { get; set; }
+    public double BatteryTemperature { get; set; }
+    public int BatteryAmperage { get; set; }
+    public int BatteryVoltage { get; set; }
+    public double BatteryChargerWatts { get; set; }
+    public bool BatteryIsCharging { get; set; }
+    public bool BatteryIsPresent { get; set; }
+    public List<FanData> Fans { get; set; } = new();
+    public List<PerCoreData> PerCores { get; set; } = new();
+    public List<ProcessTopEntry> TopProcesses { get; set; } = new();
+    public double LoadAvg1 { get; set; }
+    public double LoadAvg5 { get; set; }
+    public double LoadAvg15 { get; set; }
+    public int ProcessCount { get; set; }
+    public ulong UptimeSeconds { get; set; }
     public double CpuTemperature { get; set; }
+    public double CpuPcoreTemperature { get; set; }
+    public double CpuEcoreTemperature { get; set; }
     public double GpuTemperature { get; set; }
     public double CpuPower { get; set; }
     public double GpuPower { get; set; }
     public double AnePower { get; set; }
-    public double GpuFreq { get; set; }
     public double CpuUsageSampleIntervalMs { get; set; }
     public DateTime LastUpdate { get; set; }
 
@@ -90,6 +119,11 @@ public class SystemInfo
     public bool HasBluetooth { get; set; }
     public bool BtPowerOn { get; set; }
     public int BtDeviceCount { get; set; }
+    // 已连接设备名，多个用 " · " 连接。空表示服务端没提供（旧版本）或当前无已连接设备。
+    public string BtDeviceName { get; set; } = "";
+
+    // App version
+    public string Version { get; set; } = "0.14.0";
 }
 
 public class GpuData : ModelBase
@@ -101,6 +135,8 @@ public class GpuData : ModelBase
     private bool _isVirtual;
     private double _temperature;
     private double _usage;
+    private double _memoryPercent;
+    private bool _isUnified;
 
     public string Name { get => _name; set => SetProperty(ref _name, value); }
     public string Brand { get => _brand; set => SetProperty(ref _brand, value); }
@@ -109,15 +145,21 @@ public class GpuData : ModelBase
     public bool IsVirtual { get => _isVirtual; set => SetProperty(ref _isVirtual, value); }
     public double Temperature { get => _temperature; set => SetProperty(ref _temperature, value); }
     public double Usage { get => _usage; set => SetProperty(ref _usage, value); }
+    public double MemoryPercent { get => _memoryPercent; set => SetProperty(ref _memoryPercent, value); }
+
+    /// <summary>见 <c>SystemInfo.GpuIsUnified</c>。</summary>
+    public bool IsUnified { get => _isUnified; set => SetProperty(ref _isUnified, value); }
     
-    public string DisplayName => string.IsNullOrEmpty(Name) ? "未知显卡" : (IsVirtual ? $"{Name} (虚拟)" : Name);
+    public string DisplayName => string.IsNullOrEmpty(Name) ? Translator.T("未知显卡") : (IsVirtual ? $"{Name} {Translator.T("(虚拟)")}" : Name);
     public string MemoryDisplay => FormatUtils.FormatBytes(Memory);
+    public string MemoryPercentDisplay => MemoryPercent > 0 ? $"{MemoryPercent:F0}%" : "—";
 }
 
 public class NetworkAdapterData : ModelBase
 {
     private string _name = string.Empty;
     private string _mac = string.Empty;
+    private string _currentMac = string.Empty;
     private string _ipAddress = string.Empty;
     private string _adapterType = string.Empty;
     private ulong _speed;
@@ -126,13 +168,16 @@ public class NetworkAdapterData : ModelBase
 
     public string Name { get => _name; set => SetProperty(ref _name, value); }
     public string Mac { get => _mac; set => SetProperty(ref _mac, value); }
+    // 与 Mac 不同：macOS 的「私有 Wi-Fi 地址」按 SSID 轮换，所以这个值会变；
+    // Windows / Linux 上两者相同。为空表示服务端没提供。
+    public string CurrentMac { get => _currentMac; set => SetProperty(ref _currentMac, value); }
     public string IpAddress { get => _ipAddress; set => SetProperty(ref _ipAddress, value); }
     public string AdapterType { get => _adapterType; set => SetProperty(ref _adapterType, value); }
     public ulong Speed { get => _speed; set => SetProperty(ref _speed, value); }
     public ulong DownloadSpeed { get => _downloadSpeed; set { if (SetProperty(ref _downloadSpeed, value)) OnPropertyChanged(nameof(DownloadDisplay)); } }
     public ulong UploadSpeed { get => _uploadSpeed; set { if (SetProperty(ref _uploadSpeed, value)) OnPropertyChanged(nameof(UploadDisplay)); } }
     
-    public string DisplayName => string.IsNullOrEmpty(Name) ? "未知网卡" : $"{Name} ({IpAddress})";
+    public string DisplayName => string.IsNullOrEmpty(Name) ? Translator.T("未知网卡") : $"{Name} ({IpAddress})";
     public string SpeedDisplay => FormatUtils.FormatNetworkSpeed(Speed);
     public string DownloadDisplay => FormatUtils.FormatNetworkSpeed(DownloadSpeed);
     public string UploadDisplay => FormatUtils.FormatNetworkSpeed(UploadSpeed);
@@ -141,6 +186,7 @@ public class NetworkAdapterData : ModelBase
 public class DiskData : ModelBase
 {
     private char _letter;
+    private string _mountPoint = string.Empty;
     private string _label = string.Empty;
     private string _fileSystem = string.Empty;
     private ulong _totalSize;
@@ -149,6 +195,9 @@ public class DiskData : ModelBase
     private int _physicalDiskIndex = -1;
 
     public char Letter { get => _letter; set => SetProperty(ref _letter, value); }
+    // 挂载点。Windows 是 "C:\"，macOS 是 "/System/Volumes/Data" —— Win32 把盘符、卷 GUID 路径、
+    // 挂载文件夹都算 volume mount point，所以两边共用一词。
+    public string MountPoint { get => _mountPoint; set => SetProperty(ref _mountPoint, value); }
     public string Label { get => _label; set => SetProperty(ref _label, value); }
     public string FileSystem { get => _fileSystem; set => SetProperty(ref _fileSystem, value); }
     public ulong TotalSize { get => _totalSize; set => SetProperty(ref _totalSize, value); }
@@ -157,7 +206,17 @@ public class DiskData : ModelBase
     public int PhysicalDiskIndex { get => _physicalDiskIndex; set => SetProperty(ref _physicalDiskIndex, value); }
 
     public double UsagePercent => TotalSize > 0 ? (double)UsedSpace / TotalSize * 100 : 0;
-    public string DisplayName => string.IsNullOrEmpty(Label) ? "未知分区" : (Letter == '\0' ? Label : $"{Letter}: {Label}");
+    // 盘符最短最易辨识，优先；macOS 没有盘符就走卷名；卷名也空才回落到挂载点。
+    // Letter == '\0' 这个判断不能省 —— 省了 macOS 会渲染出一个 NUL 字符。
+    public string DisplayName
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(Label)) return Letter == '\0' ? Label : $"{Letter}: {Label}";
+            if (!string.IsNullOrEmpty(MountPoint)) return MountPoint;
+            return Translator.T("未知分区");
+        }
+    }
     public string TotalSizeDisplay => FormatUtils.FormatBytes(TotalSize);
     public string UsedSpaceDisplay => FormatUtils.FormatBytes(UsedSpace);
     public string FreeSpaceDisplay => FormatUtils.FormatBytes(FreeSpace);
@@ -208,7 +267,7 @@ public class TemperatureData
 {
     public string SensorName { get; set; } = string.Empty;
     public double Temperature { get; set; }
-    public string DisplayName => string.IsNullOrEmpty(SensorName) ? "未知传感器" : SensorName;
+    public string DisplayName => string.IsNullOrEmpty(SensorName) ? Translator.T("未知传感器") : SensorName;
     public string TemperatureDisplay => $"{Temperature:0.#}°C";
 }
 
@@ -236,14 +295,14 @@ public class PhysicalDiskView : ModelBase
         get
         {
             if (Partitions.Count > 0)
-                return "卷: " + string.Join(", ", Partitions.Select(p => p.Label));
+                return Translator.T("卷: ") + string.Join(", ", Partitions.Select(p => p.Label));
             if (Disk?.LogicalDriveLetters != null && Disk.LogicalDriveLetters.Count > 0)
                 return string.Join(", ", Disk.LogicalDriveLetters.Select(l => l + ":"));
             return "";
         }
     }
     
-    public string DisplayName => Disk == null ? "未知磁盘" : $"{Disk.Model} ({LettersDisplay})";
+    public string DisplayName => Disk == null ? Translator.T("未知磁盘") : $"{Disk.Model} ({LettersDisplay})";
 }
 
 public class TpmData : ModelBase
@@ -262,5 +321,38 @@ public class TpmData : ModelBase
     public bool IsEnabled { get => _isEnabled; set => SetProperty(ref _isEnabled, value); }
     public bool IsActive { get => _isActive; set => SetProperty(ref _isActive, value); }
     
-    public string DisplayName => string.IsNullOrEmpty(Manufacturer) ? "未检测到 TPM" : $"{Manufacturer} TPM";
+    public string DisplayName => string.IsNullOrEmpty(Manufacturer) ? Translator.T("未检测到 TPM") : $"{Manufacturer} TPM";
+}
+
+// ─── 4. Fan speed ───
+public class FanData : ModelBase
+{
+    private string _name = string.Empty;
+    private float _rpm;
+
+    public string Name { get => _name; set => SetProperty(ref _name, value); }
+    public float Rpm { get => _rpm; set => SetProperty(ref _rpm, value); }
+    public string DisplayName => string.IsNullOrEmpty(Name) ? "—" : Name;
+    public string RpmDisplay => Rpm > 0 ? $"{Rpm:F0} RPM" : "—";
+}
+
+// ─── 5. Process top entry ───
+public class ProcessTopEntry
+{
+    public int Pid { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public ulong MemoryBytes { get; set; }
+    public double CpuPercent { get; set; }
+    public string MemoryDisplay => FormatUtils.FormatBytes(MemoryBytes);
+    public string CpuDisplay => $"{CpuPercent:F1}%";
+}
+
+// ─── 6. Per-core sensor ───
+public class PerCoreData
+{
+    public int Index { get; set; }
+    public double Temperature { get; set; }
+    public double Frequency { get; set; }
+    public string TempDisplay => Temperature > 0 ? $"{Temperature:F0}°C" : "—";
+    public string FreqDisplay => Frequency > 0 ? $"{Frequency:F0} MHz" : "—";
 }
