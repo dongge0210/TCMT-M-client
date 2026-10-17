@@ -4,21 +4,27 @@
 #error "This file should only be compiled for Linux (TCMT_LINUX defined)"
 #endif
 
-#include <chrono>
-#include <iostream>
-#include <sstream>
-#include <iomanip>
-#include <thread>
+#include <algorithm>
 #include <atomic>
-#include <cstring>
+#include <chrono>
 #include <csignal>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/sysinfo.h>
-#include <dirent.h>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <thread>
+#include <vector>
+
+#include <dirent.h>
 #include <sys/stat.h>
+#include <sys/sysinfo.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "core/cpu/CpuInfo.h"
 #include "core/gpu/GpuInfo.h"
@@ -29,7 +35,6 @@
 #include "core/disk/DiskInfo.h"
 #include "core/history/HistoryLogger.h"
 #include "core/usb/UsbInfo.h"
-#include "core/notifications/DeviceChangeNotifier.h"
 #include "core/notifications/UserNotifier.h"
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
@@ -37,6 +42,7 @@
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
+#include "core/Utils/WinUtils.h"
 #include "tui/TuiApp.h"
 
 #include "core/Config/ConfigManager.h"
@@ -166,8 +172,7 @@ int main(int argc, char* argv[]) {
             auto gpu = std::make_unique<GpuInfo>();
             const auto& gpus = gpu->GetGpuData();
             if (!gpus.empty()) {
-                cfg.SetString("gpu.name",
-                    std::string(gpus[0].name.begin(), gpus[0].name.end()));
+                cfg.SetString("gpu.name", WinUtils::WstringToUtf8(gpus[0].name));
                 cfg.SetUint64("gpu.dedicatedMemory", gpus[0].dedicatedMemory);
                 cfg.SetDouble("gpu.usage", gpus[0].usage);
             }
@@ -302,7 +307,7 @@ int main(int argc, char* argv[]) {
                 GpuInfo gpu;
                 const auto& gpus = gpu.GetGpuData();
                 if (!gpus.empty()) {
-                    j["name"] = std::string(gpus[0].name.begin(), gpus[0].name.end());
+                    j["name"] = WinUtils::WstringToUtf8(gpus[0].name);
                     j["usage"] = gpus[0].usage;
                     j["memory"] = gpus[0].dedicatedMemory;
                 }
@@ -457,7 +462,7 @@ int main(int argc, char* argv[]) {
     try {
         gpuInfo = std::make_unique<GpuInfo>();
         for (const auto& gpu : gpuInfo->GetGpuData()) {
-            std::string gname(gpu.name.begin(), gpu.name.end());
+            const std::string gname = WinUtils::WstringToUtf8(gpu.name);
             Logger::Debug("GPU: " + gname + " mem=" + FormatSize(gpu.dedicatedMemory));
         }
     } catch (const std::exception& e) {
@@ -500,22 +505,16 @@ int main(int argc, char* argv[]) {
     static int cachedTotalCores = 0;
     static int cachedPCores = 0;
     static int cachedECores = 0;
-    static bool cachedHT = false;
-    static bool cachedVirt = false;
     if (cpuInfo) {
         cachedCpuName = cpuInfo->GetName();
         cachedTotalCores = cpuInfo->GetTotalCores();
         cachedPCores = cpuInfo->GetLargeCores();
         cachedECores = cpuInfo->GetSmallCores();
-        cachedHT = cpuInfo->IsHyperThreadingEnabled();
-        cachedVirt = cpuInfo->IsVirtualizationEnabled();
     }
 
     // Start ModuleCoordinator background collection threads
     ModuleCoordinator coordinator;
     coordinator.Start();
-
-    int loopCounter = 1;
 
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
         try {
@@ -554,8 +553,7 @@ int main(int argc, char* argv[]) {
                 const auto& gpus = gpuInfo->GetGpuData();
                 for (const auto& gpu : gpus) {
                     if (data.gpuName.empty()) {
-                        std::string gn(gpu.name.begin(), gpu.name.end());
-                        data.gpuName = gn;
+                        data.gpuName = WinUtils::WstringToUtf8(gpu.name);
                         data.gpuMemory = gpu.dedicatedMemory;
                     }
                     if (data.gpuUsage == 0.0 && gpu.usage > 0.0) {
@@ -564,12 +562,11 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // USB detection (every 10 seconds)
+            // USB detection (every 10 seconds). DeviceChangeNotifier has no Linux
+            // backend (Poll() always returns true), so polling the counter is both
+            // simpler and avoids rescanning sysfs on every frame.
             static int usbCheckCounter = 0;
             static size_t prevUsbCount = 0;
-            static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
-            static DeviceChangeNotifier s_hubNotify(DeviceChangeNotifier::USB_Hub);
-            if (s_usbNotify.Poll() || s_hubNotify.Poll()) usbCheckCounter = 20;
             if (++usbCheckCounter >= 20) {
                 usbCheckCounter = 0;
                 try {
@@ -599,12 +596,14 @@ int main(int argc, char* argv[]) {
             {
                 const auto& wd = s_wifi.GetData();
                 data.hasWiFi = wd.powerOn || wd.isConnected;
+                data.wifiConnected = wd.isConnected;
                 data.wifiSSID = wd.ssid;
                 data.wifiBSSID = wd.bssid;
                 data.wifiRSSI = wd.rssi;
                 data.wifiChannel = wd.channel;
                 data.wifiSecurity = wd.security;
                 data.wifiBand = wd.band;
+                data.wifiGen = wd.wifiGen;
                 data.wifiTxRate = wd.txRate;
             }
             {
@@ -704,8 +703,10 @@ int main(int argc, char* argv[]) {
             int loopMs = (int)std::chrono::duration_cast<std::chrono::milliseconds>(
                 loopEnd - loopStart).count();
             int sleepMs = std::max(500 - loopMs, 50);
-            for (int s = 0; s < 10 && !g_shouldExit.load(); ++s) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            while (sleepMs > 0 && !g_shouldExit.load()) {
+                const int chunk = std::min(sleepMs, 50);
+                std::this_thread::sleep_for(std::chrono::milliseconds(chunk));
+                sleepMs -= chunk;
             }
 
             // Push sensor snapshots to history logger
@@ -726,8 +727,6 @@ int main(int argc, char* argv[]) {
                 }
                 historyLogger.WriteBatch(snapshots);
             }
-
-            loopCounter++;
         }
         catch (const std::exception& e) {
             Logger::Error("Loop error: " + std::string(e.what()));

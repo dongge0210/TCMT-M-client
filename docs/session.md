@@ -582,6 +582,26 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
 留空不估；AMD 的 CPU 功耗走 `RyzenSmuReader` 那条路，本次没动。
 `hardware` 页「实时」那一段仍只画主卡（其余卡的读数不是每帧在刷）。
 
+## 2026-10-18 — Linux 从脚手架提升为支持目标（分支 Linux_support）
+
+- 平台层：`cmake/Platform.cmake` 去掉 `[UNSUPPORTED]` 警告与标记，
+  `-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON` 变成兼容用的空操作。CMake 登记
+  `WiFiInfo_linux.cpp`、`BluetoothInfo_linux.cpp` 与 `src/core/linux/` 下五个采集实现；
+  `main_linux.cpp` 修掉 Windows 类型与 `std::wstring` 转换，USB 热插拔改为固定 10 秒轮询
+  （`DeviceChangeNotifier` 在 Linux 没有后端）。
+- 采集层：CPU/内存/进程走 `/proc`，频率与温度走 `cpufreq`、`hwmon`、`thermal_zone`；
+  NVIDIA 用 `dlopen` 加载 NVML，AMD 与 Intel 用 DRM sysfs 与 hwmon；
+  磁盘吞吐读 `/proc/diskstats`，温度读 NVMe 控制器 hwmon 与 `drivetemp`；
+  网络吞吐读 `/proc/net/dev`，链路速率走 `ETHTOOL_GLINKSETTINGS`；
+  电池与 AC 读 `power_supply`。RAPL 与 SMART 需要 root，读不到时明确标记不可用，不做估算。
+- WiFi/蓝牙：NetworkManager 与 BlueZ 走 D-Bus，`libdbus-1` 是可选依赖；
+  没有 D-Bus 时回落到 `/proc/net/wireless` 和 `/sys/class/bluetooth`。
+- CI：`build.yml` 新增 Ubuntu 24.04 的 `build-linux` job。
+- 验证：`ubuntu:24.04`（arm64）容器内编译链接通过，`--mcp` 退出码 0；
+  TUI 跑 5 秒，CPU/内存/进程有真实读数；macOS Release 回归构建通过。
+- 未验证：x86_64 的 CI 尚未实际跑；真实桌面上的 NetworkManager/BlueZ 属性未验证；
+  Windows 只做了条件编译隔离审查，没有编译。
+
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
   这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出

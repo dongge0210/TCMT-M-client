@@ -848,7 +848,8 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
             if (pd.temperature > 0)
                 off += snprintf(buf + off, sizeof(buf) - off, " %.0fC", pd.temperature);
             if (pd.smartSupported && pd.powerOnHours > 0)
-                off += snprintf(buf + off, sizeof(buf) - off, " %lluh", pd.powerOnHours);
+                off += snprintf(buf + off, sizeof(buf) - off, " %lluh",
+                                static_cast<unsigned long long>(pd.powerOnHours));
             if (pd.smartSupported && pd.wearLeveling > 0 && pd.wearLeveling <= 1.0)
                 off += snprintf(buf + off, sizeof(buf) - off, " WL%.0f%%", pd.wearLeveling * 100.0);
             line += buf;
