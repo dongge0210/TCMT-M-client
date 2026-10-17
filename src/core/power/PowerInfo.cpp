@@ -13,6 +13,7 @@
 #include <setupapi.h>
 #include <devguid.h>
 #include <batclass.h>
+#include <cstdlib>   // wcstoull：WMI 的 uint64 以 VT_BSTR 十进制字符串过来
 #include "../Utils/WMIManager.h"
 
 // NO_SUBTYPE_GUID may not be declared in newer SDKs; define it locally.
@@ -23,6 +24,30 @@ static const GUID kNoSubtypeGuid = {0xfea3413e, 0x7e05, 0x4911,
 
 #pragma comment(lib, "PowrProf.lib")
 #pragma comment(lib, "Setupapi.lib")
+
+// 从 WMI 读出来的数值按 vt 分派，别假设固定类型。
+// CIM 的 uint64 在 VARIANT 里是 **VT_BSTR**（十进制字符串，VARIANT 没有无符号 64 位），
+// 拿 VT_I4 去比会永远不成立 —— Win32_Battery 的 DesignVoltage 就是 uint64。
+static bool VariantToUInt64(const VARIANT& v, uint64_t* out) {
+    if (!out) return false;
+    switch (v.vt) {
+        case VT_UI8: *out = static_cast<uint64_t>(v.ullVal); return true;
+        case VT_I8:  *out = v.llVal < 0 ? 0 : static_cast<uint64_t>(v.llVal); return true;
+        case VT_UI4: *out = v.ulVal; return true;
+        case VT_I4:  *out = v.lVal < 0 ? 0 : static_cast<uint64_t>(v.lVal); return true;
+        case VT_UI2: *out = v.uiVal; return true;
+        case VT_I2:  *out = v.iVal < 0 ? 0 : static_cast<uint64_t>(v.iVal); return true;
+        case VT_BSTR: {
+            if (!v.bstrVal) return false;
+            wchar_t* end = nullptr;
+            const unsigned long long parsed = wcstoull(v.bstrVal, &end, 10);
+            if (end == v.bstrVal) return false;   // 不是数字，别当 0
+            *out = static_cast<uint64_t>(parsed);
+            return true;
+        }
+        default: return false;
+    }
+}
 
 // 电池设备接口。WMI 的 Win32_Battery 只给一部分属性（没有 Voltage、没有 CycleCount），
 // 真正的明细在设备本身：SetupDi 找到电池设备 → CreateFile → 三个 ioctl。
@@ -193,30 +218,40 @@ void PowerInfo::Detect() {
                 bat.name = WinUtils::WstringToString(std::wstring(vtProp.bstrVal));
             VariantClear(&vtProp);
 
-            // DesignCapacity (mWh)
-            if (SUCCEEDED(pclsObj->Get(L"DesignCapacity", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
-                bat.designCapacity = static_cast<uint32_t>(vtProp.lVal);
+            // DesignCapacity (mWh，uint32)
+            if (SUCCEEDED(pclsObj->Get(L"DesignCapacity", 0, &vtProp, 0, 0))) {
+                uint64_t v = 0;
+                if (VariantToUInt64(vtProp, &v)) bat.designCapacity = static_cast<uint32_t>(v);
+            }
             VariantClear(&vtProp);
 
-            // FullChargeCapacity (mWh)
-            if (SUCCEEDED(pclsObj->Get(L"FullChargeCapacity", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
-                bat.fullChargeCapacity = static_cast<uint32_t>(vtProp.lVal);
+            // FullChargeCapacity (mWh，uint32)
+            if (SUCCEEDED(pclsObj->Get(L"FullChargeCapacity", 0, &vtProp, 0, 0))) {
+                uint64_t v = 0;
+                if (VariantToUInt64(vtProp, &v)) bat.fullChargeCapacity = static_cast<uint32_t>(v);
+            }
             VariantClear(&vtProp);
 
-            // EstimatedChargeRemaining (percent)
-            if (SUCCEEDED(pclsObj->Get(L"EstimatedChargeRemaining", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I2)
-                bat.chargePercent = static_cast<uint32_t>(vtProp.iVal);
+            // EstimatedChargeRemaining (percent，uint16)
+            if (SUCCEEDED(pclsObj->Get(L"EstimatedChargeRemaining", 0, &vtProp, 0, 0))) {
+                uint64_t v = 0;
+                if (VariantToUInt64(vtProp, &v)) bat.chargePercent = static_cast<uint32_t>(v);
+            }
             VariantClear(&vtProp);
 
-            // Voltage (mV)。这个类里叫 DesignVoltage，没有叫 Voltage 的属性；
-            // 读不到的字段（比如 CycleCount）在这里是空值，不影响别的列。
-            if (SUCCEEDED(pclsObj->Get(L"DesignVoltage", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
-                bat.voltage = static_cast<uint32_t>(vtProp.lVal);
+            // 电压 (mV)。这个类里叫 DesignVoltage，没有叫 Voltage 的属性；而且它是 **uint64**，
+            // VARIANT 里以 VT_BSTR 十进制字符串过来，按 VT_I4 读会永远读不到。
+            if (SUCCEEDED(pclsObj->Get(L"DesignVoltage", 0, &vtProp, 0, 0))) {
+                uint64_t v = 0;
+                if (VariantToUInt64(vtProp, &v)) bat.voltage = static_cast<uint32_t>(v);
+            }
             VariantClear(&vtProp);
 
             // CycleCount：Win32_Battery 没有这个属性，留给下面的设备接口补
-            if (SUCCEEDED(pclsObj->Get(L"CycleCount", 0, &vtProp, 0, 0)) && vtProp.vt == VT_I4)
-                bat.cycleCount = static_cast<uint32_t>(vtProp.lVal);
+            if (SUCCEEDED(pclsObj->Get(L"CycleCount", 0, &vtProp, 0, 0))) {
+                uint64_t v = 0;
+                if (VariantToUInt64(vtProp, &v)) bat.cycleCount = static_cast<uint32_t>(v);
+            }
             VariantClear(&vtProp);
 
             // BatteryStatus — 1=discharging, 2=AC connected, 3=fully charged,
