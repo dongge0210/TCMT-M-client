@@ -2397,6 +2397,14 @@ int main(int argc, char* argv[]) {
 
         Logger::Info("Program startup complete");
 
+        // The TUI owns the console from here. The Windows logger writes INFO
+        // in light green and then resets the console attribute, but PDCurses
+        // draws through that same console: the color change and the log text
+        // bleed into the screen and leave the UI tinted green. macOS/Linux
+        // already disable console output for their TUI; do the same here and
+        // keep the in-app log page fed through g_tuiLogBuffer.
+        Logger::EnableConsoleOutput(false);
+
         // Start TUI (Windows version)
         tcmt::TuiApp tuiApp;
         tuiApp.Start();
