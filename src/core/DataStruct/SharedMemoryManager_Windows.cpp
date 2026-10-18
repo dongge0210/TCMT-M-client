@@ -288,7 +288,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         SafeCopyStr(pBuffer->gpuName, sizeof(pBuffer->gpuName), systemInfo.gpuName);
         SafeCopyStr(pBuffer->gpuBrand, sizeof(pBuffer->gpuBrand), systemInfo.gpuBrand);
         pBuffer->gpuMemory = systemInfo.gpuMemory;
-        pBuffer->gpuMemoryPercent = static_cast<float>(systemInfo.gpuCoreFreq); // NVML VRAM%
+        pBuffer->gpuMemoryPercent = static_cast<float>(systemInfo.gpuMemoryPercent);
         pBuffer->gpuUsage = static_cast<float>(systemInfo.gpuUsage);
         pBuffer->gpuTemp = static_cast<float>(systemInfo.gpuTemperature);
         pBuffer->gpuFreq = static_cast<float>(systemInfo.gpuFreq);

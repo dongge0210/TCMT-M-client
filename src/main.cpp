@@ -121,6 +121,117 @@ static std::string JsonSafeStr(const std::string& s) {
 // 要统一得单独说）。
 static std::atomic<int> g_sampleIntervalMs{1000};
 
+// ── IPC ConfigSet：Avalonia 设置页改配置的唯一入口 ──
+// 服务端只负责搬 JSON；认键、校验、落盘、生效在这里。没有白名单的话，
+// 客户端一个请求就能把 os.version / cpu.name 这类运行时快照写进配置文件。
+namespace {
+
+enum class CfgType { Bool, Int, Str };
+
+struct CfgKey {
+    const char* key;
+    CfgType     type;
+};
+
+constexpr CfgKey kClientConfigKeys[] = {
+    { "server.enabled",      CfgType::Bool },
+    { "server.url",          CfgType::Str  },
+    { "server.insecure",     CfgType::Bool },
+    { "server.intervalSec",  CfgType::Int  },
+    { "sampling.intervalMs", CfgType::Int  },
+    { "ui.language",         CfgType::Str  },
+};
+
+const CfgKey* FindCfgKey(const std::string& key) {
+    for (const auto& k : kClientConfigKeys) {
+        if (key == k.key) return &k;
+    }
+    return nullptr;
+}
+
+std::string BuildConfigSnapshotJson() {
+    auto& cfg = GetServerCfg();
+    nlohmann::json j;
+    j["server.enabled"]      = cfg.GetBool("server.enabled", false);
+    j["server.url"]          = cfg.GetString("server.url", "");
+    j["server.insecure"]     = cfg.GetBool("server.insecure", false);
+    j["server.intervalSec"]  = cfg.GetInt("server.intervalSec", 2);
+    j["sampling.intervalMs"] = g_sampleIntervalMs.load();
+    j["ui.language"]         = cfg.GetString("ui.language", "zh-Hans");
+    return j.dump();
+}
+
+void ApplyClientConfigSet(const std::string& payload, tcmt::ipc::IPCServer& ipcServer) {
+    nlohmann::json in;
+    try {
+        in = nlohmann::json::parse(payload);
+    } catch (const std::exception& e) {
+        Logger::Warn(std::string("IPC: ConfigSet 不是合法 JSON，丢弃: ") + e.what());
+        return;
+    }
+    if (!in.is_object()) {
+        Logger::Warn("IPC: ConfigSet 不是 JSON 对象，丢弃");
+        return;
+    }
+
+    auto& cfg = GetServerCfg();
+    int applied = 0;
+    for (auto it = in.begin(); it != in.end(); ++it) {
+        const CfgKey* k = FindCfgKey(it.key());
+        if (!k) {
+            Logger::Warn("IPC: ConfigSet 含白名单外的键，忽略: " + it.key());
+            continue;
+        }
+        try {
+            switch (k->type) {
+                case CfgType::Bool:
+                    if (!it.value().is_boolean()) throw std::runtime_error("要布尔值");
+                    cfg.SetBool(k->key, it.value().get<bool>());
+                    break;
+                case CfgType::Int:
+                    if (!it.value().is_number_integer()) throw std::runtime_error("要整数");
+                    cfg.SetInt(k->key, it.value().get<int>());
+                    break;
+                case CfgType::Str:
+                    if (!it.value().is_string()) throw std::runtime_error("要字符串");
+                    cfg.SetString(k->key, it.value().get<std::string>());
+                    break;
+            }
+            applied++;
+        } catch (const std::exception& e) {
+            Logger::Warn(std::string("IPC: ConfigSet 的 ") + k->key + " 类型不对（" +
+                         e.what() + "），忽略");
+        }
+    }
+
+    if (applied == 0) return;
+    cfg.Save();
+
+    // 采样间隔除了落盘还要喂那个原子量 —— RunMonitoringLoop 每轮读它，
+    // 发现变了才调 coordinator.SetSampleIntervalMs。
+    const int ms = cfg.GetInt("sampling.intervalMs", g_sampleIntervalMs.load());
+    g_sampleIntervalMs.store(
+        (std::max)(tcmt::kSampleIntervalMinMs,
+                   (std::min)(tcmt::kSampleIntervalMaxMs, ms)));
+
+    // 上传设置走 TUI 设置页同一条 pending 通道，主循环会重启探针。
+    tcmt::ServerSettings s;
+    s.enabled     = cfg.GetBool("server.enabled", false);
+    s.url         = cfg.GetString("server.url", "");
+    s.insecure    = cfg.GetBool("server.insecure", false);
+    s.intervalSec = cfg.GetInt("server.intervalSec", 2);
+    {
+        std::lock_guard<std::mutex> lock(g_push.mutex);
+        g_push.pending = s;
+        g_push.pendingReady = true;
+    }
+
+    Logger::Info("IPC: 客户端改了 " + std::to_string(applied) + " 项配置，已保存并生效");
+    ipcServer.BroadcastConfigSnapshot();
+}
+
+}  // namespace
+
 static std::atomic<bool> g_monitoringStarted{false};
 static std::atomic<bool> g_comInitialized{false};
 
@@ -1089,6 +1200,15 @@ static bool InitSharedMemoryAndIpc(std::unique_ptr<tcmt::ipc::IPCServer>& ipcSer
         } else {
             Logger::Warn("IPC server failed: " + ipcServer->GetLastError());
         }
+
+        // Avalonia 设置页的 ConfigSet 入口。macOS 的 main_mac.cpp 一直有这条，
+        // Windows 以前没接 —— 设置页写出去的 server.* / sampling.intervalMs
+        // 全被丢弃，界面还会被回推的快照打回原值。
+        ipcServer->SetConfigBridge(
+            [] { return BuildConfigSnapshotJson(); },
+            [srv = ipcServer.get()](const std::string& payload) {
+                ApplyClientConfigSet(payload, *srv);
+            });
         return true;
     }
     catch (const std::exception& e) {
@@ -1265,7 +1385,18 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
 
     // Exit when Ctrl+C is received OR the TUI itself quit ('q' / Esc): on
     // Windows the TUI runs in-process, so its shutdown must stop the loop.
+    int appliedSampleMs = g_sampleIntervalMs.load();
     while (!g_shouldExit.load() && tuiApp.IsRunning()) {
+        // TUI 设置页直接调 setter；Avalonia 经 IPC 改的只是全局原子量。
+        // 两条路最终都落到 g_sampleIntervalMs，这里发现变化再喂给采集线程。
+        {
+            const int wantedMs = g_sampleIntervalMs.load();
+            if (wantedMs != appliedSampleMs) {
+                coordinator.SetSampleIntervalMs(wantedMs);
+                appliedSampleMs = wantedMs;
+            }
+        }
+
         // Apply server settings saved from the TUI settings page.
         {
             tcmt::ServerSettings pending;
@@ -1751,7 +1882,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     tuiData.gpuName = sysInfo.gpuName;
                     tuiData.gpuMemory = sysInfo.gpuMemory;
                     tuiData.gpuUsage = sysInfo.gpuUsage;
-                    tuiData.gpuMemoryPercent = sysInfo.gpuCoreFreq; // NVML VRAM % (set above)
+                    tuiData.gpuMemoryPercent = sysInfo.gpuMemoryPercent;
                 }
                 tuiData.gpuTemp = sysInfo.gpuTemperature;
                 tuiData.cpuPower = sysInfo.cpuPower;
