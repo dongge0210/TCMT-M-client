@@ -975,7 +975,11 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         lines++;
         DrawLabeledValue(win, y + lines, x0, maxW, "Total:", "N/A");
         lines++;
+#ifdef TCMT_WINDOWS
+        const std::string hint = "Power unavailable — CPU needs PawnIO, GPU needs NVML";
+#else
         const std::string hint = "Power unavailable — run tools/install-powerd.sh (sudo)";
+#endif
         wattron(win, A_DIM);
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4,
                   TrimRight(hint, (maxW - 4) > 0 ? maxW - 4 : 0).c_str());
@@ -983,6 +987,24 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         lines++;
     } else {
         char val[32];
+#ifdef TCMT_WINDOWS
+        // Windows has no ANE, and 0 mW means "source unavailable" rather than
+        // an idle 0 W reading. Keep the row but say N/A instead of 0.00 W.
+        auto formatWatts = [&val](double milliwatts) -> std::string {
+            if (milliwatts <= 0.0) return "N/A";
+            snprintf(val, sizeof(val), "%.2f W", milliwatts / 1000.0);
+            return val;
+        };
+        DrawLabeledValue(win, y + lines, x0, maxW, "CPU:",
+                         formatWatts(data.cpuPower));
+        lines++;
+        DrawLabeledValue(win, y + lines, x0, maxW, "GPU:",
+                         formatWatts(data.gpuPower));
+        lines++;
+        DrawLabeledValue(win, y + lines, x0, maxW, "Total:",
+                         formatWatts(data.cpuPower + data.gpuPower));
+        lines++;
+#else
         double totalPower = (data.cpuPower + data.gpuPower + data.anePower) / 1000.0;
         snprintf(val, sizeof(val), "%.2f W", data.cpuPower / 1000.0);
         DrawLabeledValue(win, y + lines, x0, maxW, "CPU:", val);
@@ -996,6 +1018,7 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         snprintf(val, sizeof(val), "%.2f W", totalPower);
         DrawLabeledValue(win, y + lines, x0, maxW, "Total:", val);
         lines++;
+#endif
     }
 
     // Battery health

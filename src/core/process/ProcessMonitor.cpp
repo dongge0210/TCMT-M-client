@@ -9,6 +9,42 @@
 #include <algorithm>
 #include <unordered_set>
 
+namespace {
+
+// Owning user of the process, as UTF-8. Empty when the token cannot be read
+// (protected processes); the TUI renders that as N/A.
+std::string ProcessUserUtf8(HANDLE proc) {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(proc, TOKEN_QUERY, &token)) return {};
+
+    DWORD needed = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &needed);
+    std::string result;
+    if (needed > 0) {
+        std::vector<BYTE> buf(needed);
+        if (GetTokenInformation(token, TokenUser, buf.data(), needed, &needed)) {
+            auto* user = reinterpret_cast<TOKEN_USER*>(buf.data());
+            WCHAR name[256] = {};
+            WCHAR domain[256] = {};
+            DWORD nameLen = 256;
+            DWORD domainLen = 256;
+            SID_NAME_USE use{};
+            if (LookupAccountSidW(nullptr, user->User.Sid, name, &nameLen,
+                                  domain, &domainLen, &use)) {
+                char utf8[768] = {};
+                WideCharToMultiByte(CP_UTF8, 0, name, -1, utf8,
+                                    static_cast<int>(sizeof(utf8)) - 1,
+                                    nullptr, nullptr);
+                result = utf8;
+            }
+        }
+    }
+    CloseHandle(token);
+    return result;
+}
+
+}  // namespace
+
 void ProcessMonitor::Refresh() {
     const auto now = std::chrono::steady_clock::now();
     const double dtSec = firstSample_
@@ -38,6 +74,7 @@ void ProcessMonitor::Refresh() {
         }
 
         double cpuPct = 0.0;
+        uint64_t cpuTime100ns = 0;
         FILETIME create{}, exit{}, kernel{}, user{};
         if (GetProcessTimes(hProc, &create, &exit, &kernel, &user)) {
             ULARGE_INTEGER k, u;
@@ -46,6 +83,7 @@ void ProcessMonitor::Refresh() {
             u.LowPart = user.dwLowDateTime;
             u.HighPart = user.dwHighDateTime;
             const uint64_t total = k.QuadPart + u.QuadPart;  // 100ns units
+            cpuTime100ns = total;
             const auto it = prevSamples_.find(pe.th32ProcessID);
             if (!firstSample_ && it != prevSamples_.end() && dtSec > 0.0) {
                 const uint64_t delta = total - it->second.totalTime;
@@ -61,12 +99,16 @@ void ProcessMonitor::Refresh() {
         if (K32GetProcessMemoryInfo(hProc, &pmc, sizeof(pmc))) {
             mem = pmc.WorkingSetSize;
         }
+        const std::string processUser = ProcessUserUtf8(hProc);
         CloseHandle(hProc);
 
         ProcessTopEntry e;
         e.pid = static_cast<pid_t>(pe.th32ProcessID);
         e.memoryBytes = mem;
         e.cpuPercent = cpuPct;
+        e.threads = static_cast<int>(pe.cntThreads);
+        e.cpuTimeMs = cpuTime100ns / 10000;  // 100ns -> ms
+        e.user = processUser;
         char nameBuf[256] = {};
         WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1,
                             nameBuf, static_cast<int>(sizeof(nameBuf)) - 1, nullptr, nullptr);

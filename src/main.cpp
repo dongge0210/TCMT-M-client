@@ -1888,6 +1888,13 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 tuiData.cpuPower = sysInfo.cpuPower;
                 tuiData.gpuPower = sysInfo.gpuPower;
                 tuiData.anePower = sysInfo.anePower;
+                // PowerMonitor is the macOS energy-model implementation; on
+                // Windows IsPowerAvailable() is a stub that always returns
+                // false, so the panel said "unavailable" even when NVML had
+                // GPU power. Any live source means the panel has data.
+                sysInfo.powerAvailable =
+                    (sysInfo.cpuPower > 0 || sysInfo.gpuPower > 0 || sysInfo.anePower > 0);
+                tuiData.powerAvailable = sysInfo.powerAvailable;
                 tuiData.gpuFreq = sysInfo.gpuFreq;
                 // GPU fans (NVAPI RPM + NVML fallback)
                 tuiData.gpuFans.clear();
@@ -2019,6 +2026,16 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         if (label.empty()) label = "Disk";
                         sysInfo.temperatures.push_back({label, pd.temperature});
                     }
+                }
+                // GPU temperature lives in its own field (NVML); the Temps panel
+                // draws systemInfo.temperatures. Add it once if the temperature
+                // collector did not already provide a GPU entry.
+                if (sysInfo.gpuTemperature > 0) {
+                    const bool hasGpuTemp = std::any_of(
+                        sysInfo.temperatures.begin(), sysInfo.temperatures.end(),
+                        [](const auto& t) { return t.first.find("GPU") != std::string::npos; });
+                    if (!hasGpuTemp)
+                        sysInfo.temperatures.push_back({"GPU Core", sysInfo.gpuTemperature});
                 }
                 tuiData.temperatures = sysInfo.temperatures;
                 if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
