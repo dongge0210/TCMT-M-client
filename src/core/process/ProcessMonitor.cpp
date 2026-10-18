@@ -19,6 +19,60 @@ namespace {
 using NtQuerySystemInformationFn =
     NTSTATUS (NTAPI *)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
 
+// winternl.h exposes only a prefix of the kernel's SYSTEM_PROCESS_INFORMATION
+// (CreateTime/UserTime/KernelTime/Threads and the I/O counters are hidden), so
+// define the real layout here. This is the documented x64 structure; the
+// kernel appends NumberOfThreads entries immediately after Threads[0].
+struct SystemThreadInformationRecord {
+    LARGE_INTEGER KernelTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER CreateTime;
+    ULONG WaitTime;
+    PVOID StartAddress;
+    CLIENT_ID ClientId;
+    KPRIORITY Priority;
+    LONG BasePriority;
+    ULONG ContextSwitches;
+    ULONG ThreadState;
+    ULONG WaitReason;
+};
+
+struct SystemProcessInformationRecord {
+    ULONG NextEntryOffset;
+    ULONG NumberOfThreads;
+    LARGE_INTEGER WorkingSetPrivateSize;
+    ULONG HardFaultCount;
+    ULONG NumberOfThreadsHighWatermark;
+    ULONGLONG CycleTime;
+    LARGE_INTEGER CreateTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER KernelTime;
+    UNICODE_STRING ImageName;
+    KPRIORITY BasePriority;
+    HANDLE UniqueProcessId;
+    HANDLE InheritedFromUniqueProcessId;
+    ULONG HandleCount;
+    ULONG SessionId;
+    ULONG_PTR UniqueProcessKey;
+    SIZE_T PeakVirtualSize;
+    SIZE_T VirtualSize;
+    ULONG PageFaultCount;
+    SIZE_T PeakWorkingSetSize;
+    SIZE_T WorkingSetSize;
+    SIZE_T QuotaPagedPoolUsage;
+    SIZE_T QuotaNonPagedPoolUsage;
+    SIZE_T PagefileUsage;
+    SIZE_T PeakPagefileUsage;
+    SIZE_T PrivatePageCount;
+    LARGE_INTEGER ReadOperationCount;
+    LARGE_INTEGER WriteOperationCount;
+    LARGE_INTEGER OtherOperationCount;
+    LARGE_INTEGER ReadTransferCount;
+    LARGE_INTEGER WriteTransferCount;
+    LARGE_INTEGER OtherTransferCount;
+    SystemThreadInformationRecord Threads[1];
+};
+
 NtQuerySystemInformationFn GetNtQuerySystemInformation() {
     static auto fn = reinterpret_cast<NtQuerySystemInformationFn>(
         ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "NtQuerySystemInformation"));
@@ -71,7 +125,7 @@ std::string ProcessUserUtf8(DWORD pid) {
 // SYSTEM_PROCESS_INFORMATION record. KTHREAD_STATE:
 // 0 initialized, 1 ready, 2 running, 3 standby, 4 terminated, 5 waiting,
 // 6 transition, 7 deferred-ready. WaitReason 5 is Suspended.
-std::string ProcessState(const SYSTEM_PROCESS_INFORMATION& p) {
+std::string ProcessState(const SystemProcessInformationRecord& p) {
     if (p.NumberOfThreads == 0) return "Unknown";
 
     bool anyRunning = false;
@@ -128,7 +182,7 @@ void ProcessMonitor::Refresh() {
     std::vector<ProcessTopEntry> collected;
     std::unordered_set<unsigned long> livePids;
 
-    auto* spi = reinterpret_cast<SYSTEM_PROCESS_INFORMATION*>(buffer.data());
+    auto* spi = reinterpret_cast<SystemProcessInformationRecord*>(buffer.data());
     for (;;) {
         const DWORD pid = static_cast<DWORD>(
             reinterpret_cast<uintptr_t>(spi->UniqueProcessId));
@@ -190,7 +244,7 @@ void ProcessMonitor::Refresh() {
         collected.push_back(std::move(e));
 
         if (spi->NextEntryOffset == 0) break;
-        spi = reinterpret_cast<SYSTEM_PROCESS_INFORMATION*>(
+        spi = reinterpret_cast<SystemProcessInformationRecord*>(
             reinterpret_cast<BYTE*>(spi) + spi->NextEntryOffset);
     }
 
