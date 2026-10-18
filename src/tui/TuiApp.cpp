@@ -1247,8 +1247,9 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     DrawPanelTitle(win, y, x0, maxW, "Top Processes", selPid_ >= 0);
     int lines = 1;
 
-    // Cache the list geometry for the mouse shim (MapMouseEvent).
-    procListY_ = y;
+    // Cache the list geometry for the mouse shim (MapMouseEvent). The header
+    // row is not clickable, so rows start one line below it.
+    procListY_ = y + 1;
     procListX0_ = x0;
     procListW_ = maxW;
 
@@ -1265,6 +1266,28 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 
     int nameW = maxW - 21 - optW;
     if (nameW < 6) nameW = 6;
+    const int cpuCol = x0 + 2 + nameW + 13;
+
+    // Column header. Without it the PID, memory, CPU% and context numbers are
+    // unlabeled. Dim label styling, same widths as the data rows.
+    {
+        const std::string nameHdr = PadCell("Name", nameW);
+        char headBuf[160];
+        snprintf(headBuf, sizeof(headBuf), "%s %6s %4s ",
+                 nameHdr.c_str(), "PID", "Mem");
+        std::string tail;
+        if (showState) tail += PadCell("State", 7);
+        if (showThr)   { tail += " "; tail += PadCell("Thr", 4); }
+        if (showCpuT)  { tail += " "; tail += PadCell("Time", 8); }
+
+        wattron(win, A_DIM);
+        mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
+        mvwprintw(win, y + lines, cpuCol, "%5s%%", "CPU");
+        if (!tail.empty())
+            mvwprintw(win, y + lines, cpuCol + 6, "%s", tail.c_str());
+        wattroff(win, A_DIM);
+        lines++;
+    }
 
     for (const auto& p : data.topProcesses) {
         // Pad/truncate name to exact display width (CJK-safe)
@@ -1302,7 +1325,6 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         // selected row flips to plain reverse (no per-cell color) so the
         // highlight stays unambiguous.
         const int cpuColor = HighIsWorsePair(p.cpuPercent, kProcCpuWarn, kProcCpuCrit);
-        const int cpuCol = x0 + 2 + nameW + 13;
         if (cpuColor >= 0 && !selected) wattron(win, COLOR_PAIR(cpuColor));
         mvwprintw(win, y + lines, cpuCol, "%5.1f%%", p.cpuPercent);
         if (cpuColor >= 0 && !selected) wattroff(win, COLOR_PAIR(cpuColor));
@@ -1324,7 +1346,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         lines++;
     }
 
-    procListCount_ = lines - 1;   // rows below the title (mouse hit region)
+    procListCount_ = lines - 2;   // rows below the title + header
     return lines + 1;  // +1 bottom padding
 }
 
