@@ -1236,7 +1236,10 @@ static std::string PadCell(const std::string& s, int w) {
 }
 
 int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
-    if (maxW < 15 || data.topProcesses.empty()) {
+    // 27 = name(6 minimum) + pid(6) + mem(4) + cpu(6) + the five separators
+    // and offsets. Below that the fixed cells alone overflow the panel, so
+    // hide the list instead of writing past its right edge.
+    if (maxW < 27 || data.topProcesses.empty()) {
         procListY_ = -1;   // no list this frame — mouse hits nothing
         procListCount_ = 0;
         return 0;
@@ -1279,7 +1282,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     // unlabeled. Dim label styling, same widths as the data rows.
     {
         const std::string nameHdr = PadCell("Name", nameW);
-        char headBuf[160];
+        char headBuf[512];
         snprintf(headBuf, sizeof(headBuf), "%s %6s %4s ",
                  nameHdr.c_str(), "PID", "Mem");
         std::string tail;
@@ -1322,7 +1325,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         const bool selected = (p.pid == selPid_);
         if (selected) wattron(win, A_REVERSE);
 
-        char headBuf[160];
+        char headBuf[512];
         snprintf(headBuf, sizeof(headBuf), "%s %6s %4s ",
                  name.c_str(), pidStr.c_str(), memStr.c_str());
         mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
