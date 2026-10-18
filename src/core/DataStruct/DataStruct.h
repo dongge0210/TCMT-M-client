@@ -311,6 +311,7 @@ struct SystemInfo {
     uint64_t gpuMemory;             // Added
     double gpuCoreFreq;             // Added
     double gpuUsage;                // GPU usage
+    double gpuMemoryPercent = 0.0;  // VRAM usage % (NVML); 0 = unknown
     bool gpuIsVirtual;              // Is virtual GPU
     std::string networkAdapterName; // Added
     std::string networkAdapterMac;  // Added

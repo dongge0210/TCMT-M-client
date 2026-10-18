@@ -6,6 +6,7 @@
 // NOTE: winsock2.h must be included BEFORE windows.h and wbemidl.h
 #include <winsock2.h>
 #include <windows.h>
+#include <winioctl.h>   // CTL_CODE / FILE_DEVICE_BATTERY：WIN32_LEAN_AND_MEAN 不会带进来
 #include <wbemidl.h>
 #include <comdef.h>
 #include <powrprof.h>
