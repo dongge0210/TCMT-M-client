@@ -141,12 +141,14 @@ std::string ProcessState(const SystemProcessInformationRecord& p) {
         if (state == 5 && p.Threads[i].WaitReason == 5) suspended = true;
     }
 
-    // Keep these within the 7-column TUI cell.
+    // Keep these within the 7-column TUI cell. A process with no running,
+    // ready or waiting threads is between states (initializing or exiting),
+    // so call it Idle instead of showing "Unknown" for half the list.
     if (anyRunning) return "Running";
     if (suspended) return "Susp";
     if (allWaiting) return "Sleep";
     if (anyReady) return "Ready";
-    return "Unknown";
+    return "Idle";
 }
 
 }  // namespace

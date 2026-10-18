@@ -1309,8 +1309,8 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         if (optW > 0) {
             std::string tail;
             if (showState) tail += PadCell(p.state.empty() ? "N/A" : p.state, 7);
-            if (showThr)   tail += PadCell(p.threads >= 0 ? std::to_string(p.threads) : "N/A", 5);
-            if (showCpuT)  tail += PadCell(p.cpuTimeMs > 0 ? CpuTimeShort(p.cpuTimeMs) : "N/A", 9);
+            if (showThr)   { tail += " "; tail += PadCell(p.threads >= 0 ? std::to_string(p.threads) : "N/A", 4); }
+            if (showCpuT)  { tail += " "; tail += PadCell(p.cpuTimeMs > 0 ? CpuTimeShort(p.cpuTimeMs) : "N/A", 8); }
             if (!selected) wattron(win, A_DIM);
             mvwprintw(win, y + lines, cpuCol + 6, "%s", tail.c_str());
             if (!selected) wattroff(win, A_DIM);
