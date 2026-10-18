@@ -1,5 +1,6 @@
 // ProcessTop.h — Top processes by memory (macOS)
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -22,6 +23,25 @@ struct ProcessTopEntry {
     uint64_t cpuTimeMs = 0;    // user + system, milliseconds
     std::string state;         // short state word (idle/run/sleep/stop/zombie)
     std::string user;          // owning user name
+
+    // Everything else NtQuerySystemInformation reports for a process. These
+    // do not all have a TUI column yet; they are collected so the process
+    // details view and IPC consumers do not have to re-query the kernel.
+    int ppid = -1;
+    int handles = -1;
+    uint32_t sessionId = 0;
+    int basePriority = 0;
+    uint64_t privateBytes = 0;
+    uint64_t virtualBytes = 0;
+    uint64_t pageFaults = 0;
+    uint64_t kernelTimeMs = 0;
+    uint64_t userTimeMs = 0;
+    uint64_t readBytes = 0;
+    uint64_t writeBytes = 0;
+    uint64_t readOps = 0;
+    uint64_t writeOps = 0;
+    uint64_t otherOps = 0;
+    uint64_t createTimeMs = 0;  // Unix epoch, milliseconds
 };
 
 // Everything the details page wants about one pid. Fetched on demand — only

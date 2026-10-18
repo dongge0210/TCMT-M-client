@@ -19,7 +19,8 @@ public:
 
 private:
     struct ProcSample {
-        uint64_t totalTime = 0;  // kernel+user, 100ns units
+        uint64_t totalTime = 0;   // kernel+user, 100ns units
+        uint64_t createTime = 0;  // process creation time, 100ns since 1601
     };
 
     std::unordered_map<unsigned long, ProcSample> prevSamples_;
