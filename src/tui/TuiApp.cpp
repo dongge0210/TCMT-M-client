@@ -1259,7 +1259,14 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     // the least useful column and the name stays readable. 21 = pid(7) +
     // mem(5) + cpu(7) + the two columns of padding around the row.
     const int kNameMin = 10;
+#ifdef TCMT_WINDOWS
+    // Windows has no reliable user-mode process state: deriving it from
+    // thread states classified most rows as Idle. Leave the column out and
+    // give its width to the process name; macOS keeps the real state column.
+    const bool showState = false;
+#else
     const bool showState = (maxW - 21 - 7 >= kNameMin);
+#endif
     const bool showThr   = (maxW - 21 - (showState ? 7 : 0) - 5 >= kNameMin);
     const bool showCpuT  = (maxW - 21 - (showState ? 7 : 0) - (showThr ? 5 : 0) - 9 >= kNameMin);
     const int optW = (showState ? 7 : 0) + (showThr ? 5 : 0) + (showCpuT ? 9 : 0);
