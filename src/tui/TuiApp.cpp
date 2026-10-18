@@ -4,6 +4,10 @@
 #endif
 
 #include <curses.h>
+#ifdef __PDCURSES__
+// PDCurses internals: the ANSI-path switch, see the note in TuiApp::Run().
+extern "C" bool pdc_ansi;
+#endif
 #include "TuiApp.h"
 #include "core/I18n.h"
 #include "core/Utils/Logger.h"   // log page header shows the active level
@@ -1889,6 +1893,14 @@ void TuiApp::Run() {
 
     initscr();
     cursesActive_ = true;
+#ifdef __PDCURSES__
+    // conhost picks the CHAR_INFO path (pdc_ansi == false) and converts every
+    // byte of a multibyte UTF-8 sequence as its own cell, so Chinese process
+    // names and SSIDs turn into mojibake. The ANSI path writes the whole line
+    // with WriteConsoleA, where the console's UTF-8 code page decodes it.
+    // PDCurses enables VT processing before emitting its escapes.
+    pdc_ansi = true;
+#endif
 #ifndef __PDCURSES__
     ESCDELAY = 25;   // 25ms Esc timeout (default 1000ms) — fix "half-exit" feel
 #endif
