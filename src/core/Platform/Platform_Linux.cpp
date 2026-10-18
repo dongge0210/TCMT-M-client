@@ -303,8 +303,18 @@ std::wstring StringConverter::Utf8ToWide(const std::string& utf8) {
                 i += 1;
             }
         } else if ((c & 0xF8) == 0xF0) {
-            wc = 0xFFFD;
-            i += 4;
+            // Linux wchar_t is UTF-32, so a 4-byte sequence fits directly.
+            if (i + 3 < len) {
+                wc = static_cast<wchar_t>(
+                    ((c & 0x07) << 18) |
+                    ((static_cast<unsigned char>(ptr[i + 1]) & 0x3F) << 12) |
+                    ((static_cast<unsigned char>(ptr[i + 2]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(ptr[i + 3]) & 0x3F));
+                i += 4;
+            } else {
+                wc = 0xFFFD;
+                i += 1;
+            }
         } else {
             wc = '?';
             i += 1;

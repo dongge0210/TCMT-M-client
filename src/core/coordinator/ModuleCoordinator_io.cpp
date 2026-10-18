@@ -8,6 +8,10 @@
 #include "Utils/WMIManager.h"
 #endif
 
+#ifdef TCMT_LINUX
+#include "linux/LinuxDisk.h"
+#endif
+
 // ============================================================================
 // DiskLoop — 5-second cadence
 //   Each cycle: create DiskInfo, call GetDisks(), lock and copy to data_.
@@ -20,6 +24,13 @@ void ModuleCoordinator::DiskLoop(tcmt::compat::StopToken st) {
             DiskInfo diskInfo;
             diskInfo.Refresh();
             auto disks = diskInfo.GetDisks();
+
+#ifdef TCMT_LINUX
+            // CollectSmartData (called every 60 s from the entry point) reads
+            // the latest /proc/diskstats delta. Sampling here every 5 s keeps
+            // that delta short instead of averaging over a minute.
+            (void)tcmt::linux::SampleDiskStats();
+#endif
 
             {
                 std::lock_guard<std::mutex> lock(data_.diskMutex);

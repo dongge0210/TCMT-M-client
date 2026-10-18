@@ -161,6 +161,20 @@ function(tcmt_find_linux_dependencies)
         message(FATAL_ERROR "ncurses not found - install libncurses-dev")
     endif()
 
+    # libdbus-1 is optional. WiFi and Bluetooth use it to talk to NetworkManager
+    # and BlueZ when those services are present; without it they fall back to
+    # /proc and sysfs. Never make it required — a machine without D-Bus must
+    # still build and run.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(DBUS QUIET dbus-1)
+    endif()
+    if(DBUS_FOUND)
+        message(STATUS "    libdbus-1 found: ${DBUS_VERSION}")
+    else()
+        message(STATUS "    libdbus-1 not found - WiFi/Bluetooth D-Bus detection disabled")
+    endif()
+
     message(STATUS "  Linux dependencies OK")
 endfunction()
 

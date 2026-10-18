@@ -11,6 +11,17 @@
 #include <cctype>
 #include "notifications/UserNotifier.h"
 
+#ifdef TCMT_LINUX
+#include "linux/LinuxCpu.h"
+#include "linux/LinuxGpu.h"
+#include "linux/LinuxPower.h"
+#include "linux/LinuxProcess.h"
+#include "linux/LinuxSysfs.h"
+#include <chrono>
+#include <sys/types.h>
+#include <utility>
+#endif
+
 // =====================================================================
 // Construction / Destruction
 // =====================================================================
@@ -325,6 +336,202 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
 
     // ─── 5+7+6: Process top, battery detail, per-core — populated by caller (main_mac/main) ───
     // These are filled by the main loop, not by ModuleCoordinator
+
+#ifdef TCMT_LINUX
+    // -------------------------------------------------------------------
+    // Linux: fill the fields the other entry points populate themselves.
+    // Everything below is cached; Snapshot() runs at the UI cadence and must
+    // not scan /proc or call NVML on every frame.
+    // -------------------------------------------------------------------
+    using SteadyClock = std::chrono::steady_clock;
+    const auto now = SteadyClock::now();
+
+    // Per-core CPU (collected by CpuLoop through LinuxCpu).
+    const tcmt::linux::CpuSnapshot cpu = tcmt::linux::GetLatestCpu();
+    const int coreCount = (std::min)(cpu.logicalCores, 16);
+    sysInfo.perCoreCount = coreCount;
+    tuiData.perCoreCount = static_cast<uint8_t>(coreCount);
+    for (int i = 0; i < coreCount; ++i) {
+        const size_t index = static_cast<size_t>(i);
+        const float freq = index < cpu.coreFreqMHz.size()
+                               ? static_cast<float>(cpu.coreFreqMHz[index])
+                               : 0.0f;
+        const float temp = index < cpu.coreTempC.size()
+                               ? static_cast<float>(cpu.coreTempC[index])
+                               : 0.0f;
+        const float usage = index < cpu.coreUsage.size()
+                                ? static_cast<float>(cpu.coreUsage[index])
+                                : 0.0f;
+        sysInfo.perCoreFreq[i] = freq;
+        sysInfo.perCoreTemp[i] = temp;
+        sysInfo.perCoreUsage[i] = usage;
+        tuiData.perCoreFreq[i] = freq;
+        tuiData.perCoreTemp[i] = temp;
+    }
+    sysInfo.cpuUsageSampleIntervalMs = cpu.intervalMs;
+    tuiData.sampleIntervalMs = static_cast<int>(cpu.intervalMs);
+
+    // The coretemp/k10temp package sensor is a better CPU temperature than
+    // the first non-GPU entry in the generic sensor list.
+    if (cpu.hasPackageTemp) {
+        sysInfo.cpuTemperature = cpu.packageTempC;
+        tuiData.cpuTemp = cpu.packageTempC;
+    }
+
+    // Fans are RPM, not temperatures, so they are not in the sensor list.
+    // Refresh them separately (every four seconds is plenty for a fan ramp).
+    static bool fanPrimed = false;
+    static SteadyClock::time_point fanAt{};
+    static std::vector<std::pair<std::string, double>> fanCache;
+    if (!fanPrimed || now - fanAt > std::chrono::seconds(4)) {
+        fanCache.clear();
+        tcmt::linux::ReadHwmonFans(fanCache);
+        fanAt = now;
+        fanPrimed = true;
+    }
+    sysInfo.fans.clear();
+    sysInfo.fans.reserve(fanCache.size());
+    for (const auto& [name, rpm] : fanCache) {
+        SystemInfo::FanData fan;
+        fan.name = name;
+        fan.rpm = static_cast<float>(rpm);
+        sysInfo.fans.push_back(std::move(fan));
+    }
+
+    // GPU: NVML + DRM sysfs. One second of cache is enough for the UI.
+    static bool gpuPrimed = false;
+    static SteadyClock::time_point gpuAt{};
+    static std::vector<tcmt::linux::GpuSnapshot> gpuCache;
+    if (!gpuPrimed || now - gpuAt > std::chrono::seconds(1)) {
+        gpuCache = tcmt::linux::CollectGpus();
+        gpuAt = now;
+        gpuPrimed = true;
+    }
+    sysInfo.gpus.clear();
+    sysInfo.gpus.reserve(gpuCache.size());
+    for (const auto& gpu : gpuCache) {
+        GpuSpec spec;
+        spec.name = gpu.name;
+        spec.brand = gpu.brand.empty() ? GpuBrandFromName(gpu.name) : gpu.brand;
+        spec.memory = gpu.memoryBytes;
+        spec.memoryPercent = gpu.memoryPercent;
+        spec.coreClock = gpu.coreClockMHz;
+        spec.temperature = gpu.temperatureValid ? gpu.temperatureC : 0.0;
+        spec.isVirtual = gpu.isVirtual;
+        spec.isUnified = gpu.isUnified;
+        spec.usage = gpu.usagePercent;
+        sysInfo.gpus.push_back(std::move(spec));
+    }
+    if (!sysInfo.gpus.empty()) {
+        const GpuSpec& primary = sysInfo.gpus.front();
+        sysInfo.gpuName = primary.name;
+        sysInfo.gpuBrand = primary.brand;
+        sysInfo.gpuMemory = primary.memory;
+        sysInfo.gpuCoreFreq = primary.coreClock;
+        sysInfo.gpuUsage = primary.usage;
+        sysInfo.gpuIsVirtual = primary.isVirtual;
+        sysInfo.gpuFreq = primary.coreClock;
+        tuiData.gpuFreq = primary.coreClock;
+        tuiData.gpuName = primary.name;
+        tuiData.gpuMemory = primary.memory;
+        tuiData.gpuMemoryPercent = primary.memoryPercent;
+        tuiData.gpuUsage = primary.usage;
+        tuiData.gpuUnified = primary.isUnified;
+        if (primary.temperature > 0.0) {
+            sysInfo.gpuTemperature = primary.temperature;
+            tuiData.gpuTemp = primary.temperature;
+        }
+    }
+
+    // Power: RAPL is the only CPU power source; absence means unavailable,
+    // never an estimate from load.
+    const double cpuMilliwatts = data_.cpuPower.load();
+    sysInfo.cpuPower = cpuMilliwatts;
+    tuiData.cpuPower = cpuMilliwatts;
+    sysInfo.powerAvailable = cpuMilliwatts > 0.0;
+    tuiData.powerAvailable = sysInfo.powerAvailable;
+    sysInfo.anePower = 0.0;
+    tuiData.anePower = 0.0;
+    if (!gpuCache.empty() && gpuCache.front().powerValid) {
+        sysInfo.gpuPower = gpuCache.front().powerMilliwatts;
+        tuiData.gpuPower = gpuCache.front().powerMilliwatts;
+    }
+
+    // Battery detail (voltage/current/temperature/power) every two seconds.
+    static bool batteryPrimed = false;
+    static SteadyClock::time_point batteryAt{};
+    static tcmt::linux::BatteryDetail battery;
+    if (!batteryPrimed || now - batteryAt > std::chrono::seconds(2)) {
+        battery = tcmt::linux::ReadPrimaryBattery();
+        batteryAt = now;
+        batteryPrimed = true;
+    }
+    if (battery.present) {
+        sysInfo.batteryIsPresent = true;
+        sysInfo.batteryIsCharging = battery.charging;
+        tuiData.batteryIsCharging = battery.charging;
+        if (battery.temperatureValid) {
+            sysInfo.batteryTemp = static_cast<float>(battery.temperatureC);
+            tuiData.batteryTemp = battery.temperatureC;
+        }
+        int milliamps = 0;
+        if (battery.currentUA > 0) {
+            milliamps = static_cast<int>(battery.currentUA / 1000ULL);
+            if (battery.currentNegative) milliamps = -milliamps;
+        } else if (battery.powerValid && battery.voltageUV > 0) {
+            // Some drivers expose power_now but not current_now. Derive the
+            // current so the TUI's power row (mA * mV) stays populated. Sign
+            // follows the charge direction, matching the TUI convention.
+            const double volts = static_cast<double>(battery.voltageUV) / 1.0e6;
+            milliamps = static_cast<int>(battery.watts * 1000.0 / volts);
+            if (battery.discharging) milliamps = -milliamps;
+        }
+        if (milliamps != 0) {
+            sysInfo.batteryAmperage = milliamps;
+            tuiData.batteryAmperage = milliamps;
+        }
+        if (battery.voltageUV > 0) {
+            const int millivolts = static_cast<int>(battery.voltageUV / 1000ULL);
+            sysInfo.batteryVoltage = millivolts;
+            tuiData.batteryVoltage = millivolts;
+        }
+        // chargerWatts means "rated charger" in the TUI; power_supply only
+        // reports the battery's actual power, so it is deliberately not set.
+    }
+
+    // Top processes every two seconds.
+    static bool procPrimed = false;
+    static SteadyClock::time_point procAt{};
+    static std::vector<tcmt::linux::ProcessSample> procCache;
+    if (!procPrimed || now - procAt > std::chrono::seconds(2)) {
+        procCache = tcmt::linux::CollectTopProcesses(12);
+        procAt = now;
+        procPrimed = true;
+    }
+    sysInfo.topProcesses.clear();
+    sysInfo.topProcesses.reserve(procCache.size());
+    tuiData.topProcesses.clear();
+    tuiData.topProcesses.reserve(procCache.size());
+    for (const auto& sample : procCache) {
+        SystemInfo::ProcData proc;
+        proc.pid = sample.pid;
+        proc.name = sample.name;
+        proc.memoryBytes = sample.memoryBytes;
+        proc.cpuPercent = static_cast<float>(sample.cpuPercent);
+        sysInfo.topProcesses.push_back(std::move(proc));
+
+        tcmt::TuiData::ProcessTopEntry row;
+        row.pid = static_cast<pid_t>(sample.pid);
+        row.name = sample.name;
+        row.memoryBytes = sample.memoryBytes;
+        row.cpuPercent = sample.cpuPercent;
+        row.threads = sample.threads;
+        row.cpuTimeMs = sample.cpuTimeMs;
+        row.state = sample.state;
+        row.user = sample.user;
+        tuiData.topProcesses.push_back(std::move(row));
+    }
+#endif  // TCMT_LINUX
 }
 
 // =====================================================================
@@ -355,6 +562,16 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 // Battery and power entries are not thermal sensors
                 if (lower.find("battery") != std::string::npos) continue;
                 if (lower.find("power") != std::string::npos) continue;
+#ifdef TCMT_LINUX
+                // On Linux fans share the sensor list (value = RPM) and disk
+                // hwmon entries are not CPU/GPU temperatures. Both still reach
+                // the sensor list; only the CPU/GPU attribution skips them.
+                if (lower.find("fan") != std::string::npos) continue;
+                if (lower.find("nvme") != std::string::npos ||
+                    lower.find("drivetemp") != std::string::npos) {
+                    continue;
+                }
+#endif
 
                 bool isGpu = (lower.find("gpu") != std::string::npos ||
                               lower.find("tg") != std::string::npos ||

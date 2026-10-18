@@ -554,13 +554,18 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
+#include "../linux/LinuxDisk.h"
+#include "../linux/LinuxSysfs.h"
 #include <fstream>
 #include <sstream>
 #include <dirent.h>
 #include <sys/statvfs.h>
+#include <atomic>
 #include <cstring>
 #include <algorithm>
+#include <map>
 #include <set>
+#include <utility>
 #include <cctype>
 
 DiskInfo::DiskInfo() { QueryDrives(); }
@@ -570,24 +575,20 @@ void DiskInfo::QueryDrives() {
 
     std::ifstream mountsFile("/proc/mounts");
     if (!mountsFile.is_open()) {
-        Logger::Error("DiskInfo: failed to open /proc/mounts");
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged, "DiskInfo: /proc/mounts unreadable", true);
         return;
     }
 
+    // Only local filesystems with a statvfs volume. Network and pseudo
+    // filesystems are intentionally excluded.
     std::set<std::string> realFs = {
         "ext2", "ext3", "ext4", "xfs", "btrfs",
-        "ntfs", "vfat", "fat32", "exfat", "hfsplus",
+        "ntfs", "vfat", "fat32", "exfat", "hfsplus", "fuseblk",
         "zfs", "f2fs", "jfs", "reiserfs"
     };
 
-    std::set<std::string> skipFs = {
-        "proc", "sysfs", "tmpfs", "devpts", "cgroup", "cgroup2",
-        "devtmpfs", "debugfs", "tracefs", "securityfs", "pstore",
-        "efivarfs", "configfs", "hugetlbfs", "mqueue", "autofs",
-        "overlay", "squashfs", "fuse.gvfsd-fuse", "fusectl",
-        "rpc_pipefs", "binfmt_misc", "nfsd", "sunrpc", "bpf"
-    };
-
+    std::set<std::string> seenMounts;
     std::string line;
     while (std::getline(mountsFile, line)) {
         std::stringstream ss(line);
@@ -595,30 +596,45 @@ void DiskInfo::QueryDrives() {
         int dump = 0, pass = 0;
         ss >> device >> mountpoint >> fstype >> options >> dump >> pass;
 
-        if (skipFs.find(fstype) != skipFs.end()) continue;
         if (realFs.find(fstype) == realFs.end()) continue;
+        if (mountpoint.find("/sys") == 0 || mountpoint.find("/proc") == 0 ||
+            mountpoint.find("/dev") == 0 || mountpoint.find("/run") == 0) {
+            continue;
+        }
+        // Bind mounts and btrfs subvolumes can repeat the same path.
+        if (!seenMounts.insert(mountpoint).second) continue;
 
-        if (mountpoint.find("/sys/") == 0 || mountpoint.find("/proc/") == 0 ||
-            mountpoint.find("/dev/") == 0 || mountpoint.find("/run/") == 0) continue;
-
-        struct statvfs vfs;
+        struct statvfs vfs {};
         if (statvfs(mountpoint.c_str(), &vfs) != 0) continue;
 
-        uint64_t total = static_cast<uint64_t>(vfs.f_blocks) * static_cast<uint64_t>(vfs.f_frsize);
-        uint64_t freeSpace = static_cast<uint64_t>(vfs.f_bfree) * static_cast<uint64_t>(vfs.f_frsize);
+        const uint64_t total =
+            static_cast<uint64_t>(vfs.f_blocks) * static_cast<uint64_t>(vfs.f_frsize);
+        // f_bavail is what an unprivileged user can actually use; f_bfree
+        // includes the root-reserved blocks.
+        const uint64_t freeSpace =
+            static_cast<uint64_t>(vfs.f_bavail) * static_cast<uint64_t>(vfs.f_frsize);
+        const uint64_t freeAll =
+            static_cast<uint64_t>(vfs.f_bfree) * static_cast<uint64_t>(vfs.f_frsize);
         if (total == 0) continue;
 
         DriveInfo info{};
         info.totalSize = total;
         info.freeSpace = freeSpace;
-        info.usedSpace = (total >= freeSpace) ? (total - freeSpace) : 0ULL;
+        info.usedSpace = total >= freeAll ? total - freeAll : 0ULL;
 
-        size_t lastSlash = mountpoint.find_last_of('/');
-        info.label = (lastSlash != std::string::npos && lastSlash + 1 < mountpoint.size())
-                     ? mountpoint.substr(lastSlash + 1) : mountpoint;
-        if (info.label.empty()) info.label = "Unnamed";
+        // No volume-label API without root; the mount point is the honest
+        // identifier. "/" stays "/" rather than becoming "Unnamed".
+        if (mountpoint == "/") {
+            info.label = "/";
+        } else {
+            const size_t lastSlash = mountpoint.find_last_of('/');
+            info.label = (lastSlash != std::string::npos && lastSlash + 1 < mountpoint.size())
+                             ? mountpoint.substr(lastSlash + 1)
+                             : mountpoint;
+            if (info.label.empty()) info.label = mountpoint;
+        }
         info.fileSystem = fstype;
-        info.mountPoint = mountpoint;   // Linux 侧同口径：落点就是挂载点
+        info.mountPoint = mountpoint;
         info.letter = 0;
 
         drives.push_back(std::move(info));
@@ -653,86 +669,114 @@ static void CopyStringToWchar(WCHAR* dst, size_t dstLen, const std::string& src)
 }
 
 void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
-    Logger::Debug("DiskInfo::CollectSmartData - Linux: enumerating physical disks via sysfs");
+    Logger::Debug("DiskInfo::CollectSmartData - Linux: enumerating /sys/block");
 
-    DIR* blockDir = opendir("/sys/block");
-    if (!blockDir) {
-        Logger::Error("DiskInfo: failed to open /sys/block");
-        return;
+    // Deltas from /proc/diskstats. The caller refreshes this list every 60 s,
+    // so the throughput is a 60-second average; the first call reports 0.
+    const std::map<std::string, tcmt::linux::DiskIoDelta> ioDeltas =
+        tcmt::linux::SampleDiskStats();
+
+    // Which whole disk backs "/"? /proc/mounts points at a partition, so a
+    // prefix match against "/dev/<disk>" is enough.
+    std::string rootDevice;
+    {
+        std::ifstream mounts("/proc/mounts");
+        std::string line;
+        while (std::getline(mounts, line)) {
+            std::istringstream ss(line);
+            std::string device, mountpoint;
+            if (ss >> device >> mountpoint && mountpoint == "/") {
+                rootDevice = device;
+                break;
+            }
+        }
     }
 
-    struct dirent* entry;
-    while ((entry = readdir(blockDir)) != nullptr) {
-        std::string name(entry->d_name);
-        if (name == "." || name == "..") continue;
-
-        bool isPhysical = false;
-        if (name.find("nvme") == 0) {
-            isPhysical = true;
-        } else if (name.find("sd") == 0 && name.length() > 2
-                   && std::isdigit(static_cast<unsigned char>(name[2]))) {
-            isPhysical = true;
-        } else if (name.find("mmcblk") == 0) {
-            isPhysical = true;
-        } else if (name.find("vd") == 0 && name.length() > 2
-                   && std::isdigit(static_cast<unsigned char>(name[2]))) {
-            isPhysical = true;
-        }
-        if (!isPhysical) continue;
+    const std::vector<std::string> physical = tcmt::linux::ListPhysicalDisks();
+    for (size_t index = 0; index < physical.size(); ++index) {
+        const std::string& name = physical[index];
+        const std::string base = "/sys/block/" + name;
 
         PhysicalDiskSmartData pd{};
+        // SmartReader re-enumerates the same sorted list; the index is the
+        // stable key between DiskInfo and SmartReader on Linux.
+        pd.physicalIndex = static_cast<int>(index);
         pd.smartSupported = false;
         pd.smartEnabled = false;
-        pd.healthPercentage = 100;
-        pd.temperature = -1;
+        pd.healthPercentage = 0;  // 0 = unknown; never pretend a failed read is 100 %
+        pd.temperature = 0.0;
         pd.logicalDriveCount = 0;
+        pd.attributeCount = 0;
 
-        std::string modelPath = "/sys/block/" + name + "/device/model";
-        std::ifstream modelFile(modelPath);
-        if (modelFile.is_open()) {
-            std::string model;
-            std::getline(modelFile, model);
-            model.erase(0, model.find_first_not_of(" \t"));
-            model.erase(model.find_last_not_of(" \t") + 1);
+        std::string model = tcmt::linux::ReadLine(base + "/device/model");
+        if (model.empty()) model = tcmt::linux::ReadLine(base + "/device/name");
+        if (!model.empty()) {
             CopyStringToWchar(pd.model, sizeof(pd.model) / sizeof(WCHAR), model);
         }
 
-        std::string serialPath = "/sys/block/" + name + "/device/serial";
-        std::ifstream serialFile(serialPath);
-        if (serialFile.is_open()) {
-            std::string serial;
-            std::getline(serialFile, serial);
-            serial.erase(0, serial.find_first_not_of(" \t"));
-            serial.erase(serial.find_last_not_of(" \t") + 1);
+        const std::string serial = tcmt::linux::ReadLine(base + "/device/serial");
+        if (!serial.empty()) {
             CopyStringToWchar(pd.serialNumber, sizeof(pd.serialNumber) / sizeof(WCHAR), serial);
         }
 
-        std::string sizePath = "/sys/block/" + name + "/size";
-        std::ifstream sizeFile(sizePath);
-        if (sizeFile.is_open()) {
-            std::string sizeStr;
-            std::getline(sizeFile, sizeStr);
-            try {
-                uint64_t sectors = std::stoull(sizeStr);
-                pd.capacity = sectors * 512;
-            } catch (...) {}
+        const std::string firmware = tcmt::linux::ReadLine(base + "/device/firmware_rev");
+        if (!firmware.empty()) {
+            CopyStringToWchar(pd.firmwareVersion,
+                              sizeof(pd.firmwareVersion) / sizeof(WCHAR), firmware);
         }
 
-        std::string rotPath = "/sys/block/" + name + "/queue/rotational";
-        std::ifstream rotFile(rotPath);
-        if (rotFile.is_open()) {
-            int rot = 0;
-            rotFile >> rot;
-            std::string typeStr = (rot == 1) ? "HDD" : "SSD";
-            CopyStringToWchar(pd.diskType, sizeof(pd.diskType) / sizeof(WCHAR), typeStr);
+        uint64_t sectors = 0;
+        if (tcmt::linux::ReadUInt64(base + "/size", sectors)) {
+            // sysfs "size" is in 512-byte sectors for every block driver.
+            pd.capacity = sectors * 512ULL;
+        }
+
+        std::string diskType;
+        if (name.compare(0, 4, "nvme") == 0) {
+            diskType = "SSD";  // NVMe is flash by definition
         } else {
-            CopyStringToWchar(pd.diskType, sizeof(pd.diskType) / sizeof(WCHAR), "Unknown");
+            uint64_t rotational = 0;
+            if (tcmt::linux::ReadUInt64(base + "/queue/rotational", rotational)) {
+                diskType = rotational == 1 ? "HDD" : "SSD";
+            } else {
+                diskType = "Unknown";
+            }
+        }
+        CopyStringToWchar(pd.diskType, sizeof(pd.diskType) / sizeof(WCHAR), diskType);
+        CopyStringToWchar(pd.interfaceType, sizeof(pd.interfaceType) / sizeof(WCHAR),
+                          tcmt::linux::ReadDiskInterfaceType(name));
+
+        // Temperature from NVMe hwmon or drivetemp works without privileges.
+        double hwmonTemp = 0.0;
+        if (tcmt::linux::ReadDiskTemperatureC(name, hwmonTemp)) {
+            pd.temperature = hwmonTemp;
+        }
+
+        // SMART ioctls need root/CAP_SYS_RAWIO. Failure leaves the disk in the
+        // list with smartSupported=false and health 0; it must not break the
+        // list or log on every refresh.
+        SmartReader::Read(static_cast<int>(index), pd);
+        if (!pd.smartSupported) {
+            pd.smartEnabled = false;
+            pd.healthPercentage = 0;
+        }
+        if (pd.temperature <= 0.0 && hwmonTemp > 0.0) pd.temperature = hwmonTemp;
+
+        const auto io = ioDeltas.find(name);
+        if (io != ioDeltas.end()) {
+            pd.readBytesPerSec = io->second.readBytesPerSec;
+            pd.writeBytesPerSec = io->second.writeBytesPerSec;
+            pd.readIops = io->second.readIops;
+            pd.writeIops = io->second.writeIops;
+        }
+
+        if (!rootDevice.empty() &&
+            rootDevice.compare(0, 5 + name.size(), "/dev/" + name) == 0) {
+            pd.isSystemDisk = true;
         }
 
         sysInfo.physicalDisks.push_back(pd);
     }
-
-    closedir(blockDir);
 
     Logger::Debug("DiskInfo: found " + std::to_string(sysInfo.physicalDisks.size())
                   + " physical disks on Linux");

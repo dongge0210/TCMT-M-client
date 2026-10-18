@@ -26,7 +26,7 @@ and `2.0.0` (2026-06-17 merge) got in. There is no single source; change all six
 first.
 
 **Two separate build systems co-exist:**
-- **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on both macOS ARM64 and Windows x64. **Linux is deliberately not a supported target** (no machine to validate readings against; the `TCMT_LINUX` paths are a half-wired scaffold that fails at link). `cmake/Platform.cmake` warns at configure time and prints `[UNSUPPORTED]` (silence it with `-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON`); a Linux build may still fail at link.
+- **CMake** — C++20 core library (`TCMTCore` static lib) + CLI entry point (`TCMT-M`). Runs on macOS ARM64, Windows x64 and Linux x86_64/aarch64. Linux shares the CMake path: `cmake/Platform.cmake` sets `TCMT_LINUX`, and `-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON` is a deprecated no-op kept so older build scripts still configure.
 - **MSBuild** — Windows-only C++/CLI app (`TCMT.exe`, .NET Framework 4.7.2) with an AvaloniaUI .NET 10.0 frontend.
 
 **CRITICAL: When adding new source files (.cpp/.h/.c/.mm), you MUST register them in ALL build systems:**
