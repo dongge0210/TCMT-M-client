@@ -26,6 +26,13 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifdef TCMT_LINUX
+#include "linux/LinuxCpu.h"
+#include "linux/LinuxPower.h"
+#include "linux/LinuxSysfs.h"
+#include <atomic>
+#endif
+
 // =====================================================================
 // CpuLoop  —  500 ms cadence
 // Creates one CpuInfo object (calls the constructor once) and reuses it
@@ -33,6 +40,46 @@
 // E-core freq then sleeps for 500 ms (minus the elapsed collection time).
 // =====================================================================
 void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
+#ifdef TCMT_LINUX
+    // Linux: /proc/stat is the source of truth for both the aggregate and the
+    // per-CPU values. SampleCpu() caches the result for Snapshot(), so the UI
+    // thread never reads /proc itself.
+    Logger::Info("CpuLoop: started (Linux /proc/stat)");
+
+    while (!st.stop_requested()) {
+        const auto cycleStart = std::chrono::steady_clock::now();
+        try {
+            const tcmt::linux::CpuSnapshot snapshot = tcmt::linux::SampleCpu();
+            data.cpuUsage.store(snapshot.totalUsage);
+
+            double freqSum = 0.0;
+            int freqCount = 0;
+            for (double mhz : snapshot.coreFreqMHz) {
+                if (mhz > 0.0) {
+                    freqSum += mhz;
+                    ++freqCount;
+                }
+            }
+            // Linux has no P/E split; the average current frequency is the
+            // only honest aggregate. eCoreFreq stays 0.
+            if (freqCount > 0) data.pCoreFreq.store(freqSum / freqCount);
+            data.eCoreFreq.store(0.0);
+        } catch (const std::exception& e) {
+            Logger::Error("CpuLoop: collection error - " + std::string(e.what()));
+        }
+
+        const auto elapsed = std::chrono::steady_clock::now() - cycleStart;
+        const auto elapsedMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        const int sleepMs = ScaledSampleIntervalMs(data, 1, 200) -
+                            static_cast<int>(elapsedMs);
+        if (sleepMs > 0) ModuleCoordinator::SleepFor(st, sleepMs);
+    }
+
+    Logger::Info("CpuLoop: stopped");
+    return;
+#endif  // TCMT_LINUX
+
     // Create the CpuInfo instance once; if construction fails the thread
     // exits immediately because there is nothing useful to do.
     std::unique_ptr<CpuInfo> cpuInfo;
@@ -123,6 +170,22 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
             } else {
                 data.compressedMemory.store(0);
             }
+#elif defined(TCMT_LINUX)
+            // /proc/swaps reports every active swap area; SwapFree from
+            // /proc/meminfo alone would miss multiple devices.
+            uint64_t swapUsed = 0, swapTotal = 0;
+            if (tcmt::linux::ReadSwapUsage(swapUsed, swapTotal)) {
+                data.swapUsed.store(swapUsed);
+                data.swapTotal.store(swapTotal);
+            }
+            // Linux has no single kernel counter equivalent to macOS's
+            // compressor or Windows' compression store: zswap/zram usage is
+            // per-device and not comparable. Report 0 and say so once.
+            data.compressedMemory.store(0);
+            static std::atomic<bool> compressedLogged{false};
+            if (!compressedLogged.exchange(true)) {
+                Logger::Info("MemoryLoop: no system-wide compressed-memory counter on Linux; reporting 0");
+            }
 #elif defined(TCMT_WINDOWS)
             // Windows: estimate compressed memory = CommitTotal - PhysicalUsed - PageFileUsed.
             // The compression store lives in physical memory and counts toward commit.
@@ -180,8 +243,17 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
                 // Use the first battery's charge percentage; -1 means no battery
                 int batPct = -1;
                 if (!powerInfo.batteries.empty()) {
-                    batPct = static_cast<int>(
-                        powerInfo.batteries[0].chargePercent);
+                    const auto& primary = powerInfo.batteries[0];
+                    batPct = static_cast<int>(primary.chargePercent);
+#ifdef TCMT_LINUX
+                    // power_supply has no "capacity" file on some devices and
+                    // no energy/charge counters either. 0 would be a made-up
+                    // reading, so report "unknown" instead.
+                    if (primary.chargePercent == 0 && primary.fullChargeCapacity == 0 &&
+                        primary.currentCapacity == 0 && primary.designCapacity == 0) {
+                        batPct = -1;
+                    }
+#endif
                 }
                 data.batteryPercent.store(batPct);
 
@@ -210,6 +282,12 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
                     const double watts = CpuPowerReader::ReadPackagePowerW();
                     if (watts >= 0.0) data.cpuPower.store(watts * 1000.0);  // W → mW
                 }
+#elif defined(TCMT_LINUX)
+                // RAPL energy_uj is root-only by default since CVE-2020-8694.
+                // -1 means "not readable"; store 0 so powerAvailable stays
+                // false instead of keeping a stale reading.
+                const double milliwatts = tcmt::linux::SampleCpuPackagePowerMilliwatts();
+                data.cpuPower.store(milliwatts >= 0.0 ? milliwatts : 0.0);
 #endif
             }
         } catch (const std::exception& e) {

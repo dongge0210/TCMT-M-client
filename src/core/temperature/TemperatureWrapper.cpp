@@ -1394,7 +1394,7 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
             if (type.empty()) continue;
 
             double temp = ReadTempMillideg(base + "/temp");
-            if (temp <= 0.0 || temp > 200.0) continue;
+            if (temp <= 0.0 || temp > 150.0) continue;
 
             temps.push_back({type, temp});
         }
@@ -1421,7 +1421,10 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
             struct dirent* hwentry;
             while ((hwentry = readdir(hwEntryDir)) != nullptr) {
                 std::string fname(hwentry->d_name);
-                if (fname.find("temp") != 0) continue;
+                // Only temperature channels belong here. Fans live in
+                // fan*_input (RPM) and are collected separately into
+                // SystemInfo::fans by the coordinator.
+                if (fname.compare(0, 4, "temp") != 0) continue;
 
                 std::string rest = fname.substr(4);
                 size_t usPos = rest.find('_');
@@ -1445,7 +1448,8 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
             for (const auto& input : inputs) {
                 int idx = input.first;
                 double val = input.second;
-                if (val <= 0.0 || val > 200.0) continue;
+                // Reject sensor glitches and unconnected channels.
+                if (val <= 0.0 || val > 150.0) continue;
 
                 std::string label;
                 auto lit = labels.find(idx);
@@ -1460,18 +1464,16 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
         closedir(hwDir);
     }
 
+    // De-duplicate by label, not by value: a package and its first core can
+    // legitimately read the same temperature, and dropping one by value used
+    // to hide real sensors.
+    std::set<std::string> seenLabels;
     std::vector<std::pair<std::string, double>> deduped;
     for (const auto& t : temps) {
-        bool dup = false;
-        for (const auto& d : deduped) {
-            if (std::abs(t.second - d.second) < 0.5) {
-                dup = true;
-                break;
-            }
-        }
-        if (!dup)
-            deduped.push_back(t);
+        if (seenLabels.insert(t.first).second) deduped.push_back(t);
     }
+    std::sort(deduped.begin(), deduped.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
 
     return deduped;
 }

@@ -181,6 +181,14 @@ struct PhysicalDiskSmartData {
     uint64_t totalBytesWritten;    // Total bytes written
     uint64_t totalBytesRead;       // Total bytes read
 
+    // Linux: live IO deltas from /proc/diskstats. 0 when unavailable.
+    // Sector counts there are 512-byte units regardless of the device's
+    // logical block size.
+    uint64_t readBytesPerSec = 0;
+    uint64_t writeBytesPerSec = 0;
+    uint64_t readIops = 0;
+    uint64_t writeIops = 0;
+
     // Associated logical drives
     char logicalDriveLetters[8];   // Associated drive letters
     int logicalDriveCount;         // Associated drive count
@@ -303,6 +311,7 @@ struct SystemInfo {
     uint64_t gpuMemory;             // Added
     double gpuCoreFreq;             // Added
     double gpuUsage;                // GPU usage
+    double gpuMemoryPercent = 0.0;  // VRAM usage % (NVML); 0 = unknown
     bool gpuIsVirtual;              // Is virtual GPU
     std::string networkAdapterName; // Added
     std::string networkAdapterMac;  // Added
@@ -352,6 +361,9 @@ struct SystemInfo {
     // 6. Per-core sensors
     float perCoreTemp[16] = {};
     float perCoreFreq[16] = {};
+    // Linux-only for now: /proc/stat per-logical-CPU usage. TuiData has no
+    // counterpart, so this does not reach the TUI yet.
+    float perCoreUsage[16] = {};
     int perCoreCount = 0;
 
     // 7. Battery detail (extended)

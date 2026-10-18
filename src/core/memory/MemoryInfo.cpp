@@ -152,43 +152,79 @@ std::string MemoryInfo::GetRamType() const         { return ramType; }
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
+#include "../linux/LinuxSysfs.h"
+#include <atomic>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
 
+namespace {
+
+// /proc/meminfo values are kB. Returns 0 when the key is absent.
+uint64_t MeminfoKb(const std::string& line, const char* key) {
+    const size_t keyLen = std::strlen(key);
+    if (line.compare(0, keyLen, key) != 0) return 0;
+    std::istringstream ss(line.substr(keyLen));
+    uint64_t kb = 0;
+    if (!(ss >> kb)) return 0;
+    return kb;
+}
+
+}  // namespace
+
 MemoryInfo::MemoryInfo()
     : totalPhysical(0), availablePhysical(0), totalVirtual(0),
       swapTotal(0), swapFree(0), ramSpeed(0) {
+    uint64_t memFree = 0, buffers = 0, cached = 0, sReclaimable = 0;
+    bool haveAvailable = false;
+
     std::ifstream meminfo("/proc/meminfo");
     if (meminfo.is_open()) {
         std::string line;
         while (std::getline(meminfo, line)) {
-            if (line.substr(0, 9) == "MemTotal:") {
-                unsigned long kb = 0;
-                std::sscanf(line.c_str(), "MemTotal: %lu kB", &kb);
-                totalPhysical = static_cast<uint64_t>(kb) * 1024;
-            } else if (line.substr(0, 13) == "MemAvailable:") {
-                unsigned long kb = 0;
-                std::sscanf(line.c_str(), "MemAvailable: %lu kB", &kb);
-                availablePhysical = static_cast<uint64_t>(kb) * 1024;
-            } else if (line.substr(0, 10) == "SwapTotal:") {
-                unsigned long kb = 0;
-                std::sscanf(line.c_str(), "SwapTotal: %lu kB", &kb);
-                swapTotal = static_cast<uint64_t>(kb) * 1024;
-            } else if (line.substr(0, 9) == "SwapFree:") {
-                unsigned long kb = 0;
-                std::sscanf(line.c_str(), "SwapFree: %lu kB", &kb);
-                swapFree = static_cast<uint64_t>(kb) * 1024;
+            if (line.compare(0, 9, "MemTotal:") == 0) {
+                totalPhysical = MeminfoKb(line, "MemTotal:") * 1024ULL;
+            } else if (line.compare(0, 13, "MemAvailable:") == 0) {
+                // MemAvailable already accounts for reclaimable page cache
+                // and slab; it is the value "free"-style tools report.
+                availablePhysical = MeminfoKb(line, "MemAvailable:") * 1024ULL;
+                haveAvailable = true;
+            } else if (line.compare(0, 8, "MemFree:") == 0) {
+                memFree = MeminfoKb(line, "MemFree:") * 1024ULL;
+            } else if (line.compare(0, 8, "Buffers:") == 0) {
+                buffers = MeminfoKb(line, "Buffers:") * 1024ULL;
+            } else if (line.compare(0, 7, "Cached:") == 0) {
+                cached = MeminfoKb(line, "Cached:") * 1024ULL;
+            } else if (line.compare(0, 14, "SReclaimable:") == 0) {
+                sReclaimable = MeminfoKb(line, "SReclaimable:") * 1024ULL;
+            } else if (line.compare(0, 10, "SwapTotal:") == 0) {
+                swapTotal = MeminfoKb(line, "SwapTotal:") * 1024ULL;
+            } else if (line.compare(0, 9, "SwapFree:") == 0) {
+                swapFree = MeminfoKb(line, "SwapFree:") * 1024ULL;
             }
         }
-        meminfo.close();
     } else {
-        Logger::Error("Cannot open /proc/meminfo");
+        // MemoryLoop constructs a MemoryInfo every second; one line is enough.
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged,
+                             "MemoryInfo: /proc/meminfo unreadable; memory stats unavailable",
+                             true);
     }
 
+    // Kernels before 3.14 have no MemAvailable. Approximate it the same way
+    // the kernel does: free + reclaimable cache/slab.
+    if (!haveAvailable) {
+        availablePhysical = memFree + buffers + cached + sReclaimable;
+    }
+    if (availablePhysical > totalPhysical) availablePhysical = totalPhysical;
+
     totalVirtual = totalPhysical + swapTotal;
+    // RAM type/speed live in DMI (root-only on most distributions). There is
+    // no unprivileged sysfs equivalent, so leave them empty instead of
+    // guessing from the CPU model.
     ramSpeed = 0;
-    ramType = "Unknown";
+    ramType.clear();
 }
 
 uint64_t MemoryInfo::GetTotalPhysical() const     { return totalPhysical; }

@@ -58,6 +58,24 @@ if(TCMT_MACOS)
     )
 endif()
 
+# Linux WiFi/Bluetooth (D-Bus: NetworkManager / BlueZ, with /proc and sysfs
+# fallbacks). WiFiInfo.cpp is the Windows WLAN implementation and must not be
+# built here.
+if(TCMT_LINUX)
+    list(APPEND CORE_MODULES_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo_linux.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo_linux.cpp
+        # Shared Linux collection helpers (owned by the sensors side). Every new
+        # .cpp under core/linux/ must be listed here or it silently misses the
+        # build and only shows up as an undefined symbol at link time.
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxCpu.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxDisk.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxGpu.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxPower.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxProcess.cpp
+    )
+endif()
+
 # Windows Bluetooth (bthprops.cpl API)
 if(TCMT_WINDOWS)
     list(APPEND CORE_MODULES_SOURCES
@@ -236,6 +254,24 @@ elseif(TCMT_LINUX)
     target_compile_definitions(TCMTCore PRIVATE
         TCMT_LINUX _GNU_SOURCE
     )
+endif()
+
+# libdbus-1 — optional. WiFi/Bluetooth use NetworkManager and BlueZ when the
+# system bus provides them. TCMT_HAVE_DBUS is only defined when pkg-config can
+# find dbus-1; without it both collectors still compile and fall back to
+# /proc/net/wireless and /sys/class/bluetooth.
+if(TCMT_LINUX)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(TCMT_DBUS QUIET IMPORTED_TARGET dbus-1)
+    endif()
+    if(TCMT_DBUS_FOUND)
+        target_compile_definitions(TCMTCore PRIVATE TCMT_HAVE_DBUS)
+        target_link_libraries(TCMTCore PRIVATE PkgConfig::TCMT_DBUS)
+        message(STATUS "  libdbus-1: ${TCMT_DBUS_VERSION} (NetworkManager / BlueZ enabled)")
+    else()
+        message(STATUS "  libdbus-1: not found (WiFi/Bluetooth fall back to /proc and sysfs)")
+    endif()
 endif()
 
 # Apply compile options from cmake/Options.cmake
@@ -580,7 +616,11 @@ elseif(TCMT_MACOS)
         COMMENT "Creating TCMT-M.app bundle (codesign if identity available)"
     )
 elseif(TCMT_LINUX)
-    # Linux: no .app bundle, no codesign, no SMJobBless helper
+    # Linux: no .app bundle, no codesign, no SMJobBless helper.
+    # _GNU_SOURCE is not inherited from TCMTCore (it is PRIVATE there), and
+    # -std=c++20 defines __STRICT_ANSI__, which hides POSIX declarations such as
+    # localtime_r and getloadavg that main_linux.cpp uses.
+    target_compile_definitions(TCMT-M PRIVATE _GNU_SOURCE)
     target_link_options(TCMT-M PRIVATE
         -pthread
     )

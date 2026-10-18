@@ -1246,6 +1246,22 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
     // Start ModuleCoordinator background collection threads
     ModuleCoordinator coordinator;
     coordinator.Start();
+    coordinator.SetSampleIntervalMs(g_sampleIntervalMs.load());
+
+    // 采样间隔的 handler 必须挂在 coordinator 还活着的作用域里。它以前写在
+    // main() 的设置块中，而 coordinator 是 RunMonitoringLoop 的局部变量，
+    // MSVC 直接报 C2065 / C3481。启动值上面已经喂过一次，这里只处理运行中修改。
+    tuiApp.SetSampleIntervalHandler([&coordinator](int ms) {
+        if (ms < tcmt::kSampleIntervalMinMs) ms = tcmt::kSampleIntervalMinMs;
+        if (ms > tcmt::kSampleIntervalMaxMs) ms = tcmt::kSampleIntervalMaxMs;
+        g_sampleIntervalMs.store(ms);
+        // 采集循环也按这个周期跑，否则改了设置只有界面刷新变快
+        coordinator.SetSampleIntervalMs(ms);
+        auto& cfg = GetServerCfg();
+        cfg.SetInt("sampling.intervalMs", ms);
+        cfg.Save();
+        Logger::Info("Sampling interval set to " + std::to_string(ms) + " ms");
+    });
 
     // Exit when Ctrl+C is received OR the TUI itself quit ('q' / Esc): on
     // Windows the TUI runs in-process, so its shutdown must stop the loop.
@@ -2264,8 +2280,7 @@ int main(int argc, char* argv[]) {
             g_sampleIntervalMs.store(
                 (std::max)(tcmt::kSampleIntervalMinMs,
                            (std::min)(tcmt::kSampleIntervalMaxMs, ms)));
-            // 采集循环的周期也从这个值派生，不然设置改了只有界面刷新变快、读数纹丝不动
-            coordinator.SetSampleIntervalMs(g_sampleIntervalMs.load());
+            // 启动值由 RunMonitoringLoop 在其作用域内喂给 coordinator
             Logger::Info("Sampling interval: " + std::to_string(g_sampleIntervalMs.load()) +
                          " ms");
         }
@@ -2287,19 +2302,7 @@ int main(int argc, char* argv[]) {
             Logger::Info("Server settings saved: enabled=" +
                          std::string(s.enabled ? "true" : "false") + " url=" + s.url);
         });
-        // 采样间隔单独一个 handler（TuiApp 保存时会两个都调）。以前这台机器上没注册它，
-        // 所以设置页里那个输入框改了不生效 —— 主循环读的是写死的 1000ms。
-        tuiApp.SetSampleIntervalHandler([&coordinator](int ms) {
-            if (ms < tcmt::kSampleIntervalMinMs) ms = tcmt::kSampleIntervalMinMs;
-            if (ms > tcmt::kSampleIntervalMaxMs) ms = tcmt::kSampleIntervalMaxMs;
-            g_sampleIntervalMs.store(ms);
-            // 采集循环也按这个周期跑，否则改了设置只有界面刷新变快
-            coordinator.SetSampleIntervalMs(ms);
-            auto& cfg = GetServerCfg();
-            cfg.SetInt("sampling.intervalMs", ms);
-            cfg.Save();
-            Logger::Info("Sampling interval set to " + std::to_string(ms) + " ms");
-        });
+        // 采样间隔的 handler 在 RunMonitoringLoop 里注册 —— coordinator 是那边的局部变量。
         // 语言同样单独一个 handler：设置页选的语言以前只活在本次会话里，重启就回到默认。
         // 启动时把存下来的值喂回去（TCMT_LANG 仍然优先）。
         {

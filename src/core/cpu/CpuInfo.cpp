@@ -400,7 +400,9 @@ void CpuInfo::UpdateCoreSpeeds() {
         uint64_t freq64 = 0;
         len = sizeof(freq64);
         if (sysctlbyname("hw.cpufrequency_max", &freq64, &len, nullptr, 0) == 0) {
-            largeCoreSpeed = freq64 / 1000000; // convert to MHz
+            // Divide in double: hw.cpufrequency_max is in Hz and integer
+            // division would truncate before the assignment.
+            largeCoreSpeed = static_cast<double>(freq64) / 1000000.0; // convert to MHz
         }
     }
     smallCoreSpeed = largeCoreSpeed * 0.6; // E-cores typically lower freq
@@ -517,6 +519,7 @@ bool CpuInfo::IsVirtualizationEnabled() const {
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
+#include "../linux/LinuxCpu.h"
 #include <sys/time.h>
 #include <unistd.h>
 #include <fstream>
@@ -568,7 +571,8 @@ void CpuInfo::InitializeCounter() {
         return;
 
     prevTotalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
-    prevIdleTicks = idle;
+    // iowait is idle from the scheduler's point of view (same as top/htop).
+    prevIdleTicks = idle + iowait;
     prevSampleTimeMs = GetTickCountMs();
 }
 
@@ -577,54 +581,20 @@ void CpuInfo::CleanupCounter() {
 }
 
 void CpuInfo::DetectCores() {
-    std::ifstream cpuinfo("/proc/cpuinfo");
-    if (!cpuinfo.is_open()) {
-        Logger::Error("Cannot open /proc/cpuinfo");
-        totalCores = 1;
-        largeCores = 1;
-        smallCores = 0;
-        return;
-    }
+    totalCores = tcmt::linux::ReadLogicalCpuCount();
+    if (totalCores <= 0) totalCores = 1;
 
-    std::set<int> coreIds;
-    int processorCount = 0;
-    int cpuCores = 0;
-    std::string line;
+    // Physical cores come from the topology sysfs, counting unique
+    // (package, core id) pairs. /proc/cpuinfo "core id" repeats the same id
+    // on every package, so a plain set would under-count multi-socket boxes.
+    int physicalCores = tcmt::linux::ReadPhysicalCoreCount();
+    if (physicalCores <= 0 || physicalCores > totalCores) physicalCores = totalCores;
 
-    while (std::getline(cpuinfo, line)) {
-        if (line.substr(0, 10) == "processor\t") {
-            processorCount++;
-        } else if (line.substr(0, 8) == "core id\t") {
-            size_t colon = line.find(':');
-            if (colon != std::string::npos) {
-                int id = std::stoi(line.substr(colon + 1));
-                coreIds.insert(id);
-            }
-        } else if (line.substr(0, 10) == "cpu cores\t") {
-            size_t colon = line.find(':');
-            if (colon != std::string::npos) {
-                cpuCores = std::stoi(line.substr(colon + 1));
-            }
-        }
-    }
-
-    totalCores = processorCount;
-    int physicalCores = static_cast<int>(coreIds.size());
-
-    if (physicalCores > 0) {
-        largeCores = physicalCores;
-        smallCores = 0;
-    } else if (cpuCores > 0) {
-        largeCores = cpuCores;
-        smallCores = 0;
-    } else {
-        largeCores = totalCores;
-        smallCores = 0;
-    }
+    largeCores = physicalCores;
+    smallCores = 0;
 
     Logger::Debug("CpuInfo: total=" + std::to_string(totalCores)
-               + " P=" + std::to_string(largeCores)
-               + " E=" + std::to_string(smallCores));
+               + " physical=" + std::to_string(largeCores));
 }
 
 void CpuInfo::UpdateCoreSpeeds() {
@@ -659,20 +629,9 @@ void CpuInfo::UpdateCoreSpeeds() {
 }
 
 std::string CpuInfo::GetNameFromRegistry() {
-    std::ifstream cpuinfo("/proc/cpuinfo");
-    if (!cpuinfo.is_open()) return "Unknown CPU";
-
-    std::string line;
-    while (std::getline(cpuinfo, line)) {
-        if (line.substr(0, 11) == "model name\t") {
-            size_t colon = line.find(':');
-            if (colon != std::string::npos) {
-                std::string name = line.substr(colon + 2);
-                if (!name.empty()) return name;
-            }
-        }
-    }
-    return "Unknown CPU";
+    // Handles x86 ("model name"), ARM ("Model"/"Hardware") and the device
+    // tree fallback used by most ARM boards.
+    return tcmt::linux::ReadCpuModel();
 }
 
 double CpuInfo::updateUsage() {
@@ -697,7 +656,8 @@ double CpuInfo::updateUsage() {
 
     uint64_t totalTicks = user + nice + system + idle + iowait + irq + softirq + steal;
     uint64_t totalDelta = totalTicks - prevTotalTicks;
-    uint64_t idleDelta = idle - prevIdleTicks;
+    uint64_t idleTicks = idle + iowait;
+    uint64_t idleDelta = idleTicks >= prevIdleTicks ? idleTicks - prevIdleTicks : 0;
 
     if (totalDelta > 0) {
         double newUsage = 100.0 * (1.0 - static_cast<double>(idleDelta)
@@ -709,7 +669,7 @@ double CpuInfo::updateUsage() {
     }
 
     prevTotalTicks = totalTicks;
-    prevIdleTicks = idle;
+    prevIdleTicks = idleTicks;
     prevSampleTimeMs = nowMs;
     lastSampleIntervalMs = static_cast<double>(elapsedMs);
 

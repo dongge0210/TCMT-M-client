@@ -235,3 +235,38 @@ jobs:
         path: TCMT-macOS-arm64-alpha.zip
         retention-days: 14
 
+  build-linux:
+    name: Linux (CMake + GCC)
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        # libncursesw5-dev is the wide-character dev package on 22.04; on 24.04
+        # the same files ship in libncurses-dev (which provides libncursesw).
+        sudo apt-get install -y \
+          cmake g++ pkg-config libncurses-dev libdbus-1-dev
+
+    # -DTCMT_ALLOW_UNSUPPORTED_LINUX=ON is kept in the command line on purpose:
+    # it is a deprecated no-op now, and keeping it proves older call sites still
+    # configure cleanly.
+    - name: Configure CMake
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release \
+              -DTCMT_ALLOW_UNSUPPORTED_LINUX=ON
+
+    - name: Build
+      run: |
+        cmake --build build -j"$(nproc)"
+
+    - name: Smoke test
+      run: |
+        test -x build/src/TCMT-M
+

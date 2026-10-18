@@ -582,25 +582,33 @@ const std::vector<NetworkAdapter::AdapterInfo>& NetworkAdapter::GetAdapters() co
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
+#include "../linux/LinuxSysfs.h"
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <linux/ethtool.h>
 #include <linux/if_link.h>
-#include <sys/ioctl.h>
 #include <linux/sockios.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
 #include <cctype>
-#include <map>
 #include <chrono>
-#include <tuple>
+#include <map>
+#include <utility>
+#include <vector>
 
-static std::string FormatMacAddr(const unsigned char* addr, size_t len) {
+namespace {
+
+std::string FormatMacAddr(const unsigned char* addr, size_t len) {
     std::stringstream ss;
     for (size_t i = 0; i < len; ++i) {
         if (i > 0) ss << ":";
@@ -610,7 +618,7 @@ static std::string FormatMacAddr(const unsigned char* addr, size_t len) {
     return ss.str();
 }
 
-static std::string FormatSpd(uint64_t bitsPerSecond) {
+std::string FormatSpd(uint64_t bitsPerSecond) {
     const double GB = 1000000000.0, MB = 1000000.0, KB = 1000.0;
     std::stringstream ss;
     ss << std::fixed << std::setprecision(1);
@@ -621,7 +629,81 @@ static std::string FormatSpd(uint64_t bitsPerSecond) {
     return ss.str();
 }
 
-NetworkAdapter::NetworkAdapter() : initialized(false) { Initialize(); }
+std::string ReadSysFsString(const std::string& path) {
+    return tcmt::linux::ReadLine(path);
+}
+
+// /proc/net/dev: after the ':' the first field is rx bytes and the ninth is
+// tx bytes (the intervening fields are packets/errors/drops on each side).
+void ReadProcNetDev(std::map<std::string, std::pair<uint64_t, uint64_t>>& counters) {
+    std::ifstream ifs("/proc/net/dev");
+    if (!ifs.is_open()) return;
+    std::string line;
+    while (std::getline(ifs, line)) {
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos) continue;  // header lines
+        const std::string ifname = tcmt::linux::Trim(line.substr(0, colon));
+        if (ifname.empty()) continue;
+
+        std::istringstream ss(line.substr(colon + 1));
+        uint64_t values[16] = {};
+        int count = 0;
+        while (count < 16 && (ss >> values[count])) ++count;
+        if (count < 9) continue;
+        counters[ifname] = {values[0], values[8]};
+    }
+}
+
+// ETHTOOL_GLINKSETTINGS: the kernel first reports how many 32-bit words the
+// link-mode mask needs, then the caller repeats the ioctl with a buffer large
+// enough for the three masks. No CAP_NET_ADMIN is required.
+uint64_t QueryLinkSpeedBps(const std::string& ifname) {
+    const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return 0;
+
+    uint64_t result = 0;
+    struct ifreq ifr {};
+    std::snprintf(ifr.ifr_name, IFNAMSIZ, "%s", ifname.c_str());
+
+    struct ethtool_link_settings request {};
+    request.cmd = ETHTOOL_GLINKSETTINGS;
+    ifr.ifr_data = reinterpret_cast<char*>(&request);
+    if (::ioctl(fd, SIOCETHTOOL, &ifr) == 0 && request.link_mode_masks_nwords != 0) {
+        // UAPI: a negative return means the handshake is in progress and the
+        // absolute value is the mask size the kernel expects.
+        int nwords = request.link_mode_masks_nwords;
+        if (nwords < 0) nwords = -nwords;
+        std::vector<unsigned char> buffer(
+            sizeof(struct ethtool_link_settings) + 3 * sizeof(uint32_t) * static_cast<size_t>(nwords));
+        auto* full = reinterpret_cast<struct ethtool_link_settings*>(buffer.data());
+        std::memcpy(full, &request, sizeof(request));
+        full->link_mode_masks_nwords = static_cast<signed char>(nwords);
+        ifr.ifr_data = reinterpret_cast<char*>(full);
+        if (::ioctl(fd, SIOCETHTOOL, &ifr) == 0) {
+            const uint32_t speedMbps = full->speed;
+            if (speedMbps > 0 && speedMbps != 0xffffffffU) {
+                result = static_cast<uint64_t>(speedMbps) * 1000000ULL;
+            }
+        }
+    }
+
+    if (result == 0) {
+        // Old kernels/drivers reject GLINKSETTINGS. /sys reads the same
+        // ethtool value and is still unprivileged; -1 means "unknown".
+        int64_t speedMbps = 0;
+        if (tcmt::linux::ReadInt64("/sys/class/net/" + ifname + "/speed", speedMbps) &&
+            speedMbps > 0) {
+            result = static_cast<uint64_t>(speedMbps) * 1000000ULL;
+        }
+    }
+
+    ::close(fd);
+    return result;
+}
+
+}  // namespace
+
+NetworkAdapter::NetworkAdapter() : prevSampleTimeMs(0), initialized(false) { Initialize(); }
 NetworkAdapter::~NetworkAdapter() { Cleanup(); }
 
 void NetworkAdapter::Initialize() {
@@ -640,14 +722,27 @@ void NetworkAdapter::Refresh() {
 }
 
 bool NetworkAdapter::IsVirtualAdapter(const std::string& name) const {
-    const std::string virtualKeywords[] = {
-        "lo", "docker", "veth", "br-", "virbr", "tun", "tap",
-        "Virtual", "VPN", "Loopback"
+    if (name == "lo" || name.empty()) return true;
+    // Physical NICs have a "device" symlink. Anything without one that also
+    // lives under /sys/devices/virtual/net is a bridge/veth/tun/docker device.
+    if (tcmt::linux::PathExists("/sys/class/net/" + name + "/device")) return false;
+    // A bond is a software device but it carries the machine's real link.
+    if (tcmt::linux::PathExists("/sys/class/net/" + name + "/bonding")) return false;
+    if (tcmt::linux::PathExists("/sys/devices/virtual/net/" + name)) return true;
+
+    const std::string lower = [&] {
+        std::string s = name;
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    }();
+    static const char* kPrefixes[] = {
+        "docker", "veth", "br-", "virbr", "tun", "tap", "tailscale",
+        "wg", "zt", "vmnet", "dummy", "cni"
     };
-    std::string lower = name;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    for (const auto& kw : virtualKeywords)
-        if (lower.find(kw) != std::string::npos) return true;
+    for (const char* prefix : kPrefixes) {
+        if (lower.compare(0, std::strlen(prefix), prefix) == 0) return true;
+    }
     return false;
 }
 
@@ -659,134 +754,129 @@ std::string NetworkAdapter::FormatSpeed(uint64_t bitsPerSecond) const {
     return FormatSpd(bitsPerSecond);
 }
 
-static std::string ReadSysFsString(const std::string& path) {
-    std::ifstream ifs(path);
-    if (!ifs.is_open()) return "";
-    std::string val;
-    std::getline(ifs, val);
-    val.erase(0, val.find_first_not_of(" \t\n\r"));
-    val.erase(val.find_last_not_of(" \t\n\r") + 1);
-    return val;
-}
-
 void NetworkAdapter::QueryAdapterInfo() {
     struct ifaddrs* ifaddr = nullptr;
-    if (getifaddrs(&ifaddr) != 0) {
-        Logger::Error("NetworkAdapter: getifaddrs failed");
+    if (::getifaddrs(&ifaddr) != 0) {
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged, "NetworkAdapter: getifaddrs failed", true);
         return;
     }
 
-    std::map<std::string, AdapterInfo> nameMap;
+    struct LocalInfo {
+        AdapterInfo info;
+        std::string ipv4;
+        std::string ipv6;
+    };
+    std::map<std::string, LocalInfo> nameMap;
 
     for (struct ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
         if (!ifa->ifa_name) continue;
-        std::string ifname(ifa->ifa_name);
+        const std::string ifname(ifa->ifa_name);
         if (IsVirtualAdapter(ifname)) continue;
 
         auto it = nameMap.find(ifname);
         if (it == nameMap.end()) {
-            AdapterInfo info;
-            info.name = ifname;
-            info.isEnabled = (ifa->ifa_flags & IFF_UP) != 0;
-            info.isConnected = (ifa->ifa_flags & IFF_RUNNING) != 0;
-            info.speed = 0;
-            info.speedString = "Unknown";
-
-            if (ifname.find("wl") == 0 || ifname.find("wlan") == 0)
-                info.adapterType = "Wireless adapter";
-            else if (ifname.find("en") == 0 || ifname.find("eth") == 0)
-                info.adapterType = "Ethernet adapter";
-            else
-                info.adapterType = "Unknown";
-
-            nameMap[ifname] = info;
+            LocalInfo local;
+            local.info.name = ifname;
+            local.info.isEnabled = (ifa->ifa_flags & IFF_UP) != 0;
+            local.info.isConnected = (ifa->ifa_flags & IFF_RUNNING) != 0;
+            local.info.speed = 0;
+            local.info.speedString = "Unknown";
+            nameMap[ifname] = std::move(local);
             it = nameMap.find(ifname);
         }
 
-        if (ifa->ifa_addr) {
-            if (ifa->ifa_addr->sa_family == AF_INET) {
-                char ipStr[INET_ADDRSTRLEN];
-                struct sockaddr_in* ipv4 = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
-                inet_ntop(AF_INET, &(ipv4->sin_addr), ipStr, INET_ADDRSTRLEN);
-                it->second.ip = std::string(ipStr);
-            } else if (ifa->ifa_addr->sa_family == AF_INET6) {
-                char ipStr[INET6_ADDRSTRLEN];
-                struct sockaddr_in6* ipv6 = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
-                inet_ntop(AF_INET6, &(ipv6->sin6_addr), ipStr, INET6_ADDRSTRLEN);
-                if (it->second.ip.empty())
-                    it->second.ip = std::string(ipStr);
+        it->second.info.isEnabled = (ifa->ifa_flags & IFF_UP) != 0;
+        it->second.info.isConnected = (ifa->ifa_flags & IFF_RUNNING) != 0;
+
+        if (!ifa->ifa_addr) continue;
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            char ipStr[INET_ADDRSTRLEN] = {};
+            auto* ipv4 = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
+            if (::inet_ntop(AF_INET, &ipv4->sin_addr, ipStr, sizeof(ipStr))) {
+                // Prefer a routable IPv4 over loopback/link-local.
+                if (std::strncmp(ipStr, "127.", 4) != 0 && it->second.ipv4.empty()) {
+                    it->second.ipv4 = ipStr;
+                }
+            }
+        } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+            char ipStr[INET6_ADDRSTRLEN] = {};
+            auto* ipv6 = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
+            if (::inet_ntop(AF_INET6, &ipv6->sin6_addr, ipStr, sizeof(ipStr))) {
+                if (it->second.ipv6.empty() && std::strncmp(ipStr, "fe80", 4) != 0 &&
+                    std::strcmp(ipStr, "::1") != 0) {
+                    it->second.ipv6 = ipStr;
+                }
             }
         }
-
-        it->second.isEnabled = (ifa->ifa_flags & IFF_UP) != 0;
-        it->second.isConnected = (ifa->ifa_flags & IFF_RUNNING) != 0;
     }
 
-    freeifaddrs(ifaddr);
+    ::freeifaddrs(ifaddr);
 
-    for (auto& kv : nameMap) {
-        const std::string& ifname = kv.first;
+    std::map<std::string, std::pair<uint64_t, uint64_t>> counters;
+    ReadProcNetDev(counters);
+
+    const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+
+    for (auto& [ifname, local] : nameMap) {
+        AdapterInfo& info = local.info;
+        info.ip = !local.ipv4.empty() ? local.ipv4 : local.ipv6;
 
         std::string mac = ReadSysFsString("/sys/class/net/" + ifname + "/address");
-        if (!mac.empty()) {
+        if (!mac.empty() && mac != "00:00:00:00:00:00") {
             std::transform(mac.begin(), mac.end(), mac.begin(), ::toupper);
-            kv.second.mac = mac;
+            info.mac = mac;
+            info.currentMac = mac;
         }
 
-        std::string speedStr = ReadSysFsString("/sys/class/net/" + ifname + "/speed");
-        if (!speedStr.empty() && speedStr != "-1") {
-            try {
-                uint64_t speedMbps = std::stoull(speedStr);
-                kv.second.speed = speedMbps * 1000000ULL;
-                kv.second.speedString = FormatSpd(kv.second.speed);
-            } catch (...) {
-                kv.second.speed = 0;
-                kv.second.speedString = "Unknown";
+        const bool wireless =
+            tcmt::linux::PathExists("/sys/class/net/" + ifname + "/wireless") ||
+            tcmt::linux::PathExists("/sys/class/net/" + ifname + "/phy80211");
+        int64_t arphrd = 0;
+        tcmt::linux::ReadInt64("/sys/class/net/" + ifname + "/type", arphrd);
+        if (wireless) info.adapterType = "Wireless adapter";
+        else if (arphrd == 1) info.adapterType = "Ethernet adapter";
+        else if (ifname.compare(0, 2, "ww") == 0) info.adapterType = "WWAN adapter";
+        else info.adapterType = "Unknown";
+
+        info.speed = QueryLinkSpeedBps(ifname);
+        info.speedString = info.speed > 0 ? FormatSpd(info.speed) : "Unknown";
+
+        const std::string operState = ReadSysFsString("/sys/class/net/" + ifname + "/operstate");
+        int64_t carrier = -1;
+        const bool hasCarrier =
+            tcmt::linux::ReadInt64("/sys/class/net/" + ifname + "/carrier", carrier);
+        info.isConnected = operState == "up" || (hasCarrier && carrier == 1);
+
+        // Throughput from /proc/net/dev deltas.
+        const auto counter = counters.find(ifname);
+        if (counter != counters.end()) {
+            const uint64_t rxBytes = counter->second.first;
+            const uint64_t txBytes = counter->second.second;
+            const auto prevRx = prevRxBytes.find(ifname);
+            const auto prevTx = prevTxBytes.find(ifname);
+            if (prevRx != prevRxBytes.end() && prevTx != prevTxBytes.end() &&
+                prevSampleTimeMs > 0 && static_cast<uint64_t>(now) > prevSampleTimeMs) {
+                const uint64_t dt = static_cast<uint64_t>(now - prevSampleTimeMs);
+                const uint64_t rxDelta =
+                    rxBytes >= prevRx->second ? rxBytes - prevRx->second : 0;
+                const uint64_t txDelta =
+                    txBytes >= prevTx->second ? txBytes - prevTx->second : 0;
+                info.downloadSpeed = rxDelta * 1000 / dt;
+                info.uploadSpeed = txDelta * 1000 / dt;
             }
+            prevRxBytes[ifname] = rxBytes;
+            prevTxBytes[ifname] = txBytes;
         }
 
-        std::string operState = ReadSysFsString("/sys/class/net/" + ifname + "/operstate");
-        kv.second.isConnected = (operState == "up");
-    }
-
-    for (auto& kv : nameMap)
-        adapters.push_back(std::move(kv.second));
-
-    Logger::Debug("NetworkAdapter: found " + std::to_string(adapters.size()) + " adapters on Linux");
-
-    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-
-    for (auto& adapter : adapters) {
-        const std::string& ifname = adapter.name;
-        std::string rxStr = ReadSysFsString("/sys/class/net/" + ifname + "/statistics/rx_bytes");
-        std::string txStr = ReadSysFsString("/sys/class/net/" + ifname + "/statistics/tx_bytes");
-        if (rxStr.empty() || txStr.empty()) continue;
-
-        uint64_t rxBytes = 0, txBytes = 0;
-        try {
-            rxBytes = std::stoull(rxStr);
-            txBytes = std::stoull(txStr);
-        } catch (...) {
-            continue;
-        }
-
-        auto rxIt = prevRxBytes.find(ifname);
-        auto txIt = prevTxBytes.find(ifname);
-        if (rxIt != prevRxBytes.end() && txIt != prevTxBytes.end() && prevSampleTimeMs > 0) {
-            uint64_t dt = now - prevSampleTimeMs;
-            if (dt > 0) {
-                uint64_t rxDelta = (rxBytes >= rxIt->second) ? (rxBytes - rxIt->second) : 0;
-                uint64_t txDelta = (txBytes >= txIt->second) ? (txBytes - txIt->second) : 0;
-                adapter.downloadSpeed = rxDelta * 1000 / dt;
-                adapter.uploadSpeed = txDelta * 1000 / dt;
-            }
-        }
-
-        prevRxBytes[ifname] = rxBytes;
-        prevTxBytes[ifname] = txBytes;
+        adapters.push_back(std::move(info));
     }
     prevSampleTimeMs = now;
+
+    Logger::Debug("NetworkAdapter: found " + std::to_string(adapters.size()) +
+                  " adapters on Linux");
 }
 
 void NetworkAdapter::UpdateAdapterAddresses() {

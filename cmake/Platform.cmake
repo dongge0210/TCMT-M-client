@@ -1,6 +1,11 @@
 # Platform detection and configuration for TCMT Client
 # Platform detection and configuration module
 
+# Deprecated, kept as a no-op so existing build scripts that pass
+# -DTCMT_ALLOW_UNSUPPORTED_LINUX=ON keep working (CMake warns about command-line
+# variables that no CMakeLists mentions). Linux is a supported target now.
+option(TCMT_ALLOW_UNSUPPORTED_LINUX "Deprecated no-op; Linux is a supported target" OFF)
+
 function(tcmt_detect_platform)
     message(STATUS "Detecting platform...")
 
@@ -40,19 +45,13 @@ function(tcmt_detect_platform)
         message(STATUS "  Build host: macOS ${MACOS_VERSION}")
 
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        # Linux is NOT a supported target (decided 2026-10-13): there is no Linux
-        # machine to validate readings against, so accuracy cannot be guaranteed, and
-        # the TCMT_LINUX paths are a half-wired scaffold — main_linux.cpp is registered
-        # while WiFiInfo and BluetoothInfo have no Linux implementation, so a Linux
-        # build can fail at link. Warn loudly instead of blocking, because Linux builds
-        # are still useful for experiments. The platform code stays in the tree
-        # (Platform_Linux.cpp, SharedMemoryManager_Linux.cpp — pulled in by their
-        # parents' #include, so they are not registered separately).
-        if(NOT TCMT_ALLOW_UNSUPPORTED_LINUX)
-            message(WARNING
-                "Building for Linux, which is NOT a supported target for TCMT-M (see "
-                "CLAUDE.md). Expect gaps, especially at link time. Pass "
-                "-DTCMT_ALLOW_UNSUPPORTED_LINUX=ON to silence this warning.")
+        # Linux is a supported target. The platform code lives in Platform_Linux.cpp
+        # and SharedMemoryManager_Linux.cpp, both pulled in by their parents' #include,
+        # so they are not registered as standalone sources.
+        if(TCMT_ALLOW_UNSUPPORTED_LINUX)
+            message(STATUS
+                "TCMT_ALLOW_UNSUPPORTED_LINUX is deprecated and ignored: "
+                "Linux is a supported target now.")
         endif()
         set(TCMT_LINUX ON CACHE BOOL "Building for Linux platform")
         set(TCMT_PLATFORM_NAME "Linux" CACHE STRING "Platform name")
@@ -64,7 +63,7 @@ function(tcmt_detect_platform)
             OUTPUT_VARIABLE LINUX_KERNEL
             OUTPUT_STRIP_TRAILING_WHITESPACE
         )
-        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL}) [UNSUPPORTED]")
+        message(STATUS "  Target: Linux (kernel ${LINUX_KERNEL})")
 
     else()
         message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")

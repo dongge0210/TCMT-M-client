@@ -502,11 +502,280 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     return success;
 }
 
-#else  // !TCMT_WINDOWS — macOS stub
+#elif defined(TCMT_MACOS)
 
 extern "C" bool SmartReaderMacRead(int diskIndex, PhysicalDiskSmartData& smartData);
 bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     return SmartReaderMacRead(diskIndex, smartData);
 }
 
+#elif defined(TCMT_LINUX)
+// ======================== Linux Implementation ========================
+//
+// NVMe:  NVME_IOCTL_ADMIN_CMD with Get Log Page (LID 0x02, SMART/Health).
+// SATA:  SG_IO with ATA PASS-THROUGH (12), SMART READ DATA (0xD0).
+//
+// Both ioctls require root or CAP_SYS_RAWIO/CAP_SYS_ADMIN. When they fail the
+// function returns false and leaves smartSupported=false; DiskInfo keeps the
+// disk in the list and reports health 0. Failures are logged once per family.
+
+#include "../linux/LinuxDisk.h"
+#include "../linux/LinuxSysfs.h"
+
+#include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <linux/nvme_ioctl.h>
+#include <scsi/sg.h>
+#include <string>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <vector>
+
+namespace {
+
+void SetAscii(WCHAR* destination, size_t count, const char* text) {
+    if (!destination || count == 0) return;
+    size_t i = 0;
+    for (; text && text[i] && i + 1 < count; ++i) {
+        destination[i] = static_cast<WCHAR>(static_cast<unsigned char>(text[i]));
+    }
+    destination[i] = 0;
+}
+
+uint64_t Le128Low64(const unsigned char* bytes) {
+    uint64_t value = 0;
+    for (int i = 7; i >= 0; --i) value = (value << 8) | bytes[i];
+    return value;
+}
+
+void AddAttribute(PhysicalDiskSmartData& disk, uint8_t id, uint8_t current,
+                  uint8_t worst, uint64_t raw, const char* name, bool critical) {
+    if (disk.attributeCount >= 32) return;
+    SmartAttributeData& attribute = disk.attributes[disk.attributeCount++];
+    attribute.id = id;
+    attribute.flags = 0;
+    attribute.current = current;
+    attribute.worst = worst;
+    attribute.threshold = 0;
+    attribute.rawValue = raw;
+    attribute.isCritical = critical;
+    attribute.physicalValue = 0.0;
+    SetAscii(attribute.name, sizeof(attribute.name) / sizeof(WCHAR), name);
+    attribute.description[0] = 0;
+    attribute.units[0] = 0;
+}
+
+bool ReadNvmeHealth(const std::string& device, PhysicalDiskSmartData& disk) {
+    const std::string path = "/dev/" + device;
+    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+    if (fd < 0) {
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged,
+                             "SmartReader: cannot open NVMe device node (root/CAP_SYS_ADMIN required)");
+        return false;
+    }
+
+    unsigned char buffer[512] = {};
+    struct nvme_admin_cmd command {};
+    command.opcode = 0x02;      // Get Log Page
+    command.nsid = 0xffffffff;  // controller-wide
+    command.addr = reinterpret_cast<uint64_t>(buffer);
+    command.data_len = sizeof(buffer);
+    // CDW10: LID (bits 7:0) | NUMDL (bits 31:16, number of dwords - 1).
+    command.cdw10 = 0x02U | (127U << 16);
+    command.timeout_ms = 5000;
+
+    const int result = ::ioctl(fd, NVME_IOCTL_ADMIN_CMD, &command);
+    ::close(fd);
+    if (result != 0) {
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged,
+                             "SmartReader: NVMe admin passthrough denied (root/CAP_SYS_ADMIN required)");
+        return false;
+    }
+
+    const uint8_t criticalWarning = buffer[0];
+    const int kelvin = static_cast<int>(buffer[1]) | (static_cast<int>(buffer[2]) << 8);
+    const uint8_t percentageUsed = buffer[5];
+
+    // A zeroed/invalid log page would otherwise look like a perfect drive.
+    // Available Spare has no meaningful zero value, so all four zero is a
+    // reliable "no data" signature.
+    if (kelvin <= 273 && criticalWarning == 0 && percentageUsed == 0 && buffer[3] == 0) {
+        return false;
+    }
+
+    disk.smartSupported = true;
+    disk.smartEnabled = true;
+    disk.temperature = kelvin > 273 ? static_cast<double>(kelvin - 273) : -1.0;
+    disk.wearLeveling = percentageUsed;
+    disk.totalBytesRead = Le128Low64(buffer + 32) * 512000ULL;
+    disk.totalBytesWritten = Le128Low64(buffer + 48) * 512000ULL;
+    disk.powerCycleCount = Le128Low64(buffer + 112);
+    disk.powerOnHours = Le128Low64(buffer + 128);
+    disk.uncorrectableErrors = Le128Low64(buffer + 160);
+    disk.healthPercentage = static_cast<uint8_t>(
+        100 - (std::min)(static_cast<int>(percentageUsed), 100));
+
+    AddAttribute(disk, 0x01, criticalWarning, 0, criticalWarning,
+                 "Critical Warning", criticalWarning != 0);
+    AddAttribute(disk, 0x02, kelvin > 273 ? static_cast<uint8_t>(kelvin - 273) : 0, 0,
+                 static_cast<uint64_t>(std::max(kelvin, 0)),
+                 "Temperature", false);
+    AddAttribute(disk, 0x03, buffer[3], 0, buffer[3], "Available Spare", false);
+    AddAttribute(disk, 0x05, percentageUsed, 0, percentageUsed,
+                 "Percentage Used", false);
+    AddAttribute(disk, 0x0B, 0, 0, disk.powerCycleCount, "Power Cycles", false);
+    AddAttribute(disk, 0x0C, 0, 0, disk.powerOnHours, "Power On Hours", false);
+    return true;
+}
+
+bool ReadAtaSmart(const std::string& device, PhysicalDiskSmartData& disk) {
+    const std::string path = "/dev/" + device;
+    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+    if (fd < 0) {
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged,
+                             "SmartReader: cannot open SATA device node (root/disk group required)");
+        return false;
+    }
+
+    unsigned char cdb[12] = {};
+    cdb[0] = 0xA1;                    // ATA PASS-THROUGH (12)
+    cdb[1] = 3 << 1;                  // PROTOCOL = PIO Data-In (SAT: 3)
+    cdb[2] = (1 << 5) | (1 << 3) | 2; // CK_COND, T_DIR=from device, T_LENGTH=sector count
+    cdb[3] = 0xD0;                    // SMART READ DATA
+    cdb[4] = 1;                       // one sector
+    cdb[9] = 0xB0;                    // SMART command
+
+    unsigned char data[512] = {};
+    unsigned char sense[64] = {};
+    struct sg_io_hdr header {};
+    header.interface_id = 'S';
+    header.dxfer_direction = SG_DXFER_FROM_DEV;
+    header.cmd_len = static_cast<unsigned char>(sizeof(cdb));
+    header.mx_sb_len = sizeof(sense);
+    header.dxfer_len = sizeof(data);
+    header.dxferp = data;
+    header.cmdp = cdb;
+    header.sbp = sense;
+    header.timeout = 5000;
+
+    const int result = ::ioctl(fd, SG_IO, &header);
+    ::close(fd);
+    if (result < 0 || header.status != 0 || header.host_status != 0 ||
+        header.driver_status != 0) {
+        static std::atomic<bool> logged{false};
+        tcmt::linux::LogOnce(logged,
+                             "SmartReader: SATA SMART passthrough denied (root/CAP_SYS_RAWIO required)");
+        return false;
+    }
+
+    // 30 SMART attributes, 12 bytes each, starting at offset 2.
+    bool criticalFailure = false;
+    bool anyAttribute = false;
+    int lifeLeft = -1;
+    double temperature = -1.0;
+    for (int i = 0; i < 30; ++i) {
+        const unsigned char* entry = data + 2 + i * 12;
+        const uint8_t id = entry[0];
+        if (id == 0) continue;
+        anyAttribute = true;
+        const uint8_t current = entry[3];
+        const uint8_t worst = entry[4];
+        uint64_t raw = 0;
+        for (int j = 0; j < 6; ++j) {
+            raw |= static_cast<uint64_t>(entry[5 + j]) << (8 * j);
+        }
+
+        bool critical = false;
+        switch (id) {
+            case 5:   // Reallocated Sector Count
+                disk.reallocatedSectorCount = raw & 0xFFFFFFFFFFFFULL;
+                critical = disk.reallocatedSectorCount != 0;
+                AddAttribute(disk, id, current, worst, raw, "Reallocated Sectors", true);
+                break;
+            case 9:   // Power-On Hours (low 16 bits per ATA spec)
+                disk.powerOnHours = raw & 0xFFFFULL;
+                AddAttribute(disk, id, current, worst, raw, "Power On Hours", false);
+                break;
+            case 12:  // Power Cycle Count
+                disk.powerCycleCount = raw & 0xFFFFULL;
+                AddAttribute(disk, id, current, worst, raw, "Power Cycles", false);
+                break;
+            case 187: // Reported Uncorrectable
+                disk.uncorrectableErrors = raw;
+                critical = raw != 0;
+                AddAttribute(disk, id, current, worst, raw, "Reported Uncorrectable", true);
+                break;
+            case 194: {  // Temperature: raw[0] is Celsius on most drives
+                const int celsius = entry[5] != 0 ? entry[5] : entry[6];
+                if (celsius > 0 && celsius <= 150) temperature = celsius;
+                AddAttribute(disk, id, current, worst, raw, "Temperature", false);
+                break;
+            }
+            case 197: // Current Pending Sector
+                disk.currentPendingSector = raw;
+                critical = raw != 0;
+                AddAttribute(disk, id, current, worst, raw, "Current Pending Sectors", true);
+                break;
+            case 198: // Offline Uncorrectable
+                critical = raw != 0;
+                AddAttribute(disk, id, current, worst, raw, "Offline Uncorrectable", true);
+                break;
+            case 177:
+            case 231:  // SSD wear-leveling / life left (normalized 0-100)
+                lifeLeft = current;
+                disk.wearLeveling = 100 - static_cast<int>(std::min<uint8_t>(current, 100));
+                AddAttribute(disk, id, current, worst, raw,
+                             id == 177 ? "Wear Leveling Count" : "SSD Life Left", false);
+                break;
+            default:
+                AddAttribute(disk, id, current, worst, raw, "SMART Attribute", false);
+                break;
+        }
+        if (critical) criticalFailure = true;
+    }
+
+    // An all-zero page means the bridge/kernel returned success without data.
+    if (!anyAttribute) return false;
+
+    disk.smartSupported = true;
+    disk.smartEnabled = true;
+    disk.temperature = temperature;
+    // SMART data has no single health percentage. Use the remaining-life
+    // attribute when the drive exposes one; otherwise report 0 % for a drive
+    // with a failing critical counter and 100 % when none failed.
+    if (lifeLeft >= 0) {
+        disk.healthPercentage = static_cast<uint8_t>((std::min)(lifeLeft, 100));
+    } else {
+        disk.healthPercentage = criticalFailure ? 0 : 100;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
+    const std::vector<std::string> disks = tcmt::linux::ListPhysicalDisks();
+    if (diskIndex < 0 || static_cast<size_t>(diskIndex) >= disks.size()) return false;
+    const std::string& device = disks[static_cast<size_t>(diskIndex)];
+
+    if (device.compare(0, 4, "nvme") == 0) {
+        return ReadNvmeHealth(device, smartData);
+    }
+    if (device.compare(0, 2, "sd") == 0 || device.compare(0, 2, "vd") == 0 ||
+        device.compare(0, 2, "hd") == 0 || device.compare(0, 3, "xvd") == 0) {
+        return ReadAtaSmart(device, smartData);
+    }
+    // mmcblk and other transports have no SMART log; leave the disk as
+    // unsupported instead of reporting a fake health value.
+    return false;
+}
+
+#else
+#error "Unsupported platform"
 #endif // TCMT_WINDOWS
