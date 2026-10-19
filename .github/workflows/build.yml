@@ -24,7 +24,7 @@ permissions:
 jobs:
   build-windows:
     name: Windows (MSBuild + CUDA)
-    runs-on: windows-2025
+    runs-on: windows-latest
 
     env:
       SOLUTION_FILE_PATH: TCMT.sln
@@ -175,7 +175,7 @@ jobs:
 
   build-macos:
     name: macOS (CMake + Clang)
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       # ccache 4.x defaults to ~/Library/Caches/ccache on macOS, but the cache
       # steps below use ~/.cache/ccache — pin it so restore/save actually hit.
@@ -237,7 +237,7 @@ jobs:
 
   build-linux:
     name: Linux (CMake + GCC)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
