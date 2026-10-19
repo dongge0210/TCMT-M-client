@@ -152,7 +152,7 @@ std::string MemoryInfo::GetRamType() const         { return ramType; }
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
-#include "../linux/LinuxSysfs.h"
+#include "../Utils/Sysfs.h"
 #include <atomic>
 #include <cstring>
 #include <fstream>

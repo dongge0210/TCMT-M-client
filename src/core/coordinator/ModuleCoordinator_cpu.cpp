@@ -27,9 +27,7 @@
 #endif
 
 #ifdef TCMT_LINUX
-#include "linux/LinuxCpu.h"
-#include "linux/LinuxPower.h"
-#include "linux/LinuxSysfs.h"
+#include "Utils/Sysfs.h"
 #include <atomic>
 #endif
 

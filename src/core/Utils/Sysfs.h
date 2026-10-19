@@ -1,9 +1,11 @@
-// LinuxSysfs.h — small, header-only helpers for the Linux collectors.
+// Sysfs.h — small, header-only helpers for the Linux collectors.
 //
 // Everything here is best-effort: a missing file, a permission error or a
 // malformed value returns false/empty instead of throwing. Callers are
 // expected to treat false as "unknown" and keep the previous value or zero.
 #pragma once
+
+#ifdef TCMT_LINUX
 
 #include <algorithm>
 #include <atomic>
@@ -22,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-#include "../Utils/Logger.h"
+#include "Logger.h"
 
 namespace tcmt::linux {
 
@@ -187,3 +189,5 @@ inline bool ReadSwapUsage(uint64_t& usedBytes, uint64_t& totalBytes) {
 }
 
 }  // namespace tcmt::linux
+
+#endif  // TCMT_LINUX

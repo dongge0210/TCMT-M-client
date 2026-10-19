@@ -1,6 +1,6 @@
 # TCMT Repository Directory
 
-334 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
+322 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
 `node tools/gen-repo-directory.mjs`，别手改这一份。
 
 ```
@@ -199,6 +199,7 @@
 |   |   |   |-- LogBuffer.h    -- 500-line thread-safe ring buffer
 |   |   |   |-- Logger.cpp    -- File + console + TUI buffer output
 |   |   |   |-- Logger.h    -- 7-level thread-safe logger
+|   |   |   |-- Sysfs.h
 |   |   |   |-- TimeUtils.cpp    -- std::chrono helpers
 |   |   |   |-- TimeUtils.h    -- Boot time, uptime, timestamps
 |   |   |   |-- TpmBridge.cpp    -- TBS API wrappers
@@ -261,18 +262,6 @@
 |   |   |-- history/
 |   |   |   |-- HistoryLogger.cpp    -- Background flush worker, retention
 |   |   |   |-- HistoryLogger.h    -- SQLite sensor log header
-|   |   |-- linux/
-|   |   |   |-- LinuxCpu.cpp
-|   |   |   |-- LinuxCpu.h
-|   |   |   |-- LinuxDisk.cpp
-|   |   |   |-- LinuxDisk.h
-|   |   |   |-- LinuxGpu.cpp
-|   |   |   |-- LinuxGpu.h
-|   |   |   |-- LinuxPower.cpp
-|   |   |   |-- LinuxPower.h
-|   |   |   |-- LinuxProcess.cpp
-|   |   |   |-- LinuxProcess.h
-|   |   |   |-- LinuxSysfs.h
 |   |   |-- memory/
 |   |   |   |-- MemoryInfo.cpp    -- GlobalMemoryStatusEx / host_statistics64
 |   |   |   |-- MemoryInfo.h    -- RAM stats header
@@ -410,12 +399,10 @@
 |-- AGENTS.md    -- Pointer to CLAUDE.md (kept for tools that only read AGENTS.md)
 |-- CLAUDE.md    -- Claude Code project guidelines
 |-- CMakeLists.txt    -- Core library + executable build
-|-- GEMINI.md
 |-- LICENSE
 |-- README-WF.md    -- Submodule licenses
 |-- README.md    -- Project overview (zh)
 |-- TCMT.sln    -- Visual Studio solution
 |-- TCMT.vcxproj    -- Visual Studio project (Win32 C++/CLI)
 |-- TCMT.vcxproj.filters    -- VS project filters
-|-- TestNav.cs
 ```

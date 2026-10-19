@@ -582,7 +582,7 @@ const std::vector<NetworkAdapter::AdapterInfo>& NetworkAdapter::GetAdapters() co
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
-#include "../linux/LinuxSysfs.h"
+#include "../Utils/Sysfs.h"
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/socket.h>

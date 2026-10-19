@@ -65,14 +65,10 @@ if(TCMT_LINUX)
     list(APPEND CORE_MODULES_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/core/wifi/WiFiInfo_linux.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/core/bluetooth/BluetoothInfo_linux.cpp
-        # Shared Linux collection helpers (owned by the sensors side). Every new
-        # .cpp under core/linux/ must be listed here or it silently misses the
-        # build and only shows up as an undefined symbol at link time.
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxCpu.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxDisk.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxGpu.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxPower.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/core/linux/LinuxProcess.cpp
+        # Linux collection helpers live in the owning module files behind
+        # TCMT_LINUX guards (CpuInfo/GpuInfo/DiskInfo/PowerInfo). ProcessMonitor
+        # is Windows-only elsewhere, so it must be listed here as well.
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/process/ProcessMonitor.cpp
     )
 endif()
 

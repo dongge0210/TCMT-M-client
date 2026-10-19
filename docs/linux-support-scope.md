@@ -53,7 +53,8 @@
 - `src/core/coordinator/ModuleCoordinator*.cpp`
 - `src/core/process/` 下的 Linux 实现（如需新建文件，先通知 A）
 - `src/core/DataStruct/DataStruct.h`
-- `src/core/linux/`（新建，放只被 Linux 使用的采集辅助代码）
+- `src/core/{cpu,disk,gpu,power,process}/` 中 `#elif defined(TCMT_LINUX)` 分支（Linux 采集实现与模块同文件）
+- `src/core/Utils/Sysfs.h`（跨模块共享的 sysfs/procfs 只读辅助）
 
 职责：
 - CPU：`/proc/stat` 总占用与逐核占用；`/proc/cpuinfo` 型号/核心；`cpufreq/scaling_cur_freq` 频率；hwmon `coretemp`/`k10temp` 温度；`thermal_zone` 兜底。
@@ -104,7 +105,7 @@
 - 不改变 macOS/Windows 分支的行为。
 - 所有采集函数必须有失败路径，返回空或 false，不抛异常到主循环。
 - 不要把每帧日志写进 INFO；高频失败只记一次。
-- 文件控制在 800 行以内，超了就拆到 `src/core/linux/`。
+- 文件控制在 800 行以内；Linux 专属实现留在所属模块的 `#elif defined(TCMT_LINUX)` 分支，通用 sysfs/procfs 辅助集中到 `src/core/Utils/Sysfs.h`。需要新增文件时先通知 A。
 
 ## 验收
 

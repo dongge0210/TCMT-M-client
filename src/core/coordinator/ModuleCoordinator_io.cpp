@@ -9,7 +9,6 @@
 #endif
 
 #ifdef TCMT_LINUX
-#include "linux/LinuxDisk.h"
 #endif
 
 // ============================================================================

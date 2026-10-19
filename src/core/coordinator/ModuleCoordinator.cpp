@@ -12,11 +12,11 @@
 #include "notifications/UserNotifier.h"
 
 #ifdef TCMT_LINUX
-#include "linux/LinuxCpu.h"
-#include "linux/LinuxGpu.h"
-#include "linux/LinuxPower.h"
-#include "linux/LinuxProcess.h"
-#include "linux/LinuxSysfs.h"
+#include "cpu/CpuInfo.h"
+#include "gpu/GpuInfo.h"
+#include "power/PowerInfo.h"
+#include "process/ProcessMonitor.h"
+#include "Utils/Sysfs.h"
 #include <chrono>
 #include <sys/types.h>
 #include <utility>

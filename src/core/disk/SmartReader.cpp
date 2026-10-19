@@ -519,8 +519,8 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 // function returns false and leaves smartSupported=false; DiskInfo keeps the
 // disk in the list and reports health 0. Failures are logged once per family.
 
-#include "../linux/LinuxDisk.h"
-#include "../linux/LinuxSysfs.h"
+#include "DiskInfo.h"
+#include "../Utils/Sysfs.h"
 
 #include <algorithm>
 #include <atomic>
