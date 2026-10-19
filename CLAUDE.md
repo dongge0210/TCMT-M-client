@@ -58,12 +58,12 @@ Three exceptions / caveats (2026-10-13):
 ### macOS (Apple Silicon)
 ```bash
 # C++ core + ncurses TUI
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j8
+cmake -B build/macos -DCMAKE_BUILD_TYPE=Release && cmake --build build/macos -j8
 # AvaloniaUI desktop frontend
 dotnet build AvaloniaUI/AvaloniaUI.csproj -c Release -r osx-arm64
 # Run — from inside the .app bundle, NOT the bare binary
 # (CoreLocation / SSID need the bundle; the bare binary silently returns nothing)
-./build/src/TCMT-M.app/Contents/MacOS/TCMT-M
+./build/macos/src/TCMT-M.app/Contents/MacOS/TCMT-M
 ```
 macOS requires `brew install ncurses` (CMake's `find_package(Curses)` handles it).
 
@@ -84,7 +84,7 @@ Prerequisites: VS 2022 / 2026 with C++/CLI support, CUDA Toolkit 13.2+, .NET 8.0
 Never hardcode a build output path. Ask the MCP server to infer it:
 - `.csproj` → parse the XML (`OutputType`, `TargetFramework`, `AssemblyName`, `-r` flag)
 - `.vcxproj` → parse the XML (`ConfigurationType`, `TargetName`, MSBuild defaults for `OutDir`)
-- CMake → read `build/CMakeCache.txt` (`CMAKE_RUNTIME_OUTPUT_DIRECTORY`)
+- CMake → read `build/<platform>/CMakeCache.txt` (`CMAKE_RUNTIME_OUTPUT_DIRECTORY`)
 
 ## Architecture
 
@@ -237,7 +237,7 @@ git submodule update --init --recursive
 |---|---|---|
 | Schema `MaxFields=200` | 300；超限是静默截断，不是报错 | 2026-05-16 |
 | `src/third_party/` 有 9 个（后来改成 10 个）子模块 | 12 个（2026-10-14 加 `libusb_scsi_command` 之前是 11；2026-10-19 移除无引用的 TC、h2o、websocketpp 后为 9）。FFmpeg 只出现在 `.gitmodules` 的历史里，当前 checkout 从来没有过 | 2026-09-03 |
-| macOS 产物在 `build/bin/TCMT-M` | 在 `build/src/TCMT-M`，且运行要进 `.app` 包内那个（裸二进制拿不到 CoreLocation/SSID） | 2026-10-12 |
+| macOS 产物在 `build/bin/TCMT-M` | 在 `build/macos/src/TCMT-M`（2026-10-19 起构建目录按平台分到 `build/<platform>/`），且运行要进 `.app` 包内那个（裸二进制拿不到 CoreLocation/SSID） | 2026-10-12 |
 | AGENTS.md 是一份独立的规则文件 | 它只是 CLAUDE.md 的并行副本，已经漂移出错误内容，现压成一行指针 | 2026-10-12 |
 | `IPCDataBlock` (macOS) + `SharedMemoryBlock` (Windows) 两块，字段名与偏移随平台变 | 只有一块 `IPCDataBlock`；平台差异在传输方式（POSIX shm+UDS ↔ NamedPipe），布局全平台一致 | 2026-10-13 |
 | `src/DataStruct.h` — Packed `SharedMemoryBlock` | 真身 `src/core/DataStruct/DataStruct.h`，定义的是采集侧结构体（`SystemInfo` / `DiskData` / `GpuSpec` …），没有 `SharedMemoryBlock` | 2026-10-13 |
@@ -257,6 +257,6 @@ git submodule update --init --recursive
 - All PRs target `dev` unless told otherwise.
 
 ## Edit Verification
-- After every code change on macOS, run `cmake --build build -j8` and confirm 0 errors. Use fixed `-j8`, NOT `$(nproc)` or `$(sysctl -n hw.ncpu)` — command substitution breaks auto-approval.
+- After every code change on macOS, run `cmake --build build/macos -j8` and confirm 0 errors. Use fixed `-j8`, NOT `$(nproc)` or `$(sysctl -n hw.ncpu)` — command substitution breaks auto-approval.
 - After every code change on Windows, the build command is `msbuild TCMT.sln /p:Configuration=Release /p:Platform=x64 /m`.
 - **Zero warnings tolerance** — fix any warning immediately, do not suppress or ignore.

@@ -26,7 +26,7 @@ rm -f "${HELPER_BIN}" "${PLIST_PATH}"
 
 # Copy helper binary
 echo "→ Copying helper binary..."
-cp "${REPO_DIR}/build/src/tcmt_sensor_helper" "${HELPER_BIN}"
+cp "${REPO_DIR}/build/macos/src/tcmt_sensor_helper" "${HELPER_BIN}"
 chown root:wheel "${HELPER_BIN}"
 chmod 755 "${HELPER_BIN}"
 

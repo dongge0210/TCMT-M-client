@@ -28,9 +28,9 @@ KEY="$HOME/.tcmt/updater/update_key.pem"
 if [ ! -f "$KEY" ]; then echo "缺少签名私钥: $KEY"; exit 1; fi
 
 echo "==> 构建 Release ($VERSION)"
-cmake --build build -j8 >/dev/null
+cmake --build build/macos -j8 >/dev/null
 
-BIN="build/src/TCMT-M"
+BIN="build/macos/src/TCMT-M"
 
 # 构建出来的二进制里那个版本串必须和要发的版本对得上 —— 不然发出去的是一个
 # 自称别的版本的包，更新器拿到会拿去跟自己比，结果没人说得清。这条链从来没跑通过，

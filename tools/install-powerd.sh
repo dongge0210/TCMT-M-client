@@ -14,7 +14,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$ROOT/build/src/tcmt-powerd"
+SRC="$ROOT/build/macos/src/tcmt-powerd"
 DST=/usr/local/libexec/tcmt-powerd
 PLIST=/Library/LaunchDaemons/com.tcmt.powerd.plist
 TPL="$ROOT/src/helper/powerd/com.tcmt.powerd.plist"

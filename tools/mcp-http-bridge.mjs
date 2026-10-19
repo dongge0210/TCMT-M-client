@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // TCMT MCP → HTTP bridge
 // Spawns TCMT-M --mcp, bridges its JSON-RPC stdio to HTTP REST on port 9876.
-// Usage: node mcp-http-bridge.js [--port 9876] [--tcmt ./build/src/TCMT-M]
+// Usage: node mcp-http-bridge.js [--port 9876] [--tcmt ./build/macos/src/TCMT-M]
 
 import { spawn } from 'child_process';
 import { createServer } from 'http';
 import { createInterface } from 'readline';
 
 const PORT = parseInt(process.env.PORT || '9876');
-const TCMT = process.env.TCMT || './build/src/TCMT-M';
+const TCMT = process.env.TCMT || './build/macos/src/TCMT-M';
 const TOKEN = process.env.BRIDGE_TOKEN || 'tcmt-dev';
 // Allowed origins for CORS (dev tools only)
 const ALLOWED = ['http://localhost:8888', 'http://127.0.0.1:8888', 'http://localhost:9876'];
