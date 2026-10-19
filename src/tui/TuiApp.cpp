@@ -946,6 +946,83 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 
 int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
+#if defined(TCMT_LINUX)
+    // Linux has no IOReport, so there is no CPU/GPU/ANE split. What the
+    // platform actually reports is the battery/AC state from power_supply and,
+    // when readable, RAPL package power for the CPU.
+    const bool hasBattery = data.batteryPercent >= 0;
+    const bool hasRapl = data.cpuPower > 0.0;
+
+    DrawPanelTitle(win, y, x0, maxW, "Power");
+    int lines = 1;
+
+    if (data.thermalState > 0) {
+        static const char* labels[] = {"", "Fairly Serious", "Critical"};
+        const char* label = (data.thermalState < 3) ? labels[data.thermalState] : "Unknown";
+        const int pair = (data.thermalState >= 2) ? 4 : 3;
+        DrawLabeledValue(win, y + lines, x0, maxW, "Thermal:", label, pair);
+        lines++;
+    }
+
+    char val[32];
+    if (hasBattery) {
+        snprintf(val, sizeof(val), "%d%%", data.batteryPercent);
+        DrawLabeledValue(win, y + lines, x0, maxW, "Battery:", val);
+        lines++;
+
+        const char* state = data.batteryIsCharging
+                                ? "Charging"
+                                : (data.batteryAmperage < 0 ? "Discharging" : "Idle");
+        DrawLabeledValue(win, y + lines, x0, maxW, "State:", state);
+        lines++;
+
+        if (data.batteryAmperage != 0 && data.batteryVoltage > 0) {
+            const int64_t powerMw =
+                static_cast<int64_t>(std::abs(data.batteryAmperage)) *
+                static_cast<int64_t>(data.batteryVoltage) / 1000;
+            if (powerMw > 0) {
+                const char* dir = (data.batteryAmperage > 0) ? "Chg" : "Dchg";
+                char watts[32];
+                snprintf(watts, sizeof(watts), "%.2f W", powerMw / 1000.0);
+                const std::string text = std::string(dir) + " " + watts;
+                DrawLabeledValue(win, y + lines, x0, maxW, "Power:", text);
+                lines++;
+            }
+        }
+    }
+
+    // Only laptops report an AC supply; a desktop without power_supply would
+    // otherwise be labelled "offline".
+    if (hasBattery) {
+        DrawLabeledValue(win, y + lines, x0, maxW, "AC:",
+                         data.acOnline ? "online" : "offline");
+        lines++;
+    }
+
+    if (hasRapl) {
+        snprintf(val, sizeof(val), "%.2f W", data.cpuPower / 1000.0);
+        DrawLabeledValue(win, y + lines, x0, maxW, "CPU:", val);
+        lines++;
+    }
+    if (data.gpuPower > 0.0) {
+        snprintf(val, sizeof(val), "%.2f W", data.gpuPower / 1000.0);
+        DrawLabeledValue(win, y + lines, x0, maxW, "GPU:", val);
+        lines++;
+    }
+
+    if (!hasBattery && !hasRapl) {
+        // Covers both cases: no powercap device at all (VMs, many desktops)
+        // and a device that exists but is root-only. Do not promise sudo here.
+        const std::string hint = "No battery; RAPL not readable";
+        wattron(win, A_DIM);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4,
+                  TrimRight(hint, (maxW - 4) > 0 ? maxW - 4 : 0).c_str());
+        wattroff(win, A_DIM);
+        lines++;
+    }
+
+    return lines;
+#else
     bool hasPower = (data.cpuPower > 0 || data.gpuPower > 0 || data.anePower > 0);
     bool hasBattery = (data.batteryCycleCount > 0 || data.batteryHealthPercent > 0);
     // When power is unavailable there is still a status worth showing: the
@@ -981,6 +1058,9 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         lines++;
 #ifdef TCMT_WINDOWS
         const std::string hint = "Power unavailable — CPU needs PawnIO, GPU needs NVML";
+#elif defined(TCMT_LINUX)
+        const std::string hint =
+            "Power unavailable — needs power_supply or RAPL (root-only)";
 #else
         const std::string hint = "Power unavailable — run tools/install-powerd.sh (sudo)";
 #endif
@@ -1060,6 +1140,7 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     }
 
     return lines;
+#endif
 }
 
 int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {

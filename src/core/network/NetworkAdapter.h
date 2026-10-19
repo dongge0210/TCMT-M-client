@@ -90,12 +90,6 @@ private:
     WmiManager& wmiManager;
 #endif
 
-#if defined(TCMT_LINUX)
-    std::map<std::string, uint64_t> prevRxBytes;
-    std::map<std::string, uint64_t> prevTxBytes;
-    uint64_t prevSampleTimeMs;
-#endif
-
     std::vector<AdapterInfo> adapters;
     bool initialized;
 };

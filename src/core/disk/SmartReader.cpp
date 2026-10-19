@@ -767,8 +767,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     if (device.compare(0, 4, "nvme") == 0) {
         return ReadNvmeHealth(device, smartData);
     }
-    if (device.compare(0, 2, "sd") == 0 || device.compare(0, 2, "vd") == 0 ||
-        device.compare(0, 2, "hd") == 0 || device.compare(0, 3, "xvd") == 0) {
+    // virtio (vd*) and Xen (xvd*) have no ATA pass-through; sending them down
+    // the SG_IO path only produces a misleading permission-style failure.
+    if (device.compare(0, 2, "sd") == 0 || device.compare(0, 2, "hd") == 0) {
         return ReadAtaSmart(device, smartData);
     }
     // mmcblk and other transports have no SMART log; leave the disk as
@@ -778,4 +779,4 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
 
 #else
 #error "Unsupported platform"
-#endif // TCMT_WINDOWS
+#endif // TCMT_WINDOWS / TCMT_MACOS / TCMT_LINUX

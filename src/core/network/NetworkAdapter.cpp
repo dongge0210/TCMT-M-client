@@ -703,7 +703,7 @@ uint64_t QueryLinkSpeedBps(const std::string& ifname) {
 
 }  // namespace
 
-NetworkAdapter::NetworkAdapter() : prevSampleTimeMs(0), initialized(false) { Initialize(); }
+NetworkAdapter::NetworkAdapter() : initialized(false) { Initialize(); }
 NetworkAdapter::~NetworkAdapter() { Cleanup(); }
 
 void NetworkAdapter::Initialize() {
@@ -753,6 +753,13 @@ std::string NetworkAdapter::FormatMacAddress(const unsigned char* addr, size_t l
 std::string NetworkAdapter::FormatSpeed(uint64_t bitsPerSecond) const {
     return FormatSpd(bitsPerSecond);
 }
+
+// Throughput delta cache. It must outlive the NetworkAdapter instance:
+// NetworkLoop constructs a new adapter for every sample, so instance members
+// would start empty and every delta would be discarded. Key: interface name.
+// Value: {rx bytes, tx bytes, steady-clock milliseconds}.
+static std::map<std::string, std::tuple<uint64_t, uint64_t, int64_t>>
+    g_throughputCacheLinux;
 
 void NetworkAdapter::QueryAdapterInfo() {
     struct ifaddrs* ifaddr = nullptr;
@@ -855,25 +862,25 @@ void NetworkAdapter::QueryAdapterInfo() {
         if (counter != counters.end()) {
             const uint64_t rxBytes = counter->second.first;
             const uint64_t txBytes = counter->second.second;
-            const auto prevRx = prevRxBytes.find(ifname);
-            const auto prevTx = prevTxBytes.find(ifname);
-            if (prevRx != prevRxBytes.end() && prevTx != prevTxBytes.end() &&
-                prevSampleTimeMs > 0 && static_cast<uint64_t>(now) > prevSampleTimeMs) {
-                const uint64_t dt = static_cast<uint64_t>(now - prevSampleTimeMs);
-                const uint64_t rxDelta =
-                    rxBytes >= prevRx->second ? rxBytes - prevRx->second : 0;
-                const uint64_t txDelta =
-                    txBytes >= prevTx->second ? txBytes - prevTx->second : 0;
-                info.downloadSpeed = rxDelta * 1000 / dt;
-                info.uploadSpeed = txDelta * 1000 / dt;
+            const auto prev = g_throughputCacheLinux.find(ifname);
+            if (prev != g_throughputCacheLinux.end()) {
+                const int64_t prevMs = std::get<2>(prev->second);
+                const uint64_t dt =
+                    now > prevMs ? static_cast<uint64_t>(now - prevMs) : 0;
+                if (dt > 0) {
+                    const uint64_t prevRx = std::get<0>(prev->second);
+                    const uint64_t prevTx = std::get<1>(prev->second);
+                    const uint64_t rxDelta = rxBytes >= prevRx ? rxBytes - prevRx : 0;
+                    const uint64_t txDelta = txBytes >= prevTx ? txBytes - prevTx : 0;
+                    info.downloadSpeed = rxDelta * 1000 / dt;
+                    info.uploadSpeed = txDelta * 1000 / dt;
+                }
             }
-            prevRxBytes[ifname] = rxBytes;
-            prevTxBytes[ifname] = txBytes;
+            g_throughputCacheLinux[ifname] = {rxBytes, txBytes, now};
         }
 
         adapters.push_back(std::move(info));
     }
-    prevSampleTimeMs = now;
 
     Logger::Debug("NetworkAdapter: found " + std::to_string(adapters.size()) +
                   " adapters on Linux");

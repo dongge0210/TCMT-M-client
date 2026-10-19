@@ -502,14 +502,11 @@ int main(int argc, char* argv[]) {
 
     // Static info caching
     static std::string cachedCpuName;
-    static int cachedTotalCores = 0;
-    static int cachedPCores = 0;
-    static int cachedECores = 0;
+    static int cachedPhysicalCores = 0;
     if (cpuInfo) {
         cachedCpuName = cpuInfo->GetName();
-        cachedTotalCores = cpuInfo->GetTotalCores();
-        cachedPCores = cpuInfo->GetLargeCores();
-        cachedECores = cpuInfo->GetSmallCores();
+        // Linux has no P/E split: largeCores holds the physical core count.
+        cachedPhysicalCores = cpuInfo->GetLargeCores();
     }
 
     // Start ModuleCoordinator background collection threads
@@ -525,9 +522,11 @@ int main(int argc, char* argv[]) {
             data.osVersion = os.GetVersion();
             data.hardwareModel = os.GetModel();
             data.cpuName = cachedCpuName;
-            data.physicalCores = cachedTotalCores;
-            data.performanceCores = cachedPCores;
-            data.efficiencyCores = cachedECores;
+            // No P/E split on Linux; leave both zero so the TUI renders a
+            // plain "Cores: N" line instead of a misleading "P:N E:0".
+            data.physicalCores = cachedPhysicalCores;
+            data.performanceCores = 0;
+            data.efficiencyCores = 0;
 
             // Coordinator snapshot fills CPU, Memory, Disk, Network, Temperature, Power
             {

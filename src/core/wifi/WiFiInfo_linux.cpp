@@ -407,11 +407,11 @@ bool FillFromAccessPoint(DBusConnection* conn, const std::string& apPath,
     if (ssid != ap.end()) data.ssid.assign(ssid->second.bytes.begin(),
                                           ssid->second.bytes.end());
 
-    const auto bssid = ap.find("Bssid");
+    const auto bssid = ap.find("HwAddress");
     if (bssid != ap.end()) data.bssid = bssid->second.text;
 
     int frequency = 0;
-    const auto freq = ap.find("Freq");
+    const auto freq = ap.find("Frequency");
     if (freq != ap.end()) frequency = static_cast<int>(freq->second.number);
     data.channel = ChannelFromFrequency(frequency);
     data.band = BandFromFrequency(frequency);
@@ -430,10 +430,24 @@ bool FillFromAccessPoint(DBusConnection* conn, const std::string& apPath,
     // NM reports both rates in kbit/s.
     double rateKbit = negotiatedRateKbit;
     if (rateKbit <= 0.0) {
-        const auto maxRate = ap.find("MaxBitRate");
+        const auto maxRate = ap.find("MaxBitrate");
         if (maxRate != ap.end()) rateKbit = static_cast<double>(maxRate->second.number);
     }
     data.txRate = rateKbit / 1000.0;   // kbit/s -> Mbit/s
+
+    // Same frequency/rate heuristic as the Windows WLAN path. NM does not
+    // expose the PHY mode directly, so an unknown rate stays empty.
+    if (frequency >= 6000) {
+        data.wifiGen = "WiFi 6E";
+    } else if (data.txRate >= 1201) {
+        data.wifiGen = "WiFi 6";
+    } else if (data.txRate >= 433) {
+        data.wifiGen = "WiFi 5";
+    } else if (data.txRate >= 150) {
+        data.wifiGen = "WiFi 4";
+    } else if (data.txRate > 0) {
+        data.wifiGen = "WiFi 3";
+    }
 
     // dBm comes from the kernel, not from NM's 0-100 Strength percentage.
     if (!interfaceName.empty()) {

@@ -829,6 +829,7 @@ std::string ReadDiskInterfaceType(const std::string& device) {
 #include <fstream>
 #include <sstream>
 #include <dirent.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <atomic>
 #include <cstring>
@@ -859,6 +860,10 @@ void DiskInfo::QueryDrives() {
     };
 
     std::set<std::string> seenMounts;
+    // Bind mounts repeat one filesystem at several paths (OrbStack mounts the
+    // same device under / and /home/<user>). Track the device id as well so
+    // the volume is listed once.
+    std::set<dev_t> seenDevices;
     std::string line;
     while (std::getline(mountsFile, line)) {
         std::stringstream ss(line);
@@ -873,6 +878,10 @@ void DiskInfo::QueryDrives() {
         }
         // Bind mounts and btrfs subvolumes can repeat the same path.
         if (!seenMounts.insert(mountpoint).second) continue;
+
+        struct stat st {};
+        if (::stat(mountpoint.c_str(), &st) != 0) continue;
+        if (!seenDevices.insert(st.st_dev).second) continue;
 
         struct statvfs vfs {};
         if (statvfs(mountpoint.c_str(), &vfs) != 0) continue;
