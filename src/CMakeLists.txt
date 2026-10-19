@@ -318,6 +318,45 @@ if(TCMT_MACOS OR TCMT_LINUX)
     set(_ossl_src "${CMAKE_SOURCE_DIR}/src/third_party/openssl")
     set(_ossl_build "${CMAKE_BINARY_DIR}/third_party/openssl")
 
+    # The generated Makefile and everything under _ossl_build/include belong to
+    # the source revision that ran Configure. Bumping the submodule pin without
+    # re-running it leaves stale generated headers behind: 4.x builds crypto.h
+    # and cryptoerr.h from .h.in templates, while 3.x generated a different set
+    # and shipped cryptoerr.h as a plain source header. The app then fails on a
+    # missing header before anything is linked. Record the revision and start
+    # over when it no longer matches.
+    set(_ossl_rev "")
+    execute_process(
+        COMMAND git -C "${_ossl_src}" rev-parse HEAD
+        OUTPUT_VARIABLE _ossl_rev
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _ossl_rev_result
+        ERROR_QUIET)
+    if(NOT _ossl_rev_result EQUAL 0)
+        set(_ossl_rev "")
+    endif()
+
+    set(_ossl_rev_stamp "${_ossl_build}/.tcmt-source-rev")
+    set(_ossl_rev_recorded "")
+    if(EXISTS "${_ossl_rev_stamp}")
+        file(READ "${_ossl_rev_stamp}" _ossl_rev_recorded)
+        string(STRIP "${_ossl_rev_recorded}" _ossl_rev_recorded)
+    endif()
+
+    if(EXISTS "${_ossl_build}/Makefile" AND
+       NOT _ossl_rev STREQUAL "" AND
+       NOT _ossl_rev STREQUAL _ossl_rev_recorded)
+        message(STATUS "OpenSSL: submodule revision changed, reconfiguring")
+        file(REMOVE_RECURSE "${_ossl_build}")
+    endif()
+
+    # A submodule update rewrites the files it checks out; make CMake rerun the
+    # revision check above instead of waiting for someone to configure by hand.
+    if(EXISTS "${_ossl_src}/Configure")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            "${_ossl_src}/Configure" "${_ossl_src}/VERSION.dat")
+    endif()
+
     if(EXISTS "${_ossl_src}/Configure")
         if(NOT EXISTS "${_ossl_build}/Makefile")
             if(TCMT_MACOS)
@@ -361,9 +400,13 @@ if(TCMT_MACOS OR TCMT_LINUX)
             endif()
         endif()
 
+        if(_ossl_rev)
+            file(WRITE "${_ossl_rev_stamp}" "${_ossl_rev}\n")
+        endif()
+
         add_custom_command(
             OUTPUT "${_ossl_build}/libssl.a" "${_ossl_build}/libcrypto.a"
-            COMMAND ${CMAKE_MAKE_PROGRAM} -j8 build_libs
+            COMMAND ${CMAKE_MAKE_PROGRAM} build_libs
             WORKING_DIRECTORY "${_ossl_build}"
             COMMENT "构建 third_party/openssl"
             VERBATIM)

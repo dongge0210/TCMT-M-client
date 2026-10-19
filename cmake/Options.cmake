@@ -5,6 +5,15 @@
 # parallel cl.exe processes each emit a SARIF run, which upload-sarif rejects.
 option(TCMT_MP "Enable MSVC multi-processor compilation (/MP)" ON)
 
+# Plain -flto makes GCC run the LTRANS jobs at link time serially
+# ("using serial compilation of N LTRANS jobs"). =auto lets it use all cores
+# without pinning a count. AppleClang only accepts the bare flag.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(TCMT_LTO_FLAG "-flto=auto")
+else()
+    set(TCMT_LTO_FLAG "-flto")
+endif()
+
 function(tcmt_set_compile_options)
     message(STATUS "Setting compilation options...")
 
@@ -55,7 +64,7 @@ function(tcmt_set_compile_options)
         else()
             add_compile_options(
                 -O3         # 最大优化
-                -flto       # 链接时优化
+                ${TCMT_LTO_FLAG}  # 链接时优化（GCC 用 =auto 并行 LTRANS）
             )
             add_definitions(-DNDEBUG)
         endif()
@@ -180,8 +189,8 @@ function(tcmt_target_set_options target)
         if(MSVC)
             target_link_options(${target} PRIVATE /LTCG)
         else()
-            target_compile_options(${target} PRIVATE -flto)
-            target_link_options(${target} PRIVATE -flto)
+            target_compile_options(${target} PRIVATE ${TCMT_LTO_FLAG})
+            target_link_options(${target} PRIVATE ${TCMT_LTO_FLAG})
         endif()
     endif()
 
