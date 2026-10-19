@@ -1,6 +1,6 @@
 # TCMT Repository Directory
 
-318 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
+334 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
 `node tools/gen-repo-directory.mjs`，别手改这一份。
 
 ```
@@ -152,7 +152,10 @@
 |   |   |   |-- 2026-04-19-tcmt-ui-fixes-design.md    -- UI fixes design
 |   |-- apple-silicon-private-apis.md
 |   |-- docs_architecture_and_protocol_plan_v0.14_full_Version11.md    -- Architecture design doc v11
+|   |-- elements_BAN_list.md
+|   |-- jmicron_TEST.txt
 |   |-- linux-gap-analysis.md
+|   |-- linux-support-scope.md
 |   |-- macos27-power-and-tcmt-powerd.md
 |   |-- repo-directory.md    -- This file
 |   |-- session.md
@@ -206,8 +209,6 @@
 |   |   |   |-- WinUtils.h    -- String encoding + privilege utilities
 |   |   |   |-- stdafx.h    -- Precompiled header
 |   |   |-- accel/
-|   |   |   |-- AccelSensor.h
-|   |   |   |-- AccelSensor.mm
 |   |   |   |-- SpsManager.h
 |   |   |   |-- SpsManager.mm
 |   |   |-- als/
@@ -220,6 +221,7 @@
 |   |   |   |-- BluetoothInfo.cpp    -- Windows Bluetooth APIs (winsock/BTH)
 |   |   |   |-- BluetoothInfo.h    -- Bluetooth adapter + device info header
 |   |   |   |-- BluetoothInfo.mm    -- macOS CoreBluetooth via IOKit
+|   |   |   |-- BluetoothInfo_linux.cpp
 |   |   |-- board/
 |   |   |   |-- BoardInfo.cpp    -- WMI Win32_BaseBoard / IOKit
 |   |   |   |-- BoardInfo.h    -- Motherboard info struct
@@ -231,6 +233,8 @@
 |   |   |-- cpu/
 |   |   |   |-- CpuInfo.cpp    -- PDH (Win) / sysctl (macOS)
 |   |   |   |-- CpuInfo.h    -- CPU detection header
+|   |   |   |-- CpuPowerReader.cpp
+|   |   |   |-- CpuPowerReader.h
 |   |   |   |-- CpuTempReader.cpp
 |   |   |   |-- CpuTempReader.h
 |   |   |   |-- RyzenSmuReader.cpp
@@ -257,6 +261,18 @@
 |   |   |-- history/
 |   |   |   |-- HistoryLogger.cpp    -- Background flush worker, retention
 |   |   |   |-- HistoryLogger.h    -- SQLite sensor log header
+|   |   |-- linux/
+|   |   |   |-- LinuxCpu.cpp
+|   |   |   |-- LinuxCpu.h
+|   |   |   |-- LinuxDisk.cpp
+|   |   |   |-- LinuxDisk.h
+|   |   |   |-- LinuxGpu.cpp
+|   |   |   |-- LinuxGpu.h
+|   |   |   |-- LinuxPower.cpp
+|   |   |   |-- LinuxPower.h
+|   |   |   |-- LinuxProcess.cpp
+|   |   |   |-- LinuxProcess.h
+|   |   |   |-- LinuxSysfs.h
 |   |   |-- memory/
 |   |   |   |-- MemoryInfo.cpp    -- GlobalMemoryStatusEx / host_statistics64
 |   |   |   |-- MemoryInfo.h    -- RAM stats header
@@ -288,6 +304,8 @@
 |   |   |   |-- ProcessTop.h
 |   |   |   |-- ProcessTop.mm
 |   |   |-- temperature/
+|   |   |   |-- AcpiThermalZoneReader.cpp
+|   |   |   |-- AcpiThermalZoneReader.h
 |   |   |   |-- BoardTempReader.cpp
 |   |   |   |-- BoardTempReader.h
 |   |   |   |-- IntelMchbarReader.cpp
@@ -303,6 +321,7 @@
 |   |   |   |-- WiFiInfo.cpp    -- Windows WLAN API
 |   |   |   |-- WiFiInfo.h    -- WiFi adapter + network info header
 |   |   |   |-- WiFiInfo.mm    -- macOS CoreWLAN
+|   |   |   |-- WiFiInfo_linux.cpp
 |   |   |   |-- WiFiInfo_wlan.c    -- WLAN callback + scan helper
 |   |   |   |-- WiFiInfo_wlan.h    -- WLAN helper header
 |   |   |-- I18n.h
@@ -347,15 +366,13 @@
 |   |   |   |-- sqlite3.h
 |   |   |   |-- sqlite3ext.h
 |   |   |-- PDCurses
-|   |   |-- TC
 |   |   |-- USBMonitor-cpp
 |   |   |-- curl
-|   |   |-- h2o
 |   |   |-- json
+|   |   |-- libusb_scsi_command
 |   |   |-- openssl
 |   |   |-- sqlite
 |   |   |-- tpm2-tss
-|   |   |-- websocketpp
 |   |   |-- zlib
 |   |-- tools/
 |   |   |-- sensor_recorder.mm
