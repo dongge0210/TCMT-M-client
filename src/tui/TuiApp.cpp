@@ -1438,9 +1438,11 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 #else
     const bool showState = (maxW - 22 - 7 >= kNameMin);
 #endif
-    const bool showThr   = (maxW - 22 - (showState ? 7 : 0) - 5 >= kNameMin);
-    const bool showCpuT  = (maxW - 22 - (showState ? 7 : 0) - (showThr ? 5 : 0) - 9 >= kNameMin);
-    const int optW = (showState ? 7 : 0) + (showThr ? 5 : 0) + (showCpuT ? 9 : 0);
+    // The thread column carries the full word "Threads": the abbreviation was
+    // ambiguous, and 3 more columns are cheaper than a legend.
+    const bool showThr   = (maxW - 22 - (showState ? 7 : 0) - 8 >= kNameMin);
+    const bool showCpuT  = (maxW - 22 - (showState ? 7 : 0) - (showThr ? 8 : 0) - 9 >= kNameMin);
+    const int optW = (showState ? 7 : 0) + (showThr ? 8 : 0) + (showCpuT ? 9 : 0);
 
     int nameW = maxW - 22 - optW;
     if (nameW < 6) nameW = 6;
@@ -1455,7 +1457,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
                  nameHdr.c_str(), "PID", "Mem");
         std::string tail;
         if (showState) tail += PadCell("State", 7);
-        if (showThr)   { tail += " "; tail += PadCell("Thr", 4); }
+        if (showThr)   { tail += " "; tail += PadCell("Threads", 7); }
         if (showCpuT)  { tail += " "; tail += PadCell("CPU Time", 8); }
 
         wattron(win, A_DIM);
@@ -1513,7 +1515,15 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         if (optW > 0) {
             std::string tail;
             if (showState) tail += PadCell(p.state.empty() ? "N/A" : p.state, 7);
-            if (showThr)   { tail += " "; tail += PadCell(p.threads >= 0 ? std::to_string(p.threads) : "N/A", 4); }
+            if (showThr) {
+                // Right-aligned under the word: "Threads" is a header, the
+                // column below it is numbers.
+                char thr[16];
+                snprintf(thr, sizeof(thr), "%7s",
+                         p.threads >= 0 ? std::to_string(p.threads).c_str() : "N/A");
+                tail += " ";
+                tail += thr;
+            }
             if (showCpuT)  { tail += " "; tail += PadCell(p.cpuTimeMs > 0 ? CpuTimeShort(p.cpuTimeMs) : "N/A", 8); }
             if (!selected) wattron(win, A_DIM);
             mvwprintw(win, y + lines, cpuCol + 7, "%s", tail.c_str());
