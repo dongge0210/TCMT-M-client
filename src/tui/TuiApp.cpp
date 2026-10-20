@@ -2121,7 +2121,90 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
     }
 
     mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
-              utf8_truncate(Tr("cpu.close"), W - 6).c_str());
+              utf8_truncate(Tr("details.close"), W - 6).c_str());
+}
+
+// GPU detail overlay — the same gestures as the CPU one. macOS adds the GPU
+// core count and has no VRAM reading at all: on Apple Silicon the memory
+// figure would be a slice of system RAM, so it stays off the screen instead
+// of being labelled "VRAM".
+void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
+        gpuPage_ = false;
+        clear();
+        return;
+    }
+
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    const int W = (std::min)(66, cols - 6);
+    const int H = (std::min)(14, rows - 4);
+    const int x0 = (std::max)(1, (cols - W) / 2);
+    const int y0 = (std::max)(2, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " GPU Details ");
+
+    int y = y0 + 2;
+    auto emit = [&](const std::string& s) {
+        if (y >= y0 + H - 2) return;
+        mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(s, W - 6).c_str());
+    };
+    char buf[128];
+
+    if (!data.gpuName.empty()) emit("Name: " + data.gpuName);
+    if (data.gpuCoreCount > 0) {
+        snprintf(buf, sizeof(buf), "GPU cores: %d", data.gpuCoreCount);
+        emit(buf);
+    }
+
+    {
+        char val[32];
+        snprintf(val, sizeof(val), "%.1f%%", data.gpuUsage);
+        DrawUsageBarRow(stdscr, y, x0 + 1, W - 2, "Use:", data.gpuUsage, val);
+        y++;
+    }
+
+    if (data.gpuFreq > 0) {
+        if (data.gpuMaxFreq > 0 &&
+            static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq)) {
+            snprintf(buf, sizeof(buf), "Freq: %d/%d MHz",
+                     static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
+        } else {
+            snprintf(buf, sizeof(buf), "Freq: %d MHz", static_cast<int>(data.gpuFreq));
+        }
+        emit(buf);
+    }
+    if (data.gpuPower > 0.0) {
+        snprintf(buf, sizeof(buf), "Power: %.2f W", data.gpuPower / 1000.0);
+        emit(buf);
+    }
+    // Discrete GPUs only. Under unified memory this figure is system RAM and
+    // reads as VRAM, so it is not shown at all.
+    if (!data.gpuUnified && data.gpuMemory > 0 && data.gpuMemoryPercent > 1) {
+        const uint64_t used =
+            static_cast<uint64_t>(data.gpuMemory * data.gpuMemoryPercent / 100.0);
+        emit("VRAM: " + FormatSize(used) + " / " + FormatSize(data.gpuMemory));
+    }
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
+              utf8_truncate(Tr("details.close"), W - 6).c_str());
 }
 
 // Focus order is draw order: the left column top-down, then the right
@@ -2176,9 +2259,10 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
                 break;
             }
         }
-        // Double-click on the CPU panel opens its detail view: hand the
+        // Double-click on a panel with a detail view opens it: hand the
         // keyboard handler the same synthetic key the keyboard would send.
-        if ((mev.bstate & BUTTON1_DOUBLE_CLICKED) && focusedPanel_ == PanelId::Cpu) {
+        if ((mev.bstate & BUTTON1_DOUBLE_CLICKED) &&
+            (focusedPanel_ == PanelId::Cpu || focusedPanel_ == PanelId::Gpu)) {
             return ' ';
         }
         // Click inside the Top Processes list region (geometry cached by
@@ -2302,7 +2386,8 @@ void TuiApp::Run() {
         // While a page owns the screen the dashboard is not drawn, so its
         // cached list geometry is stale: drop it, and no mouse event can
         // address a rectangle that is not on screen.
-        if (settingsPage_ || helpPage_ || connListPage_ || logPage_ || cpuPage_) procListY_ = -1;
+        if (settingsPage_ || helpPage_ || connListPage_ || logPage_ || cpuPage_ ||
+            gpuPage_) procListY_ = -1;
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
@@ -2336,6 +2421,13 @@ void TuiApp::Run() {
         // double-click on it. Same modal semantics as the other pages.
         if (cpuPage_) {
             RenderCpuDetails(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
+        if (gpuPage_) {
+            RenderGpuDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -2445,11 +2537,16 @@ void TuiApp::Run() {
         }
 #endif
 
-        // Space expands the focused panel. Only CPU has a detail view today;
-        // a double-click on that panel arrives here as a synthetic space.
-        if (ch == ' ' && focusedPanel_ == PanelId::Cpu) {
-            cpuPage_ = true;
-            clear();
+        // Space expands the focused panel. CPU and GPU have detail views; a
+        // double-click on either arrives here as a synthetic space.
+        if (ch == ' ') {
+            if (focusedPanel_ == PanelId::Cpu) {
+                cpuPage_ = true;
+                clear();
+            } else if (focusedPanel_ == PanelId::Gpu) {
+                gpuPage_ = true;
+                clear();
+            }
         }
 
         // Dashboard-local keys need the current snapshot, so they are

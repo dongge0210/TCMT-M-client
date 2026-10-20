@@ -1252,6 +1252,7 @@ int main(int argc, char* argv[]) {
                         data.gpuName = gn;
                         data.gpuMemory = gpu.dedicatedMemory;
                         data.gpuUnified = gpu.isUnified;
+                        data.gpuCoreCount = gpu.coreCount;
                     }
                     if (data.gpuUsage == 0.0 && gpu.usage > 0.0) {
                         data.gpuUsage = gpu.usage;

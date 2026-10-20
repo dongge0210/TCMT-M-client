@@ -52,6 +52,8 @@ public:
         int computeCapabilityMinor = 0;
         unsigned int temperature = 0;
         double usage = 0.0;  // GPU usage (0-100)
+        // Apple Silicon: core count from AGXAccelerator ("gpu-core-count").
+        int coreCount = 0;
     };
 
 #ifdef TCMT_WINDOWS

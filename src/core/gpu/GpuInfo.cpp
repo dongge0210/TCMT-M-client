@@ -627,19 +627,23 @@ void GpuInfo::DetectGpusViaMetal() {
 
             data.isVirtual = IsVirtualGpu(data.name);
 
+            // Apple Silicon publishes the GPU core count on the accelerator
+            // node itself; Intel Macs leave it absent (0 = unknown).
+            data.coreCount = static_cast<int>(IORegistryUInt64(entry, "gpu-core-count"));
+
             // Read GPU utilization from PerformanceStatistics
             CFTypeRef perfStatsRef = IORegistryEntryCreateCFProperty(
                 entry, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, 0);
             if (perfStatsRef && CFGetTypeID(perfStatsRef) == CFDictionaryGetTypeID()) {
                 CFDictionaryRef perfDict = static_cast<CFDictionaryRef>(perfStatsRef);
-                CFNumberRef utilRef = static_cast<CFNumberRef>(
-                    CFDictionaryGetValue(perfDict, CFSTR("Device Utilization %")));
-                if (utilRef && CFGetTypeID(utilRef) == CFNumberGetTypeID()) {
-                    int utilVal = 0;
-                    if (CFNumberGetValue(utilRef, kCFNumberIntType, &utilVal)) {
-                        data.usage = static_cast<double>(utilVal);
-                    }
-                }
+                auto numberValue = [&](CFStringRef key) -> int64_t {
+                    CFNumberRef n = static_cast<CFNumberRef>(CFDictionaryGetValue(perfDict, key));
+                    if (!n || CFGetTypeID(n) != CFNumberGetTypeID()) return 0;
+                    int64_t v = 0;
+                    return CFNumberGetValue(n, kCFNumberSInt64Type, &v) ? v : 0;
+                };
+                const int64_t utilVal = numberValue(CFSTR("Device Utilization %"));
+                data.usage = static_cast<double>(utilVal);
             }
             if (perfStatsRef) CFRelease(perfStatsRef);
 

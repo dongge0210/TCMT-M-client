@@ -91,6 +91,7 @@ struct TuiData {
     uint64_t gpuMemory = 0;
     // gpuMemory 报的是统一内存而不是独立显存（Apple Silicon）
     bool gpuUnified = false;
+    int gpuCoreCount = 0;          // Apple Silicon: gpu-core-count (0 = unknown)
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
@@ -417,6 +418,7 @@ private:
     void RenderHelpPage(int rows, int cols, int ch);
     void RenderConnectionsList(int rows, int cols, int ch);
     void RenderCpuDetails(int rows, int cols, int ch);
+    void RenderGpuDetails(int rows, int cols, int ch);
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
     int MapMouseEvent(int rows, int cols);
@@ -550,6 +552,7 @@ private:
     bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
     bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
     bool cpuPage_ = false;                 // CPU detail overlay (Space on, or double-click, the CPU panel)
+    bool gpuPage_ = false;                 // GPU detail overlay (same gestures on the GPU panel)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,
                                            // 4=sample interval, 5=language
