@@ -1831,6 +1831,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     common.push_back({"q", Tr("help.quit")});
 
     dash.push_back({"Tab / Shift+Tab", Tr("help.panel_focus")});
+    dash.push_back({"Space", Tr("help.cpu_details")});
     dash.push_back({upArrow_ + " / " + downArrow_, Tr("help.select_row")});
     dash.push_back({"c", Tr("help.conn_list")});
 
@@ -1954,6 +1955,151 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
               utf8_truncate(Tr("conn.close"), W - 6).c_str());
 }
 
+// CPU detail overlay — Space while the CPU panel holds focus, or a
+// double-click on that panel. Carries the numbers the dashboard panel has no
+// room for (cluster frequencies, base clock, per-cluster temperatures) plus a
+// per-core table where the platform collects one. macOS reports cluster
+// frequencies only, so the table there says so instead of showing zeros.
+void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
+        cpuPage_ = false;
+        clear();
+        return;
+    }
+
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    const int W = (std::min)(76, cols - 6);
+    const int H = (std::min)(22, rows - 4);
+    const int x0 = (std::max)(1, (cols - W) / 2);
+    const int y0 = (std::max)(2, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " CPU Details ");
+
+    int y = y0 + 2;
+    auto emit = [&](const std::string& s) {
+        if (y >= y0 + H - 2) return;
+        mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(s, W - 6).c_str());
+    };
+    char buf[192];
+
+    if (!data.cpuName.empty()) emit("Name: " + data.cpuName);
+
+    if (data.performanceCores > 0 || data.efficiencyCores > 0) {
+        snprintf(buf, sizeof(buf), "Cores: %d (P %d / E %d)",
+                 data.physicalCores, data.performanceCores, data.efficiencyCores);
+    } else {
+        snprintf(buf, sizeof(buf), "Cores: %d", data.physicalCores);
+    }
+    emit(buf);
+
+    snprintf(buf, sizeof(buf), "Usage: %.1f%%", data.cpuUsage);
+    emit(buf);
+
+    if (data.pCoreFreq > 0 || data.eCoreFreq > 0) {
+        std::string f = "Freq:";
+        if (data.pCoreFreq > 0) {
+            snprintf(buf, sizeof(buf), " P %.0f", data.pCoreFreq);
+            f += buf;
+            if (data.pCoreMaxFreq > 0) {
+                snprintf(buf, sizeof(buf), "/%.0f", data.pCoreMaxFreq);
+                f += buf;
+            }
+            f += " MHz";
+        }
+        if (data.eCoreFreq > 0) {
+            snprintf(buf, sizeof(buf), "   E %.0f", data.eCoreFreq);
+            f += buf;
+            if (data.eCoreMaxFreq > 0) {
+                snprintf(buf, sizeof(buf), "/%.0f", data.eCoreMaxFreq);
+                f += buf;
+            }
+            f += " MHz";
+        }
+        emit(f);
+    }
+    if (data.cpuBaseFreq > 0) {
+        snprintf(buf, sizeof(buf), "Base: %.0f MHz", data.cpuBaseFreq);
+        emit(buf);
+    }
+    {
+        std::string t = "Temp:";
+        if (data.cpuTemp > 0) {
+            snprintf(buf, sizeof(buf), " CPU %.1f C", data.cpuTemp);
+            t += buf;
+        }
+        if (data.cpuPcoreTemp > 0) {
+            snprintf(buf, sizeof(buf), "   P %.1f C", data.cpuPcoreTemp);
+            t += buf;
+        }
+        if (data.cpuEcoreTemp > 0) {
+            snprintf(buf, sizeof(buf), "   E %.1f C", data.cpuEcoreTemp);
+            t += buf;
+        }
+        if (t != "Temp:") emit(t);
+    }
+
+    const int count = (std::min)(
+        (std::max)(static_cast<int>(data.perCoreCount),
+                   static_cast<int>(data.perCoreUsageCount)), 16);
+    if (count <= 0) {
+        emit("");
+        emit(Tr("cpu.no_percore"));
+    } else {
+        y++;   // blank line between the summary and the table
+        const int tableY = y;
+        const int pitch = 30;
+        const bool twoCols = (W >= 3 + pitch * 2);
+        const int perCol = twoCols ? 8 : 16;
+        auto header = [&](int col) {
+            mvwprintw(stdscr, tableY, x0 + 3 + col * pitch,
+                      "%s", "Core   Use    Freq   Temp");
+        };
+        header(0);
+        if (twoCols && count > perCol) header(1);
+
+        for (int i = 0; i < count; ++i) {
+            const int col = i / perCol;
+            const int row = i % perCol;
+            const int ty = tableY + 1 + row;
+            if (ty >= y0 + H - 2) break;
+
+            char fbuf[16], tbuf[16];
+            if (data.perCoreFreq[i] > 0) snprintf(fbuf, sizeof(fbuf), "%6dM", static_cast<int>(data.perCoreFreq[i]));
+            else                         snprintf(fbuf, sizeof(fbuf), "%6s", "-");
+            if (data.perCoreTemp[i] > 0) snprintf(tbuf, sizeof(tbuf), "%5dC", static_cast<int>(data.perCoreTemp[i]));
+            else                         snprintf(tbuf, sizeof(tbuf), "%5s", "-");
+
+            const int tc = HighIsWorsePair(static_cast<double>(data.perCoreTemp[i]),
+                                           kTempWarn, kTempCrit);
+            if (tc >= 0) wattron(stdscr, COLOR_PAIR(tc));
+            mvwprintw(stdscr, ty, x0 + 3 + col * pitch, "C%02d %5.1f%% %s %s",
+                      i, static_cast<double>(data.perCoreUsage[i]), fbuf, tbuf);
+            if (tc >= 0) wattroff(stdscr, COLOR_PAIR(tc));
+        }
+    }
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
+              utf8_truncate(Tr("cpu.close"), W - 6).c_str());
+}
+
 // Focus order is draw order: the left column top-down, then the right
 // column. Only panels that actually rendered are registered, so Tab skips
 // the ones a short terminal or missing hardware dropped this frame.
@@ -2005,6 +2151,11 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
                 focusedPanel_ = p.id;
                 break;
             }
+        }
+        // Double-click on the CPU panel opens its detail view: hand the
+        // keyboard handler the same synthetic key the keyboard would send.
+        if ((mev.bstate & BUTTON1_DOUBLE_CLICKED) && focusedPanel_ == PanelId::Cpu) {
+            return ' ';
         }
         // Click inside the Top Processes list region (geometry cached by
         // DrawProcessPanel every frame).
@@ -2127,7 +2278,7 @@ void TuiApp::Run() {
         // While a page owns the screen the dashboard is not drawn, so its
         // cached list geometry is stale: drop it, and no mouse event can
         // address a rectangle that is not on screen.
-        if (settingsPage_ || helpPage_ || connListPage_ || logPage_) procListY_ = -1;
+        if (settingsPage_ || helpPage_ || connListPage_ || logPage_ || cpuPage_) procListY_ = -1;
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
@@ -2152,6 +2303,15 @@ void TuiApp::Run() {
         // into one row per live client. Same modal semantics.
         if (connListPage_) {
             RenderConnectionsList(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
+        // CPU details overlay — Space on the focused CPU panel, or a
+        // double-click on it. Same modal semantics as the other pages.
+        if (cpuPage_) {
+            RenderCpuDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -2260,6 +2420,13 @@ void TuiApp::Run() {
             CyclePanelFocus(-1);
         }
 #endif
+
+        // Space expands the focused panel. Only CPU has a detail view today;
+        // a double-click on that panel arrives here as a synthetic space.
+        if (ch == ' ' && focusedPanel_ == PanelId::Cpu) {
+            cpuPage_ = true;
+            clear();
+        }
 
         // Dashboard-local keys need the current snapshot, so they are
         // handled here: ↑/↓ move the process selection while Top Processes

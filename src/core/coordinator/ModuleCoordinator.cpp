@@ -367,6 +367,7 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
         sysInfo.perCoreUsage[i] = usage;
         tuiData.perCoreFreq[i] = freq;
         tuiData.perCoreTemp[i] = temp;
+        tuiData.perCoreUsage[i] = usage;
     }
     sysInfo.cpuUsageSampleIntervalMs = cpu.intervalMs;
     tuiData.sampleIntervalMs = static_cast<int>(cpu.intervalMs);

@@ -2005,6 +2005,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 for (int ci = 0; ci < tuiData.perCoreCount; ci++) {
                     tuiData.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
                     tuiData.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                    tuiData.perCoreUsage[ci] = sysInfo.perCoreUsage[ci];
                 }
 
                 // ─── Network traffic history (sparkline) ───

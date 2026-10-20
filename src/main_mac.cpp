@@ -1208,6 +1208,17 @@ int main(int argc, char* argv[]) {
                 for (int ci = 0; ci < data.perCoreCount; ci++) {
                     data.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
                     data.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
+                    data.perCoreUsage[ci] = sysInfo.perCoreUsage[ci];
+                }
+                // macOS has no per-core temperature/frequency source wired in,
+                // but CpuInfo samples per-logical-CPU usage from the kernel.
+                if (cpuInfo) {
+                    cpuInfo->SamplePerCoreUsage();
+                    const std::vector<double>& perCore = cpuInfo->GetPerCoreUsage();
+                    const int n = (std::min)(static_cast<int>(perCore.size()), 16);
+                    for (int i = 0; i < n; ++i)
+                        data.perCoreUsage[i] = static_cast<float>(perCore[i]);
+                    data.perCoreUsageCount = static_cast<uint8_t>(n);
                 }
             }
 

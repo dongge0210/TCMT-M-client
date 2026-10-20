@@ -30,6 +30,16 @@ public:
     bool IsHyperThreadingEnabled() const;
     bool IsVirtualizationEnabled() const;
 
+    // Per-logical-CPU usage from the last sample (index = cpuN). Empty on
+    // platforms that do not sample per core (Windows fills it elsewhere).
+    const std::vector<double>& GetPerCoreUsage() const { return coreUsage; }
+#ifdef TCMT_MACOS
+    // Refresh the per-core sample from the kernel (host_processor_info).
+    // GetUsage() also calls it, but callers that never ask for the aggregate
+    // still need a way to keep the per-core deltas moving.
+    void SamplePerCoreUsage();
+#endif
+
     // Last CPU usage sample interval (ms)
     double GetLastSampleIntervalMs() const { return lastSampleIntervalMs; }
 
@@ -53,6 +63,10 @@ private:
     double smallCoreSpeed;
     double lastSampleIntervalMs;
 
+    // Per-logical-CPU usage (macOS: host_processor_info; other platforms
+    // leave it empty and fill their own arrays).
+    std::vector<double> coreUsage;
+
 #ifdef TCMT_WINDOWS
     void* queryHandle;       // PDH_HQUERY
     void* counterHandle;     // PDH_HCOUNTER (CPU usage)
@@ -73,6 +87,10 @@ private:
     // P-core / E-core grouped frequencies
     std::vector<double> pCoreSpeeds;
     std::vector<double> eCoreSpeeds;
+    // Per-CPU tick counters behind coreUsage (host_processor_info).
+    std::vector<uint64_t> prevCoreTotal;
+    std::vector<uint64_t> prevCoreIdle;
+    bool coreUsagePrimed = false;
 #endif
 
 #ifdef TCMT_LINUX

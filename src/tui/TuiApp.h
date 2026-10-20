@@ -323,7 +323,9 @@ struct TuiData {
     // Per-core sensor data (up to 16 cores)
     float perCoreTemp[16] = {};
     float perCoreFreq[16] = {};
-    uint8_t perCoreCount = 0;
+    float perCoreUsage[16] = {};
+    uint8_t perCoreCount = 0;       // cores with temperature/frequency data
+    uint8_t perCoreUsageCount = 0;  // cores with usage data (macOS samples these alone)
 
     // Network traffic sparkline history (last 40 samples)
     static constexpr int NET_HISTORY_MAX = 40;
@@ -412,6 +414,7 @@ private:
     void RenderLogPage(int rows, int cols, int ch);
     void RenderHelpPage(int rows, int cols, int ch);
     void RenderConnectionsList(int rows, int cols, int ch);
+    void RenderCpuDetails(int rows, int cols, int ch);
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
     int MapMouseEvent(int rows, int cols);
@@ -544,6 +547,7 @@ private:
     bool settingsPage_ = false;
     bool helpPage_ = false;                // ? key-reference overlay (modal, like settings)
     bool connListPage_ = false;            // connections list overlay ('c' on the dashboard)
+    bool cpuPage_ = false;                 // CPU detail overlay (Space on, or double-click, the CPU panel)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,
                                            // 4=sample interval, 5=language

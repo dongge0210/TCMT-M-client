@@ -69,6 +69,7 @@ inline const I18nEntry kI18nTable[] = {
     {"help.close",           "close this help",                              "关闭帮助"},
     {"help.quit",            "quit TCMT Monitor",                            "退出 TCMT Monitor"},
     {"help.panel_focus",     "move panel focus",                             "切换面板焦点"},
+    {"help.cpu_details",     "open CPU details (CPU panel focused)",         "打开 CPU 详情（CPU 面板聚焦时）"},
     {"help.select_row",      "select a process row",                         "选择进程行"},
     {"help.conn_list",       "connections list (expand the status chip)",    "连接列表（展开状态芯片）"},
     {"help.scroll_line",     "scroll one line",                              "滚动一行"},
@@ -128,6 +129,10 @@ inline const I18nEntry kI18nTable[] = {
     {"wifi.g1_root",         "Running as root: can't request permission",    "以 root 运行，无法申请定位权限"},
     {"bt.on",                "On (%d devices)",                              "开（%d 台设备）"},
     {"bt.off",               "Off",                                          "关"},
+
+    // ── CPU details overlay ──────────────────────────────────────────
+    {"cpu.no_percore",       "Per-core data is not collected on this platform", "此平台未采集逐核数据"},
+    {"cpu.close",            "Esc / Space close",                             "Esc / 空格关闭"},
 
     // ── global / system ──────────────────────────────────────────────
     {"sys.toosmall",         "Terminal too small. Current: %dx%d",           "终端过小。当前：%dx%d"},

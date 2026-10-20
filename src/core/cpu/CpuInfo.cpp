@@ -461,7 +461,49 @@ double CpuInfo::updateUsage() {
     prevSampleTimeMs = nowMs;
     lastSampleIntervalMs = (double)elapsedMs;
 
+    SamplePerCoreUsage();
     return cpuUsage;
+}
+
+// host_statistics above is host-wide; host_processor_info is the only source
+// of per-logical-CPU ticks on macOS. It is deprecated but still the API htop
+// and friends use, and it needs no privileges.
+void CpuInfo::SamplePerCoreUsage() {
+    natural_t cpuCount = 0;
+    processor_info_array_t info = nullptr;
+    mach_msg_type_number_t infoCount = 0;
+    if (host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO,
+                            &cpuCount, &info, &infoCount) != KERN_SUCCESS) {
+        return;
+    }
+    auto* loads = reinterpret_cast<processor_cpu_load_info_t>(info);
+    const size_t n = cpuCount;
+    if (prevCoreTotal.size() != n) {
+        prevCoreTotal.assign(n, 0);
+        prevCoreIdle.assign(n, 0);
+        coreUsage.assign(n, 0.0);
+        coreUsagePrimed = false;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        uint64_t total = 0;
+        for (int s = 0; s < CPU_STATE_MAX; ++s) total += loads[i].cpu_ticks[s];
+        const uint64_t idle = loads[i].cpu_ticks[CPU_STATE_IDLE];
+        if (coreUsagePrimed) {
+            const uint64_t dt = total - prevCoreTotal[i];
+            const uint64_t di = idle - prevCoreIdle[i];
+            if (dt > 0) {
+                double pct = 100.0 * static_cast<double>(dt - di) / static_cast<double>(dt);
+                if (pct < 0.0) pct = 0.0;
+                if (pct > 100.0) pct = 100.0;
+                coreUsage[i] = pct;
+            }
+        }
+        prevCoreTotal[i] = total;
+        prevCoreIdle[i] = idle;
+    }
+    coreUsagePrimed = true;
+    vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(info),
+                  infoCount * sizeof(integer_t));
 }
 
 double CpuInfo::GetUsage() { return updateUsage(); }
