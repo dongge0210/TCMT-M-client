@@ -18,7 +18,25 @@ struct BluetoothDeviceData {
     int rssi = 0;               // Signal strength in dBm (0 if unavailable)
     bool connected = false;
     bool remembered = false;    // Paired/remembered
+    // macOS (system_profiler): "Minor Type" — Headphones, Mouse, Car Stereo...
+    std::string type;
+    // Battery readings. One entry for single-battery devices ("Battery"),
+    // three for AirPods-style devices ("Left"/"Right"/"Case"). Percent.
+    std::vector<std::pair<std::string, int>> batteries;
 };
+
+// "L27 R100 C68" — the compact form the TUI and logs use. Empty when the
+// device reports no battery (most peripherals do not).
+inline std::string CompactBatteryText(const BluetoothDeviceData& d) {
+    std::string out;
+    for (const auto& [label, pct] : d.batteries) {
+        const char tag = label.empty() ? 'B' : label[0];
+        if (!out.empty()) out += ' ';
+        out += tag;
+        out += std::to_string(pct);
+    }
+    return out;
+}
 
 struct BluetoothData {
     BluetoothAdapterData adapter;

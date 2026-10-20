@@ -1282,7 +1282,12 @@ int main(int argc, char* argv[]) {
             static BluetoothInfo s_bt;
             if (++wbCtr >= 6) { wbCtr = 0;
                 try { s_wifi.Detect(); } catch (...) {}
-                if (s_btNotify.Poll()) { try { s_bt.Detect(); } catch (...) {} }
+                // Poll() only reports change events; Detect() must still run
+                // every cycle, otherwise the battery/type profile that lands
+                // asynchronously would never reach the panel until the next
+                // connect/disconnect.
+                s_btNotify.Poll();
+                try { s_bt.Detect(); } catch (...) {}
             }
             {
               const auto& wd = s_wifi.GetData();
@@ -1302,7 +1307,21 @@ int main(int argc, char* argv[]) {
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
               data.btPowerOn = bd.adapter.powerOn;
-              data.btDeviceCount = static_cast<int>(bd.devices.size());
+              data.btDevices.clear();
+              {
+                  int btConnected = 0;
+                  for (const auto& dev : bd.devices) {
+                      tcmt::TuiData::BtDeviceInfo d;
+                      d.name = dev.name;
+                      d.type = dev.type;
+                      d.battery = CompactBatteryText(dev);
+                      d.rssi = dev.rssi;
+                      d.connected = dev.connected;
+                      if (dev.connected) ++btConnected;
+                      data.btDevices.push_back(std::move(d));
+                  }
+                  data.btDeviceCount = btConnected;
+              }
             }
 
             // Display monitors, battery health, ALS, accelerometer & thermal state (every ~3 seconds)

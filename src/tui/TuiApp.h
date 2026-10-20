@@ -245,7 +245,15 @@ struct TuiData {
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
-    int btDeviceCount = 0;
+    int btDeviceCount = 0;           // connected devices
+    struct BtDeviceInfo {
+        std::string name;
+        std::string type;            // "Headphones" / "Mouse" / ...
+        std::string battery;         // compact "L27 R100 C68" / "87%" / empty
+        int rssi = 0;
+        bool connected = false;
+    };
+    std::vector<BtDeviceInfo> btDevices;  // paired devices, connected first in input order
 
     // Display monitors
     struct DisplayInfo {

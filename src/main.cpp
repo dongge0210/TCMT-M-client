@@ -2098,9 +2098,21 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                   const auto& bd = s_bt.GetData();
                   tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
                   tuiData.btPowerOn = bd.adapter.powerOn;
-                  tuiData.btDeviceCount = static_cast<int>(bd.devices.size());
+                  tuiData.btDevices.clear();
+                  int btConnected = 0;
+                  for (const auto& dev : bd.devices) {
+                      tcmt::TuiData::BtDeviceInfo d;
+                      d.name = dev.name;
+                      d.type = dev.type;
+                      d.battery = CompactBatteryText(dev);
+                      d.rssi = dev.rssi;
+                      d.connected = dev.connected;
+                      if (dev.connected) ++btConnected;
+                      tuiData.btDevices.push_back(std::move(d));
+                  }
+                  tuiData.btDeviceCount = btConnected;
                   sysInfo.btPowerOn = bd.adapter.powerOn;
-                  sysInfo.btDeviceCount = static_cast<int>(bd.devices.size());
+                  sysInfo.btDeviceCount = btConnected;
                   sysInfo.btDeviceName = JoinConnectedDeviceNames(bd, 63);
 
                   // Write WiFi & Bluetooth to shared memory block (via WriteToSharedMemory below)

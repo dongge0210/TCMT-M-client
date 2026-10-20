@@ -129,6 +129,7 @@ inline const I18nEntry kI18nTable[] = {
     {"wifi.g1_root",         "Running as root: can't request permission",    "以 root 运行，无法申请定位权限"},
     {"bt.on",                "On (%d devices)",                              "开（%d 台设备）"},
     {"bt.off",               "Off",                                          "关"},
+    {"bt.paired",            "+%d paired",                                   "+%d 已配对"},
 
     // ── CPU details overlay ──────────────────────────────────────────
     {"cpu.no_percore",       "Per-core data is not collected on this platform", "此平台未采集逐核数据"},

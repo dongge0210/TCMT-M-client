@@ -628,7 +628,21 @@ int main(int argc, char* argv[]) {
                 const auto& bd = s_bt.GetData();
                 data.hasBluetooth = bd.adapter.detected;
                 data.btPowerOn = bd.adapter.powerOn;
-                data.btDeviceCount = static_cast<int>(bd.devices.size());
+                data.btDevices.clear();
+                {
+                    int btConnected = 0;
+                    for (const auto& dev : bd.devices) {
+                        tcmt::TuiData::BtDeviceInfo d;
+                        d.name = dev.name;
+                        d.type = dev.type;
+                        d.battery = CompactBatteryText(dev);
+                        d.rssi = dev.rssi;
+                        d.connected = dev.connected;
+                        if (dev.connected) ++btConnected;
+                        data.btDevices.push_back(std::move(d));
+                    }
+                    data.btDeviceCount = btConnected;
+                }
             }
 
             // System uptime / load / process count

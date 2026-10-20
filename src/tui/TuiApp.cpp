@@ -845,6 +845,30 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         lines++;  // blank line between WiFi and BT
         mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
         lines++;
+
+        // Connected devices, one per line: name, type, battery, signal.
+        // Paired-but-idle devices fold into a single count line.
+        int pairedIdle = 0;
+        for (const auto& d : data.btDevices) {
+            if (!d.connected) { ++pairedIdle; continue; }
+            if (y + lines >= LINES - 5) break;
+            std::string line = d.name;
+            if (!d.type.empty()) line += "  " + d.type;
+            if (!d.battery.empty()) line += "  " + d.battery;
+            if (d.rssi < 0) line += "  " + std::to_string(d.rssi) + "dBm";
+            mvwprintw(win, y + lines, x0 + 4, "%s",
+                      utf8_truncate(line, maxW - 6).c_str());
+            lines++;
+        }
+        if (pairedIdle > 0 && y + lines < LINES - 5) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), Tr("bt.paired"), pairedIdle);
+            wattron(win, A_DIM);
+            mvwprintw(win, y + lines, x0 + 4, "%s",
+                      utf8_truncate(buf, maxW - 6).c_str());
+            wattroff(win, A_DIM);
+            lines++;
+        }
     }
 
     return lines;

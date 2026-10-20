@@ -43,7 +43,9 @@ static double s_cachedTxRate = 0;
 
 static void RunSystemProfiler() {
     std::string json;
-    FILE* fp = popen("system_profiler SPAirPortDataType -json 2>/dev/null", "r");
+    // Absolute path: Finder launches carry a minimal PATH, and system_profiler
+    // lives in /usr/sbin rather than /usr/bin.
+    FILE* fp = popen("/usr/sbin/system_profiler SPAirPortDataType -json 2>/dev/null", "r");
     if (fp) {
         char buf[4096];
         while (fgets(buf, sizeof(buf), fp)) json += buf;
