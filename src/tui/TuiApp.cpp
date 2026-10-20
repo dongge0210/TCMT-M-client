@@ -782,9 +782,6 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
                 mvwprintw(win, y + lines, x0 + 2, "%s",
                           utf8_truncate(Tr("wifi.g1_root"), maxW - 4).c_str());
                 lines++;
-                mvwprintw(win, y + lines, x0 + 2, "%s",
-                          utf8_truncate(Tr("wifi.g2_root"), maxW - 4).c_str());
-                lines++;
             } else {
                 const bool denied = (data.wifiLocationStatus == 1 || data.wifiLocationDenied);
                 mvwprintw(win, y + lines, x0 + 2, "%s",

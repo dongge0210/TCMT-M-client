@@ -126,7 +126,6 @@ inline const I18nEntry kI18nTable[] = {
     {"wifi.g_root",          "root can't request permission",                "root 无法申请权限"},
     {"wifi.ssid_root",       "SSID hidden (root can't request permission)",  "SSID 不可用（root 无法申请权限）"},
     {"wifi.g1_root",         "Running as root: can't request permission",    "以 root 运行，无法申请定位权限"},
-    {"wifi.g2_root",         "Run without sudo to read the SSID",            "去掉 sudo 才能读取 SSID"},
     {"bt.on",                "On (%d devices)",                              "开（%d 台设备）"},
     {"bt.off",               "Off",                                          "关"},
 
