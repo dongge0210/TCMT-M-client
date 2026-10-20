@@ -137,10 +137,10 @@ to execute signed kernel modules for raw hardware access — SMBus, LPC/Super I/
 config space.
 
 - **Driver**: the PawnIO installer (`PawnIO_setup.exe`) creates `\\.\GLOBALROOT\Device\PawnIO`.
-- **Modules (.bin)**: signed, pre-compiled binaries from the official 0.2.8 release:
-  https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.8
-  (single `release_0_2_8.zip`). Stored in `src/resources/pawnio/`, version tracking
-  in `src/resources/pawnio/.version`. Auto-updated weekly via
+- **Modules (.bin)**: signed, pre-compiled binaries from the official 0.2.11 release:
+  https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.11
+  (single `release_0_2_11.zip`). Stored in `src/resources/pawnio/`; version and
+  archive SHA-256 are recorded in `.version` and `.sha256sum`. Auto-updated weekly via
   `.github/workflows/update-pawnio.yml`.
   Our `src/resources.rc` embeds the subset we use as RCDATA.
 - **Wrapper**: `src/core/memory/PawnIOWrapper.h/.cpp` — `CreateFileW` + `DeviceIoControl`.

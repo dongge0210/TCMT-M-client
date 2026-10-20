@@ -1,6 +1,6 @@
 # TCMT Repository Directory
 
-322 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
+327 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
 `node tools/gen-repo-directory.mjs`，别手改这一份。
 
 ```
@@ -150,6 +150,7 @@
 |   |   |   |-- 2026-04-18-disk-smart-tpm-design.md    -- SMART + TPM design
 |   |   |   |-- 2026-04-18-wpf-to-avalonia-migration.md    -- WPF→Avalonia migration
 |   |   |   |-- 2026-04-19-tcmt-ui-fixes-design.md    -- UI fixes design
+|   |-- API.md
 |   |-- apple-silicon-private-apis.md
 |   |-- docs_architecture_and_protocol_plan_v0.14_full_Version11.md    -- Architecture design doc v11
 |   |-- elements_BAN_list.md
@@ -340,15 +341,19 @@
 |   |   |   |-- IntelMCHBAR.bin
 |   |   |   |-- IntelMSR.bin
 |   |   |   |-- IntelOOBMSM.bin
+|   |   |   |-- IntelPCHThermal.bin
 |   |   |   |-- IsaBridgeEC.bin
+|   |   |   |-- LedsValve.bin
 |   |   |   |-- LpcACPIEC.bin
 |   |   |   |-- LpcCrOSEC.bin
 |   |   |   |-- LpcIO.bin
+|   |   |   |-- Nvidia.bin
 |   |   |   |-- RyzenSMU.bin
 |   |   |   |-- SmbusI801.bin
 |   |   |   |-- SmbusIntelSkylakeIMC.bin
 |   |   |   |-- SmbusNCT6793.bin
 |   |   |   |-- SmbusPIIX4.bin
+|   |   |   |-- ZhaoxinMSR.bin
 |   |-- third_party/
 |   |   |-- sqlite-amalgamation/
 |   |   |   |-- sqlite3.c
