@@ -18,12 +18,22 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: read
+  contents: read
 
 jobs:
+  # Limit runner use to the allowlisted account; manual runs are dev-only and PR authors are checked below.
   build-windows:
     name: Windows (MSBuild + CUDA)
+    if: >-
+      github.actor == 'dongge0210' &&
+      (
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.user.login == 'dongge0210'
+      ) &&
+      (
+        github.event_name != 'workflow_dispatch' ||
+        github.ref == 'refs/heads/dev'
+      )
     runs-on: windows-latest
 
     env:
@@ -175,6 +185,16 @@ jobs:
 
   build-macos:
     name: macOS (CMake + Clang)
+    if: >-
+      github.actor == 'dongge0210' &&
+      (
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.user.login == 'dongge0210'
+      ) &&
+      (
+        github.event_name != 'workflow_dispatch' ||
+        github.ref == 'refs/heads/dev'
+      )
     runs-on: macos-latest
     env:
       # ccache 4.x defaults to ~/Library/Caches/ccache on macOS, but the cache
@@ -237,6 +257,16 @@ jobs:
 
   build-linux:
     name: Linux (CMake + GCC)
+    if: >-
+      github.actor == 'dongge0210' &&
+      (
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.user.login == 'dongge0210'
+      ) &&
+      (
+        github.event_name != 'workflow_dispatch' ||
+        github.ref == 'refs/heads/dev'
+      )
     runs-on: ubuntu-latest
 
     steps:
@@ -269,4 +299,3 @@ jobs:
     - name: Smoke test
       run: |
         test -x build/src/TCMT-M
-
