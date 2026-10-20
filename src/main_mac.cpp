@@ -380,7 +380,8 @@ int main(int argc, char* argv[]) {
     // and hides nothing else that the user gains. Refuse to start instead of
     // running in a degraded state that looks like a bug.
     if (geteuid() == 0) {
-        std::cerr << "TCMT-M: root 下不可用，请去掉 sudo 以登录用户运行。\n";
+        std::cerr << "TCMT-M: unavailable under root. Run without sudo as your login user.\n"
+                  << "TCMT-M: root 下不可用，请去掉 sudo 以登录用户运行。\n";
         return 1;
     }
 
