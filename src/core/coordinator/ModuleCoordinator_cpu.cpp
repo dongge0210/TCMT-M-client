@@ -108,6 +108,8 @@ void CpuLoop(ModuleData& data, tcmt::compat::StopToken st) {
                           + std::string(e.what()));
         }
 
+        data.readyMask.fetch_or(kReadyCpu, std::memory_order_relaxed);
+
         // Sleep for the remainder of the cycle（1× 采样基周期，下限 200ms）
         auto elapsed = std::chrono::steady_clock::now() - cycleStart;
         auto elapsedMs =
@@ -208,6 +210,8 @@ void MemoryLoop(ModuleData& data, tcmt::compat::StopToken st) {
             Logger::Error("MemoryLoop: " + std::string(e.what()));
         }
 
+        data.readyMask.fetch_or(kReadyMemory, std::memory_order_relaxed);
+
         // 2× 采样基周期，下限 500ms
         ModuleCoordinator::SleepFor(st, ScaledSampleIntervalMs(data, 2, 500));
     }
@@ -291,6 +295,8 @@ void PowerLoop(ModuleData& data, tcmt::compat::StopToken st) {
         } catch (const std::exception& e) {
             Logger::Error("PowerLoop: " + std::string(e.what()));
         }
+
+        data.readyMask.fetch_or(kReadyPower, std::memory_order_relaxed);
 
         // Respond faster to ETW/system power events；平时按 4× 采样基周期，下限 1000ms
         if (!data.powerDirty.exchange(false) && !data.sysPowerDirty.exchange(false)) {

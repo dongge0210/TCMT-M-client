@@ -1095,6 +1095,10 @@ int main(int argc, char* argv[]) {
         try {
             auto loopStart = std::chrono::high_resolution_clock::now();
 
+            // Startup readiness of the inline collectors; the coordinator's
+            // six loops report through ReadyMask().
+            static bool gpuSampled = false, wifiSampled = false, btSampled = false;
+
             // Apply server settings saved from the TUI settings page.
             {
                 tcmt::ServerSettings pending;
@@ -1274,6 +1278,10 @@ int main(int argc, char* argv[]) {
                 }
             }
 
+            // A missing gpuInfo (init failure) still counts as sampled, so the
+            // startup indicator cannot stall at 90% forever.
+            gpuSampled = true;
+
             // WiFi & Bluetooth (every ~3 seconds)
             static int wbCtr = 0;
             static WiFiInfo s_wifi;
@@ -1289,6 +1297,8 @@ int main(int argc, char* argv[]) {
                 // connect/disconnect.
                 s_btNotify.Poll();
                 try { s_bt.Detect(); } catch (...) {}
+                wifiSampled = true;
+                btSampled = true;
             }
             {
               const auto& wd = s_wifi.GetData();
@@ -1665,6 +1675,22 @@ int main(int argc, char* argv[]) {
                         data.temperatures.push_back({label, cachedSmart[di].temperature});
                     }
                 }
+
+            // Startup progress: six coordinator loops plus GPU, WiFi,
+            // Bluetooth and the process list.
+            {
+                const unsigned mask = coordinator.ReadyMask();
+                int done = 0;
+                for (unsigned bit = 0; bit < kReadyLoopCount; ++bit) {
+                    if (mask & (1u << bit)) ++done;
+                }
+                if (gpuSampled) ++done;
+                if (wifiSampled) ++done;
+                if (btSampled) ++done;
+                if (!data.topProcesses.empty()) ++done;
+                data.loadDone = static_cast<uint8_t>(done);
+                data.loadTotal = static_cast<uint8_t>(kReadyLoopCount + 4);
+            }
 
             // Update TUI
             g_loopStage = 3;  // UpdateData + IPC write

@@ -3306,9 +3306,24 @@ void TuiApp::Run() {
         mvwprintw(stdscr, hintRow1 ? 1 : 0, cols - hintW - 1, "%s", hint.c_str());
         wattroff(stdscr, COLOR_PAIR(5));
 
-        // Row-1 left reservation: the stale chip when the monitor loop is
-        // silent (yellow = warning class); nothing otherwise.
+        // Row-1 left reservation: startup progress first, then the stale chip
+        // when the monitor loop goes silent (both yellow, warning class).
         int row1Left = 1;   // first column still free after left occupants
+
+        // Startup: how much of the first collection round has landed. This is
+        // the window where panels still look empty; the chip disappears as
+        // soon as every collector has reported once.
+        const bool loading = data.loadTotal > 0 && data.loadDone < data.loadTotal;
+        if (loading) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), " LOADING %d%% ",
+                     data.loadDone * 100 / (data.loadTotal ? data.loadTotal : 1));
+            wattron(stdscr, COLOR_PAIR(3) | A_BOLD);
+            mvwprintw(stdscr, 1, row1Left, "%s", buf);
+            wattroff(stdscr, COLOR_PAIR(3) | A_BOLD);
+            row1Left += static_cast<int>(std::strlen(buf));
+        }
+
         const int64_t lastUs = lastUpdateUs_.load();
         const int64_t staleUs = (lastUs == 0) ? 0
             : std::chrono::duration_cast<std::chrono::microseconds>(
@@ -3316,7 +3331,7 @@ void TuiApp::Run() {
         if (staleUs > kStaleAfterUs) {
             std::string chip = " stale " + std::to_string(staleUs / 1000000) + "s ";
             wattron(stdscr, COLOR_PAIR(3));
-            mvwprintw(stdscr, 1, 1, "%.*s", cols - 3, chip.c_str());
+            mvwprintw(stdscr, 1, row1Left, "%.*s", cols - 3, chip.c_str());
             wattroff(stdscr, COLOR_PAIR(3));
             row1Left += static_cast<int>(chip.size());
         }

@@ -70,6 +70,12 @@ struct TuiData {
     double pCoreMaxFreq = 0.0;
     double eCoreMaxFreq = 0.0;
     double cpuBaseFreq = 0.0;
+    // Startup progress: collection units that have completed one pass.
+    // 0 total means "do not show the indicator" (producers that do not
+    // report readiness yet).
+    uint8_t loadDone = 0;
+    uint8_t loadTotal = 0;
+
     double gpuFreq = 0.0;
     double gpuMaxFreq = 0.0;
     double cpuTemp = 0.0;

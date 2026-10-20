@@ -675,6 +675,7 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
         }
 
         // 4× 采样基周期，下限 1000ms —— 温度那一路单次采集不便宜
+        data_.readyMask.fetch_or(kReadyTemperature, std::memory_order_relaxed);
         SleepFor(st, ScaledSampleIntervalMs(data_, 4, 1000));
     }
 }

@@ -16,8 +16,23 @@ namespace tcmt { struct TuiData; }
 #include "notifications/SystemEventMonitor.h"
 #include "power/PowerMonitor.h"
 
+// First-sample readiness bits, OR-ed by each collection loop. The TUI turns
+// them into a startup LOADING percentage so the first seconds do not look
+// like broken panels. One bit per coordinator loop.
+enum : unsigned {
+    kReadyCpu         = 1u << 0,
+    kReadyMemory      = 1u << 1,
+    kReadyDisk        = 1u << 2,
+    kReadyNetwork     = 1u << 3,
+    kReadyTemperature = 1u << 4,
+    kReadyPower       = 1u << 5,
+    kReadyLoopCount   = 6,
+};
+
 struct ModuleData {
     // CPU (500ms) — scalars use atomic
+    // First-sample readiness (see kReady* above).
+    std::atomic<unsigned> readyMask{0};
     std::atomic<double> cpuUsage{0.0};
     std::atomic<double> pCoreFreq{0.0};
     std::atomic<double> eCoreFreq{0.0};
@@ -130,6 +145,8 @@ public:
     // platform has no per-core source. `out` entries are -1 when unknown.
     int GetPerCoreFreqs(double* out, int max);
     static void SleepFor(tcmt::compat::StopToken st, int ms);
+    // Bits of the collection loops that have completed at least one pass.
+    unsigned ReadyMask() const { return data_.readyMask.load(std::memory_order_relaxed); }
     bool IsWifiDirty() { return data_.wifiDirty.exchange(false); }
     bool IsBtDirty()   { return data_.btDirty.exchange(false); }
     bool IsUsbDirty()  { return data_.usbDirty.exchange(false); }
