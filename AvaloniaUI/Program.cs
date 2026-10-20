@@ -43,8 +43,21 @@ internal sealed class Program
     }
 
     public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
-            .UsePlatformDetect()
+    {
+        // UsePlatformDetect() 来自 Avalonia.Desktop 元包，会顺带把三套后端都编进产物。
+        // 现在 csproj 按宿主只引一个后端，这里也只调对应的那一个。
+        var builder = AppBuilder.Configure<App>()
+            .UseHarfBuzz();
+#if TCMT_MACOS
+        builder = builder.UseAvaloniaNative();
+#elif TCMT_WINDOWS
+        builder = builder.UseWin32();
+#else
+        builder = builder.UseX11();
+#endif
+        return builder
+            .UseSkia()
             .WithInterFont()
             .LogToTrace();
+    }
 }

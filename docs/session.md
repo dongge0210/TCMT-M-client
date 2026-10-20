@@ -602,6 +602,22 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
 - 未验证：x86_64 的 CI 尚未实际跑；真实桌面上的 NetworkManager/BlueZ 属性未验证；
   Windows 只做了条件编译隔离审查，没有编译。
 
+## 2026-10-20 — AvaloniaUI 产物按宿主平台隔离
+
+- 根因一：csproj 只写了 `RuntimeIdentifiers`（复数）而没给 `RuntimeIdentifier`，`dotnet build`
+  走 RID 无关构建，NuGet 把每个包所有 RID 的原生资产都摊进 `runtimes/`。macOS Debug 产物
+  783MB，其中 `runtimes/` 552MB（17 个 RID，三个 `libSkiaSharp.pdb` 各约 80MB），其余主要是日志。
+- 根因二：`Avalonia.Desktop` 是元包，无条件依赖 Win32、X11、FreeDesktop、Native 四套后端，
+  macOS Release 里因此带着 `Avalonia.Win32.dll`、`Avalonia.X11.dll`、`Avalonia.FreeDesktop*.dll`
+  和 `Tmds.DBus.Protocol.dll`。
+- 改动：默认 `RuntimeIdentifier = $(NETCoreSdkPortableRuntimeIdentifier)`，显式 `-r` 仍可交叉构建；
+  按宿主只引一个后端包，另显式引 `Avalonia.Skia` / `Avalonia.HarfBuzz`；`Program.cs` 用
+  `TCMT_MACOS` / `TCMT_WINDOWS` / `TCMT_LINUX` 选对应 `Use*`，替代 `UsePlatformDetect()`。
+- 验证（macOS arm64）：Release/Debug 均 0 警告 0 错误；输出 `bin/<Cfg>/net10.0/osx-arm64/`，
+  无 `runtimes/`、无 Win32/X11/FreeDesktop/DBus 程序集；Release 28MB、Debug 30MB。
+  Release 实跑 6 秒，日志有 `MainWindow initialized and hardware monitoring started`。
+- 未验证：Windows 的 `TCMT_WINDOWS` 分支只做了条件编译审查，本机编不了。
+
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
   这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出

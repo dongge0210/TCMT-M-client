@@ -2,9 +2,15 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('osx'))">osx-arm64;osx-x64</RuntimeIdentifiers>
-    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('windows'))">win-x64</RuntimeIdentifiers>
-    <RuntimeIdentifiers Condition="$([MSBuild]::IsOSPlatform('linux'))">linux-x64</RuntimeIdentifiers>
+    <!-- 不传 -r 时默认按宿主 RID 构建。只写 RuntimeIdentifiers（复数）而留空 RuntimeIdentifier，
+         SDK 会走 RID 无关构建：NuGet 把每个包所有 RID 的原生资产都摊进 runtimes/，
+         Debug 产物因此到过 783MB（17 个 RID，单 Windows x64 的 SkiaSharp.pdb 就 80MB）。
+         交叉构建仍然显式传 -r，不受这条默认值影响。 -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</RuntimeIdentifier>
+    <!-- Program.cs 靠这三个常量选后端，和下面按宿主引入的 Avalonia 后端包一一对应。 -->
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('osx'))">$(DefineConstants);TCMT_MACOS</DefineConstants>
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('windows'))">$(DefineConstants);TCMT_WINDOWS</DefineConstants>
+    <DefineConstants Condition="$([MSBuild]::IsOSPlatform('linux'))">$(DefineConstants);TCMT_LINUX</DefineConstants>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -37,7 +43,15 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <!-- 不用 Avalonia.Desktop：这个元包无条件依赖 Win32、X11、FreeDesktop、Native 四套后端，
+         每个平台的产物里都混着另外两套（macOS 的 Release 里就有 Avalonia.Win32/X11/FreeDesktop
+         和 Tmds.DBus.Protocol）。按宿主只引一个后端；两个渲染包是 Desktop 原本替我们引的。
+         Program.cs 的 UseHarfBuzz/UseSkia 与这里的包一一对应，删包必须同时删调用。 -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.HarfBuzz" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Native" Version="12.1.1" Condition="$([MSBuild]::IsOSPlatform('osx'))" />
+    <PackageReference Include="Avalonia.Win32" Version="12.1.1" Condition="$([MSBuild]::IsOSPlatform('windows'))" />
+    <PackageReference Include="Avalonia.X11" Version="12.1.1" Condition="$([MSBuild]::IsOSPlatform('linux'))" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.20" Condition="'$(Configuration)' == 'Debug'" />
