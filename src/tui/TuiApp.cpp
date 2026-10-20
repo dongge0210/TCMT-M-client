@@ -713,6 +713,17 @@ static std::vector<std::string> WrapFields(const std::vector<std::string>& field
     return out;
 }
 
+// Four-cell signal indicator for a Bluetooth RSSI. The panel row is drawn as
+// one string, so the cells are monochrome; -1 (unavailable) yields nothing.
+static std::string BtSignalBars(int rssi, const std::string& fill,
+                                const std::string& track) {
+    if (rssi >= 0) return {};
+    const int level = rssi >= -50 ? 4 : rssi >= -60 ? 3 : rssi >= -70 ? 2 : 1;
+    std::string out;
+    for (int i = 0; i < 4; ++i) out += (i < level ? fill : track);
+    return out;
+}
+
 int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     int lines = 0;
@@ -855,7 +866,11 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             std::string line = d.name;
             if (!d.type.empty()) line += "  " + d.type;
             if (!d.battery.empty()) line += "  " + d.battery;
-            if (d.rssi < 0) line += "  " + std::to_string(d.rssi) + "dBm";
+            if (d.rssi < 0) {
+                const std::string bars = BtSignalBars(d.rssi, barFill_, barTrack_);
+                if (!bars.empty()) line += "  " + bars;
+                line += " " + std::to_string(d.rssi) + "dBm";
+            }
             mvwprintw(win, y + lines, x0 + 4, "%s",
                       utf8_truncate(line, maxW - 6).c_str());
             lines++;
