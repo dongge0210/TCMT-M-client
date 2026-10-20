@@ -66,11 +66,29 @@ void BatteryHealth::Detect() {
             // Voltage (mV)
             data_.voltage = readInt(@"Voltage");
 
-            // Charger details (adapter rated wattage)
+            // Charger details. AdapterDetails is absent while unplugged, so
+            // everything here stays empty/0 in that case.
             NSDictionary* adapter = dict[@"AdapterDetails"];
             if (adapter && [adapter isKindOfClass:[NSDictionary class]]) {
                 NSNumber* watts = adapter[@"Watts"];
                 if (watts) data_.chargerWatts = [watts doubleValue];
+                auto readString = [&](NSString* key) -> std::string {
+                    id v = adapter[key];
+                    if (![v isKindOfClass:[NSString class]]) return {};
+                    const char* s = [(NSString*)v UTF8String];
+                    return s ? std::string(s) : std::string();
+                };
+                data_.chargerName = readString(@"Name");
+                data_.chargerManufacturer = readString(@"Manufacturer");
+                data_.chargerModel = readString(@"Model");
+                data_.chargerSerial = readString(@"SerialString");
+                NSNumber* adapterVoltage = adapter[@"AdapterVoltage"];
+                if (adapterVoltage) data_.chargerVoltageMv = [adapterVoltage intValue];
+                NSNumber* adapterCurrent = adapter[@"Current"];
+                if (adapterCurrent) data_.chargerCurrentMa = [adapterCurrent intValue];
+                id wireless = adapter[@"IsWireless"];
+                if ([wireless isKindOfClass:[NSNumber class]])
+                    data_.chargerWireless = [wireless boolValue];
             }
 
             // Charging / AC status

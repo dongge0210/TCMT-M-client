@@ -1194,12 +1194,26 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
                 lines++;
             }
         }
-        // Charger rated wattage
-        if (data.chargerWatts > 0) {
-            char val[32];
-            snprintf(val, sizeof(val), "%.0f W", data.chargerWatts);
-            DrawLabeledValue(win, y + lines, x0, maxW, "Charger:", val);
+        // Charger: the adapter reports its marketing name, rated wattage and
+        // the voltage/current it negotiated with the Mac.
+        if (data.chargerWatts > 0 || !data.chargerName.empty()) {
+            std::string name = data.chargerName;
+            if (name.empty()) {
+                char w[32];
+                snprintf(w, sizeof(w), "%.0f W", data.chargerWatts);
+                name = w;
+            }
+            DrawLabeledValue(win, y + lines, x0, maxW, "Charger:", name);
             lines++;
+            if (data.chargerVoltageMv > 0 || data.chargerCurrentMa > 0) {
+                char val[64];
+                snprintf(val, sizeof(val), "%.0f W   %.1f V / %.2f A",
+                         data.chargerWatts,
+                         data.chargerVoltageMv / 1000.0,
+                         data.chargerCurrentMa / 1000.0);
+                DrawLabeledValue(win, y + lines, x0, maxW, "Output:", val);
+                lines++;
+            }
         }
         // Battery temp — shown in Temperature panel (from TemperatureWrapper/iokit_battery_temp)
     }

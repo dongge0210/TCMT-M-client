@@ -1351,6 +1351,13 @@ int main(int argc, char* argv[]) {
                 data.batteryAmperage = bd.amperage;
                 data.batteryVoltage = bd.voltage;
                 data.batteryIsCharging = bd.isCharging;
+                // Charger details; the panel had a Charger row from the start
+                // but this assignment was missing, so it never appeared.
+                data.chargerWatts = bd.chargerWatts;
+                data.chargerName = bd.chargerName;
+                data.chargerVoltageMv = bd.chargerVoltageMv;
+                data.chargerCurrentMa = bd.chargerCurrentMa;
+                data.chargerWireless = bd.chargerWireless;
             }
 
             // ALS (ambient light sensor) — from SPU HID callback (SpsManager)

@@ -14,6 +14,16 @@ struct BatteryHealthData {
     int amperage = 0;            // mA (positive=charging, negative=discharging)
     int voltage = 0;             // mV
     double chargerWatts = 0.0;   // connected charger rated wattage (0 = unknown)
+    // AdapterDetails of the connected charger (all empty/0 when unplugged):
+    // the marketing name ("30W USB-C Power Adapter"), the negotiated voltage
+    // and current, and the identifiers the adapter reports.
+    std::string chargerName;
+    std::string chargerManufacturer;
+    std::string chargerModel;
+    std::string chargerSerial;
+    int chargerVoltageMv = 0;    // negotiated adapter voltage
+    int chargerCurrentMa = 0;    // negotiated adapter current
+    bool chargerWireless = false;
 };
 
 class BatteryHealth {

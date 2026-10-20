@@ -184,6 +184,11 @@ struct TuiData {
     int batteryAmperage = 0;         // mA (+=charging, -=discharging)
     int batteryVoltage = 0;          // mV
     double chargerWatts = 0.0;       // connected charger rated wattage
+    // AdapterDetails of the connected charger (empty/0 when unplugged).
+    std::string chargerName;
+    int chargerVoltageMv = 0;        // negotiated voltage
+    int chargerCurrentMa = 0;        // negotiated current
+    bool chargerWireless = false;
     bool batteryIsCharging = false;
 
     double cpuPower = 0.0;
