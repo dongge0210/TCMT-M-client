@@ -210,6 +210,7 @@ struct TuiData {
     std::string wifiGen;
     double wifiTxRate = 0;
     bool wifiLocationDenied = false; // macOS 15+: SSID blocked by Location Services
+    bool wifiLocationRoot = false;   // macOS: running as root; Location can never be granted
     int wifiLocationStatus = 0;      // 0=not determined, 1=denied, 2=authorized
     // Bluetooth (optional)
     bool hasBluetooth = false;
@@ -408,6 +409,26 @@ private:
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
     int MapMouseEvent(int rows, int cols);
+
+    // Dashboard panels are focusable surfaces: Tab / Shift+Tab cycle the
+    // panels actually drawn this frame, and a click inside a panel focuses
+    // it. The focused panel's title chip is the active-surface cue.
+    enum class PanelId {
+        Cpu, Gpu, Memory, Process, Core,
+        Disk, PhysicalDisk, Network, Traffic, WifiBluetooth,
+        Temp, Power, Display, Accel, Tpm,
+    };
+    struct PanelHit {
+        PanelId id;
+        int y;
+        int x;
+        int w;
+        int h;
+    };
+    void RegisterPanel(PanelId id, int y, int x, int w, int h);
+    void CyclePanelFocus(int dir);
+    bool IsPanelFocused(PanelId id) const { return focusedPanel_ == id; }
+
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -499,6 +520,13 @@ private:
     int procListCount_ = 0;     // visible process rows below the title
     int procListX0_ = 0;
     int procListW_ = 0;
+
+    // Panel focus state. Only the TUI thread touches it (input + draw are
+    // the same loop), so no lock is needed. Default = Top Processes: that
+    // surface was keyboard-addressable before panels could be focused, and
+    // keeping it keeps the arrow keys live from the first frame.
+    PanelId focusedPanel_ = PanelId::Process;
+    std::vector<PanelHit> panelHits_;   // panels drawn last frame, in draw order
 
     // Settings page state (press S): framed interactive form.
     ServerSettings serverSettings_;        // current values (from main)

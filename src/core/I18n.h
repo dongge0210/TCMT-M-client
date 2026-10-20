@@ -33,6 +33,7 @@ struct I18nEntry {
 inline const I18nEntry kI18nTable[] = {
     // ── top bar hints ────────────────────────────────────────────────
     {"hint.settings",        "S:Settings",                                   "S:设置"},
+    {"hint.panel",           "Tab:Panel",                                    "Tab:面板"},
     {"hint.log",             "L:Log",                                        "L:日志"},
     {"hint.update",          "U:Update",                                     "U:更新"},
     {"hint.location",        "R:Location",                                   "R:定位"},
@@ -67,6 +68,7 @@ inline const I18nEntry kI18nTable[] = {
     {"help.back",            "go back one level",                            "返回上一层"},
     {"help.close",           "close this help",                              "关闭帮助"},
     {"help.quit",            "quit TCMT Monitor",                            "退出 TCMT Monitor"},
+    {"help.panel_focus",     "move panel focus",                             "切换面板焦点"},
     {"help.select_row",      "select a process row",                         "选择进程行"},
     {"help.conn_list",       "connections list (expand the status chip)",    "连接列表（展开状态芯片）"},
     {"help.scroll_line",     "scroll one line",                              "滚动一行"},
@@ -120,6 +122,11 @@ inline const I18nEntry kI18nTable[] = {
     {"wifi.path1",           "System Settings > Privacy & Security",         "系统设置 > 隐私与安全"},
     {"wifi.path2",           "> Location Services, allow TCMT-M",            "> 定位服务，允许 TCMT-M"},
     {"wifi.ssid_denied",     "SSID unavailable (Location Services denied)",  "SSID 不可用（定位被拒）"},
+    {"wifi.loc_root",        "unknown (running as root)",                    "未知（以 root 运行）"},
+    {"wifi.g_root",          "needs login user, not root",                   "需要登录用户，root 不行"},
+    {"wifi.ssid_root",       "SSID unavailable (running as root)",           "SSID 不可用（以 root 运行）"},
+    {"wifi.g1_root",         "Location unavailable to root",                 "root 无法使用定位服务"},
+    {"wifi.g2_root",         "run as login user for SSID",                   "以登录用户运行才能读 SSID"},
     {"bt.on",                "On (%d devices)",                              "开（%d 台设备）"},
     {"bt.off",               "Off",                                          "关"},
 

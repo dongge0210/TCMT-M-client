@@ -288,12 +288,20 @@ void TuiApp::DrawPanelTitle(WINDOW* win, int y, int x0, int maxW,
     int tw = static_cast<int>(std::strlen(title));
     if (tw > maxW - 2) tw = maxW - 2;
 
-    // Chip: ' title ' — reversed by default, green+bold when focused.
+    // Chip: ' title ' — reversed by default. Focused turns the WHOLE strip
+    // into a solid green reverse bar: coloring only the chip was too quiet
+    // to spot with a dozen panels on screen (the green text sat on the
+    // default background, while the unfocused chip was already reversed).
     if (focused) {
-        wattron(win, COLOR_PAIR(2) | A_BOLD);
+        wattron(win, COLOR_PAIR(2) | A_REVERSE | A_BOLD);
         mvwprintw(win, y, x0, " %-*s ", tw, title);
-        wattroff(win, COLOR_PAIR(2) | A_BOLD);
-    } else {
+        for (int x = x0 + tw + 2; x < x0 + maxW; ++x) {
+            mvwaddstr(win, y, x, segShade_.c_str());
+        }
+        wattroff(win, COLOR_PAIR(2) | A_REVERSE | A_BOLD);
+        return;
+    }
+    {
         wattron(win, A_REVERSE);
         mvwprintw(win, y, x0, " %-*s ", tw, title);
         wattroff(win, A_REVERSE);
@@ -439,7 +447,7 @@ int TuiApp::DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     if (maxW < 10) return 0;
     int lines = 0;
 
-    DrawPanelTitle(win, y + lines, x0, maxW, "CPU");
+    DrawPanelTitle(win, y + lines, x0, maxW, "CPU", IsPanelFocused(PanelId::Cpu));
     lines++;
 
     auto name = TrimRight(data.cpuName, maxW - 4);
@@ -484,7 +492,7 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     if (maxW < 10) return 0;
     int lines = 0;
 
-    DrawPanelTitle(win, y + lines, x0, maxW, "RAM");
+    DrawPanelTitle(win, y + lines, x0, maxW, "RAM", IsPanelFocused(PanelId::Memory));
     lines++;
 
     double upct = (data.totalMemory > 0) ? 100.0 * data.usedMemory / data.totalMemory : 0;
@@ -522,7 +530,7 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     if (maxW < 10) return 0;
     int lines = 0;
 
-    DrawPanelTitle(win, y + lines, x0, maxW, "GPU");
+    DrawPanelTitle(win, y + lines, x0, maxW, "GPU", IsPanelFocused(PanelId::Gpu));
     lines++;
 
 #ifndef TCMT_MACOS
@@ -576,7 +584,7 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
 
-    DrawPanelTitle(win, y, x0, maxW, "Disks");
+    DrawPanelTitle(win, y, x0, maxW, "Disks", IsPanelFocused(PanelId::Disk));
     int lines = 1;
 
     for (const auto& d : data.disks) {
@@ -603,7 +611,7 @@ int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
 
 int TuiApp::DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    DrawPanelTitle(win, y, x0, maxW, "Network");
+    DrawPanelTitle(win, y, x0, maxW, "Network", IsPanelFocused(PanelId::Network));
     int lines = 1;
 
     for (const auto& n : data.adapters) {
@@ -694,19 +702,26 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         // actually true and give the next step instead; "Disconnected" is
         // only reported when Location is not standing in the way.
         const bool locBlocked = caps_.wifiLocationServices &&
-            (data.wifiLocationStatus == 0 || data.wifiLocationStatus == 1 || data.wifiLocationDenied);
+            (data.wifiLocationRoot || data.wifiLocationStatus == 0 ||
+             data.wifiLocationStatus == 1 || data.wifiLocationDenied);
         if (locBlocked) {
             const bool denied = (data.wifiLocationStatus == 1 || data.wifiLocationDenied);
+            // Root never gets a Location grant, so "press R" would be a dead
+            // end: name the cause and the way out instead.
+            const char* headKey = data.wifiLocationRoot ? "wifi.loc_root"
+                                : denied              ? "wifi.loc_denied"
+                                                      : "wifi.loc_off";
+            const char* hintKey = data.wifiLocationRoot ? "wifi.g_root"
+                                : denied              ? "wifi.grant"
+                                                      : "wifi.press_r";
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, x0 + 8, "%s",
-                      utf8_truncate(denied ? Tr("wifi.loc_denied") : Tr("wifi.loc_off"),
-                                    maxW - 10).c_str());
+                      utf8_truncate(Tr(headKey), maxW - 10).c_str());
             wattroff(win, COLOR_PAIR(6));
             lines++;
             wattron(win, COLOR_PAIR(6));
             mvwprintw(win, y + lines, x0 + 8, "%s",
-                      utf8_truncate(denied ? Tr("wifi.grant") : Tr("wifi.press_r"),
-                                    maxW - 10).c_str());
+                      utf8_truncate(Tr(hintKey), maxW - 10).c_str());
             wattroff(win, COLOR_PAIR(6));
             lines++;
         } else {
@@ -719,7 +734,9 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
     } else {
         std::vector<std::string> fields;
         fields.push_back(Tr("wifi.connected"));
-        if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+        if (data.wifiLocationRoot) {
+            fields.push_back(Tr("wifi.ssid_root"));
+        } else if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
             fields.push_back(Tr("wifi.ssid_denied"));
         } else {
             if (!data.wifiSSID.empty()) fields.push_back("SSID: " + data.wifiSSID);
@@ -753,30 +770,35 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         // A platform capability: only macOS fills wifiLocationStatus, so
         // Windows (WLAN API) and Linux must never see this macOS flow.
         if (caps_.wifiLocationServices &&
-            (data.wifiLocationStatus == 0 || data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
+            (data.wifiLocationRoot || data.wifiLocationStatus == 0 ||
+             data.wifiLocationStatus == 1 || data.wifiLocationDenied)) {
             wattron(win, COLOR_PAIR(6));
-            if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+            if (data.wifiLocationRoot) {
+                // Root can never be granted Location Services, so neither
+                // the R key nor the System Settings path applies.
                 mvwprintw(win, y + lines, x0 + 2, "%s",
-                          utf8_truncate(Tr("wifi.g1_denied"), maxW - 4).c_str());
+                          utf8_truncate(Tr("wifi.g1_root"), maxW - 4).c_str());
+                lines++;
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.g2_root"), maxW - 4).c_str());
+                lines++;
             } else {
+                const bool denied = (data.wifiLocationStatus == 1 || data.wifiLocationDenied);
                 mvwprintw(win, y + lines, x0 + 2, "%s",
-                          utf8_truncate(Tr("wifi.g1_open"), maxW - 4).c_str());
-            }
-            lines++;
-            mvwprintw(win, y + lines, x0 + 2, "%s",
-                      utf8_truncate(Tr("wifi.g2"), maxW - 4).c_str());
-            lines++;
-            if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+                          utf8_truncate(Tr(denied ? "wifi.g1_denied" : "wifi.g1_open"),
+                                        maxW - 4).c_str());
+                lines++;
+                mvwprintw(win, y + lines, x0 + 2, "%s",
+                          utf8_truncate(Tr("wifi.g2"), maxW - 4).c_str());
+                lines++;
                 mvwprintw(win, y + lines, x0 + 2, "%s",
                           utf8_truncate(Tr("wifi.path1"), maxW - 4).c_str());
                 lines++;
-                mvwprintw(win, y + lines, x0 + 2, "%s",
-                          utf8_truncate(Tr("wifi.path2"), maxW - 4).c_str());
-                lines++;
-            } else {
-                mvwprintw(win, y + lines, x0 + 2, "%s",
-                          utf8_truncate(Tr("wifi.path1"), maxW - 4).c_str());
-                lines++;
+                if (denied) {
+                    mvwprintw(win, y + lines, x0 + 2, "%s",
+                              utf8_truncate(Tr("wifi.path2"), maxW - 4).c_str());
+                    lines++;
+                }
             }
             wattroff(win, COLOR_PAIR(6));
         }
@@ -800,7 +822,7 @@ int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     if (data.displays.empty()) return 0;
     int lines = 0;
 
-    DrawPanelTitle(win, y + lines, x0, maxW, "Displays");
+    DrawPanelTitle(win, y + lines, x0, maxW, "Displays", IsPanelFocused(PanelId::Display));
     lines++;
 
     for (const auto& d : data.displays) {
@@ -826,7 +848,7 @@ int TuiApp::DrawDisplayPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 int TuiApp::DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     if (data.tpmInfo.empty() || data.tpmInfo == "No TPM") return 0;
-    DrawPanelTitle(win, y, x0, maxW, "TPM");
+    DrawPanelTitle(win, y, x0, maxW, "TPM", IsPanelFocused(PanelId::Tpm));
     mvwprintw(win, y + 1, x0 + 2, "%s", utf8_truncate(data.tpmInfo, maxW - 2).c_str());
     return 2;
 }
@@ -866,16 +888,19 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
 
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    DrawPanelTitle(win, y, x0, maxW, "Temps");
+    DrawPanelTitle(win, y, x0, maxW, "Temps", IsPanelFocused(PanelId::Temp));
     int lines = 1;
 
     int halfW = maxW / 2;
     // Grow the grid with the space actually available below the title
-    // (content may run down to row LINES-8, see Run), capped at 8 rows:
+    // (content may run down to row LINES-5, see Run), capped at 8 rows:
     // with room, every sensor is visible at once and no paging happens;
     // the 3-second auto-rotate only kicks in when the panel truly overflows.
-    const int availRows = (LINES - 8) - (y + 1);
-    const int contentRows = (std::max)(1, (std::min)(availRows, 8));
+    // The bound is the real last row of the dashboard, not a fixed offset:
+    // the right column above this panel varies in height, so a fixed base let
+    // the grid run past the panel's slot and paint over the rows below.
+    const int maxContentRows = (std::max)(1, (LINES - 5) - y - 1);
+    int contentRows = (std::max)(1, (std::min)(maxContentRows, 8));
 
     // All sensors are pre-filtered upstream; display everything
     std::vector<std::pair<std::string, double>> displayTemps;
@@ -885,6 +910,13 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     int perPage = contentRows * 2;
     int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
     bool needPaging = totalPages > 1;
+    if (needPaging) {
+        // The page indicator owns a row of its own: take it from the grid so
+        // the panel keeps the height it reported to the layout.
+        contentRows = (std::max)(1, contentRows - 1);
+        perPage = contentRows * 2;
+        totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
+    }
 
     static int currentPage = 0;
     static auto lastPageFlip = std::chrono::steady_clock::now();
@@ -953,7 +985,7 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     const bool hasBattery = data.batteryPercent >= 0;
     const bool hasRapl = data.cpuPower > 0.0;
 
-    DrawPanelTitle(win, y, x0, maxW, "Power");
+    DrawPanelTitle(win, y, x0, maxW, "Power", IsPanelFocused(PanelId::Power));
     int lines = 1;
 
     if (data.thermalState > 0) {
@@ -1030,7 +1062,7 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     const bool powerUnavailable = !data.powerAvailable;
     if (!powerUnavailable && !hasPower && !hasBattery && data.thermalState == 0) return 0;
 
-    DrawPanelTitle(win, y, x0, maxW, "Power");
+    DrawPanelTitle(win, y, x0, maxW, "Power", IsPanelFocused(PanelId::Power));
     int lines = 1;
 
     // Thermal state — value carries the severity pair.
@@ -1150,7 +1182,7 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
                      data.motionHb.valid || data.deviceMotion.valid;
     if (!hasSensor) return 0;
 
-    DrawPanelTitle(win, y, x0, maxW, "Sensors");
+    DrawPanelTitle(win, y, x0, maxW, "Sensors", IsPanelFocused(PanelId::Accel));
     int lines = 1;
 
     // ALS (ambient light sensor) — lux + raw RGBC channels
@@ -1206,7 +1238,7 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
 int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 20 || data.perCoreCount == 0) return 0;
 
-    DrawPanelTitle(win, y, x0, maxW, "Per-Core Sensors");
+    DrawPanelTitle(win, y, x0, maxW, "Per-Core Sensors", IsPanelFocused(PanelId::Core));
     int lines = 1;
 
     int count = std::min((int)data.perCoreCount, 16);
@@ -1252,7 +1284,7 @@ int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, i
     int graphW = std::min(maxW - 14, data.dlHistoryLen);
     if (graphW < 4) return 0;
 
-    DrawPanelTitle(win, y, x0, maxW, "Traffic");
+    DrawPanelTitle(win, y, x0, maxW, "Traffic", IsPanelFocused(PanelId::Traffic));
     int lines = 1;
 
     // Find max for scaling
@@ -1328,7 +1360,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 
     // Focused strip (bold) while a process selection exists — the panel is
     // then the active surface; reverse keeps it theme- and NO_COLOR-proof.
-    DrawPanelTitle(win, y, x0, maxW, "Top Processes", selPid_ >= 0);
+    DrawPanelTitle(win, y, x0, maxW, "Top Processes", IsPanelFocused(PanelId::Process));
     int lines = 1;
 
     // Cache the list geometry for the mouse shim (MapMouseEvent). The header
@@ -1340,8 +1372,9 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     // Optional context columns after the CPU% cell: state, threads, CPU time.
     // They are added while the name still keeps kNameMin columns, and dropped
     // right-to-left (CPU time → threads → state), so a narrow terminal loses
-    // the least useful column and the name stays readable. 21 = pid(7) +
-    // mem(5) + cpu(7) + the two columns of padding around the row.
+    // the least useful column and the name stays readable. 22 = the fixed
+    // pid/mem cells + padding around the row + the one-column gap between
+    // the CPU% cell and the context columns.
     const int kNameMin = 10;
 #ifdef TCMT_WINDOWS
     // Windows has no reliable user-mode process state: deriving it from
@@ -1349,13 +1382,13 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
     // give its width to the process name; macOS keeps the real state column.
     const bool showState = false;
 #else
-    const bool showState = (maxW - 21 - 7 >= kNameMin);
+    const bool showState = (maxW - 22 - 7 >= kNameMin);
 #endif
-    const bool showThr   = (maxW - 21 - (showState ? 7 : 0) - 5 >= kNameMin);
-    const bool showCpuT  = (maxW - 21 - (showState ? 7 : 0) - (showThr ? 5 : 0) - 9 >= kNameMin);
+    const bool showThr   = (maxW - 22 - (showState ? 7 : 0) - 5 >= kNameMin);
+    const bool showCpuT  = (maxW - 22 - (showState ? 7 : 0) - (showThr ? 5 : 0) - 9 >= kNameMin);
     const int optW = (showState ? 7 : 0) + (showThr ? 5 : 0) + (showCpuT ? 9 : 0);
 
-    int nameW = maxW - 21 - optW;
+    int nameW = maxW - 22 - optW;
     if (nameW < 6) nameW = 6;
     const int cpuCol = x0 + 2 + nameW + 13;
 
@@ -1369,13 +1402,13 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         std::string tail;
         if (showState) tail += PadCell("State", 7);
         if (showThr)   { tail += " "; tail += PadCell("Thr", 4); }
-        if (showCpuT)  { tail += " "; tail += PadCell("Time", 8); }
+        if (showCpuT)  { tail += " "; tail += PadCell("CPU Time", 8); }
 
         wattron(win, A_DIM);
         mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
         mvwprintw(win, y + lines, cpuCol, "%5s%%", "CPU");
         if (!tail.empty())
-            mvwprintw(win, y + lines, cpuCol + 6, "%s", tail.c_str());
+            mvwprintw(win, y + lines, cpuCol + 7, "%s", tail.c_str());
         wattroff(win, A_DIM);
         lines++;
     }
@@ -1429,7 +1462,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
             if (showThr)   { tail += " "; tail += PadCell(p.threads >= 0 ? std::to_string(p.threads) : "N/A", 4); }
             if (showCpuT)  { tail += " "; tail += PadCell(p.cpuTimeMs > 0 ? CpuTimeShort(p.cpuTimeMs) : "N/A", 8); }
             if (!selected) wattron(win, A_DIM);
-            mvwprintw(win, y + lines, cpuCol + 6, "%s", tail.c_str());
+            mvwprintw(win, y + lines, cpuCol + 7, "%s", tail.c_str());
             if (!selected) wattroff(win, A_DIM);
         }
 
@@ -1788,7 +1821,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     std::vector<std::pair<std::string, std::string>> common, dash, logpage;
     common.push_back({"S", Tr("help.server_push")});
     if (caps_.inlineLogPage)
-        common.push_back({"L / Tab", Tr("help.switch_log")});
+        common.push_back({"L", Tr("help.switch_log")});
     if (updateRequestHandler_)
         common.push_back({"U", Tr("help.check_update")});
     if (locationRequestHandler_)
@@ -1797,6 +1830,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     common.push_back({"?", Tr("help.close")});
     common.push_back({"q", Tr("help.quit")});
 
+    dash.push_back({"Tab / Shift+Tab", Tr("help.panel_focus")});
     dash.push_back({upArrow_ + " / " + downArrow_, Tr("help.select_row")});
     dash.push_back({"c", Tr("help.conn_list")});
 
@@ -1806,7 +1840,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
         logpage.push_back({"Home", Tr("help.oldest")});
         logpage.push_back({"End", Tr("help.newest")});
         logpage.push_back({"f", Tr("help.follow")});
-        logpage.push_back({"Esc / L / Tab", Tr("help.back_dash")});
+        logpage.push_back({"Esc / L", Tr("help.back_dash")});
     }
 
     group(Tr("help.group.common"), common);
@@ -1920,13 +1954,36 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
               utf8_truncate(Tr("conn.close"), W - 6).c_str());
 }
 
+// Focus order is draw order: the left column top-down, then the right
+// column. Only panels that actually rendered are registered, so Tab skips
+// the ones a short terminal or missing hardware dropped this frame.
+void TuiApp::RegisterPanel(PanelId id, int y, int x, int w, int h) {
+    if (h <= 0 || w <= 0) return;
+    panelHits_.push_back({id, y, x, w, h});
+}
+
+void TuiApp::CyclePanelFocus(int dir) {
+    if (panelHits_.empty()) return;
+    const int n = static_cast<int>(panelHits_.size());
+    int cur = -1;
+    for (int i = 0; i < n; ++i) {
+        if (panelHits_[i].id == focusedPanel_) { cur = i; break; }
+    }
+    if (cur < 0) {
+        // Focus sits on a panel that is not on screen: enter at the near end.
+        focusedPanel_ = (dir >= 0) ? panelHits_.front().id : panelHits_.back().id;
+        return;
+    }
+    focusedPanel_ = panelHits_[(cur + dir + n) % n].id;
+}
+
 // Minimal mouse (B direction): translate one mouse event into the keyboard
 // action a user would have typed. Every existing handler stays the source
 // of truth — mouse is only an input shim:
-//   click a process row       -> select it (dashboard only)
+//   click a panel             -> focus it (dashboard only)
+//   click a process row       -> focus the list and select that row
 //   click the Connections row -> 'c' (client list)
-//   wheel up / down           -> KEY_UP / KEY_DOWN, which the keyboard
-//                                 dispatch routes by the page on screen
+//   wheel                     -> ignored (see below)
 // Clicking is gated on the dashboard being the visible surface: on any page the
 // list geometry below is left over from the last dashboard frame, and acting on
 // it moved the dashboard selection from behind the page the user was reading.
@@ -1939,6 +1996,16 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
     const bool dashboardActive = !logPage_ && !settingsPage_ && !helpPage_ && !connListPage_;
     if (dashboardActive &&
         (mev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_DOUBLE_CLICKED))) {
+        // Any click inside a panel drawn last frame focuses it. The list
+        // check below runs afterwards: it also moves the row selection, and
+        // its rectangle lies inside the registered process panel.
+        for (const auto& p : panelHits_) {
+            if (mev.y >= p.y && mev.y < p.y + p.h &&
+                mev.x >= p.x && mev.x < p.x + p.w) {
+                focusedPanel_ = p.id;
+                break;
+            }
+        }
         // Click inside the Top Processes list region (geometry cached by
         // DrawProcessPanel every frame).
         if (procListY_ >= 0 && mev.y > procListY_ &&
@@ -1961,10 +2028,10 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
         }
         return ERR;
     }
-#ifdef BUTTON4_PRESSED
-    if (mev.bstate & BUTTON4_PRESSED) return KEY_UP;     // wheel up
-    if (mev.bstate & BUTTON5_PRESSED) return KEY_DOWN;   // wheel down
-#endif
+    // Wheel is deliberately unmapped: forwarding it as KEY_UP/KEY_DOWN made
+    // the process selection chase a backlog of queued events, so the list
+    // visibly lagged behind the gesture. Keyboard arrows are the only way to
+    // move the selection.
 #else
     (void)rows;
     (void)cols;
@@ -2124,10 +2191,14 @@ void TuiApp::Run() {
             updateRequestHandler_();
         }
         // The in-TUI log page is a capability: on Windows the dashboard
-        // pairs with the standalone Win32 log window, so L/Tab stay inert.
-        if (caps_.inlineLogPage && (ch == 'l' || ch == 'L' || ch == '\t')) {
+        // pairs with the standalone Win32 log window, so L stays inert.
+        // Tab used to toggle the log page too; on the dashboard it now
+        // cycles panel focus, so it only acts as "back" while the page is
+        // already open.
+        if (caps_.inlineLogPage && (ch == 'l' || ch == 'L' || (ch == '\t' && logPage_))) {
             logPage_ = !logPage_;
             clear();
+            ch = ERR;   // consume: Tab must not also advance panel focus
         }
         if (ch == 27 && caps_.inlineLogPage && logPage_) {  // Esc = back to dashboard (not quit)
             logPage_ = false;
@@ -2149,7 +2220,7 @@ void TuiApp::Run() {
             continue;
         }
 
-        // Log page — in-process full-screen log view (Tab / L to switch back).
+        // Log page — in-process full-screen log view (L to switch back).
         // logPage_ can only become true where caps_.inlineLogPage is set, so
         // this branch is naturally dormant on Windows (native log window).
         // Skip the repaint when nothing changed: no key, same buffer version
@@ -2178,11 +2249,23 @@ void TuiApp::Run() {
             data = data_;
         }
 
+        // Tab / Shift+Tab walk the panel focus ring. The ring is the set of
+        // panels drawn last frame, in draw order, so hidden panels are never
+        // a stop. Mouse clicks focus a panel the same way (MapMouseEvent).
+        if (ch == '\t') {
+            CyclePanelFocus(1);
+        }
+#ifdef KEY_BTAB
+        else if (ch == KEY_BTAB) {
+            CyclePanelFocus(-1);
+        }
+#endif
+
         // Dashboard-local keys need the current snapshot, so they are
-        // handled here: ↑/↓ move the process selection (the first focusable
-        // surface of the dashboard), Enter opens the details overlay. The
-        // top list re-sorts every refresh, so the selection tracks the pid —
-        // if the process leaves the list the highlight clears.
+        // handled here: ↑/↓ move the process selection while Top Processes
+        // is the focused panel. The top list re-sorts every refresh, so the
+        // selection tracks the pid — if the process leaves the list the
+        // highlight clears.
         int selIdx = -1;
         if (selPid_ >= 0) {
             for (size_t i = 0; i < data.topProcesses.size(); ++i) {
@@ -2190,7 +2273,7 @@ void TuiApp::Run() {
             }
             if (selIdx < 0) selPid_ = -1;   // selected process left the top list
         }
-        if (!data.topProcesses.empty()) {
+        if (focusedPanel_ == PanelId::Process && !data.topProcesses.empty()) {
             const int last = static_cast<int>(data.topProcesses.size()) - 1;
             int nextIdx = selIdx;
             if (ch == KEY_UP) {
@@ -2253,6 +2336,7 @@ void TuiApp::Run() {
         // is left between them. Hints are built from caps_ + handlers so no
         // dead keys are advertised.
         std::string hint = Tr("hint.settings");
+        hint += " "; hint += Tr("hint.panel");
         if (caps_.inlineLogPage) { hint += " "; hint += Tr("hint.log"); }
         if (updateRequestHandler_) { hint += " "; hint += Tr("hint.update"); }
         if (locationRequestHandler_) { hint += " "; hint += Tr("hint.location"); }
@@ -2312,24 +2396,34 @@ void TuiApp::Run() {
         // reaching rows-5 is safe — anything below rows-4 gets wiped and
         // repainted by the status rows.
         int maxY = rows - 4;
+        panelHits_.clear();   // rebuilt below: only panels drawn this frame are focusable
         int ly = 2;
         if (ly < maxY) {
             int cpuLines = DrawCpuPanel(stdscr, data, ly, lx, leftW);
+            RegisterPanel(PanelId::Cpu, ly, lx, leftW, cpuLines);
             ly += cpuLines + 1;
             if (ly < maxY) {
-                ly += DrawGpuPanel(stdscr, data, ly, lx, leftW) + 1;
+                int h = DrawGpuPanel(stdscr, data, ly, lx, leftW);
+                RegisterPanel(PanelId::Gpu, ly, lx, leftW, h);
+                ly += h + 1;
             }
             if (ly < maxY) {
-                ly += DrawMemoryPanel(stdscr, data, ly, lx, leftW);
+                int h = DrawMemoryPanel(stdscr, data, ly, lx, leftW);
+                RegisterPanel(PanelId::Memory, ly, lx, leftW, h);
+                ly += h;
             }
             if (ly < maxY) {
                 ly += 2;  // blank rows before processes
             }
             if (ly < maxY) {
-                ly += DrawProcessPanel(stdscr, data, ly, lx, leftW);
+                int h = DrawProcessPanel(stdscr, data, ly, lx, leftW);
+                RegisterPanel(PanelId::Process, ly, lx, leftW, h);
+                ly += h;
             }
             if (ly < maxY) {
-                ly += DrawCorePanel(stdscr, data, ly, lx, leftW);
+                int h = DrawCorePanel(stdscr, data, ly, lx, leftW);
+                RegisterPanel(PanelId::Core, ly, lx, leftW, h);
+                ly += h;
             }
         }
         if (ly > maxY) ly = maxY;
@@ -2337,15 +2431,21 @@ void TuiApp::Run() {
         // === Right panels (storage / network / thermal first) ===
         int ry = 2;
         if (ry < maxY) {
-            ry += DrawDiskPanel(stdscr, data, ry, rx, rightW);
+            int h = DrawDiskPanel(stdscr, data, ry, rx, rightW);
+            RegisterPanel(PanelId::Disk, ry, rx, rightW, h);
+            ry += h;
             if (ry < maxY) {
                 ry += DrawPhysicalDiskPanel(stdscr, data, ry, rx, rightW);
             }
             if (ry < maxY) {
-                ry += DrawNetworkPanel(stdscr, data, ry, rx, rightW);
+                h = DrawNetworkPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Network, ry, rx, rightW, h);
+                ry += h;
             }
             if (ry < maxY) {
-                ry += DrawNetGraphPanel(stdscr, data, ry, rx, rightW);
+                h = DrawNetGraphPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Traffic, ry, rx, rightW, h);
+                ry += h;
             }
             // WiFi & Bluetooth supplementary info after Network
             if (ry < maxY) {
@@ -2355,19 +2455,29 @@ void TuiApp::Run() {
             // terminal it is Displays/Accel/TPM that silently drop, not the
             // thermal state.
             if (ry < maxY) {
-                ry += DrawTempPanel(stdscr, data, ry, rx, rightW);
+                h = DrawTempPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Temp, ry, rx, rightW, h);
+                ry += h;
             }
             if (ry < maxY) {
-                ry += DrawPowerPanel(stdscr, data, ry, rx, rightW);
+                h = DrawPowerPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Power, ry, rx, rightW, h);
+                ry += h;
             }
             if (ry < maxY) {
-                ry += DrawDisplayPanel(stdscr, data, ry, rx, rightW);
+                h = DrawDisplayPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Display, ry, rx, rightW, h);
+                ry += h;
             }
             if (ry < maxY) {
-                ry += DrawAccelPanel(stdscr, data, ry, rx, rightW);
+                h = DrawAccelPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Accel, ry, rx, rightW, h);
+                ry += h;
             }
             if (ry < maxY) {
-                ry += DrawTpmPanel(stdscr, data, ry, rx, rightW);
+                h = DrawTpmPanel(stdscr, data, ry, rx, rightW);
+                RegisterPanel(PanelId::Tpm, ry, rx, rightW, h);
+                ry += h;
             }
         }
         if (ry > maxY) ry = maxY;
