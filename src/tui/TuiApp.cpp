@@ -526,34 +526,67 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     return lines;
 }
 
+const TuiData::GpuEntry* TuiApp::CurrentGpu(const TuiData& data) const {
+    if (data.gpus.empty()) return nullptr;
+    return &data.gpus[GpuIndexFor(data)];
+}
+
+int TuiApp::GpuIndexFor(const TuiData& data) const {
+    if (data.gpus.empty()) return 0;
+    int idx = gpuIndex_;
+    if (idx < 0) idx = 0;
+    if (idx >= static_cast<int>(data.gpus.size())) idx = static_cast<int>(data.gpus.size()) - 1;
+    return idx;
+}
+
 int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
     int lines = 0;
 
-    DrawPanelTitle(win, y + lines, x0, maxW, "GPU", IsPanelFocused(PanelId::Gpu));
-    lines++;
-
-#ifndef TCMT_MACOS
-    auto name = TrimRight(data.gpuName, maxW - 4);
-    mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, name.c_str());
-    lines++;
-#endif
-
-    {
-        char val[32];
-        snprintf(val, sizeof(val), "%.1f%%", data.gpuUsage);
-        DrawUsageBarRow(win, y + lines, x0, maxW, "Use:", data.gpuUsage, val);
+    const TuiData::GpuEntry* g = CurrentGpu(data);
+    const bool multi = data.gpus.size() > 1;
+    char title[32];
+    if (multi) {
+        snprintf(title, sizeof(title), "GPU %d/%d",
+                 GpuIndexFor(data) + 1, static_cast<int>(data.gpus.size()));
+    } else {
+        snprintf(title, sizeof(title), "GPU");
     }
+    DrawPanelTitle(win, y + lines, x0, maxW, title, IsPanelFocused(PanelId::Gpu));
     lines++;
 
-#ifndef TCMT_MACOS
-    if (data.gpuMemoryPercent > 1 && data.gpuMemory > 0) {
-        uint64_t used = (uint64_t)(data.gpuMemory * data.gpuMemoryPercent / 100.0);
-        DrawLabeledValue(win, y + lines, x0, maxW, "VRAM:",
-                         FormatSize(used) + " / " + FormatSize(data.gpuMemory));
+#ifdef TCMT_MACOS
+    // A single Apple GPU needs no name line: the title already says GPU.
+    const bool showName = multi;
+#else
+    const bool showName = true;
+#endif
+    const std::string name = g ? g->name : data.gpuName;
+    if (showName && !name.empty()) {
+        auto n = TrimRight(name, maxW - 4);
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 2, n.c_str());
         lines++;
     }
-#endif
+
+    const double usage = g ? g->usage : data.gpuUsage;
+    {
+        char val[32];
+        snprintf(val, sizeof(val), "%.1f%%", usage);
+        DrawUsageBarRow(win, y + lines, x0, maxW, "Use:", usage, val);
+    }
+    lines++;
+
+    // VRAM only for dedicated memory: under unified memory the figure is a
+    // slice of system RAM, so the row is omitted (see the detail overlay).
+    const bool unified = g ? g->unified : data.gpuUnified;
+    const uint64_t mem = g ? g->memory : data.gpuMemory;
+    const double memPct = g ? g->memoryPercent : data.gpuMemoryPercent;
+    if (!unified && mem > 0 && memPct > 1) {
+        uint64_t used = (uint64_t)(mem * memPct / 100.0);
+        DrawLabeledValue(win, y + lines, x0, maxW, "VRAM:",
+                         FormatSize(used) + " / " + FormatSize(mem));
+        lines++;
+    }
 
     if (data.gpuFreq > 0) {
         std::string freqStr;
@@ -2129,6 +2162,21 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
 // figure would be a slice of system RAM, so it stays off the screen instead
 // of being labelled "VRAM".
 void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    // Left / Right walk the GPU list. The index lives on the TUI side because
+    // TuiData is rebuilt by the producer every frame.
+    if (ch == KEY_LEFT || ch == KEY_RIGHT) {
+        const int n = static_cast<int>(data.gpus.size());
+        if (n > 1) {
+            gpuIndex_ = (GpuIndexFor(data) + ((ch == KEY_RIGHT) ? 1 : -1) + n) % n;
+        }
+    }
+
     const bool isEnter = (ch == '\n' || ch == '\r'
 #ifdef KEY_ENTER
         || ch == KEY_ENTER
@@ -2138,12 +2186,6 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         gpuPage_ = false;
         clear();
         return;
-    }
-
-    TuiData data;
-    {
-        std::lock_guard<std::mutex> lock(dataMutex_);
-        data = data_;
     }
 
     const int W = (std::min)(66, cols - 6);
@@ -2168,16 +2210,27 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     };
     char buf[128];
 
-    if (!data.gpuName.empty()) emit("Name: " + data.gpuName);
-    if (data.gpuCoreCount > 0) {
-        snprintf(buf, sizeof(buf), "GPU cores: %d", data.gpuCoreCount);
+    const TuiData::GpuEntry* g = CurrentGpu(data);
+    const bool multi = data.gpus.size() > 1;
+    if (multi) {
+        snprintf(buf, sizeof(buf), "GPU %d/%d", GpuIndexFor(data) + 1,
+                 static_cast<int>(data.gpus.size()));
         emit(buf);
     }
 
+    const std::string name = g ? g->name : data.gpuName;
+    if (!name.empty()) emit("Name: " + name);
+    const int coreCount = g ? g->coreCount : data.gpuCoreCount;
+    if (coreCount > 0) {
+        snprintf(buf, sizeof(buf), "GPU cores: %d", coreCount);
+        emit(buf);
+    }
+
+    const double usage = g ? g->usage : data.gpuUsage;
     {
         char val[32];
-        snprintf(val, sizeof(val), "%.1f%%", data.gpuUsage);
-        DrawUsageBarRow(stdscr, y, x0 + 1, W - 2, "Use:", data.gpuUsage, val);
+        snprintf(val, sizeof(val), "%.1f%%", usage);
+        DrawUsageBarRow(stdscr, y, x0 + 1, W - 2, "Use:", usage, val);
         y++;
     }
 
@@ -2197,14 +2250,20 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     }
     // Discrete GPUs only. Under unified memory this figure is system RAM and
     // reads as VRAM, so it is not shown at all.
-    if (!data.gpuUnified && data.gpuMemory > 0 && data.gpuMemoryPercent > 1) {
-        const uint64_t used =
-            static_cast<uint64_t>(data.gpuMemory * data.gpuMemoryPercent / 100.0);
-        emit("VRAM: " + FormatSize(used) + " / " + FormatSize(data.gpuMemory));
+    const bool unified = g ? g->unified : data.gpuUnified;
+    const uint64_t mem = g ? g->memory : data.gpuMemory;
+    const double memPct = g ? g->memoryPercent : data.gpuMemoryPercent;
+    if (!unified && mem > 0 && memPct > 1) {
+        const uint64_t used = static_cast<uint64_t>(mem * memPct / 100.0);
+        emit("VRAM: " + FormatSize(used) + " / " + FormatSize(mem));
     }
 
-    mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
-              utf8_truncate(Tr("details.close"), W - 6).c_str());
+    {
+        std::string hint = Tr("details.close");
+        if (multi) { hint += "   "; hint += Tr("details.gpu_switch"); }
+        mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
+                  utf8_truncate(hint, W - 6).c_str());
+    }
 }
 
 // Focus order is draw order: the left column top-down, then the right

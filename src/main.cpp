@@ -1890,6 +1890,19 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     tuiData.gpuMemory = sysInfo.gpuMemory;
                     tuiData.gpuUsage = sysInfo.gpuUsage;
                     tuiData.gpuMemoryPercent = sysInfo.gpuMemoryPercent;
+                    // Full list for the panel/details; the scalars above keep
+                    // describing the primary GPU for IPC and JSON.
+                    tuiData.gpus.clear();
+                    for (const auto& g : sysInfo.gpus) {
+                        tcmt::TuiData::GpuEntry e;
+                        e.name = g.name;
+                        e.usage = g.usage;
+                        e.memory = g.memory;
+                        e.memoryPercent = g.memoryPercent;
+                        e.unified = g.isUnified;
+                        e.isVirtual = g.isVirtual;
+                        tuiData.gpus.push_back(e);
+                    }
                 }
                 tuiData.gpuTemp = sysInfo.gpuTemperature;
                 tuiData.cpuPower = sysInfo.cpuPower;

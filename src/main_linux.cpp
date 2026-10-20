@@ -556,6 +556,19 @@ int main(int argc, char* argv[]) {
             if (gpuInfo) {
                 gpuInfo->RefreshUsage();
                 const auto& gpus = gpuInfo->GetGpuData();
+                // Full list for the panel/details; the scalars stay on the
+                // first GPU because IPC and JSON report that one.
+                data.gpus.clear();
+                for (const auto& gpu : gpus) {
+                    tcmt::TuiData::GpuEntry e;
+                    e.name = WinUtils::WstringToUtf8(gpu.name);
+                    e.usage = gpu.usage;
+                    e.memory = gpu.dedicatedMemory;
+                    e.unified = gpu.isUnified;
+                    e.isVirtual = gpu.isVirtual;
+                    e.coreCount = gpu.coreCount;
+                    data.gpus.push_back(e);
+                }
                 for (const auto& gpu : gpus) {
                     if (data.gpuName.empty()) {
                         data.gpuName = WinUtils::WstringToUtf8(gpu.name);

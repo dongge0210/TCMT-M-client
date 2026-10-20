@@ -133,6 +133,7 @@ inline const I18nEntry kI18nTable[] = {
     // ── CPU details overlay ──────────────────────────────────────────
     {"cpu.no_percore",       "Per-core data is not collected on this platform", "此平台未采集逐核数据"},
     {"details.close",        "Esc / Space close",                             "Esc / 空格关闭"},
+    {"details.gpu_switch",   "Left/Right switch GPU",                         "左右键切换 GPU"},
 
     // ── global / system ──────────────────────────────────────────────
     {"sys.toosmall",         "Terminal too small. Current: %dx%d",           "终端过小。当前：%dx%d"},

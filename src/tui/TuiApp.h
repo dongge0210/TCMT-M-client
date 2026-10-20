@@ -92,6 +92,19 @@ struct TuiData {
     // gpuMemory 报的是统一内存而不是独立显存（Apple Silicon）
     bool gpuUnified = false;
     int gpuCoreCount = 0;          // Apple Silicon: gpu-core-count (0 = unknown)
+    // Every detected GPU. Empty means the scalar gpu* fields above are the
+    // only source (single-GPU platforms). The scalars always describe the
+    // first GPU, because the IPC/JSON paths report that one.
+    struct GpuEntry {
+        std::string name;
+        double usage = 0.0;
+        uint64_t memory = 0;         // dedicated VRAM (or unified total when unified)
+        double memoryPercent = 0.0;
+        bool unified = false;
+        bool isVirtual = false;
+        int coreCount = 0;
+    };
+    std::vector<GpuEntry> gpus;
     double gpuUsage = 0.0;
     double gpuMemoryPercent = 0.0;
     double gpuTemp = 0.0;
@@ -442,6 +455,11 @@ private:
     void CyclePanelFocus(int dir);
     bool IsPanelFocused(PanelId id) const { return focusedPanel_ == id; }
 
+    // GPU selection for the panel and the detail overlay. The index lives on
+    // the TUI side because TuiData is rebuilt by the producer every frame.
+    int GpuIndexFor(const TuiData& data) const;              // clamped, 0 when empty
+    const TuiData::GpuEntry* CurrentGpu(const TuiData& data) const;  // null when empty
+
     void SafeEndwin();
     void InitColors();
     void DrawHeader(WINDOW* win, const TuiData& data);
@@ -554,6 +572,7 @@ private:
     bool cpuPage_ = false;                 // CPU detail overlay (Space on, or double-click, the CPU panel)
     bool gpuPage_ = false;                 // GPU detail overlay (same gestures on the GPU panel)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
+    int gpuIndex_ = 0;                     // GPU shown by the panel/details (Left/Right switches)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,
                                            // 4=sample interval, 5=language
     int urlCursor_ = 0;                    // cursor position inside URL field
