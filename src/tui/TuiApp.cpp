@@ -2440,6 +2440,155 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
               utf8_truncate(Tr("details.close"), W - 6).c_str());
 }
 
+// Battery detail overlay — Space on the Power panel (the panel that owns the
+// battery rows), or a double-click on it. Everything shown comes from
+// AppleSmartBattery / IOPS and needs no privileges. The charger block only
+// appears while an adapter is connected.
+void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
+        batteryPage_ = false;
+        clear();
+        return;
+    }
+
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    const int W = (std::min)(70, cols - 6);
+    const int H = (std::min)(rows - 4, 22);
+    const int x0 = (std::max)(1, (cols - W) / 2);
+    const int y0 = (std::max)(2, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Battery Details ");
+
+    int y = y0 + 2;
+    const int bottom = y0 + H - 3;   // last usable content row (hint below it)
+    auto emit = [&](const std::string& s) {
+        if (y >= bottom) return;
+        mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(s, W - 6).c_str());
+    };
+    char buf[160];
+
+    if (data.batteryPercent < 0) {
+        emit(Tr("battery.none"));
+    } else {
+        std::string state = data.batteryIsCharging ? "Charging"
+                          : (data.batteryAmperage < 0 ? "Discharging" : "Idle");
+        if (data.batteryFullyCharged) state = "Fully charged";
+        emit("State: " + state + (data.acOnline ? "   (AC connected)" : "   (on battery)"));
+
+        // Charge bar: unlike the usage bars, a low charge is the bad end, so
+        // the severity colors come from kBattWarn / kBattCrit.
+        {
+            if (y < bottom) {
+                mvwprintw(stdscr, y, x0 + 3, "%s", "Charge:");
+                const int barX = x0 + 12;
+                const int barW = (std::max)(8, (std::min)(30, W - 26));
+                int pct = data.batteryPercent;
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                const int nFill = pct * barW / 100;
+                const int col = LowIsWorsePair(pct, kBattWarn, kBattCrit);
+                int bx = barX;
+                if (col >= 0) wattron(stdscr, COLOR_PAIR(col));
+                for (int k = 0; k < nFill; ++k) mvwaddstr(stdscr, y, bx++, barFill_.c_str());
+                if (col >= 0) wattroff(stdscr, COLOR_PAIR(col));
+                wattron(stdscr, A_DIM);
+                for (; bx < barX + barW; ++bx) mvwaddstr(stdscr, y, bx, barTrack_.c_str());
+                wattroff(stdscr, A_DIM);
+                snprintf(buf, sizeof(buf), "  %d%%", pct);
+                mvwprintw(stdscr, y, barX + barW, "%s", buf);
+                y++;
+            }
+        }
+
+        if (data.batteryAmperage != 0 && data.batteryVoltage > 0) {
+            const double watts = std::abs(data.batteryAmperage) *
+                                 static_cast<double>(data.batteryVoltage) / 1e6;
+            snprintf(buf, sizeof(buf), "Power: %s %.2f W   (%.2f V / %.2f A)",
+                     data.batteryAmperage > 0 ? "Chg" : "Dchg", watts,
+                     data.batteryVoltage / 1000.0,
+                     std::abs(data.batteryAmperage) / 1000.0);
+            emit(buf);
+        }
+
+        if (data.batteryTimeRemainingMin > 0) {
+            snprintf(buf, sizeof(buf), "Time: %d:%02d %s",
+                     data.batteryTimeRemainingMin / 60,
+                     data.batteryTimeRemainingMin % 60,
+                     data.batteryIsCharging ? "to full" : "remaining");
+            emit(buf);
+        }
+
+        {
+            const int hp = static_cast<int>(data.batteryHealthPercent + 0.5);
+            snprintf(buf, sizeof(buf), "Health: %d%%   Cycles: %d",
+                     hp, data.batteryCycleCount);
+            const int hc = LowIsWorsePair(hp, kHealthWarn, kHealthCrit);
+            if (hc >= 0) wattron(stdscr, COLOR_PAIR(hc));
+            emit(buf);
+            if (hc >= 0) wattroff(stdscr, COLOR_PAIR(hc));
+        }
+
+        if (data.batteryDesignCapacity > 0 || data.batteryMaxCapacity > 0) {
+            snprintf(buf, sizeof(buf), "Capacity: %d / %d mAh",
+                     data.batteryMaxCapacity, data.batteryDesignCapacity);
+            emit(buf);
+        }
+        if (data.batteryTemp > 0) {
+            snprintf(buf, sizeof(buf), "Temp: %.1f C", data.batteryTemp);
+            emit(buf);
+        }
+
+        if (!data.chargerName.empty() || data.chargerWatts > 0) {
+            if (y < bottom) y++;
+            if (y < bottom) {
+                wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+                mvwprintw(stdscr, y++, x0 + 3, "%s", "Charger");
+                wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+            }
+            if (!data.chargerName.empty()) {
+                emit("Name: " + data.chargerName +
+                     (data.chargerWireless ? "   (wireless)" : ""));
+            }
+            if (data.chargerWatts > 0 || data.chargerVoltageMv > 0 ||
+                data.chargerCurrentMa > 0) {
+                snprintf(buf, sizeof(buf), "Output: %.0f W   %.1f V / %.2f A",
+                         data.chargerWatts, data.chargerVoltageMv / 1000.0,
+                         data.chargerCurrentMa / 1000.0);
+                emit(buf);
+            }
+            std::string make;
+            if (!data.chargerManufacturer.empty()) make = data.chargerManufacturer;
+            if (!data.chargerModel.empty()) {
+                if (!make.empty()) make += "   ";
+                make += "Model " + data.chargerModel;
+            }
+            if (!make.empty()) emit("Adapter: " + make);
+            if (!data.chargerSerial.empty()) emit("Serial: " + data.chargerSerial);
+        }
+    }
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
+              utf8_truncate(Tr("details.close"), W - 6).c_str());
+}
+
 // Focus order is draw order: the left column top-down, then the right
 // column. Only panels that actually rendered are registered, so Tab skips
 // the ones a short terminal or missing hardware dropped this frame.
@@ -2496,7 +2645,7 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
         // keyboard handler the same synthetic key the keyboard would send.
         if ((mev.bstate & BUTTON1_DOUBLE_CLICKED) &&
             (focusedPanel_ == PanelId::Cpu || focusedPanel_ == PanelId::Gpu ||
-             focusedPanel_ == PanelId::Disk)) {
+             focusedPanel_ == PanelId::Disk || focusedPanel_ == PanelId::Power)) {
             return ' ';
         }
         // Click inside the Top Processes list region (geometry cached by
@@ -2621,7 +2770,7 @@ void TuiApp::Run() {
         // cached list geometry is stale: drop it, and no mouse event can
         // address a rectangle that is not on screen.
         if (settingsPage_ || helpPage_ || connListPage_ || logPage_ || cpuPage_ ||
-            gpuPage_ || diskPage_) procListY_ = -1;
+            gpuPage_ || diskPage_ || batteryPage_) procListY_ = -1;
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
@@ -2669,6 +2818,13 @@ void TuiApp::Run() {
 
         if (diskPage_) {
             RenderDiskDetails(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
+        if (batteryPage_) {
+            RenderBatteryDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -2789,6 +2945,9 @@ void TuiApp::Run() {
                 clear();
             } else if (focusedPanel_ == PanelId::Disk) {
                 diskPage_ = true;
+                clear();
+            } else if (focusedPanel_ == PanelId::Power) {
+                batteryPage_ = true;
                 clear();
             }
         }

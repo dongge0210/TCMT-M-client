@@ -186,10 +186,15 @@ struct TuiData {
     double chargerWatts = 0.0;       // connected charger rated wattage
     // AdapterDetails of the connected charger (empty/0 when unplugged).
     std::string chargerName;
+    std::string chargerManufacturer;
+    std::string chargerModel;
+    std::string chargerSerial;
     int chargerVoltageMv = 0;        // negotiated voltage
     int chargerCurrentMa = 0;        // negotiated current
     bool chargerWireless = false;
     bool batteryIsCharging = false;
+    int batteryTimeRemainingMin = 0;  // 0 = still estimating / unknown
+    bool batteryFullyCharged = false;
 
     double cpuPower = 0.0;
     double gpuPower = 0.0;
@@ -438,6 +443,7 @@ private:
     void RenderCpuDetails(int rows, int cols, int ch);
     void RenderGpuDetails(int rows, int cols, int ch);
     void RenderDiskDetails(int rows, int cols, int ch);
+    void RenderBatteryDetails(int rows, int cols, int ch);
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
     int MapMouseEvent(int rows, int cols);
@@ -578,6 +584,7 @@ private:
     bool cpuPage_ = false;                 // CPU detail overlay (Space on, or double-click, the CPU panel)
     bool gpuPage_ = false;                 // GPU detail overlay (same gestures on the GPU panel)
     bool diskPage_ = false;                // disk detail overlay (same gestures on the Disks panel)
+    bool batteryPage_ = false;             // battery/charger overlay (same gestures on the Power panel)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int gpuIndex_ = 0;                     // GPU shown by the panel/details (Left/Right switches)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,

@@ -1351,10 +1351,15 @@ int main(int argc, char* argv[]) {
                 data.batteryAmperage = bd.amperage;
                 data.batteryVoltage = bd.voltage;
                 data.batteryIsCharging = bd.isCharging;
+                data.batteryTimeRemainingMin = bd.timeRemainingMin;
+                data.batteryFullyCharged = bd.fullyCharged;
                 // Charger details; the panel had a Charger row from the start
                 // but this assignment was missing, so it never appeared.
                 data.chargerWatts = bd.chargerWatts;
                 data.chargerName = bd.chargerName;
+                data.chargerManufacturer = bd.chargerManufacturer;
+                data.chargerModel = bd.chargerModel;
+                data.chargerSerial = bd.chargerSerial;
                 data.chargerVoltageMv = bd.chargerVoltageMv;
                 data.chargerCurrentMa = bd.chargerCurrentMa;
                 data.chargerWireless = bd.chargerWireless;

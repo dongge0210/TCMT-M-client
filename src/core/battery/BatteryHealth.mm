@@ -94,6 +94,11 @@ void BatteryHealth::Detect() {
             // Charging / AC status
             data_.isCharging = [dict[@"IsCharging"] boolValue];
             data_.externalConnected = [dict[@"ExternalConnected"] boolValue];
+            data_.fullyCharged = [dict[@"FullyCharged"] boolValue];
+            // TimeRemaining is minutes; the service reports 65535 (or a huge
+            // value) while it is still estimating.
+            const int remaining = readInt(@"TimeRemaining");
+            data_.timeRemainingMin = (remaining > 0 && remaining < 24 * 60) ? remaining : 0;
             data_.present = true;
         }
         IOObjectRelease(service);
