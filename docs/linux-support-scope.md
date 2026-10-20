@@ -96,7 +96,7 @@
 | WiFi SSID | NetworkManager D-Bus | 受 polkit/会话影响 |
 | 蓝牙 | BlueZ D-Bus | 受 D-Bus 策略/polkit 影响 |
 
-更细的路径和内核出处见 `docs/API.txt` 的 Linux 节（本分支可补全）。
+更细的调用路径见 [API.md](./API.md) 的 Linux 部分。
 
 ## 约束
 
