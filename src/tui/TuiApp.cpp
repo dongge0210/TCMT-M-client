@@ -2275,6 +2275,7 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
 
     const std::string name = g ? g->name : data.gpuName;
     if (!name.empty()) emit("Name: " + name);
+    if (g && !g->driver.empty()) emit("Driver: " + g->driver);
     const int coreCount = g ? g->coreCount : data.gpuCoreCount;
     if (coreCount > 0) {
         snprintf(buf, sizeof(buf), "GPU cores: %d", coreCount);

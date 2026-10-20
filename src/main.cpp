@@ -669,6 +669,7 @@ static GpuSpec MakeGpuSpec(const GpuInfo::GpuData& gpu) {
     GpuSpec spec;
     spec.name = WinUtils::WstringToString(gpu.name);
     spec.brand = GetGpuBrand(gpu.name);
+    spec.driver = gpu.driver;
     spec.memory = gpu.dedicatedMemory;
     spec.memoryPercent = 0.0;   // 只有主卡能拿到 NVML 的 VRAM 占用，写入端再补
     spec.coreClock = gpu.coreClock;
@@ -1896,6 +1897,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     for (const auto& g : sysInfo.gpus) {
                         tcmt::TuiData::GpuEntry e;
                         e.name = g.name;
+                        e.driver = g.driver;
                         e.usage = g.usage;
                         e.memory = g.memory;
                         e.memoryPercent = g.memoryPercent;

@@ -121,6 +121,8 @@ using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
 // 功耗：毫瓦。这是 NVIDIA 卡上唯一不需要自己乘电压电流的功耗来源。
 using NvmlDeviceGetPowerUsageFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetEnforcedPowerLimitFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+// Driver release string, e.g. "560.94" — the number NVIDIA's own UI shows.
+using NvmlSystemGetDriverVersionFn = nvmlReturn_t (*)(char*, unsigned int);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -140,6 +142,7 @@ struct NvmlApi {
     NvmlDeviceGetCountFn getDeviceCount = nullptr;
     NvmlDeviceGetPowerUsageFn getPowerUsage = nullptr;              // mW
     NvmlDeviceGetEnforcedPowerLimitFn getEnforcedPowerLimit = nullptr;  // mW
+    NvmlSystemGetDriverVersionFn systemGetDriverVersion = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -188,6 +191,8 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
         api.getFanSpeedV2 = reinterpret_cast<NvmlDeviceGetFanSpeedV2Fn>(
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed_v2"));
+        api.systemGetDriverVersion = reinterpret_cast<NvmlSystemGetDriverVersionFn>(
+            GetProcAddress(api.module, "nvmlSystemGetDriverVersion"));
 
         // 功耗。老驱动 / 老卡可能没有这两个入口，取不到就保持 null，调用点看得到。
         api.getPowerUsage = reinterpret_cast<NvmlDeviceGetPowerUsageFn>(
@@ -328,14 +333,21 @@ void GpuInfo::DetectGpusViaWmi() {
     IWbemClassObject* pclsObj = nullptr;
     while (pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn) == S_OK) {
         GpuData data;
-        VARIANT vtName, vtPnpId, vtAdapterRAM, vtCurrentClockSpeed;
+        VARIANT vtName, vtPnpId, vtAdapterRAM, vtCurrentClockSpeed, vtDriver;
         VariantInit(&vtName); VariantInit(&vtPnpId);
         VariantInit(&vtAdapterRAM); VariantInit(&vtCurrentClockSpeed);
+        VariantInit(&vtDriver);
 
         if (SUCCEEDED(pclsObj->Get(L"Name", 0, &vtName, 0, 0)) && vtName.vt == VT_BSTR)
             data.name = vtName.bstrVal;
         if (SUCCEEDED(pclsObj->Get(L"PNPDeviceID", 0, &vtPnpId, 0, 0)) && vtPnpId.vt == VT_BSTR)
             data.deviceId = vtPnpId.bstrVal;
+        // AMD/Intel fall back to this; NVIDIA overwrites it with the NVML
+        // release string below.
+        if (SUCCEEDED(pclsObj->Get(L"DriverVersion", 0, &vtDriver, 0, 0)) && vtDriver.vt == VT_BSTR) {
+            std::wstring dv(vtDriver.bstrVal, SysStringLen(vtDriver.bstrVal));
+            data.driver = std::string(dv.begin(), dv.end());
+        }
         if (SUCCEEDED(pclsObj->Get(L"AdapterRAM", 0, &vtAdapterRAM, 0, 0)) && vtAdapterRAM.vt == VT_UI4)
             data.dedicatedMemory = static_cast<uint64_t>(vtAdapterRAM.uintVal);
         if (SUCCEEDED(pclsObj->Get(L"CurrentClockSpeed", 0, &vtCurrentClockSpeed, 0, 0)) && vtCurrentClockSpeed.vt == VT_UI4)
@@ -356,6 +368,7 @@ void GpuInfo::DetectGpusViaWmi() {
 
         VariantClear(&vtName); VariantClear(&vtPnpId);
         VariantClear(&vtAdapterRAM); VariantClear(&vtCurrentClockSpeed);
+        VariantClear(&vtDriver);
         pclsObj->Release();
     }
     pEnumerator->Release();
@@ -410,6 +423,16 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
         if (NVML_SUCCESS == s.api->getCudaComputeCapability(s.device, &major, &minor)) {
             gpuList[index].computeCapabilityMajor = major;
             gpuList[index].computeCapabilityMinor = minor;
+        }
+    }
+
+    // Driver release ("560.94"): the number NVIDIA's own control panel shows,
+    // which is more useful than WMI's "31.0.15.6094" mapping-of-a-version.
+    if (s.api->systemGetDriverVersion) {
+        char driver[80] = {0};
+        if (NVML_SUCCESS == s.api->systemGetDriverVersion(driver, sizeof(driver)) &&
+            driver[0] != '\0') {
+            gpuList[index].driver = driver;
         }
     }
 }
@@ -498,8 +521,14 @@ std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
 #include <IOKit/IOKitLib.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <algorithm>
-#include <locale>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <locale>
+#include <map>
+#include <mutex>
+#include <thread>
 
 // Get IOKit property as string
 static std::string IORegistryString(io_registry_entry_t entry, const char* key) {
@@ -530,6 +559,60 @@ static uint64_t IORegistryUInt64(io_registry_entry_t entry, const char* key) {
     CFRelease(ref);
     return result;
 }
+
+// ---------------------------------------------------------------------------
+// Driver / graphics API string. macOS exposes the Metal generation only in
+// system_profiler's display profile ("Metal Support: Metal 4"), so it is
+// parsed on a background thread and cached; RefreshUsage() attaches it once
+// it lands. An Intel Mac with two GPUs gets one entry per "Chipset Model".
+// ---------------------------------------------------------------------------
+namespace {
+std::mutex g_metalMutex;
+std::map<std::string, std::string> g_metalByChipset;
+std::atomic<int> g_metalState{0};      // 0 idle, 1 running
+std::atomic<int64_t> g_metalStampMs{0};
+
+int64_t MetalNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+std::string TrimSpaces(const std::string& s) {
+    const size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return {};
+    const size_t e = s.find_last_not_of(" \t\r\n");
+    return s.substr(b, e - b + 1);
+}
+
+void RunDisplayProfiler() {
+    std::map<std::string, std::string> found;
+    FILE* fp = popen("/usr/sbin/system_profiler SPDisplaysDataType 2>/dev/null", "r");
+    if (fp) {
+        char buf[512];
+        std::string chipset;
+        while (fgets(buf, sizeof(buf), fp)) {
+            const std::string line(buf);
+            auto pos = line.find("Chipset Model:");
+            if (pos != std::string::npos) {
+                chipset = TrimSpaces(line.substr(pos + 14));
+                continue;
+            }
+            pos = line.find("Metal Support:");
+            if (pos != std::string::npos && !chipset.empty()) {
+                found[chipset] = TrimSpaces(line.substr(pos + 14));
+                chipset.clear();
+            }
+        }
+        pclose(fp);
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_metalMutex);
+        g_metalByChipset.swap(found);
+    }
+    g_metalStampMs.store(MetalNowMs());
+    g_metalState.store(0);
+}
+}  // namespace
 
 GpuInfo::GpuInfo() {
     DetectGpusViaMetal();
@@ -743,6 +826,22 @@ void GpuInfo::RefreshUsage() {
         if (perfStatsRef) CFRelease(perfStatsRef);
         gpuIdx++;
     }
+
+    // Metal generation: refresh the cached profile (~60s) and attach the
+    // value to every GPU whose chipset the profile names.
+    if (g_metalState.load() == 0 && MetalNowMs() - g_metalStampMs.load() > 60000) {
+        g_metalState.store(1);
+        std::thread(RunDisplayProfiler).detach();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_metalMutex);
+        for (auto& gpu : gpuList) {
+            if (gpu.name.empty() || !gpu.driver.empty()) continue;
+            const std::string name(gpu.name.begin(), gpu.name.end());
+            auto it = g_metalByChipset.find(name);
+            if (it != g_metalByChipset.end()) gpu.driver = it->second;
+        }
+    }
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }
@@ -759,6 +858,7 @@ const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuLis
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <fstream>
 #include <iterator>
 #include <map>
 #include <mutex>
@@ -1203,6 +1303,18 @@ GpuInfo::GpuData ToGpuData(const tcmt::linux::GpuSnapshot& source) {
                            ? static_cast<unsigned int>(source.temperatureC)
                            : 0U;
     data.usage = source.usagePercent;
+    if (source.brand == "NVIDIA") {
+        // /sys/module/nvidia/version holds the driver release ("550.54.14").
+        std::ifstream f("/sys/module/nvidia/version");
+        std::string v;
+        if (std::getline(f, v)) {
+            while (!v.empty() &&
+                   (v.back() == '\n' || v.back() == '\r' || v.back() == ' ')) {
+                v.pop_back();
+            }
+            if (!v.empty()) data.driver = v;
+        }
+    }
     return data;
 }
 

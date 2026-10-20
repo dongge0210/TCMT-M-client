@@ -227,6 +227,7 @@ struct TpmInfo {
 struct GpuSpec {
     std::string name;     // GPU name
     std::string brand;    // Brand
+    std::string driver;   // Graphics API / driver release ("Metal 4", "560.94")
     uint64_t memory = 0;      // VRAM (bytes)
     double memoryPercent = 0; // VRAM usage (0-100)
     double coreClock = 0;     // Core clock (MHz)

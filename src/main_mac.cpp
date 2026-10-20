@@ -1252,6 +1252,7 @@ int main(int argc, char* argv[]) {
                 for (const auto& gpu : gpus) {
                     tcmt::TuiData::GpuEntry e;
                     e.name.assign(gpu.name.begin(), gpu.name.end());
+                    e.driver = gpu.driver;
                     e.usage = gpu.usage;
                     e.memory = gpu.dedicatedMemory;
                     e.unified = gpu.isUnified;

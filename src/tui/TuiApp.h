@@ -97,6 +97,7 @@ struct TuiData {
     // first GPU, because the IPC/JSON paths report that one.
     struct GpuEntry {
         std::string name;
+        std::string driver;          // "Metal 4" / "560.94" (empty when unknown)
         double usage = 0.0;
         uint64_t memory = 0;         // dedicated VRAM (or unified total when unified)
         double memoryPercent = 0.0;

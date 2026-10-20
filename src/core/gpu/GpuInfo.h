@@ -52,6 +52,10 @@ public:
         int computeCapabilityMinor = 0;
         unsigned int temperature = 0;
         double usage = 0.0;  // GPU usage (0-100)
+        // Graphics API / driver string the platform exposes: "Metal 4" on
+        // macOS, the driver release on Windows/Linux NVIDIA. Empty when the
+        // platform has no readable value.
+        std::string driver;
         // Apple Silicon: core count from AGXAccelerator ("gpu-core-count").
         int coreCount = 0;
     };
