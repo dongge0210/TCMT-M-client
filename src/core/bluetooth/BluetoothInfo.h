@@ -25,15 +25,19 @@ struct BluetoothDeviceData {
     std::vector<std::pair<std::string, int>> batteries;
 };
 
-// "L27 R100 C68" — the compact form the TUI and logs use. Empty when the
-// device reports no battery (most peripherals do not).
+// "Case 68% Left 23% Right 100%" for AirPods-style devices, "87%" for the
+// single-battery ones. The labels are spelled out because "R100" read as
+// gibberish without a legend. Empty when the device reports no battery.
 inline std::string CompactBatteryText(const BluetoothDeviceData& d) {
     std::string out;
     for (const auto& [label, pct] : d.batteries) {
-        const char tag = label.empty() ? 'B' : label[0];
         if (!out.empty()) out += ' ';
-        out += tag;
+        if (!label.empty()) {
+            out += label;
+            out += ' ';
+        }
         out += std::to_string(pct);
+        out += '%';
     }
     return out;
 }

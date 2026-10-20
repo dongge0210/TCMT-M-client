@@ -713,15 +713,16 @@ static std::vector<std::string> WrapFields(const std::vector<std::string>& field
     return out;
 }
 
-// Four-cell signal indicator for a Bluetooth RSSI. The panel row is drawn as
-// one string, so the cells are monochrome; -1 (unavailable) yields nothing.
-static std::string BtSignalBars(int rssi, const std::string& fill,
-                                const std::string& track) {
-    if (rssi >= 0) return {};
-    const int level = rssi >= -50 ? 4 : rssi >= -60 ? 3 : rssi >= -70 ? 2 : 1;
-    std::string out;
-    for (int i = 0; i < 4; ++i) out += (i < level ? fill : track);
-    return out;
+// RSSI → percentage, using the mapping most Bluetooth stacks ship: quality =
+// 2 * (dBm + 100), clamped to 0..100. So -50 dBm is 100%, -70 is 60%, -100
+// is 0%. There is no standardized conversion; this one is at least readable
+// without a legend. Returns -1 when the device reports no RSSI.
+static int BtSignalPercent(int rssi) {
+    if (rssi >= 0) return -1;
+    int pct = 2 * (rssi + 100);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return pct;
 }
 
 int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
@@ -867,9 +868,10 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             if (!d.type.empty()) line += "  " + d.type;
             if (!d.battery.empty()) line += "  " + d.battery;
             if (d.rssi < 0) {
-                const std::string bars = BtSignalBars(d.rssi, barFill_, barTrack_);
-                if (!bars.empty()) line += "  " + bars;
-                line += " " + std::to_string(d.rssi) + "dBm";
+                const int pct = BtSignalPercent(d.rssi);
+                // "Signal" keeps it distinct from the battery percentages
+                // that sit right before it on the same line.
+                if (pct >= 0) line += "  Signal " + std::to_string(pct) + "%";
             }
             mvwprintw(win, y + lines, x0 + 4, "%s",
                       utf8_truncate(line, maxW - 6).c_str());
