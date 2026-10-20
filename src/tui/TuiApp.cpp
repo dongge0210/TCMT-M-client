@@ -2497,8 +2497,12 @@ void TuiApp::Run() {
             mvhline(r, 0, ' ', cols);
         }
 
-        // Row rows-4: uptime | load | processes (was System line 2).
-        if (data.uptimeSeconds > 0 || data.loadAvg1 > 0 || data.processCount > 0) {
+        // Row rows-4: uptime | load | processes | login user (was System line 2).
+        // The user is last so a narrow terminal truncates it before the
+        // machine-wide numbers; under sudo it is the only place the login
+        // account is visible without leaving the dashboard.
+        if (data.uptimeSeconds > 0 || data.loadAvg1 > 0 || data.processCount > 0 ||
+            !data.loginUser.empty()) {
             std::string sysStr;
             if (data.uptimeSeconds > 0) {
                 uint64_t days = data.uptimeSeconds / 86400;
@@ -2516,6 +2520,10 @@ void TuiApp::Run() {
             }
             if (data.processCount > 0) {
                 sysStr += "   Procs: " + std::to_string(data.processCount);
+            }
+            if (!data.loginUser.empty()) {
+                sysStr += "   User: " + data.loginUser;
+                if (data.elevatedViaSudo) sysStr += " (sudo)";
             }
             mvwprintw(stdscr, rows - 4, 2, "%s",
                       TrimRight(sysStr, cols - 4).c_str());

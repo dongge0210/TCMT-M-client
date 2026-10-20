@@ -152,6 +152,12 @@ struct TuiData {
     // OS
     std::string osVersion;
     std::string hardwareModel;
+    // Login identity (see core/Utils/UserIdentity.h): shown in the status
+    // row so a sudo shell is visible at a glance instead of being inferred
+    // from data that silently stopped working.
+    std::string loginUser;
+    bool processElevated = false;   // effective user is root / elevated
+    bool elevatedViaSudo = false;   // root, but invoked by a normal user
     int batteryPercent = -1;  // -1 = no battery
     bool acOnline = false;
 

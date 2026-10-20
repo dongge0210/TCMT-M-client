@@ -50,6 +50,7 @@
 #include "core/accel/SpsManager.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
+#include "core/Utils/UserIdentity.h"
 #include "tui/TuiApp.h"
 #include "tui/MacLogWindow.h"
 
@@ -1143,6 +1144,11 @@ int main(int argc, char* argv[]) {
             data.updateState = static_cast<int>(s_updater.GetState());
             data.osVersion = os.GetVersion();
             data.hardwareModel = os.GetModel();
+            // Login identity is fixed for the process lifetime.
+            static const tcmt::UserIdentity identity = tcmt::GetUserIdentity();
+            data.loginUser = identity.user;
+            data.processElevated = identity.isRoot;
+            data.elevatedViaSudo = identity.viaSudo;
             data.connectionCount = ipcServer.GetClientCount()
                                  + (motionHttpEnabled ? s_http.ActiveClients() : 0);
             data.httpClientCount = motionHttpEnabled ? s_http.ActiveClients() : 0;

@@ -44,16 +44,18 @@ bool WinUtils::CheckPrivilege(const std::wstring& privilegeName) {
     return result != FALSE;
 }
 
+// UAC elevation, not group membership: an unelevated admin token still
+// carries the Administrators SID (deny-only), and CheckTokenMembership
+// answers a question about groups, not about the token that is running.
 bool WinUtils::IsRunAsAdmin() {
-    BOOL isAdmin = FALSE;
-    PSID adminGroupSid = NULL;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    if (!AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID,
-        DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &adminGroupSid))
-        return false;
-    if (!CheckTokenMembership(NULL, adminGroupSid, &isAdmin)) isAdmin = FALSE;
-    FreeSid(adminGroupSid);
-    return isAdmin != FALSE;
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    TOKEN_ELEVATION elevation{};
+    DWORD size = sizeof(elevation);
+    const BOOL ok = GetTokenInformation(token, TokenElevation, &elevation,
+                                        sizeof(elevation), &size);
+    CloseHandle(token);
+    return ok != FALSE && elevation.TokenIsElevated != 0;
 }
 
 std::string WinUtils::FormatWindowsErrorMessage(DWORD errorCode) {
@@ -63,7 +65,9 @@ std::string WinUtils::FormatWindowsErrorMessage(DWORD errorCode) {
     if (!buffer) return "Unknown error: " + std::to_string(errorCode);
     std::wstring wideMsg(buffer);
     LocalFree(buffer);
-    return std::string(wideMsg.begin(), wideMsg.end());
+    // System messages are localized: a byte-wise narrow copy turned every
+    // non-ASCII character into '?' on non-English Windows.
+    return WstringToUtf8(wideMsg);
 }
 
 std::string WinUtils::GetExecutableDirectory() {
@@ -79,10 +83,11 @@ std::string WinUtils::GetExecutableDirectory() {
 // ======================== macOS Implementation ========================
 #include <unistd.h>
 #include <mach-o/dyld.h>
+#include "UserIdentity.h"
 
 bool WinUtils::EnablePrivilege(const std::wstring&, bool) { return false; }
 bool WinUtils::CheckPrivilege(const std::wstring&) { return false; }
-bool WinUtils::IsRunAsAdmin() { return geteuid() == 0; }
+bool WinUtils::IsRunAsAdmin() { return tcmt::GetUserIdentity().isRoot; }
 std::string WinUtils::FormatWindowsErrorMessage(DWORD) { return "N/A on macOS"; }
 std::string WinUtils::GetExecutableDirectory() {
     char path[1024];
@@ -98,9 +103,10 @@ std::string WinUtils::GetExecutableDirectory() {
 #else
 // ======================== Linux / Fallback ========================
 #include <unistd.h>
+#include "UserIdentity.h"
 bool WinUtils::EnablePrivilege(const std::wstring&, bool) { return false; }
 bool WinUtils::CheckPrivilege(const std::wstring&) { return false; }
-bool WinUtils::IsRunAsAdmin() { return geteuid() == 0; }
+bool WinUtils::IsRunAsAdmin() { return tcmt::GetUserIdentity().isRoot; }
 std::string WinUtils::FormatWindowsErrorMessage(DWORD) { return "N/A"; }
 std::string WinUtils::GetExecutableDirectory() { return "."; }
 #endif

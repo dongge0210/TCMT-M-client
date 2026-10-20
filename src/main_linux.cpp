@@ -42,6 +42,7 @@
 #include "core/temperature/TemperatureWrapper.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
+#include "core/Utils/UserIdentity.h"
 #include "core/Utils/WinUtils.h"
 #include "tui/TuiApp.h"
 
@@ -521,6 +522,11 @@ int main(int argc, char* argv[]) {
             tcmt::TuiData data;
             data.osVersion = os.GetVersion();
             data.hardwareModel = os.GetModel();
+            // Login identity is fixed for the process lifetime.
+            static const tcmt::UserIdentity identity = tcmt::GetUserIdentity();
+            data.loginUser = identity.user;
+            data.processElevated = identity.isRoot;
+            data.elevatedViaSudo = identity.viaSudo;
             data.cpuName = cachedCpuName;
             // No P/E split on Linux; leave both zero so the TUI renders a
             // plain "Cores: N" line instead of a misleading "P:N E:0".

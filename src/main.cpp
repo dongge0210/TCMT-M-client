@@ -51,6 +51,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/os/OSInfo.h"
 #include "core/process/ProcessMonitor.h"
 #include "core/Utils/Logger.h"
+#include "core/Utils/UserIdentity.h"
 #include "core/Utils/TimeUtils.h"
 #include "core/Utils/WinUtils.h"
 #include "core/Utils/WmiManager.h"
@@ -1860,6 +1861,12 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
             // Update TUI with current data
             try {
                 tcmt::TuiData tuiData;
+                // Login identity is fixed for the process lifetime.
+                static const tcmt::UserIdentity identity = tcmt::GetUserIdentity();
+                tuiData.loginUser = identity.user;
+                // Windows: "elevated" means the UAC token check; POSIX: euid 0.
+                tuiData.processElevated = WinUtils::IsRunAsAdmin();
+                tuiData.elevatedViaSudo = identity.viaSudo;
                 tuiData.cpuName = sysInfo.cpuName;
                 tuiData.cpuUsage = sysInfo.cpuUsage;
                 tuiData.physicalCores = sysInfo.physicalCores;
