@@ -69,7 +69,7 @@ inline const I18nEntry kI18nTable[] = {
     {"help.close",           "close this help",                              "关闭帮助"},
     {"help.quit",            "quit TCMT Monitor",                            "退出 TCMT Monitor"},
     {"help.panel_focus",     "move panel focus",                             "切换面板焦点"},
-    {"help.cpu_details",     "open panel details (CPU / GPU / Disks / Power)", "打开面板详情（CPU / GPU / 磁盘 / 电源面板聚焦时）"},
+    {"help.cpu_details",     "open panel details (CPU / GPU / Disks / Power / Network)", "打开面板详情（CPU / GPU / 磁盘 / 电源 / 网络面板聚焦时）"},
     {"help.select_row",      "select a process row",                         "选择进程行"},
     {"help.conn_list",       "connections list (expand the status chip)",    "连接列表（展开状态芯片）"},
     {"help.scroll_line",     "scroll one line",                              "滚动一行"},

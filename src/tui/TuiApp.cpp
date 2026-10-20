@@ -713,6 +713,14 @@ static std::vector<std::string> WrapFields(const std::vector<std::string>& field
     return out;
 }
 
+std::string TuiApp::SparkGlyph(int level) const {
+    if (level < 0) level = 0;
+    if (level > 7) level = 7;
+    if (asciiMode_) return sparkChars_.substr(static_cast<size_t>(level), 1);
+    if (level == 0) return sparkChars_.substr(0, 1);
+    return sparkChars_.substr(1 + static_cast<size_t>(level - 1) * 3, 3);
+}
+
 // RSSI → percentage, using the mapping most Bluetooth stacks ship: quality =
 // 2 * (dBm + 100), clamped to 0..100. So -50 dBm is 100%, -70 is 60%, -100
 // is 0%. There is no standardized conversion; this one is at least readable
@@ -849,13 +857,6 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         }
     }
 
-    if (!data.wifiChipset.empty()) {
-        wattron(win, A_DIM);
-        mvwprintw(win, y + lines, x0 + 2, "  Chip %s", data.wifiChipset.c_str());
-        wattroff(win, A_DIM);
-        lines++;
-    }
-
     if (data.hasBluetooth) {
         char btBuf[64];
         if (data.btPowerOn) snprintf(btBuf, sizeof(btBuf), Tr("bt.on"), data.btDeviceCount);
@@ -864,19 +865,6 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         lines++;  // blank line between WiFi and BT
         mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
         lines++;
-
-        // Controller chip and firmware, when the platform profile exposes
-        // them (macOS system_profiler does).
-        if (!data.btChipset.empty() || !data.btFirmware.empty()) {
-            std::string chip = "Chip ";
-            chip += data.btChipset.empty() ? "?" : data.btChipset;
-            if (!data.btFirmware.empty()) chip += "   FW " + data.btFirmware;
-            wattron(win, A_DIM);
-            mvwprintw(win, y + lines, x0 + 4, "%s",
-                      utf8_truncate(chip, maxW - 6).c_str());
-            wattroff(win, A_DIM);
-            lines++;
-        }
 
         // Connected devices, one per line: name, type, battery, signal.
         // Paired-but-idle devices fold into a single count line.
@@ -1379,58 +1367,6 @@ int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int m
             mvwprintw(win, y + lines, offset, "    -");
     }
     lines++;
-    return lines + 1;
-}
-
-// ─── Network Traffic Sparkline ───
-// Unicode block characters ▁▂▃▄▅▆▇█ (U+2581..U+2588); sparkChars_ holds the
-// ASCII fallback set when TCMT_ASCII is set (see Run).
-
-int TuiApp::DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
-    if (maxW < 20 || data.dlHistoryLen < 2) return 0;
-
-    int graphW = std::min(maxW - 14, data.dlHistoryLen);
-    if (graphW < 4) return 0;
-
-    DrawPanelTitle(win, y, x0, maxW, "Traffic", IsPanelFocused(PanelId::Traffic));
-    int lines = 1;
-
-    // Find max for scaling
-    uint64_t maxVal = 1;
-    for (int i = 0; i < data.dlHistoryLen; i++) {
-        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
-        uint64_t v = data.dlHistory[idx];
-        if (v > maxVal) maxVal = v;
-        v = data.ulHistory[idx];
-        if (v > maxVal) maxVal = v;
-    }
-
-    // "D:" + sparkline (blue)
-    std::string dlSpark;
-    for (int i = graphW - 1; i >= 0; i--) {
-        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
-        int level = (maxVal > 0) ? (int)(data.dlHistory[idx] * 7 / maxVal) : 0;
-        if (level < 0) level = 0; if (level > 7) level = 7;
-        dlSpark += sparkChars_[level];
-    }
-    wattron(win, COLOR_PAIR(6));
-    mvwprintw(win, y + lines, x0 + 2, "D:%s", dlSpark.c_str());
-    wattroff(win, COLOR_PAIR(6));
-    lines++;
-
-    // "U:" + sparkline (green) using pair 2
-    std::string ulSpark;
-    for (int i = graphW - 1; i >= 0; i--) {
-        int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
-        int level = (maxVal > 0) ? (int)(data.ulHistory[idx] * 7 / maxVal) : 0;
-        if (level < 0) level = 0; if (level > 7) level = 7;
-        ulSpark += sparkChars_[level];
-    }
-    wattron(win, COLOR_PAIR(2));
-    mvwprintw(win, y + lines, x0 + 2, "U:%s", ulSpark.c_str());
-    wattroff(win, COLOR_PAIR(2));
-    lines++;
-
     return lines + 1;
 }
 
@@ -2651,6 +2587,203 @@ void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
               utf8_truncate(Tr("details.close"), W - 6).c_str());
 }
 
+// Network detail overlay — Space on the Network panel, or a double-click on
+// it. Holds what the dashboard panels have no room for: every adapter with
+// its addresses and rates, the traffic history as a wide sparkline, the WiFi
+// state including the wireless chip, and the Bluetooth controller with its
+// device list. The same facts used to be spread across the Network, Traffic
+// and WiFi/BT panels.
+void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
+        networkPage_ = false;
+        clear();
+        return;
+    }
+
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    const int W = (std::min)(82, cols - 6);
+    const int H = (std::min)(rows - 4, 30);
+    const int x0 = (std::max)(1, (cols - W) / 2);
+    const int y0 = (std::max)(2, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Network Details ");
+
+    int y = y0 + 2;
+    const int bottom = y0 + H - 3;
+    auto emit = [&](const std::string& s) {
+        if (y >= bottom) return;
+        mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(s, W - 6).c_str());
+    };
+    auto emitDim = [&](const std::string& s) {
+        if (y >= bottom) return;
+        wattron(stdscr, A_DIM);
+        mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(s, W - 6).c_str());
+        wattroff(stdscr, A_DIM);
+    };
+    auto section = [&](const char* title) {
+        if (y >= bottom) return;
+        wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+        mvwprintw(stdscr, y++, x0 + 3, "%s", title);
+        wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+    };
+    char buf[192];
+
+    if (!data.adapters.empty()) {
+        section("Adapters");
+        for (const auto& a : data.adapters) {
+            if (y + 1 >= bottom) break;
+            std::string head = a.name;
+            if (!a.type.empty()) head += "  " + a.type;
+            if (a.speed > 0) head += "  " + FormatSpeed(a.speed);
+            if (!a.ip.empty()) head += "  " + a.ip;
+            emit(head);
+            std::string meta;
+            if (!a.mac.empty()) meta += "hw " + a.mac;
+            if (!meta.empty()) meta += "   ";
+            meta += "D " + FormatRate(a.downloadSpeed) + "   U " + FormatRate(a.uploadSpeed);
+            emitDim(meta);
+        }
+        if (y < bottom) y++;
+    }
+
+    if (data.dlHistoryLen >= 2) {
+        section("Traffic");
+        const int graphW = (std::min)(W - 10, data.dlHistoryLen);
+        if (graphW >= 4 && y + 3 < bottom) {
+            uint64_t maxVal = 1;
+            for (int i = 0; i < data.dlHistoryLen; ++i) {
+                const int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX)
+                              % TuiData::NET_HISTORY_MAX;
+                if (data.dlHistory[idx] > maxVal) maxVal = data.dlHistory[idx];
+                if (data.ulHistory[idx] > maxVal) maxVal = data.ulHistory[idx];
+            }
+            auto spark = [&](const uint64_t* hist) {
+                std::string s;
+                for (int i = graphW - 1; i >= 0; --i) {
+                    const int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX)
+                                  % TuiData::NET_HISTORY_MAX;
+                    int level = static_cast<int>(hist[idx] * 7 / maxVal);
+                    s += SparkGlyph(level);
+                }
+                return s;
+            };
+            mvwprintw(stdscr, y, x0 + 3, "%s", "D:");
+            wattron(stdscr, COLOR_PAIR(6));
+            mvwprintw(stdscr, y++, x0 + 5, "%s", spark(data.dlHistory).c_str());
+            wattroff(stdscr, COLOR_PAIR(6));
+            mvwprintw(stdscr, y, x0 + 3, "%s", "U:");
+            wattron(stdscr, COLOR_PAIR(2));
+            mvwprintw(stdscr, y++, x0 + 5, "%s", spark(data.ulHistory).c_str());
+            wattroff(stdscr, COLOR_PAIR(2));
+            const int last = (data.dlHistoryPos - 1 + TuiData::NET_HISTORY_MAX)
+                           % TuiData::NET_HISTORY_MAX;
+            snprintf(buf, sizeof(buf), "now %s down / %s up   peak %s",
+                     FormatRate(data.dlHistory[last]).c_str(),
+                     FormatRate(data.ulHistory[last]).c_str(),
+                     FormatRate(maxVal).c_str());
+            emitDim(buf);
+        }
+        if (y < bottom) y++;
+    }
+
+    if (data.hasWiFi) {
+        section("WiFi");
+        emit(std::string("State: ") +
+             (data.wifiConnected ? Tr("wifi.connected") : Tr("wifi.disconnected")));
+
+        std::string ids;
+        if (!data.wifiSSID.empty()) ids = "SSID: " + data.wifiSSID;
+        if (!data.wifiBSSID.empty()) {
+            if (!ids.empty()) ids += "   ";
+            ids += "BSSID: " + data.wifiBSSID;
+        }
+        if (!ids.empty()) {
+            emit(ids);
+        } else if (data.wifiLocationRoot) {
+            emit(Tr("wifi.ssid_root"));
+        } else if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
+            emit(Tr("wifi.ssid_denied"));
+        } else {
+            emit(Tr("wifi.loc_off"));
+        }
+
+        std::string radio;
+        if (data.wifiChannel > 0) radio += "Ch " + std::to_string(data.wifiChannel);
+        if (data.wifiRSSI < 0) {
+            if (!radio.empty()) radio += "   ";
+            radio += "RSSI " + std::to_string(data.wifiRSSI) + " dBm";
+        }
+        if (!data.wifiSecurity.empty()) {
+            if (!radio.empty()) radio += "   ";
+            radio += data.wifiSecurity;
+        }
+        if (!data.wifiBand.empty()) {
+            if (!radio.empty()) radio += "   ";
+            radio += data.wifiBand;
+        }
+        if (!data.wifiGen.empty()) {
+            if (!radio.empty()) radio += "   ";
+            radio += data.wifiGen;
+        }
+        if (data.wifiTxRate > 0) {
+            if (!radio.empty()) radio += "   ";
+            radio += "Tx " + std::to_string(static_cast<int>(data.wifiTxRate)) + " Mbps";
+        }
+        if (!radio.empty()) emit(radio);
+        if (!data.wifiChipset.empty()) emit("Chip: " + data.wifiChipset);
+        if (y < bottom) y++;
+    }
+
+    if (data.hasBluetooth) {
+        section("Bluetooth");
+        char btBuf[64];
+        if (data.btPowerOn) snprintf(btBuf, sizeof(btBuf), Tr("bt.on"), data.btDeviceCount);
+        else snprintf(btBuf, sizeof(btBuf), "%s", Tr("bt.off"));
+        std::string head = btBuf;
+        if (!data.btChipset.empty()) head += "   Chip " + data.btChipset;
+        if (!data.btFirmware.empty()) head += "   FW " + data.btFirmware;
+        emit(head);
+
+        int pairedIdle = 0;
+        for (const auto& d : data.btDevices) {
+            if (!d.connected) { ++pairedIdle; continue; }
+            std::string line = d.name;
+            if (!d.type.empty()) line += "  " + d.type;
+            if (!d.battery.empty()) line += "  " + d.battery;
+            if (d.rssi < 0) {
+                const int pct = BtSignalPercent(d.rssi);
+                if (pct >= 0) line += "  Signal " + std::to_string(pct) + "%";
+            }
+            emit(line);
+        }
+        if (pairedIdle > 0) {
+            snprintf(buf, sizeof(buf), Tr("bt.paired"), pairedIdle);
+            emitDim(buf);
+        }
+    }
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
+              utf8_truncate(Tr("details.close"), W - 6).c_str());
+}
+
 // Focus order is draw order: the left column top-down, then the right
 // column. Only panels that actually rendered are registered, so Tab skips
 // the ones a short terminal or missing hardware dropped this frame.
@@ -2707,7 +2840,8 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
         // keyboard handler the same synthetic key the keyboard would send.
         if ((mev.bstate & BUTTON1_DOUBLE_CLICKED) &&
             (focusedPanel_ == PanelId::Cpu || focusedPanel_ == PanelId::Gpu ||
-             focusedPanel_ == PanelId::Disk || focusedPanel_ == PanelId::Power)) {
+             focusedPanel_ == PanelId::Disk || focusedPanel_ == PanelId::Power ||
+             focusedPanel_ == PanelId::Network)) {
             return ' ';
         }
         // Click inside the Top Processes list region (geometry cached by
@@ -2832,7 +2966,7 @@ void TuiApp::Run() {
         // cached list geometry is stale: drop it, and no mouse event can
         // address a rectangle that is not on screen.
         if (settingsPage_ || helpPage_ || connListPage_ || logPage_ || cpuPage_ ||
-            gpuPage_ || diskPage_ || batteryPage_) procListY_ = -1;
+            gpuPage_ || diskPage_ || batteryPage_ || networkPage_) procListY_ = -1;
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
@@ -2887,6 +3021,13 @@ void TuiApp::Run() {
 
         if (batteryPage_) {
             RenderBatteryDetails(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
+        if (networkPage_) {
+            RenderNetworkDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -3010,6 +3151,9 @@ void TuiApp::Run() {
                 clear();
             } else if (focusedPanel_ == PanelId::Power) {
                 batteryPage_ = true;
+                clear();
+            } else if (focusedPanel_ == PanelId::Network) {
+                networkPage_ = true;
                 clear();
             }
         }
@@ -3193,11 +3337,6 @@ void TuiApp::Run() {
             if (ry < maxY) {
                 h = DrawNetworkPanel(stdscr, data, ry, rx, rightW);
                 RegisterPanel(PanelId::Network, ry, rx, rightW, h);
-                ry += h;
-            }
-            if (ry < maxY) {
-                h = DrawNetGraphPanel(stdscr, data, ry, rx, rightW);
-                RegisterPanel(PanelId::Traffic, ry, rx, rightW, h);
                 ry += h;
             }
             // WiFi & Bluetooth supplementary info after Network

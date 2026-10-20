@@ -456,6 +456,7 @@ private:
     void RenderGpuDetails(int rows, int cols, int ch);
     void RenderDiskDetails(int rows, int cols, int ch);
     void RenderBatteryDetails(int rows, int cols, int ch);
+    void RenderNetworkDetails(int rows, int cols, int ch);
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
     int MapMouseEvent(int rows, int cols);
@@ -465,7 +466,7 @@ private:
     // it. The focused panel's title chip is the active-surface cue.
     enum class PanelId {
         Cpu, Gpu, Memory, Process, Core,
-        Disk, PhysicalDisk, Network, Traffic, WifiBluetooth,
+        Disk, PhysicalDisk, Network, WifiBluetooth,
         Temp, Power, Display, Accel, Tpm,
     };
     struct PanelHit {
@@ -501,13 +502,17 @@ private:
     int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
-    int DrawNetGraphPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);      // storage: binary (1024), "MB" = MiB
     static std::string FormatSpeed(uint64_t bps);       // link speed: decimal (1000), "Mbps"
     static std::string FormatRate(uint64_t bytesPerSec); // throughput: decimal (1000), "MB/s"
     static std::string TrimRight(const std::string& s, int maxLen);
+
+    // One sparkline glyph (level 0..7). sparkChars_ packs multibyte block
+    // characters, so indexing it by byte would slice a UTF-8 sequence in half;
+    // ASCII mode packs one byte per level and is indexed directly.
+    std::string SparkGlyph(int level) const;
 
     // Row layout helpers (#6): every value line on a panel shares one
     // right-aligned value column (label left), and usage bars draw a
@@ -597,6 +602,7 @@ private:
     bool gpuPage_ = false;                 // GPU detail overlay (same gestures on the GPU panel)
     bool diskPage_ = false;                // disk detail overlay (same gestures on the Disks panel)
     bool batteryPage_ = false;             // battery/charger overlay (same gestures on the Power panel)
+    bool networkPage_ = false;             // network/WiFi/BT overlay (same gestures on the Network panel)
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int gpuIndex_ = 0;                     // GPU shown by the panel/details (Left/Right switches)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,

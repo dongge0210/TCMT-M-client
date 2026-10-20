@@ -2024,16 +2024,22 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 }
 
                 // ─── Network traffic history (sparkline) ───
-                if (tuiData.adapters.size() > 0) {
-                    uint64_t dl = tuiData.adapters[0].downloadSpeed;
-                    uint64_t ul = tuiData.adapters[0].uploadSpeed;
-                    int pos = tuiData.dlHistoryPos;
-                    tuiData.dlHistory[pos] = dl;
-                    tuiData.ulHistory[pos] = ul;
-                    tuiData.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
-                    if (tuiData.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
-                        tuiData.dlHistoryLen++;
+                // Statics: tuiData is rebuilt each pass, so a ring kept inside
+                // the struct reset to one sample and never drew a sparkline.
+                static uint64_t s_dlHist[tcmt::TuiData::NET_HISTORY_MAX] = {};
+                static uint64_t s_ulHist[tcmt::TuiData::NET_HISTORY_MAX] = {};
+                static int s_histPos = 0;
+                static int s_histLen = 0;
+                if (!tuiData.adapters.empty()) {
+                    s_dlHist[s_histPos] = tuiData.adapters[0].downloadSpeed;
+                    s_ulHist[s_histPos] = tuiData.adapters[0].uploadSpeed;
+                    s_histPos = (s_histPos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                    if (s_histLen < tcmt::TuiData::NET_HISTORY_MAX) ++s_histLen;
                 }
+                std::memcpy(tuiData.dlHistory, s_dlHist, sizeof(s_dlHist));
+                std::memcpy(tuiData.ulHistory, s_ulHist, sizeof(s_ulHist));
+                tuiData.dlHistoryPos = s_histPos;
+                tuiData.dlHistoryLen = s_histLen;
                 tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
                 if (ipcServer) {
                     auto ct = ipcServer->GetClientTypes();

@@ -1555,16 +1555,23 @@ int main(int argc, char* argv[]) {
             }
 
             // ─── Network traffic history ───
+            // The ring lives in statics: `data` is rebuilt every iteration, so
+            // keeping it inside the struct meant it reset to a single sample
+            // and the sparkline never had two points to draw.
+            static uint64_t s_dlHist[tcmt::TuiData::NET_HISTORY_MAX] = {};
+            static uint64_t s_ulHist[tcmt::TuiData::NET_HISTORY_MAX] = {};
+            static int s_histPos = 0;
+            static int s_histLen = 0;
             if (!data.adapters.empty()) {
-                uint64_t dl = data.adapters[0].downloadSpeed;
-                uint64_t ul = data.adapters[0].uploadSpeed;
-                int pos = data.dlHistoryPos;
-                data.dlHistory[pos] = dl;
-                data.ulHistory[pos] = ul;
-                data.dlHistoryPos = (pos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
-                if (data.dlHistoryLen < tcmt::TuiData::NET_HISTORY_MAX)
-                    data.dlHistoryLen++;
+                s_dlHist[s_histPos] = data.adapters[0].downloadSpeed;
+                s_ulHist[s_histPos] = data.adapters[0].uploadSpeed;
+                s_histPos = (s_histPos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                if (s_histLen < tcmt::TuiData::NET_HISTORY_MAX) ++s_histLen;
             }
+            std::memcpy(data.dlHistory, s_dlHist, sizeof(s_dlHist));
+            std::memcpy(data.ulHistory, s_ulHist, sizeof(s_ulHist));
+            data.dlHistoryPos = s_histPos;
+            data.dlHistoryLen = s_histLen;
 
             // Timestamp
             auto now = std::chrono::system_clock::now();
