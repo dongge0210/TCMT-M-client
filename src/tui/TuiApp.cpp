@@ -2697,7 +2697,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         // splits evenly between the two charts.
         const int wifiReserve = data.hasWiFi ? 7 : 0;
         const int btReserve = data.hasBluetooth ? 5 : 0;
-        int chartRows = (remaining - 4 - wifiReserve - btReserve) / 2;
+        int chartRows = (remaining - 6 - wifiReserve - btReserve) / 2;
         if (chartRows < 2) chartRows = 2;
         if (chartRows > 14) chartRows = 14;
 
@@ -2744,6 +2744,13 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
                         wattroff(stdscr, A_DIM);
                     }
 
+                    // Left boundary: one column of '|' from the peak down to
+                    // zero, so the bar area reads as a chart and not as
+                    // floating blocks.
+                    wattron(stdscr, A_DIM);
+                    mvwaddstr(stdscr, y, barX - 1, "|");
+                    wattroff(stdscr, A_DIM);
+
                     // Each cell holds 8 sublevels; the row's band from the
                     // bottom is (chartRows-1-r).
                     const uint64_t band = static_cast<uint64_t>(chartRows - 1 - r) * levelsPerRow;
@@ -2762,6 +2769,30 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
                     mvwprintw(stdscr, y, barX, "%s", row.c_str());
                 }
                 wattroff(stdscr, COLOR_PAIR(pair));
+
+                // Time axis: one column is one history sample, appended once
+                // per heavy frame (~the sample interval). Four ticks, the
+                // rightmost column being "now".
+                if (y < bottom) {
+                    const double colSec =
+                        (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0;
+                    const int ticks = graphW >= 30 ? 4 : 2;
+                    wattron(stdscr, A_DIM);
+                    for (int t = 0; t < ticks; ++t) {
+                        const int c = (graphW - 1) - t * (graphW - 1) / (ticks - 1);
+                        const int secs = static_cast<int>((graphW - 1 - c) * colSec + 0.5);
+                        char lb[16];
+                        if (secs == 0) snprintf(lb, sizeof(lb), "now");
+                        else snprintf(lb, sizeof(lb), "-%ds", secs);
+                        int lx = barX + c;
+                        const int maxX = x0 + W - 3 - static_cast<int>(std::strlen(lb));
+                        if (lx > maxX) lx = maxX;
+                        if (lx < barX) lx = barX;
+                        mvwprintw(stdscr, y, lx, "%s", lb);
+                    }
+                    wattroff(stdscr, A_DIM);
+                    y++;
+                }
             };
 
             const int last = (data.dlHistoryPos - 1 + TuiData::NET_HISTORY_MAX)
