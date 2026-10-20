@@ -153,7 +153,22 @@ static int ReadPmgrFreqTable(const char* propName, double* outFreqs, int maxCoun
 // PowerMonitor implementation (macOS)
 // ====================================================================
 
-PowerMonitor::PowerMonitor() {}
+PowerMonitor::PowerMonitor() {
+    for (int i = 0; i < kMaxClusterCores; ++i) {
+        pCoreFreqByIdx_[i].store(-1.0);
+        eCoreFreqByIdx_[i].store(-1.0);
+    }
+}
+
+double PowerMonitor::GetPCoreFreqByIdx(int i) const {
+    if (i < 0 || i >= kMaxClusterCores) return -1.0;
+    return pCoreFreqByIdx_[i].load();
+}
+
+double PowerMonitor::GetECoreFreqByIdx(int i) const {
+    if (i < 0 || i >= kMaxClusterCores) return -1.0;
+    return eCoreFreqByIdx_[i].load();
+}
 PowerMonitor::~PowerMonitor() { Stop(); }
 
 bool PowerMonitor::Start() {
@@ -433,8 +448,17 @@ void PowerMonitor::ParsePowerDelta(void* deltaV) {
                     double mhz = wsum / static_cast<double>(tres);
                     if (doDump) DBG( "  => weighted avg = %.1f MHz (wsum=%.0f tres=%lld)\n", mhz, wsum, (long long)tres);
                     if (isGpu) { gpuFreqSum += mhz; gpuFreqN++; }
-                    else if (strncmp(name, "PCPU", 4) == 0) { pCoreFreqSum += mhz; pCoreFreqN++; }
-                    else { eCoreFreqSum += mhz; eCoreFreqN++; }
+                    else if (strncmp(name, "PCPU", 4) == 0) {
+                        pCoreFreqSum += mhz; pCoreFreqN++;
+                        // Channel name is PCPU<n>: one channel per core, so the
+                        // same weighted average is that core's frequency.
+                        const int idx = std::atoi(name + 4);
+                        if (idx >= 0 && idx < kMaxClusterCores) pCoreFreqByIdx_[idx].store(mhz);
+                    } else {
+                        eCoreFreqSum += mhz; eCoreFreqN++;
+                        const int idx = std::atoi(name + 4);
+                        if (idx >= 0 && idx < kMaxClusterCores) eCoreFreqByIdx_[idx].store(mhz);
+                    }
                 }
                 if (isGpu) continue;
             }

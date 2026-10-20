@@ -1229,6 +1229,17 @@ int main(int argc, char* argv[]) {
                         data.perCoreUsage[i] = static_cast<float>(perCore[i]);
                     data.perCoreUsageCount = static_cast<uint8_t>(n);
                 }
+                // Per-core frequencies from the IOReport channels (PCPU<n> /
+                // ECPU<n>); the kernel numbers cores P first, then E, so the
+                // P/E split is positional.
+                {
+                    double freqs[16];
+                    const int nf = coordinator.GetPerCoreFreqs(freqs, 16);
+                    for (int i = 0; i < nf; ++i)
+                        data.perCoreFreq[i] = static_cast<float>(freqs[i]);
+                    data.perCoreFreqCount = static_cast<uint8_t>(nf);
+                    data.perCorePEKnown = (data.performanceCores > 0);
+                }
             }
 
             // GPU (coordinator doesn't have a GPU loop — keep inline)

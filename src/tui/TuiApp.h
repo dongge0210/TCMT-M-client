@@ -326,6 +326,8 @@ struct TuiData {
     float perCoreUsage[16] = {};
     uint8_t perCoreCount = 0;       // cores with temperature/frequency data
     uint8_t perCoreUsageCount = 0;  // cores with usage data (macOS samples these alone)
+    uint8_t perCoreFreqCount = 0;   // cores with frequency data (macOS per-core IOReport)
+    bool perCorePEKnown = false;    // P cores first, then E (macOS core numbering)
 
     // Network traffic sparkline history (last 40 samples)
     static constexpr int NET_HISTORY_MAX = 40;

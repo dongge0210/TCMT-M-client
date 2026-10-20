@@ -41,6 +41,10 @@ public:
     // Latest sampled values (updated every ~1s in direct mode)
     double GetPCoreFreq() const  { return pCoreFreq_.load(); }
     double GetECoreFreq() const  { return eCoreFreq_.load(); }
+    // Per-core frequencies, indexed inside each cluster (PCPU0.., ECPU0..).
+    // The cluster values above are their averages. -1 = no reading.
+    double GetPCoreFreqByIdx(int i) const;
+    double GetECoreFreqByIdx(int i) const;
     double GetGpuFreq() const    { return gpuFreq_.load(); }
     double GetGpuMaxFreq() const { return gpuMaxFreq_.load(); }
     double GetPCoreMaxFreq() const { return pCoreMaxFreq_.load(); }
@@ -68,6 +72,11 @@ private:
 
     std::atomic<double> pCoreFreq_{0.0};
     std::atomic<double> eCoreFreq_{0.0};
+    // IOReport publishes one channel per core; these hold the last weighted
+    // frequency for each, in channel order.
+    static constexpr int kMaxClusterCores = 16;
+    std::atomic<double> pCoreFreqByIdx_[kMaxClusterCores];
+    std::atomic<double> eCoreFreqByIdx_[kMaxClusterCores];
     std::atomic<double> gpuFreq_{0.0};
     std::atomic<double> gpuMaxFreq_{0.0};
     std::atomic<double> pCoreMaxFreq_{0.0};

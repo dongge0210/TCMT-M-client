@@ -1978,8 +1978,15 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
+    // Cores covered by any of the three samples: usage (macOS), frequency
+    // (macOS IOReport), and temp/freq (Linux/Windows).
+    const int count = (std::min)(
+        (std::max)({(std::max)(static_cast<int>(data.perCoreCount),
+                               static_cast<int>(data.perCoreUsageCount)),
+                    static_cast<int>(data.perCoreFreqCount)}),
+        16);
     const int W = (std::min)(76, cols - 6);
-    const int H = (std::min)(22, rows - 4);
+    const int H = (std::min)(rows - 4, (std::max)(12, 11 + count));
     const int x0 = (std::max)(1, (cols - W) / 2);
     const int y0 = (std::max)(2, (rows - H) / 2);
 
@@ -2039,6 +2046,10 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
         snprintf(buf, sizeof(buf), "Base: %.0f MHz", data.cpuBaseFreq);
         emit(buf);
     }
+#if !defined(TCMT_MACOS)
+    // macOS cluster "temperatures" come from SMC sensor names that do not map
+    // reliably to CPU clusters, so this overlay keeps them out on that
+    // platform instead of printing a number that invites the wrong reading.
     {
         std::string t = "Temp:";
         if (data.cpuTemp > 0) {
@@ -2055,44 +2066,57 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
         }
         if (t != "Temp:") emit(t);
     }
+#endif
 
-    const int count = (std::min)(
-        (std::max)(static_cast<int>(data.perCoreCount),
-                   static_cast<int>(data.perCoreUsageCount)), 16);
     if (count <= 0) {
         emit("");
         emit(Tr("cpu.no_percore"));
     } else {
-        y++;   // blank line between the summary and the table
+        y++;   // blank line between the summary and the chart
         const int tableY = y;
-        const int pitch = 30;
-        const bool twoCols = (W >= 3 + pitch * 2);
-        const int perCol = twoCols ? 8 : 16;
-        auto header = [&](int col) {
-            mvwprintw(stdscr, tableY, x0 + 3 + col * pitch,
-                      "%s", "Core   Use    Freq   Temp");
+        // Core label (P0.. / E0.. when the platform's numbering is known),
+        // a usage bar, then the percentage and the core's frequency.
+        const int barX = x0 + 8;
+        const int barW = (std::max)(10, W - 24);   // 1-col gap before the frame
+        auto coreLabel = [&](int i) {
+            char lb[8];
+            if (data.perCorePEKnown && data.performanceCores > 0) {
+                if (i < data.performanceCores) snprintf(lb, sizeof(lb), "P%d", i);
+                else snprintf(lb, sizeof(lb), "E%d", i - data.performanceCores);
+            } else {
+                snprintf(lb, sizeof(lb), "C%02d", i);
+            }
+            return std::string(lb);
         };
-        header(0);
-        if (twoCols && count > perCol) header(1);
 
+        mvwprintw(stdscr, tableY, x0 + 3, "%s", "Core   Usage");
         for (int i = 0; i < count; ++i) {
-            const int col = i / perCol;
-            const int row = i % perCol;
-            const int ty = tableY + 1 + row;
+            const int ty = tableY + 1 + i;
             if (ty >= y0 + H - 2) break;
 
-            char fbuf[16], tbuf[16];
-            if (data.perCoreFreq[i] > 0) snprintf(fbuf, sizeof(fbuf), "%6dM", static_cast<int>(data.perCoreFreq[i]));
-            else                         snprintf(fbuf, sizeof(fbuf), "%6s", "-");
-            if (data.perCoreTemp[i] > 0) snprintf(tbuf, sizeof(tbuf), "%5dC", static_cast<int>(data.perCoreTemp[i]));
-            else                         snprintf(tbuf, sizeof(tbuf), "%5s", "-");
+            mvwprintw(stdscr, ty, x0 + 3, "%-4s", coreLabel(i).c_str());
 
-            const int tc = HighIsWorsePair(static_cast<double>(data.perCoreTemp[i]),
-                                           kTempWarn, kTempCrit);
-            if (tc >= 0) wattron(stdscr, COLOR_PAIR(tc));
-            mvwprintw(stdscr, ty, x0 + 3 + col * pitch, "C%02d %5.1f%% %s %s",
-                      i, static_cast<double>(data.perCoreUsage[i]), fbuf, tbuf);
-            if (tc >= 0) wattroff(stdscr, COLOR_PAIR(tc));
+            double pct = static_cast<double>(data.perCoreUsage[i]);
+            if (pct < 0) pct = 0;
+            if (pct > 100) pct = 100;
+            const int nFill = static_cast<int>(pct * barW / 100.0);
+            const int sev = HighIsWorsePair(pct, kUsageWarn, kUsageCrit);
+            int bx = barX;
+            if (sev >= 0) wattron(stdscr, COLOR_PAIR(sev));
+            for (int k = 0; k < nFill; ++k) mvwaddstr(stdscr, ty, bx++, barFill_.c_str());
+            if (sev >= 0) wattroff(stdscr, COLOR_PAIR(sev));
+            wattron(stdscr, A_DIM);
+            for (; bx < barX + barW; ++bx) mvwaddstr(stdscr, ty, bx, barTrack_.c_str());
+            wattroff(stdscr, A_DIM);
+
+            char val[40];
+            if (data.perCoreFreq[i] > 0) {
+                snprintf(val, sizeof(val), " %5.1f%% %5.0fM", pct,
+                         static_cast<double>(data.perCoreFreq[i]));
+            } else {
+                snprintf(val, sizeof(val), " %5.1f%%     -", pct);
+            }
+            mvwprintw(stdscr, ty, barX + barW, "%s", val);
         }
     }
 

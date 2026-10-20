@@ -125,6 +125,10 @@ public:
         data_.sampleIntervalMs.store(ms > 0 ? ms : 500);
     }
     void Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData);
+    // Per-core CPU frequencies, P cores first then E cores (order matches the
+    // kernel's logical CPU numbering). Returns the number written; 0 when the
+    // platform has no per-core source. `out` entries are -1 when unknown.
+    int GetPerCoreFreqs(double* out, int max);
     static void SleepFor(tcmt::compat::StopToken st, int ms);
     bool IsWifiDirty() { return data_.wifiDirty.exchange(false); }
     bool IsBtDirty()   { return data_.btDirty.exchange(false); }

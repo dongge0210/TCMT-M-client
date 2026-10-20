@@ -9,6 +9,9 @@
 #include "memory/MemoryInfo.h"
 #include <algorithm>
 #include <cctype>
+#ifdef TCMT_MACOS
+#include <sys/sysctl.h>
+#endif
 #include "notifications/UserNotifier.h"
 
 #ifdef TCMT_LINUX
@@ -179,6 +182,38 @@ void ModuleCoordinator::SleepFor(tcmt::compat::StopToken st, int ms) {
 // =====================================================================
 // Snapshot — copy all ModuleData atomics + locked vectors into outputs
 // =====================================================================
+// Per-core frequencies are a macOS-only source today: IOReport publishes one
+// channel per core and the channel name carries the index (PCPU0.., ECPU0..).
+// The kernel numbers logical CPUs P first, then E, which is the order written
+// here. A non-direct power monitor (powermetrics fallback) only has cluster
+// values, so it reports nothing rather than guessing.
+int ModuleCoordinator::GetPerCoreFreqs(double* out, int max) {
+#ifdef TCMT_MACOS
+    if (out == nullptr || max <= 0) return 0;
+    if (!powerMonitor_.IsDirectMode()) return 0;
+    static const int pCores = [] {
+        int v = 0;
+        size_t len = sizeof(v);
+        return sysctlbyname("hw.perflevel0.logicalcpu", &v, &len, nullptr, 0) == 0 ? v : 0;
+    }();
+    static const int eCores = [] {
+        int v = 0;
+        size_t len = sizeof(v);
+        return sysctlbyname("hw.perflevel1.logicalcpu", &v, &len, nullptr, 0) == 0 ? v : 0;
+    }();
+    int n = 0;
+    for (int i = 0; i < pCores && n < max; ++i)
+        out[n++] = powerMonitor_.GetPCoreFreqByIdx(i);
+    for (int i = 0; i < eCores && n < max; ++i)
+        out[n++] = powerMonitor_.GetECoreFreqByIdx(i);
+    return n;
+#else
+    (void)out;
+    (void)max;
+    return 0;
+#endif
+}
+
 void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     // CPU
     sysInfo.cpuUsage = data_.cpuUsage.load();
