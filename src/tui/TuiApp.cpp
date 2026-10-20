@@ -713,6 +713,12 @@ static std::vector<std::string> WrapFields(const std::vector<std::string>& field
     return out;
 }
 
+std::string TuiApp::BlockGlyph(int level) const {
+    if (level <= 0) return " ";
+    if (level >= 8) return asciiMode_ ? "#" : "\xe2\x96\x88";   // █
+    return SparkGlyph(level);
+}
+
 std::string TuiApp::SparkGlyph(int level) const {
     if (level < 0) level = 0;
     if (level > 7) level = 7;
@@ -878,8 +884,12 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
             if (d.rssi < 0) {
                 const int pct = BtSignalPercent(d.rssi);
                 // "Signal" keeps it distinct from the battery percentages
-                // that sit right before it on the same line.
-                if (pct >= 0) line += "  Signal " + std::to_string(pct) + "%";
+                // that sit right before it on the same line; the raw dBm
+                // stays next to it for anyone who wants the measurement.
+                if (pct >= 0) {
+                    line += "  Signal " + std::to_string(pct) + "% (" +
+                            std::to_string(d.rssi) + "dBm)";
+                }
             }
             mvwprintw(win, y + lines, x0 + 4, "%s",
                       utf8_truncate(line, maxW - 6).c_str());
@@ -2612,7 +2622,9 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     }
 
     const int W = (std::min)(82, cols - 6);
-    const int H = (std::min)(rows - 4, 30);
+    // Fill the terminal height: the traffic charts are the part that grows
+    // with the box, so a tall window gets a real graph instead of two rows.
+    const int H = (std::max)(12, rows - 4);
     const int x0 = (std::max)(1, (cols - W) / 2);
     const int y0 = (std::max)(2, (rows - H) / 2);
 
@@ -2666,39 +2678,71 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
 
     if (data.dlHistoryLen >= 2) {
         section("Traffic");
+        // Two stacked charts share the height left after reserving room for
+        // the WiFi/Bluetooth sections below; the cap keeps a tall terminal
+        // from turning this into a full-screen graph.
+        const int remaining = bottom - y;
+        // Reserve the fixed lines below: two chart labels, the peak line, a
+        // trailing blank, then the WiFi and Bluetooth sections. What is left
+        // splits evenly between the two charts.
+        const int wifiReserve = data.hasWiFi ? 7 : 0;
+        const int btReserve = data.hasBluetooth ? 5 : 0;
+        int chartRows = (remaining - 4 - wifiReserve - btReserve) / 2;
+        if (chartRows < 2) chartRows = 2;
+        if (chartRows > 14) chartRows = 14;
+
         const int graphW = (std::min)(W - 10, data.dlHistoryLen);
-        if (graphW >= 4 && y + 3 < bottom) {
-            uint64_t maxVal = 1;
+        if (graphW >= 4) {
+            // Each direction gets its own scale. A shared one made the upload
+            // chart invisible whenever the download side had a single spike
+            // anywhere in the window.
+            uint64_t dlMax = 1, ulMax = 1;
             for (int i = 0; i < data.dlHistoryLen; ++i) {
                 const int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX)
                               % TuiData::NET_HISTORY_MAX;
-                if (data.dlHistory[idx] > maxVal) maxVal = data.dlHistory[idx];
-                if (data.ulHistory[idx] > maxVal) maxVal = data.ulHistory[idx];
+                if (data.dlHistory[idx] > dlMax) dlMax = data.dlHistory[idx];
+                if (data.ulHistory[idx] > ulMax) ulMax = data.ulHistory[idx];
             }
-            auto spark = [&](const uint64_t* hist) {
-                std::string s;
-                for (int i = graphW - 1; i >= 0; --i) {
-                    const int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX)
-                                  % TuiData::NET_HISTORY_MAX;
-                    int level = static_cast<int>(hist[idx] * 7 / maxVal);
-                    s += SparkGlyph(level);
+
+            auto drawChart = [&](const char* label, const uint64_t* hist,
+                                 uint64_t now, uint64_t scale, int pair) {
+                if (y >= bottom) return;
+                char head[96];
+                snprintf(head, sizeof(head), "%s  %s", label, FormatRate(now).c_str());
+                wattron(stdscr, COLOR_PAIR(pair));
+                mvwprintw(stdscr, y++, x0 + 3, "%s", head);
+
+                const int levelsPerRow = 8;
+                for (int r = 0; r < chartRows && y < bottom; ++r, ++y) {
+                    // Each cell holds 8 sublevels; the row's band from the
+                    // bottom is (chartRows-1-r).
+                    const uint64_t band = static_cast<uint64_t>(chartRows - 1 - r) * levelsPerRow;
+                    std::string row;
+                    row.reserve(static_cast<size_t>(graphW) * 3);
+                    for (int c = 0; c < graphW; ++c) {
+                        const int idx = (data.dlHistoryPos - graphW + c
+                                         + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
+                        // Total fill in sublevels (0 .. chartRows*8).
+                        const int total = static_cast<int>(hist[idx] * chartRows * levelsPerRow / scale);
+                        int cell = total - static_cast<int>(band);
+                        if (cell > levelsPerRow) cell = levelsPerRow;
+                        if (cell < 0) cell = 0;
+                        row += BlockGlyph(cell);
+                    }
+                    mvwprintw(stdscr, y, x0 + 3, "%s", row.c_str());
                 }
-                return s;
+                wattroff(stdscr, COLOR_PAIR(pair));
             };
-            mvwprintw(stdscr, y, x0 + 3, "%s", "D:");
-            wattron(stdscr, COLOR_PAIR(6));
-            mvwprintw(stdscr, y++, x0 + 5, "%s", spark(data.dlHistory).c_str());
-            wattroff(stdscr, COLOR_PAIR(6));
-            mvwprintw(stdscr, y, x0 + 3, "%s", "U:");
-            wattron(stdscr, COLOR_PAIR(2));
-            mvwprintw(stdscr, y++, x0 + 5, "%s", spark(data.ulHistory).c_str());
-            wattroff(stdscr, COLOR_PAIR(2));
+
             const int last = (data.dlHistoryPos - 1 + TuiData::NET_HISTORY_MAX)
                            % TuiData::NET_HISTORY_MAX;
-            snprintf(buf, sizeof(buf), "now %s down / %s up   peak %s",
+            drawChart("D", data.dlHistory, data.dlHistory[last], dlMax, 6);
+            drawChart("U", data.ulHistory, data.ulHistory[last], ulMax, 2);
+
+            snprintf(buf, sizeof(buf), "now %s down / %s up   peak D %s   U %s",
                      FormatRate(data.dlHistory[last]).c_str(),
                      FormatRate(data.ulHistory[last]).c_str(),
-                     FormatRate(maxVal).c_str());
+                     FormatRate(dlMax).c_str(), FormatRate(ulMax).c_str());
             emitDim(buf);
         }
         if (y < bottom) y++;
@@ -2770,7 +2814,10 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
             if (!d.battery.empty()) line += "  " + d.battery;
             if (d.rssi < 0) {
                 const int pct = BtSignalPercent(d.rssi);
-                if (pct >= 0) line += "  Signal " + std::to_string(pct) + "%";
+                if (pct >= 0) {
+                    line += "  Signal " + std::to_string(pct) + "% (" +
+                            std::to_string(d.rssi) + "dBm)";
+                }
             }
             emit(line);
         }

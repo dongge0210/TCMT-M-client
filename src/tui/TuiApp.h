@@ -513,6 +513,9 @@ private:
     // characters, so indexing it by byte would slice a UTF-8 sequence in half;
     // ASCII mode packs one byte per level and is indexed directly.
     std::string SparkGlyph(int level) const;
+    // Vertical-block glyph for a bar chart cell: 0 = blank, 1..7 = partial
+    // fill (▁..▇), 8 = full block (█, '#' in ASCII mode).
+    std::string BlockGlyph(int level) const;
 
     // Row layout helpers (#6): every value line on a panel shares one
     // right-aligned value column (label left), and usage bars draw a
