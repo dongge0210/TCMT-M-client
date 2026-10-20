@@ -741,13 +741,16 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         } else {
             if (!data.wifiSSID.empty()) fields.push_back("SSID: " + data.wifiSSID);
             if (!data.wifiBSSID.empty()) fields.push_back("BSSID: " + data.wifiBSSID);
-            if (data.wifiChannel > 0) fields.push_back("Ch: " + std::to_string(data.wifiChannel));
-            if (data.wifiRSSI < 0) fields.push_back("RSSI: " + std::to_string(data.wifiRSSI) + " dBm");
-            if (!data.wifiSecurity.empty()) fields.push_back(data.wifiSecurity);
-            if (!data.wifiBand.empty()) fields.push_back(data.wifiBand);
-            if (!data.wifiGen.empty()) fields.push_back(data.wifiGen);
-            if (data.wifiTxRate > 0) fields.push_back("Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps");
         }
+        // Radio-level facts are not TCC-gated: keep showing them when the
+        // SSID is hidden. They are all a root/sudo process can read, and
+        // dropping them made the panel look empty rather than partial.
+        if (data.wifiChannel > 0) fields.push_back("Ch: " + std::to_string(data.wifiChannel));
+        if (data.wifiRSSI < 0) fields.push_back("RSSI: " + std::to_string(data.wifiRSSI) + " dBm");
+        if (!data.wifiSecurity.empty()) fields.push_back(data.wifiSecurity);
+        if (!data.wifiBand.empty()) fields.push_back(data.wifiBand);
+        if (!data.wifiGen.empty()) fields.push_back(data.wifiGen);
+        if (data.wifiTxRate > 0) fields.push_back("Tx: " + std::to_string(static_cast<int>(data.wifiTxRate)) + "Mbps");
         // Wrap instead of truncating: a long SSID/BSSID must not push the
         // rest of the detail (Ch/RSSI/Tx) off the panel.
         const std::vector<std::string> wl = WrapFields(fields, maxW - 10);

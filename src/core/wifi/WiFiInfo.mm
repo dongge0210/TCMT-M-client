@@ -250,7 +250,12 @@ void WiFiInfo::Detect() {
         if (!data_.powerOn && !iface) {
             data_.powerOn = false;
         }
-        data_.isConnected = !data_.bssid.empty();
+        // Only SSID/BSSID are gated by Location Services. RSSI, channel, PHY
+        // and rate are readable without it (including as root), so an
+        // association is also proved by a live RSSI or channel — otherwise a
+        // root/sudo process reported "disconnected" while the radio was
+        // plainly associated, and the panel hid everything it could read.
+        data_.isConnected = !data_.bssid.empty() || data_.rssi != 0 || data_.channel != 0;
 
         Logger::Debug("WiFiInfo: ssid=" + data_.ssid +
                       " bssid=" + data_.bssid +
