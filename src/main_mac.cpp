@@ -920,9 +920,13 @@ int main(int argc, char* argv[]) {
     tuiApp.SetLogBuffer(&Logger::GetTuiBuffer());
     // Location Services request is user-triggered (press R in the TUI):
     // the judgment/guidance comes first, only then does the app ask.
-    tuiApp.SetLocationRequestHandler([] {
-        WiFiInfo::RequestLocationAuthorization();
-    });
+    // Under sudo there is no granted identity to prompt for, so the key is
+    // not advertised at all (the WiFi panel explains the root case).
+    if (geteuid() != 0) {
+        tuiApp.SetLocationRequestHandler([] {
+            WiFiInfo::RequestLocationAuthorization();
+        });
+    }
     // Server push settings (TUI settings page, press S) -> persist + apply.
     tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec,
                               g_sampleIntervalMs.load(), probeStatus});
@@ -1242,6 +1246,7 @@ int main(int argc, char* argv[]) {
               data.wifiBand = wd.band;
               data.wifiGen = wd.wifiGen;
               data.wifiLocationDenied = wd.locationDenied;
+              data.wifiLocationRoot = wd.locationRoot;
               data.wifiLocationStatus = wd.locationStatus;
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected

@@ -9,6 +9,7 @@
 #import <CoreWLAN/CoreWLAN.h>
 #import <CoreLocation/CoreLocation.h>
 #include <nlohmann/json.hpp>
+#include <unistd.h>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -129,6 +130,13 @@ static void RunSystemProfiler() {
 static CLLocationManager* s_locMgr = nil;
 
 void WiFiInfo::RequestLocationAuthorization() {
+    // Location Services is granted per login user. A root process has no
+    // window-server session to prompt in, so the request would never produce
+    // a dialog; skip it instead of leaving the caller waiting.
+    if (geteuid() == 0) {
+        Logger::Warn("Location Services: running as root, authorization cannot be requested");
+        return;
+    }
     static dispatch_once_t s_onceToken;
     dispatch_once(&s_onceToken, ^{
         @autoreleasepool {
@@ -151,6 +159,11 @@ void WiFiInfo::Detect() {
         // RequestLocationAuthorization). Also do NOT force an NSApplication
         // context here ([NSApplication sharedApplication] SIGABRTs in
         // degraded LaunchServices sessions).
+
+        // Root cannot hold a Location Services grant at all (the TCC grant is
+        // bound to the login user), so report it separately and let the UI
+        // explain the sudo case rather than showing a generic denial.
+        data_.locationRoot = (geteuid() == 0);
 
         CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
         bool locationOK = (auth == kCLAuthorizationStatusAuthorized);

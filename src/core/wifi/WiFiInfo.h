@@ -16,6 +16,11 @@ struct WiFiData {
     bool powerOn = false;   // WiFi adapter enabled
     bool isConnected = false;
     bool locationDenied = false; // macOS 15+: SSID unavailable due to Location Services denial
+    // macOS: process runs as root (sudo). Location Services is granted per
+    // login user, so a root process can never obtain it — the UI must say so
+    // instead of offering "press R", which would wait for a prompt that never
+    // appears.
+    bool locationRoot = false;
     // Location Services authorization for SSID (macOS 15+):
     // 0 = not determined, 1 = denied/restricted, 2 = authorized
     int locationStatus = 0;

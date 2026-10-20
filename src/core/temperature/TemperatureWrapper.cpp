@@ -998,13 +998,17 @@ static void powermetrics_thread_func(void) {
                 if (v > 0) g_pm_gpuFreq.store(v);
             }
             // Power: "CPU Power: 941 mW" / "GPU Power: 591 mW" / "ANE Power: 0 mW"
+            // Power values are milliwatts. They go to the power atomics only:
+            // pushing them into `batch` put "CPU Power" / "GPU Power" rows in
+            // the temperature list, so the Temps panel printed e.g. 3274.0 C
+            // (the wattage in mW) under sudo, where powermetrics actually runs.
             else if (std::strstr(line, "CPU Power:")) {
                 double v = parse_number_line(line);
-                if (v > 0) { g_pm_cpuPower.store(v); batch.push_back({"CPU Power", v}); }
+                if (v > 0) g_pm_cpuPower.store(v);
             }
             else if (std::strstr(line, "GPU Power:")) {
                 double v = parse_number_line(line);
-                if (v > 0) { g_pm_gpuPower.store(v); batch.push_back({"GPU Power", v}); }
+                if (v > 0) g_pm_gpuPower.store(v);
             }
             else if (std::strstr(line, "ANE Power:")) {
                 double v = parse_number_line(line);
