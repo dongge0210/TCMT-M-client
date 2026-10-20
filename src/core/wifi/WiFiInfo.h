@@ -15,6 +15,8 @@ struct WiFiData {
     double txRate = 0;      // Transmit rate in Mbps
     bool powerOn = false;   // WiFi adapter enabled
     bool isConnected = false;
+    // Wireless chip, e.g. "BCM4387" (macOS: system_profiler card type).
+    std::string chipset;
     bool locationDenied = false; // macOS 15+: SSID unavailable due to Location Services denial
     // macOS: process runs as root (sudo). Location Services is granted per
     // login user, so a root process can never obtain it — the UI must say so

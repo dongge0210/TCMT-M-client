@@ -1303,11 +1303,14 @@ int main(int argc, char* argv[]) {
               data.wifiBand = wd.band;
               data.wifiGen = wd.wifiGen;
               data.wifiLocationDenied = wd.locationDenied;
+              data.wifiChipset = wd.chipset;
               data.wifiLocationRoot = wd.locationRoot;
               data.wifiLocationStatus = wd.locationStatus;
               const auto& bd = s_bt.GetData();
               data.hasBluetooth = bd.adapter.detected; // show if adapter hardware detected
               data.btPowerOn = bd.adapter.powerOn;
+              data.btChipset = bd.adapter.chipset;
+              data.btFirmware = bd.adapter.firmware;
               data.btDevices.clear();
               {
                   int btConnected = 0;

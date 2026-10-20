@@ -10,6 +10,9 @@ struct BluetoothAdapterData {
     bool detected = false;      // Adapter hardware detected
     std::string address;        // "AA:BB:CC:DD:EE:FF"
     std::string name;           // Adapter name
+    // macOS profile: controller chip and firmware ("BCM_4387", "24.1.640.5755").
+    std::string chipset;
+    std::string firmware;
 };
 
 struct BluetoothDeviceData {

@@ -34,6 +34,8 @@ struct ProfDevice {
 
 std::mutex g_profMutex;
 std::vector<ProfDevice> g_profDevices;
+std::string g_ctrlChipset;
+std::string g_ctrlFirmware;
 std::atomic<bool> g_profReady{false};
 std::atomic<int> g_profState{0};      // 0 idle, 1 running
 std::atomic<int64_t> g_profStampMs{0};
@@ -58,6 +60,7 @@ size_t IndentOf(const std::string& s) {
 
 void RunProfiler() {
     std::vector<ProfDevice> out;
+    std::string ctrlChipset, ctrlFirmware;
     // system_profiler lives in /usr/sbin, not /usr/bin; an absolute path also
     // keeps it working when the app is launched from Finder with a minimal PATH.
     FILE* fp = popen("/usr/sbin/system_profiler SPBluetoothDataType 2>/dev/null", "r");
@@ -67,6 +70,7 @@ void RunProfiler() {
         int deviceIndent = -1;
         ProfDevice cur;
         bool have = false;
+        bool inController = false;
         while (fgets(buf, sizeof(buf), fp)) {
             std::string s(buf);
             while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
@@ -74,13 +78,30 @@ void RunProfiler() {
             if (t.empty()) continue;
             const size_t indent = IndentOf(s);
 
+            if (indent == 6 && t == "Bluetooth Controller:") {
+                inController = true;
+                continue;
+            }
             if (indent == 6 && (t == "Connected:" || t == "Not Connected:")) {
+                inController = false;
                 if (have) { out.push_back(cur); have = false; }
                 cur = ProfDevice{};
                 section = (t == "Connected:") ? "conn" : "disc";
                 deviceIndent = -1;
                 continue;
             }
+            // Controller block: chip and firmware, before any device section.
+            if (inController) {
+                const auto colon = t.find(": ");
+                if (colon != std::string::npos) {
+                    const std::string key = t.substr(0, colon);
+                    const std::string val = t.substr(colon + 2);
+                    if (key == "Chipset") ctrlChipset = val;
+                    else if (key == "Firmware Version") ctrlFirmware = val;
+                }
+                continue;
+            }
+
             if (section.empty()) continue;
 
             // Device header: "          Name:" at the section's device indent.
@@ -115,6 +136,8 @@ void RunProfiler() {
     {
         std::lock_guard<std::mutex> lk(g_profMutex);
         g_profDevices.swap(out);
+        g_ctrlChipset = ctrlChipset;
+        g_ctrlFirmware = ctrlFirmware;
         g_profReady = true;
     }
     g_profStampMs.store(ProfNowMs());
@@ -150,6 +173,8 @@ void BluetoothInfo::Detect() {
         bool usedProfile = false;
         if (g_profReady.load()) {
             std::lock_guard<std::mutex> lk(g_profMutex);
+            data_.adapter.chipset = g_ctrlChipset;
+            data_.adapter.firmware = g_ctrlFirmware;
             for (const auto& pd : g_profDevices) {
                 BluetoothDeviceData d;
                 d.name = pd.name;

@@ -40,6 +40,30 @@ static std::mutex s_cacheMutex;
 static std::string s_cachedSSID, s_cachedBSSID, s_cachedSecurity;
 static int s_cachedRSSI = 0, s_cachedChannel = 0;
 static double s_cachedTxRate = 0;
+static std::string s_cachedChipset;
+
+// "spairport_wireless_card_type_wifi (0x14E4, 0x4387)" → "BCM4387".
+// Vendor 0x14E4 is Broadcom; the Bluetooth profile names the same silicon
+// "BCM_4387", so use the same style here.
+static std::string FormatWifiChipset(const std::string& raw) {
+    const auto lp = raw.find('(');
+    const auto comma = raw.find(',');
+    const auto rp = raw.rfind(')');
+    if (lp == std::string::npos || comma == std::string::npos || rp == std::string::npos ||
+        comma <= lp || rp <= comma) {
+        return raw;
+    }
+    auto parseId = [](const std::string& s) -> unsigned long {
+        try { return std::stoul(s, nullptr, 0); } catch (...) { return 0; }
+    };
+    const unsigned long vendor = parseId(raw.substr(lp + 1, comma - lp - 1));
+    const unsigned long device = parseId(raw.substr(comma + 1, rp - comma - 1));
+    char buf[64];
+    if (vendor == 0x14E4) snprintf(buf, sizeof(buf), "BCM%04lX", device);
+    else if (vendor == 0x8086) snprintf(buf, sizeof(buf), "Intel %04lX", device);
+    else snprintf(buf, sizeof(buf), "%04lX:%04lX", vendor, device);
+    return buf;
+}
 
 static void RunSystemProfiler() {
     std::string json;
@@ -52,7 +76,7 @@ static void RunSystemProfiler() {
         pclose(fp);
     }
 
-    std::string ssid, bssid, security;
+    std::string ssid, bssid, security, chipset;
     int rssi = 0, channel = 0;
     double txRate = 0;
 
@@ -82,6 +106,10 @@ static void RunSystemProfiler() {
                         if (bssid.empty() && iface.contains("spairport_wireless_mac_address")) {
                             std::string raw = iface["spairport_wireless_mac_address"].get<std::string>();
                             if (raw != "<redacted>") bssid = raw;
+                        }
+                        if (chipset.empty() && iface.contains("spairport_wireless_card_type")) {
+                            chipset = FormatWifiChipset(
+                                iface["spairport_wireless_card_type"].get<std::string>());
                         }
                         if (iface.contains("spairport_current_network_information")) {
                             auto& net = iface["spairport_current_network_information"];
@@ -124,6 +152,7 @@ static void RunSystemProfiler() {
         s_cachedRSSI = rssi;
         s_cachedChannel = channel;
         s_cachedTxRate = txRate;
+        s_cachedChipset = chipset;
     }
     s_profilerState.store(2, std::memory_order_release);
 }
@@ -222,6 +251,18 @@ void WiFiInfo::Detect() {
                 double cwRate = [iface transmitRate];
                 if (cwRate > 0) data_.txRate = cwRate;
             }
+        }
+
+        // The same profile carries the wireless chip type. Start it even when
+        // Location Services already provides the SSID, and publish the chip
+        // whenever the cached copy is ready.
+        if (s_profilerState.load(std::memory_order_acquire) == 0) {
+            s_profilerState.store(1, std::memory_order_release);
+            std::thread(RunSystemProfiler).detach();
+        }
+        if (s_profilerState.load(std::memory_order_acquire) == 2) {
+            std::lock_guard<std::mutex> lk(s_cacheMutex);
+            data_.chipset = s_cachedChipset;
         }
 
         // --- Fallback: system_profiler (async, non-blocking) ---

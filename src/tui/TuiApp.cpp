@@ -849,6 +849,13 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         }
     }
 
+    if (!data.wifiChipset.empty()) {
+        wattron(win, A_DIM);
+        mvwprintw(win, y + lines, x0 + 2, "  Chip %s", data.wifiChipset.c_str());
+        wattroff(win, A_DIM);
+        lines++;
+    }
+
     if (data.hasBluetooth) {
         char btBuf[64];
         if (data.btPowerOn) snprintf(btBuf, sizeof(btBuf), Tr("bt.on"), data.btDeviceCount);
@@ -857,6 +864,19 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         lines++;  // blank line between WiFi and BT
         mvwprintw(win, y + lines, x0 + 2, "BT: %.*s", maxW - 8, btStr.c_str());
         lines++;
+
+        // Controller chip and firmware, when the platform profile exposes
+        // them (macOS system_profiler does).
+        if (!data.btChipset.empty() || !data.btFirmware.empty()) {
+            std::string chip = "Chip ";
+            chip += data.btChipset.empty() ? "?" : data.btChipset;
+            if (!data.btFirmware.empty()) chip += "   FW " + data.btFirmware;
+            wattron(win, A_DIM);
+            mvwprintw(win, y + lines, x0 + 4, "%s",
+                      utf8_truncate(chip, maxW - 6).c_str());
+            wattroff(win, A_DIM);
+            lines++;
+        }
 
         // Connected devices, one per line: name, type, battery, signal.
         // Paired-but-idle devices fold into a single count line.

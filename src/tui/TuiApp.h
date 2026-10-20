@@ -243,6 +243,7 @@ struct TuiData {
     bool wifiLocationDenied = false; // macOS 15+: SSID blocked by Location Services
     bool wifiLocationRoot = false;   // macOS: running as root; Location can never be granted
     int wifiLocationStatus = 0;      // 0=not determined, 1=denied, 2=authorized
+    std::string wifiChipset;         // "BCM4387" (macOS system_profiler card type)
     // Bluetooth (optional)
     bool hasBluetooth = false;
     bool btPowerOn = false;
@@ -255,6 +256,8 @@ struct TuiData {
         bool connected = false;
     };
     std::vector<BtDeviceInfo> btDevices;  // paired devices, connected first in input order
+    std::string btChipset;                // "BCM_4387"
+    std::string btFirmware;               // "24.1.640.5755"
 
     // Display monitors
     struct DisplayInfo {
