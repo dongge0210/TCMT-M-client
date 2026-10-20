@@ -97,7 +97,7 @@ static void wake_spu_driver(void) {
     if (!matching) return;
 
     io_iterator_t iter;
-    kern_return_t kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iter);
+    kern_return_t kr = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter);
     if (kr != KERN_SUCCESS) return;
 
     io_object_t driver;
@@ -152,7 +152,7 @@ static io_service_t find_accel_service(void) {
     if (!matching) return 0;
 
     io_iterator_t iter;
-    kern_return_t kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iter);
+    kern_return_t kr = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter);
     if (kr != KERN_SUCCESS) return 0;
 
     io_service_t found = 0;
