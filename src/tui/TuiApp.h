@@ -463,6 +463,8 @@ private:
     void RenderDiskDetails(int rows, int cols, int ch);
     void RenderBatteryDetails(int rows, int cols, int ch);
     void RenderNetworkDetails(int rows, int cols, int ch);
+    // Full-screen splash while the first collection round is still landing.
+    void RenderLoadingScreen(int rows, int cols, int done, int total);
     // Minimal mouse support: translate clicks/wheel into the equivalent
     // synthetic keys so every handler stays keyboard-driven (B direction).
     int MapMouseEvent(int rows, int cols);

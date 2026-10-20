@@ -2841,6 +2841,48 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
               utf8_truncate(Tr("details.close"), W - 6).c_str());
 }
 
+// Full-screen splash for the first collection round. Deliberately minimal:
+// title, percentage, progress bar, quit hint. The dashboard only appears once
+// every collector has reported, so nobody sees a frame full of empty panels.
+void TuiApp::RenderLoadingScreen(int rows, int cols, int done, int total) {
+    erase();
+    const int pct = total > 0 ? done * 100 / total : 100;
+
+    const char* title = "TCMT Monitor";
+    char label[48];
+    snprintf(label, sizeof(label), "LOADING %d%%", pct);
+
+    int y = rows / 2 - 3;
+    if (y < 1) y = 1;
+
+    wattron(stdscr, COLOR_PAIR(1) | A_BOLD);
+    mvwprintw(stdscr, y, (std::max)(1, (cols - static_cast<int>(std::strlen(title))) / 2),
+              "%s", title);
+    wattroff(stdscr, COLOR_PAIR(1) | A_BOLD);
+
+    mvwprintw(stdscr, y + 2, (std::max)(1, (cols - static_cast<int>(std::strlen(label))) / 2),
+              "%s", label);
+
+    const int barW = (std::max)(10, (std::min)(40, cols - 10));
+    const int nFill = pct * barW / 100;
+    const int barX = (std::max)(1, (cols - barW) / 2);
+    int bx = barX;
+    for (int i = 0; i < nFill; ++i) mvwaddstr(stdscr, y + 3, bx++, barFill_.c_str());
+    wattron(stdscr, A_DIM);
+    for (; bx < barX + barW; ++bx) mvwaddstr(stdscr, y + 3, bx, barTrack_.c_str());
+    wattroff(stdscr, A_DIM);
+
+    const char* hint = "Q:Quit";
+    wattron(stdscr, A_DIM);
+    mvwprintw(stdscr, y + 5, (std::max)(1, (cols - static_cast<int>(std::strlen(hint))) / 2),
+              "%s", hint);
+    wattroff(stdscr, A_DIM);
+
+    // Never park the cursor on the bottom-right corner (see the dashboard
+    // note about the ncurses wrap loop).
+    move(0, 0);
+}
+
 // Focus order is draw order: the left column top-down, then the right
 // column. Only panels that actually rendered are registered, so Tab skips
 // the ones a short terminal or missing hardware dropped this frame.
@@ -3182,6 +3224,16 @@ void TuiApp::Run() {
             data = data_;
         }
 
+        // First collection round: show a full-screen splash instead of a
+        // dashboard full of half-empty panels. q still quits (handled above);
+        // every other dashboard key waits until the splash is gone.
+        if (data.loadTotal > 0 && data.loadDone < data.loadTotal) {
+            RenderLoadingScreen(rows, cols, data.loadDone, data.loadTotal);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
         // Tab / Shift+Tab walk the panel focus ring. The ring is the set of
         // panels drawn last frame, in draw order, so hidden panels are never
         // a stop. Mouse clicks focus a panel the same way (MapMouseEvent).
@@ -3306,24 +3358,9 @@ void TuiApp::Run() {
         mvwprintw(stdscr, hintRow1 ? 1 : 0, cols - hintW - 1, "%s", hint.c_str());
         wattroff(stdscr, COLOR_PAIR(5));
 
-        // Row-1 left reservation: startup progress first, then the stale chip
-        // when the monitor loop goes silent (both yellow, warning class).
+        // Row-1 left reservation: the stale chip when the monitor loop is
+        // silent (yellow = warning class); nothing otherwise.
         int row1Left = 1;   // first column still free after left occupants
-
-        // Startup: how much of the first collection round has landed. This is
-        // the window where panels still look empty; the chip disappears as
-        // soon as every collector has reported once.
-        const bool loading = data.loadTotal > 0 && data.loadDone < data.loadTotal;
-        if (loading) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), " LOADING %d%% ",
-                     data.loadDone * 100 / (data.loadTotal ? data.loadTotal : 1));
-            wattron(stdscr, COLOR_PAIR(3) | A_BOLD);
-            mvwprintw(stdscr, 1, row1Left, "%s", buf);
-            wattroff(stdscr, COLOR_PAIR(3) | A_BOLD);
-            row1Left += static_cast<int>(std::strlen(buf));
-        }
-
         const int64_t lastUs = lastUpdateUs_.load();
         const int64_t staleUs = (lastUs == 0) ? 0
             : std::chrono::duration_cast<std::chrono::microseconds>(
