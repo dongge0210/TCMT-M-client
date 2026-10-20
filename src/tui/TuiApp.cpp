@@ -3224,6 +3224,15 @@ void TuiApp::Run() {
             data = data_;
         }
 
+        // Splash from the very first frame: before any snapshot arrives the
+        // dashboard would paint an empty frame, and that flash is what the
+        // splash is meant to hide. `lastUpdateUs_ == 0` means "no data yet".
+        if (lastUpdateUs_.load() == 0) {
+            RenderLoadingScreen(rows, cols, 0, 1);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
         // First collection round: show a full-screen splash instead of a
         // dashboard full of half-empty panels. q still quits (handled above);
         // every other dashboard key waits until the splash is gone.
