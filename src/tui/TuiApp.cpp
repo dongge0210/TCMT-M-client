@@ -2266,6 +2266,166 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     }
 }
 
+// Disk detail overlay — Space on the Disks panel, or a double-click on it.
+// Volumes get a usage bar, free space and mount point; physical devices add
+// health/thermal numbers and their SMART attributes where the platform
+// exposes them. Content is clipped to the frame, so a machine with many
+// volumes shows the first ones rather than overflowing.
+void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
+    const bool isEnter = (ch == '\n' || ch == '\r'
+#ifdef KEY_ENTER
+        || ch == KEY_ENTER
+#endif
+    );
+    if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
+        diskPage_ = false;
+        clear();
+        return;
+    }
+
+    TuiData data;
+    {
+        std::lock_guard<std::mutex> lock(dataMutex_);
+        data = data_;
+    }
+
+    const int W = (std::min)(78, cols - 6);
+    const int H = (std::min)(rows - 4, 26);
+    const int x0 = (std::max)(1, (cols - W) / 2);
+    const int y0 = (std::max)(2, (rows - H) / 2);
+
+    erase();
+    std::string hlineStr(W, '-');
+    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    mvwprintw(stdscr, y0, x0 + 3, " Disk Details ");
+
+    int y = y0 + 2;
+    const int bottom = y0 + H - 3;   // last usable content row (hint below it)
+
+    auto section = [&](const char* title) {
+        if (y >= bottom) return;
+        wattron(stdscr, COLOR_PAIR(5) | A_BOLD);
+        mvwprintw(stdscr, y++, x0 + 3, "%s", title);
+        wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
+    };
+
+    if (!data.disks.empty()) {
+        section("Volumes");
+        for (const auto& d : data.disks) {
+            if (y + 1 >= bottom) break;
+            const double upct =
+                d.totalSize > 0 ? 100.0 * d.usedSpace / d.totalSize : 0.0;
+            const std::string used = FormatSize(d.usedSpace);
+            const std::string total = FormatSize(d.totalSize);
+            const std::string free =
+                FormatSize(d.totalSize > d.usedSpace ? d.totalSize - d.usedSpace : 0);
+            const std::string label = d.label.empty() ? d.mountPoint : d.label;
+            char head[256];
+            snprintf(head, sizeof(head), "%s   %s   %.0f%%   %s / %s   free %s",
+                     label.c_str(), d.fileSystem.c_str(), upct,
+                     used.c_str(), total.c_str(), free.c_str());
+            mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(head, W - 6).c_str());
+
+            const int barW = 24;
+            double p = upct < 0 ? 0 : (upct > 100 ? 100 : upct);
+            const int nFill = static_cast<int>(p * barW / 100.0);
+            const int sev = HighIsWorsePair(p, kUsageWarn, kUsageCrit);
+            int bx = x0 + 3;
+            if (sev >= 0) wattron(stdscr, COLOR_PAIR(sev));
+            for (int k = 0; k < nFill; ++k) mvwaddstr(stdscr, y, bx++, barFill_.c_str());
+            if (sev >= 0) wattroff(stdscr, COLOR_PAIR(sev));
+            wattron(stdscr, A_DIM);
+            for (; bx < x0 + 3 + barW; ++bx) mvwaddstr(stdscr, y, bx, barTrack_.c_str());
+            mvwprintw(stdscr, y, x0 + 3 + barW + 2, "%s",
+                      utf8_truncate(d.mountPoint, W - 6 - barW - 2).c_str());
+            wattroff(stdscr, A_DIM);
+            y++;
+        }
+        if (y < bottom) y++;
+    }
+
+    if (!data.physicalDisks.empty()) {
+        section("Physical disks");
+        for (const auto& pd : data.physicalDisks) {
+            if (y + 1 >= bottom) break;
+            std::string head = pd.model;
+            if (!pd.diskType.empty()) head += "  " + pd.diskType;
+            if (pd.capacity > 0) head += "  " + FormatSize(pd.capacity);
+            mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(head, W - 6).c_str());
+
+            std::string stats;
+            char buf[128];
+            if (pd.smartSupported && pd.healthPct > 0) {
+                snprintf(buf, sizeof(buf), "Health %d%%", static_cast<int>(pd.healthPct));
+                stats += buf;
+            } else {
+                stats += "Health N/A";
+            }
+            if (pd.temperature > 0) {
+                snprintf(buf, sizeof(buf), "   Temp %.0f C", pd.temperature);
+                stats += buf;
+            }
+            if (pd.powerOnHours > 0) {
+                snprintf(buf, sizeof(buf), "   Power-on %lluh",
+                         static_cast<unsigned long long>(pd.powerOnHours));
+                stats += buf;
+            }
+            if (pd.wearLeveling > 0 && pd.wearLeveling <= 1.0) {
+                snprintf(buf, sizeof(buf), "   Wear %.0f%%", pd.wearLeveling * 100.0);
+                stats += buf;
+            }
+            const int hc = pd.smartSupported
+                ? LowIsWorsePair(static_cast<int>(pd.healthPct), kHealthWarn, kHealthCrit)
+                : -1;
+            if (hc >= 0) wattron(stdscr, COLOR_PAIR(hc));
+            mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(stats, W - 6).c_str());
+            if (hc >= 0) wattroff(stdscr, COLOR_PAIR(hc));
+
+            std::string meta;
+            if (!pd.serial.empty()) meta += "Serial " + pd.serial;
+            if (!pd.interfaceType.empty()) {
+                if (!meta.empty()) meta += "   ";
+                meta += pd.interfaceType;
+            }
+            if (!meta.empty() && y < bottom) {
+                wattron(stdscr, A_DIM);
+                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(meta, W - 6).c_str());
+                wattroff(stdscr, A_DIM);
+            }
+
+            wattron(stdscr, A_DIM);
+            for (const auto& a : pd.attributes) {
+                if (y >= bottom) break;
+                // PadCell measures display columns: attribute names are
+                // localized (CJK), so %-24s would misalign every row.
+                snprintf(buf, sizeof(buf), "ID %02X  ", a.id);
+                std::string row = buf;
+                row += PadCell(a.name, 24);
+                snprintf(buf, sizeof(buf), " %3u/%3u  %llu",
+                         a.current, a.worst,
+                         static_cast<unsigned long long>(a.rawValue));
+                row += buf;
+                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(row, W - 6).c_str());
+            }
+            wattroff(stdscr, A_DIM);
+            if (y < bottom) y++;
+        }
+    }
+
+    if (data.disks.empty() && data.physicalDisks.empty()) {
+        mvwprintw(stdscr, y0 + 2, x0 + 3, "%s",
+                  utf8_truncate(Tr("disk.none"), W - 6).c_str());
+    }
+
+    mvwprintw(stdscr, y0 + H - 2, x0 + 3, "%s",
+              utf8_truncate(Tr("details.close"), W - 6).c_str());
+}
+
 // Focus order is draw order: the left column top-down, then the right
 // column. Only panels that actually rendered are registered, so Tab skips
 // the ones a short terminal or missing hardware dropped this frame.
@@ -2321,7 +2481,8 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
         // Double-click on a panel with a detail view opens it: hand the
         // keyboard handler the same synthetic key the keyboard would send.
         if ((mev.bstate & BUTTON1_DOUBLE_CLICKED) &&
-            (focusedPanel_ == PanelId::Cpu || focusedPanel_ == PanelId::Gpu)) {
+            (focusedPanel_ == PanelId::Cpu || focusedPanel_ == PanelId::Gpu ||
+             focusedPanel_ == PanelId::Disk)) {
             return ' ';
         }
         // Click inside the Top Processes list region (geometry cached by
@@ -2446,7 +2607,7 @@ void TuiApp::Run() {
         // cached list geometry is stale: drop it, and no mouse event can
         // address a rectangle that is not on screen.
         if (settingsPage_ || helpPage_ || connListPage_ || logPage_ || cpuPage_ ||
-            gpuPage_) procListY_ = -1;
+            gpuPage_ || diskPage_) procListY_ = -1;
 
         // Settings page is modal: Esc cancels, Enter saves — never quits.
         // 30 ms ≈ 33 fps is plenty for a form; the old 10 ms burned CPU
@@ -2487,6 +2648,13 @@ void TuiApp::Run() {
 
         if (gpuPage_) {
             RenderGpuDetails(rows, cols, ch);
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            continue;
+        }
+
+        if (diskPage_) {
+            RenderDiskDetails(rows, cols, ch);
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             continue;
@@ -2604,6 +2772,9 @@ void TuiApp::Run() {
                 clear();
             } else if (focusedPanel_ == PanelId::Gpu) {
                 gpuPage_ = true;
+                clear();
+            } else if (focusedPanel_ == PanelId::Disk) {
+                diskPage_ = true;
                 clear();
             }
         }
