@@ -2701,7 +2701,8 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         if (chartRows < 2) chartRows = 2;
         if (chartRows > 14) chartRows = 14;
 
-        const int graphW = (std::min)(W - 10, data.dlHistoryLen);
+        // 3-col left margin + 9-col value axis + 1-col gap + right margin.
+        const int graphW = (std::min)(W - 16, data.dlHistoryLen);
         if (graphW >= 4) {
             // Each direction gets its own scale. A shared one made the upload
             // chart invisible whenever the download side had a single spike
@@ -2722,8 +2723,27 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
                 wattron(stdscr, COLOR_PAIR(pair));
                 mvwprintw(stdscr, y++, x0 + 3, "%s", head);
 
+                // Value axis: the scale's top value on the first row and the
+                // unit on the last, so the bars read without the header line.
+                const int axisW = 9;
+                const int barX = x0 + 3 + axisW + 1;
+                const char* unit = (scale >= 1000ull * 1000) ? "MB/s"
+                                 : (scale >= 1000ull ? "KB/s" : "B/s");
+
                 const int levelsPerRow = 8;
                 for (int r = 0; r < chartRows && y < bottom; ++r, ++y) {
+                    if (r == 0) {
+                        const std::string top = FormatRate(scale);
+                        wattron(stdscr, A_DIM);
+                        mvwprintw(stdscr, y, x0 + 3, "%*s", axisW, top.c_str());
+                        wattroff(stdscr, A_DIM);
+                    } else if (r == chartRows - 1) {
+                        const std::string zero = std::string("0 ") + unit;
+                        wattron(stdscr, A_DIM);
+                        mvwprintw(stdscr, y, x0 + 3, "%*s", axisW, zero.c_str());
+                        wattroff(stdscr, A_DIM);
+                    }
+
                     // Each cell holds 8 sublevels; the row's band from the
                     // bottom is (chartRows-1-r).
                     const uint64_t band = static_cast<uint64_t>(chartRows - 1 - r) * levelsPerRow;
@@ -2739,7 +2759,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
                         if (cell < 0) cell = 0;
                         row += BlockGlyph(cell);
                     }
-                    mvwprintw(stdscr, y, x0 + 3, "%s", row.c_str());
+                    mvwprintw(stdscr, y, barX, "%s", row.c_str());
                 }
                 wattroff(stdscr, COLOR_PAIR(pair));
             };
