@@ -1340,46 +1340,6 @@ int TuiApp::DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
     return lines;
 }
 
-// ─── Per-Core Sensor Panel ───
-int TuiApp::DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
-    if (maxW < 20 || data.perCoreCount == 0) return 0;
-
-    DrawPanelTitle(win, y, x0, maxW, "Per-Core Sensors", IsPanelFocused(PanelId::Core));
-    int lines = 1;
-
-    int count = std::min((int)data.perCoreCount, 16);
-    // Compact header: Core#0  Core#1  Core#2 ...
-    for (int i = 0; i < count; i++) {
-        int offset = x0 + 2 + i * 8;
-        if (offset + 7 > maxW) break;
-        mvwprintw(win, y + lines, offset, "C%02d", i);
-    }
-    lines++;
-    // Temperature row
-    for (int i = 0; i < count; i++) {
-        int offset = x0 + 2 + i * 8;
-        if (offset + 7 > maxW) break;
-        int t = static_cast<int>(data.perCoreTemp[i]);
-        const int color = HighIsWorsePair(static_cast<double>(t), kTempWarn, kTempCrit);
-        if (color >= 0) wattron(win, COLOR_PAIR(color));
-        mvwprintw(win, y + lines, offset, "%4d%s", t, degSuffixTemp_.c_str());
-        if (color >= 0) wattroff(win, COLOR_PAIR(color));
-    }
-    lines++;
-    // Frequency row
-    for (int i = 0; i < count; i++) {
-        int offset = x0 + 2 + i * 8;
-        if (offset + 7 > maxW) break;
-        int f = static_cast<int>(data.perCoreFreq[i]);
-        if (f > 0)
-            mvwprintw(win, y + lines, offset, "%4dM", f);
-        else
-            mvwprintw(win, y + lines, offset, "    -");
-    }
-    lines++;
-    return lines + 1;
-}
-
 // "12:04" under an hour, "1:12:04" above it — the CPU-time column's shape.
 static std::string CpuTimeShort(uint64_t ms) {
     const uint64_t s = ms / 1000;
@@ -2140,8 +2100,14 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
         const int tableY = y;
         // Core label (P0.. / E0.. when the platform's numbering is known),
         // a usage bar, then the percentage and the core's frequency.
+        // Per-core die temperature, when the platform exposes it (Windows MSR,
+        // Linux hwmon). Reserved only if there is something to show.
+        bool anyPerCoreTemp = false;
+        for (int i = 0; i < count; ++i) {
+            if (data.perCoreTemp[i] > 0) { anyPerCoreTemp = true; break; }
+        }
         const int barX = x0 + 8;
-        const int barW = (std::max)(10, W - 24);   // 1-col gap before the frame
+        const int barW = (std::max)(10, W - 24 - (anyPerCoreTemp ? 6 : 0));
         auto coreLabel = [&](int i) {
             char lb[8];
             if (data.perCorePEKnown && data.performanceCores > 0) {
@@ -2173,12 +2139,20 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
             for (; bx < barX + barW; ++bx) mvwaddstr(stdscr, ty, bx, barTrack_.c_str());
             wattroff(stdscr, A_DIM);
 
-            char val[40];
+            char val[48];
             if (data.perCoreFreq[i] > 0) {
                 snprintf(val, sizeof(val), " %5.1f%% %5.0fM", pct,
                          static_cast<double>(data.perCoreFreq[i]));
             } else {
                 snprintf(val, sizeof(val), " %5.1f%%     -", pct);
+            }
+            if (anyPerCoreTemp) {
+                char tb[12];
+                if (data.perCoreTemp[i] > 0)
+                    snprintf(tb, sizeof(tb), " %3.0fC", static_cast<double>(data.perCoreTemp[i]));
+                else
+                    snprintf(tb, sizeof(tb), "    -");
+                strncat(val, tb, sizeof(val) - strlen(val) - 1);
             }
             mvwprintw(stdscr, ty, barX + barW, "%s", val);
         }
@@ -3601,11 +3575,9 @@ void TuiApp::Run() {
                 RegisterPanel(PanelId::Process, ly, lx, leftW, h);
                 ly += h;
             }
-            if (ly < maxY) {
-                int h = DrawCorePanel(stdscr, data, ly, lx, leftW);
-                RegisterPanel(PanelId::Core, ly, lx, leftW, h);
-                ly += h;
-            }
+            // Per-core temps/frequencies are a detail-view thing (Space on the
+            // CPU panel), not a dashboard panel: a row of C00..C15 numbers on
+            // the main screen says nothing a user can act on.
         }
         if (ly > maxY) ly = maxY;
 

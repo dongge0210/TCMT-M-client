@@ -632,8 +632,9 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
   上限来自 `nvmlDeviceGetMaxPcieLinkWidth`。
 - 修正：`NVML_CLOCK_GRAPHICS` 原写成 1（那是 SM 时钟），按手册改为 0。
 - Windows 磁盘详情：SMART 属性名之前没抄进 TUI（`main.cpp` 漏了 `sa.name`），左列全空。
-- Windows 逐核温度：此前 `perCoreTemp`/`perCoreCount` 从未填过，逐核面板根本不出现。现在用同一
-  PawnIO 会话按物理核读一次 `IA32_THERM_STATUS`（P 核在前，最多 16 列），1 秒一次。
+- Windows 逐核温度：此前 `perCoreTemp`/`perCoreCount` 从未填过。现在用同一 PawnIO 会话按物理核
+  读一次 `IA32_THERM_STATUS`（P 核在前，最多 16 个），1 秒一次；只喂 CPU 详情页的逐核表，主界面
+  不再有逐核面板（"Per-Core Sensors" 已移除，逐核温度列只在详情里出现）。
 - 未验证：以上 Windows 改动均未在本机编译；需在 Windows 端 Debug 构建确认。
 
 ## Known Issues

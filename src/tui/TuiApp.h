@@ -526,7 +526,6 @@ private:
     int DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawAccelPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
-    int DrawCorePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
 
     // Utility
     static std::string FormatSize(uint64_t bytes);      // storage: binary (1024), "MB" = MiB
