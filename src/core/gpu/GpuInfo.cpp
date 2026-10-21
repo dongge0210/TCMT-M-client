@@ -33,8 +33,11 @@ struct nvmlUtilization_t {
 
 // NVML constants (not in header, so define locally)
 constexpr nvmlReturn_t NVML_SUCCESS = 0;
-constexpr int NVML_CLOCK_GRAPHICS = 1;
-constexpr int NVML_TEMPERATURE_GPU = 0;
+// nvmlClockType_t order (NVML API Reference Guide, nvmlClockType_t):
+// GRAPHICS = 0, SM = 1, MEM = 2, VIDEO = 3. Do not "fix" this to 1 — that is
+// the SM clock, which is what an off-by-one here silently returns.
+constexpr int NVML_CLOCK_GRAPHICS = 0;
+constexpr int NVML_TEMPERATURE_GPU = 0;   // nvmlTemperatureSensors_t
 
 // ======================== NVAPI Dynamic Loading (fan RPM) ========================
 // NVML only gives fan speed as % of max. NVAPI returns actual RPM.
