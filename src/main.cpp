@@ -70,6 +70,7 @@ const GUID GUID_DEVINTERFACE_USB_HUB = {
 #include "core/MCP/MCPServer.h"
 #include "core/IPC/IPCClient.h"
 #include "core/temperature/TemperatureWrapper.h"
+#include "core/cpu/CpuTempReader.h"
 #include "core/coordinator/ModuleCoordinator.h"
 #include "tui/TuiApp.h"
 #include "tui/LogWindow.h"
@@ -2082,6 +2083,30 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 }
                 
                 tuiData.osVersion = sysInfo.osVersion;
+
+                // ─── Per-core die temperatures ───
+                // MSR reads need one call per core, so they run on the 1 s
+                // cadence instead of every UI frame. Windows had no per-core
+                // values at all before this; the panel was hidden because
+                // perCoreCount stayed 0.
+                {
+                    static std::chrono::steady_clock::time_point coreTempAt{};
+                    static std::vector<float> coreTemps;
+                    const auto nowT = std::chrono::steady_clock::now();
+                    const bool due = coreTempAt.time_since_epoch().count() == 0 ||
+                        std::chrono::duration_cast<std::chrono::milliseconds>(nowT - coreTempAt).count() >= 1000;
+                    if (due) {
+                        coreTempAt = nowT;
+                        const auto temps = CpuTempReader::ReadPerCore();
+                        coreTemps.assign(temps.begin(), temps.end());
+                    }
+                    const int n = std::min(static_cast<int>(coreTemps.size()), 16);
+                    if (n > 0) {
+                        sysInfo.perCoreCount = n;
+                        for (int ci = 0; ci < n; ++ci)
+                            sysInfo.perCoreTemp[ci] = coreTemps[ci];
+                    }
+                }
 
                 // ─── Per-core sensors ───
                 tuiData.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);

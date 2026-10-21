@@ -45,45 +45,91 @@ bool CpuTempReader::IsAvailable() {
     return PawnIOWrapper::IsInstalled();
 }
 
-std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
-    std::vector<CpuCoreTemp> result;
-    static PawnIOWrapper s_pa;
-    static bool s_ready = false;
-    static uint32_t s_tjMax = 100;
-    static int s_coreCount = 0;
+namespace {
 
-    if (!s_ready) {
-        if (!s_pa.Open()) return result;
+struct TempReaderState {
+    PawnIOWrapper pa;
+    bool ready = false;
+    uint32_t tjMax = 100;
+    int logicalCount = 0;
+};
+
+// One PawnIO session shared by the aggregate and per-core readers; opening
+// and loading the kernel module twice would be wasteful and can fail.
+TempReaderState& TempState() {
+    static TempReaderState st;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        if (!st.pa.Open()) return st;
         auto data = LoadResource(INTEL_MSR_RES);
-        if (data.empty()) return result;
-        if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_read_msr"))
-            return result;
+        if (data.empty()) return st;
+        if (!st.pa.LoadModuleFromMemory(data.data(), data.size(), "ioctl_read_msr"))
+            return st;
 
         // Read TjMax once (same for all cores)
         uint64_t tjOut[1] = {0};
         uint64_t tjIn[1] = { MSR_IA32_TEMPERATURE_TARGET };
-        if (s_pa.Execute("ioctl_read_msr", tjIn, 1, tjOut, 1, nullptr))
-            s_tjMax = ((uint32_t)tjOut[0] >> 16) & 0xFF;
+        if (st.pa.Execute("ioctl_read_msr", tjIn, 1, tjOut, 1, nullptr))
+            st.tjMax = ((uint32_t)tjOut[0] >> 16) & 0xFF;
 
-        s_coreCount = GetProcessorCount();
-        s_ready = true;
-        Logger::Info(std::string("CpuTempReader: ready, TjMax=") + std::to_string(s_tjMax) +
-                     "C, " + std::to_string(s_coreCount) + " cores");
+        st.logicalCount = GetProcessorCount();
+        st.ready = true;
+        Logger::Info(std::string("CpuTempReader: ready, TjMax=") + std::to_string(st.tjMax) +
+                     "C, " + std::to_string(st.logicalCount) + " logical CPUs");
     }
+    return st;
+}
 
-    if (!s_ready) return result;
+// First logical processor of every physical core, in enumeration order
+// (P cores before E cores on hybrid parts). The sibling thread shares the
+// same die sensor, so one read per core is enough.
+std::vector<int> PhysicalCoreFirstThreads() {
+    std::vector<int> first;
+    DWORD len = 0;
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len) || len == 0)
+        return first;
+
+    std::vector<unsigned char> buf(len);
+    auto* base = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buf.data());
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, base, &len))
+        return first;
+
+    for (DWORD off = 0; off < len; ) {
+        const auto* info = reinterpret_cast<const PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
+            buf.data() + off);
+        if (info->Relationship == RelationProcessorCore) {
+            const KAFFINITY mask = info->Processor.GroupMask[0].Mask;
+            for (int bit = 0; bit < 64; ++bit) {
+                if (mask & (KAFFINITY(1) << bit)) {
+                    first.push_back(bit);
+                    break;
+                }
+            }
+        }
+        off += info->Size;
+    }
+    return first;
+}
+
+}  // namespace
+
+std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
+    std::vector<CpuCoreTemp> result;
+    TempReaderState& st = TempState();
+    if (!st.ready) return result;
 
     // Read all cores for max + average
     double coreMax = 0, coreSum = 0, packageTemp = 0;
     int validCores = 0;
-    for (int i = 0; i < s_coreCount && i < 32; i++) {
+    for (int i = 0; i < st.logicalCount && i < 32; i++) {
         uint64_t val = 0;
-        if (!ReadMsrOnCore(s_pa, MSR_IA32_THERM_STATUS, i, &val))
+        if (!ReadMsrOnCore(st.pa, MSR_IA32_THERM_STATUS, i, &val))
             continue;
         uint32_t eax = (uint32_t)val;
         if ((eax & 0x80000000) == 0) continue;
         uint32_t dig = (eax >> 16) & 0x7F;
-        int tempC = (int)s_tjMax - (int)dig;
+        int tempC = (int)st.tjMax - (int)dig;
         if (tempC < 0 || tempC > 125) continue;
 
         if (i == 0) packageTemp = tempC;
@@ -96,6 +142,34 @@ std::vector<CpuCoreTemp> CpuTempReader::ReadAll() {
     result.push_back({"CPU Package", packageTemp});
     result.push_back({"CPU Core Max", coreMax});
     result.push_back({"CPU Core Average", coreSum / validCores});
+    return result;
+}
+
+std::vector<double> CpuTempReader::ReadPerCore() {
+    std::vector<double> result;
+    TempReaderState& st = TempState();
+    if (!st.ready) return result;
+
+    std::vector<int> logical = PhysicalCoreFirstThreads();
+    if (logical.empty()) {
+        // No topology info: fall back to logical processors, capped at the
+        // panel's 16 columns.
+        for (int i = 0; i < st.logicalCount && i < 16; ++i) logical.push_back(i);
+    }
+
+    result.reserve(logical.size());
+    for (int lp : logical) {
+        uint64_t val = 0;
+        double tempC = 0.0;
+        if (ReadMsrOnCore(st.pa, MSR_IA32_THERM_STATUS, lp, &val)) {
+            const uint32_t eax = (uint32_t)val;
+            if ((eax & 0x80000000) != 0) {
+                const int t = (int)st.tjMax - (int)((eax >> 16) & 0x7F);
+                if (t >= 0 && t <= 125) tempC = t;
+            }
+        }
+        result.push_back(tempC);
+    }
     return result;
 }
 #endif
