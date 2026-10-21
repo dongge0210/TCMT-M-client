@@ -15,7 +15,9 @@
 #include <cstring>
 #include <csignal>
 #include <unistd.h>
+#include <spawn.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <cstdlib>
 #include <mach/mach_time.h>
 #include <mach/mach.h>
@@ -964,9 +966,26 @@ int main(int argc, char* argv[]) {
             const std::string app = up(up(dir));
             bool opened = false;
             if (!app.empty()) {
-                const std::string cmd =
-                    "/usr/bin/open -n \"" + app + "\" --args --request-location";
-                opened = (std::system(cmd.c_str()) == 0);
+                // posix_spawn, not system(): building a shell string would
+                // re-parse the bundle path. The path comes from our own
+                // executable, so it is not attacker-controlled, but there is
+                // no reason to route it through sh at all.
+                extern char** environ;
+                char* argv[] = {
+                    const_cast<char*>("/usr/bin/open"),
+                    const_cast<char*>("-n"),
+                    const_cast<char*>(app.c_str()),
+                    const_cast<char*>("--args"),
+                    const_cast<char*>("--request-location"),
+                    nullptr
+                };
+                pid_t pid = 0;
+                if (posix_spawn(&pid, "/usr/bin/open", nullptr, nullptr,
+                                argv, environ) == 0) {
+                    int status = 0;
+                    opened = (waitpid(pid, &status, 0) == pid
+                              && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+                }
             }
             Logger::Info(opened
                 ? "Location: asked the app bundle to request authorization"
