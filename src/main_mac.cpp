@@ -1324,6 +1324,8 @@ int main(int argc, char* argv[]) {
                     e.unified = gpu.isUnified;
                     e.isVirtual = gpu.isVirtual;
                     e.coreCount = gpu.coreCount;
+                    e.temperature = static_cast<double>(gpu.temperature);
+                    e.clockMhz = gpu.coreClock;
                     data.gpus.push_back(e);
                 }
                 for (const auto& gpu : gpus) {

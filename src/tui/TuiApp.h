@@ -110,6 +110,20 @@ struct TuiData {
         bool unified = false;
         bool isVirtual = false;
         int coreCount = 0;
+        // Live per-card readings. NVML fills every one on Windows NVIDIA;
+        // macOS has temperature and clock only, the rest stay at zero.
+        double temperature = 0.0;    // C
+        double clockMhz = 0.0;       // current graphics clock
+        int maxClock = 0;            // MHz ceiling
+        int memClockMhz = 0;         // memory clock
+        double powerMw = 0.0;        // current draw
+        double powerLimitMw = 0.0;   // enforced limit
+        int fanPercent = -1;         // -1 when the card reports no fan
+        int fanCount = 0;
+        unsigned int pcieGen = 0;
+        unsigned int pcieWidth = 0;
+        std::string serial;
+        std::string vbios;
     };
     std::vector<GpuEntry> gpus;
     double gpuUsage = 0.0;

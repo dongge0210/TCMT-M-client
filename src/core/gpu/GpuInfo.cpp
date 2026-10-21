@@ -6,6 +6,7 @@
 #include "WMIManager.h"
 #include <comutil.h>
 #include <algorithm>
+#include <cctype>
 #include <cwctype>
 
 // ======================== NVML Dynamic Loading ========================
@@ -37,6 +38,7 @@ constexpr nvmlReturn_t NVML_SUCCESS = 0;
 // GRAPHICS = 0, SM = 1, MEM = 2, VIDEO = 3. Do not "fix" this to 1 — that is
 // the SM clock, which is what an off-by-one here silently returns.
 constexpr int NVML_CLOCK_GRAPHICS = 0;
+constexpr int NVML_CLOCK_MEM = 2;
 constexpr int NVML_TEMPERATURE_GPU = 0;   // nvmlTemperatureSensors_t
 
 // ======================== NVAPI Dynamic Loading (fan RPM) ========================
@@ -126,6 +128,16 @@ using NvmlDeviceGetPowerUsageFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetEnforcedPowerLimitFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 // Driver release string, e.g. "560.94" — the number NVIDIA's own UI shows.
 using NvmlSystemGetDriverVersionFn = nvmlReturn_t (*)(char*, unsigned int);
+// Optional device queries. All of these have existed for years, but they are
+// still resolved as optional so an old driver degrades to "field not shown"
+// instead of disabling NVML entirely.
+using NvmlDeviceGetNameFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+using NvmlDeviceGetNumGpuCoresFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetMaxClockInfoFn = nvmlReturn_t (*)(nvmlDevice_t, int, unsigned int*);
+using NvmlDeviceGetSerialFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+using NvmlDeviceGetVbiosVersionFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+using NvmlDeviceGetCurrPcieLinkGenerationFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetCurrPcieLinkWidthFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -146,6 +158,13 @@ struct NvmlApi {
     NvmlDeviceGetPowerUsageFn getPowerUsage = nullptr;              // mW
     NvmlDeviceGetEnforcedPowerLimitFn getEnforcedPowerLimit = nullptr;  // mW
     NvmlSystemGetDriverVersionFn systemGetDriverVersion = nullptr;
+    NvmlDeviceGetNameFn getDeviceName = nullptr;
+    NvmlDeviceGetNumGpuCoresFn getNumGpuCores = nullptr;
+    NvmlDeviceGetMaxClockInfoFn getMaxClockInfo = nullptr;
+    NvmlDeviceGetSerialFn getSerial = nullptr;
+    NvmlDeviceGetVbiosVersionFn getVbiosVersion = nullptr;
+    NvmlDeviceGetCurrPcieLinkGenerationFn getPcieGen = nullptr;
+    NvmlDeviceGetCurrPcieLinkWidthFn getPcieWidth = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -202,6 +221,20 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetPowerUsage"));
         api.getEnforcedPowerLimit = reinterpret_cast<NvmlDeviceGetEnforcedPowerLimitFn>(
             GetProcAddress(api.module, "nvmlDeviceGetEnforcedPowerLimit"));
+        api.getDeviceName = reinterpret_cast<NvmlDeviceGetNameFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetName"));
+        api.getNumGpuCores = reinterpret_cast<NvmlDeviceGetNumGpuCoresFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetNumGpuCores"));
+        api.getMaxClockInfo = reinterpret_cast<NvmlDeviceGetMaxClockInfoFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetMaxClockInfo"));
+        api.getSerial = reinterpret_cast<NvmlDeviceGetSerialFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetSerial"));
+        api.getVbiosVersion = reinterpret_cast<NvmlDeviceGetVbiosVersionFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetVbiosVersion"));
+        api.getPcieGen = reinterpret_cast<NvmlDeviceGetCurrPcieLinkGenerationFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetCurrPcieLinkGeneration"));
+        api.getPcieWidth = reinterpret_cast<NvmlDeviceGetCurrPcieLinkWidthFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetCurrPcieLinkWidth"));
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -376,7 +409,9 @@ void GpuInfo::DetectGpusViaWmi() {
     }
     pEnumerator->Release();
 
-    // Query detailed info for NVIDIA GPUs (via NVML)
+    // Query detailed info for NVIDIA GPUs (via NVML), one NVML device per
+    // adapter so multi-GPU machines do not show card 0 everywhere.
+    AssignNvmlDevices();
     for (size_t i = 0; i < gpuList.size(); ++i) {
         if (gpuList[i].isNvidia && !gpuList[i].isVirtual)
             QueryNvidiaGpuInfo(static_cast<int>(i));
@@ -396,36 +431,168 @@ void GpuInfo::QueryIntelGpuInfo(int index) {
     pFactory->Release();
 }
 
+// WMI and NVML name the same adapter with slightly different strings, and a
+// driver update can change either. Compare the alphanumeric core so a vendor
+// prefix or spacing difference does not break the mapping.
+static std::string NormalizeGpuName(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if (std::isalnum(c)) out.push_back(static_cast<char>(std::tolower(c)));
+    }
+    return out;
+}
+
+// Adapter names are ASCII on every card NVML covers; folding is enough and
+// avoids pulling in a code-page conversion for a comparison key.
+static std::string WideNameToNarrow(const std::wstring& w) {
+    std::string out;
+    out.reserve(w.size());
+    for (wchar_t c : w)
+        out.push_back(c > 0 && c < 128 ? static_cast<char>(c) : '?');
+    return out;
+}
+
+void GpuInfo::AssignNvmlDevices() {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getDeviceCount) return;
+
+    unsigned int count = 0;
+    if (NVML_SUCCESS != s.api->getDeviceCount(&count)) return;
+
+    // Every NVIDIA adapter must own one NVML device. Before this, all of them
+    // queried handle 0, so a two-NVIDIA machine showed the first card's
+    // clocks, temperature and power on the second one as well.
+    std::vector<bool> taken(gpuList.size(), false);
+    for (unsigned int d = 0; d < count; ++d) {
+        nvmlDevice_t dev = nullptr;
+        if (NVML_SUCCESS != s.api->getHandleByIndex(d, &dev)) continue;
+
+        std::string nvName;
+        if (s.api->getDeviceName) {
+            char name[96] = {0};
+            if (NVML_SUCCESS == s.api->getDeviceName(dev, name, static_cast<unsigned int>(sizeof(name))))
+                nvName = NormalizeGpuName(name);
+        }
+
+        int match = -1;
+        if (!nvName.empty()) {
+            for (size_t i = 0; i < gpuList.size(); ++i) {
+                if (taken[i] || !gpuList[i].isNvidia || gpuList[i].isVirtual) continue;
+                const std::string wmi = NormalizeGpuName(WideNameToNarrow(gpuList[i].name));
+                if (!wmi.empty() && (wmi.find(nvName) != std::string::npos ||
+                                     nvName.find(wmi) != std::string::npos)) {
+                    match = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+        if (match < 0) {
+            for (size_t i = 0; i < gpuList.size(); ++i) {
+                if (!taken[i] && gpuList[i].isNvidia && !gpuList[i].isVirtual) {
+                    match = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+        if (match < 0) continue;  // more NVML devices than display adapters
+
+        taken[match] = true;
+        gpuList[match].nvmlIndex = static_cast<int>(d);
+        Logger::Debug("NVML: device " + std::to_string(d) + " -> adapter " + std::to_string(match));
+    }
+}
+
 void GpuInfo::QueryNvidiaGpuInfo(int index) {
     auto& s = GetNvmlSession();
     if (!s.ok) return; // NVML not available (no NVIDIA GPU)
 
-    // Get VRAM info
+    GpuData& gpu = gpuList[index];
+    nvmlDevice_t dev = nullptr;
+    if (gpu.nvmlIndex >= 0 &&
+        NVML_SUCCESS == s.api->getHandleByIndex(static_cast<unsigned int>(gpu.nvmlIndex), &dev)) {
+        // mapped by name in AssignNvmlDevices
+    } else {
+        dev = nullptr;
+        // Unmapped and there is only one NVIDIA adapter: device 0 is it.
+        int nvidiaCount = 0;
+        for (const auto& g : gpuList)
+            if (g.isNvidia && !g.isVirtual) ++nvidiaCount;
+        if (nvidiaCount == 1) dev = s.device;
+    }
+    if (!dev) return;
+
+    // VRAM: total, used and the percentage NVML itself would report.
     nvmlMemory_t memory;
-    if (NVML_SUCCESS == s.api->getMemoryInfo(s.device, &memory))
-        gpuList[index].dedicatedMemory = memory.total;
+    if (s.api->getMemoryInfo && NVML_SUCCESS == s.api->getMemoryInfo(dev, &memory)) {
+        gpu.dedicatedMemory = memory.total;
+        gpu.memoryUsed = memory.used;
+        if (memory.total > 0)
+            gpu.memoryPercent = 100.0 * static_cast<double>(memory.used) /
+                                static_cast<double>(memory.total);
+    }
 
-    // Get core clock (MHz)
-    unsigned int clockMHz = 0;
-    if (NVML_SUCCESS == s.api->getClockInfo(s.device, NVML_CLOCK_GRAPHICS, &clockMHz))
-        gpuList[index].coreClock = static_cast<double>(clockMHz);
+    unsigned int value = 0;
+    if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_GRAPHICS, &value))
+        gpu.coreClock = static_cast<double>(value);
+    if (s.api->getMaxClockInfo && NVML_SUCCESS == s.api->getMaxClockInfo(dev, NVML_CLOCK_GRAPHICS, &value))
+        gpu.maxCoreClock = static_cast<int>(value);
+    if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_MEM, &value))
+        gpu.memClock = static_cast<int>(value);
+    if (s.api->getTemperature && NVML_SUCCESS == s.api->getTemperature(dev, NVML_TEMPERATURE_GPU, &value))
+        gpu.temperature = value;
 
-    // Get temperature
-    unsigned int temp = 0;
-    if (NVML_SUCCESS == s.api->getTemperature(s.device, NVML_TEMPERATURE_GPU, &temp))
-        gpuList[index].temperature = temp;
-
-    // Get GPU usage
     nvmlUtilization_t util;
-    if (NVML_SUCCESS == s.api->getUtilizationRates(s.device, &util))
-        gpuList[index].usage = static_cast<double>(util.gpu);
+    if (s.api->getUtilizationRates && NVML_SUCCESS == s.api->getUtilizationRates(dev, &util))
+        gpu.usage = static_cast<double>(util.gpu);
+
+    if (s.api->getNumGpuCores && NVML_SUCCESS == s.api->getNumGpuCores(dev, &value))
+        gpu.coreCount = static_cast<int>(value);
+
+    // Power: milliwatts, the unit SystemInfo::gpuPower and the TUI use.
+    if (s.api->getPowerUsage && NVML_SUCCESS == s.api->getPowerUsage(dev, &value))
+        gpu.powerMw = value;
+    if (s.api->getEnforcedPowerLimit && NVML_SUCCESS == s.api->getEnforcedPowerLimit(dev, &value))
+        gpu.powerLimitMw = value;
+
+    if (s.api->getPcieGen && NVML_SUCCESS == s.api->getPcieGen(dev, &value))
+        gpu.pcieGen = value;
+    if (s.api->getPcieWidth && NVML_SUCCESS == s.api->getPcieWidth(dev, &value))
+        gpu.pcieWidth = value;
+
+    // Fans: per-fan % of max, averaged the way every monitor UI shows it.
+    unsigned int fanCount = 0;
+    if (s.api->getNumFans && NVML_SUCCESS == s.api->getNumFans(dev, &fanCount) && fanCount > 0) {
+        gpu.fanCount = static_cast<int>(fanCount);
+        unsigned int sum = 0, got = 0;
+        for (unsigned int f = 0; f < fanCount && f < 8; ++f) {
+            unsigned int pct = 0;
+            if (s.api->getFanSpeedV2 && NVML_SUCCESS == s.api->getFanSpeedV2(dev, f, &pct)) {
+                sum += pct;
+                ++got;
+            }
+        }
+        if (got == 0 && s.api->getFanSpeed && NVML_SUCCESS == s.api->getFanSpeed(dev, &sum)) got = 1;
+        if (got > 0) gpu.fanPercent = static_cast<int>(sum / got);
+    }
+
+    if (s.api->getSerial) {
+        char serial[64] = {0};
+        if (NVML_SUCCESS == s.api->getSerial(dev, serial, static_cast<unsigned int>(sizeof(serial))) && serial[0] != '\0')
+            gpu.serial = serial;
+    }
+    if (s.api->getVbiosVersion) {
+        char vbios[80] = {0};
+        if (NVML_SUCCESS == s.api->getVbiosVersion(dev, vbios, static_cast<unsigned int>(sizeof(vbios))) && vbios[0] != '\0')
+            gpu.vbios = vbios;
+    }
 
     // Get CUDA compute capability (optional, not available in all NVML versions)
     if (s.api->getCudaComputeCapability) {
         int major = 0, minor = 0;
-        if (NVML_SUCCESS == s.api->getCudaComputeCapability(s.device, &major, &minor)) {
-            gpuList[index].computeCapabilityMajor = major;
-            gpuList[index].computeCapabilityMinor = minor;
+        if (NVML_SUCCESS == s.api->getCudaComputeCapability(dev, &major, &minor)) {
+            gpu.computeCapabilityMajor = major;
+            gpu.computeCapabilityMinor = minor;
         }
     }
 
@@ -435,9 +602,38 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
         char driver[80] = {0};
         if (NVML_SUCCESS == s.api->systemGetDriverVersion(driver, sizeof(driver)) &&
             driver[0] != '\0') {
-            gpuList[index].driver = driver;
+            gpu.driver = driver;
         }
     }
+}
+
+GpuInfo::NvidiaLive GpuInfo::GetNvidiaLive(int nvmlIndex) {
+    NvidiaLive out;
+    auto& s = GetNvmlSession();
+    if (!s.ok || nvmlIndex < 0) return out;
+
+    nvmlDevice_t dev = nullptr;
+    if (NVML_SUCCESS != s.api->getHandleByIndex(static_cast<unsigned int>(nvmlIndex), &dev) || !dev)
+        return out;
+
+    unsigned int value = 0;
+    nvmlUtilization_t util;
+    nvmlMemory_t memory;
+    if (s.api->getUtilizationRates && NVML_SUCCESS == s.api->getUtilizationRates(dev, &util))
+        out.usage = static_cast<double>(util.gpu);
+    if (s.api->getTemperature && NVML_SUCCESS == s.api->getTemperature(dev, NVML_TEMPERATURE_GPU, &value))
+        out.temperature = static_cast<double>(value);
+    if (s.api->getPowerUsage && NVML_SUCCESS == s.api->getPowerUsage(dev, &value))
+        out.powerMw = static_cast<double>(value);
+    if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_GRAPHICS, &value))
+        out.clockMhz = static_cast<double>(value);
+    if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_MEM, &value))
+        out.memClockMhz = static_cast<double>(value);
+    if (s.api->getMemoryInfo && NVML_SUCCESS == s.api->getMemoryInfo(dev, &memory) && memory.total > 0)
+        out.memoryPercent = 100.0 * static_cast<double>(memory.used) /
+                            static_cast<double>(memory.total);
+    out.valid = true;
+    return out;
 }
 
 const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuList; }

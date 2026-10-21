@@ -2219,8 +2219,8 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         return;
     }
 
-    const int W = (std::min)(66, cols - 6);
-    const int H = (std::min)(14, rows - 4);
+    const int W = (std::min)(70, cols - 6);
+    const int H = (std::min)(19, rows - 4);
     const int x0 = (std::max)(1, (cols - W) / 2);
     const int y0 = (std::max)(2, (rows - H) / 2);
 
@@ -2266,20 +2266,53 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         y++;
     }
 
-    if (data.gpuFreq > 0) {
-        if (data.gpuMaxFreq > 0 &&
-            static_cast<int>(data.gpuMaxFreq) != static_cast<int>(data.gpuFreq)) {
+    // Per-card readings first; the aggregate scalars are the fallback so a
+    // single-GPU machine still shows temperature/power even when the backend
+    // only has the system-level value.
+    const double tempC = (g && g->temperature > 0) ? g->temperature
+                        : (multi ? 0.0 : data.gpuTemp);
+    if (tempC > 0.0) {
+        snprintf(buf, sizeof(buf), "Temp: %.0f C", tempC);
+        emit(buf);
+    }
+
+    const double curClock = (g && g->clockMhz > 0) ? g->clockMhz : data.gpuFreq;
+    const int maxClock = (g && g->maxClock > 0)
+        ? g->maxClock : static_cast<int>(data.gpuMaxFreq);
+    if (curClock > 0) {
+        if (maxClock > 0 && maxClock != static_cast<int>(curClock)) {
             snprintf(buf, sizeof(buf), "Freq: %d/%d MHz",
-                     static_cast<int>(data.gpuFreq), static_cast<int>(data.gpuMaxFreq));
+                     static_cast<int>(curClock), maxClock);
         } else {
-            snprintf(buf, sizeof(buf), "Freq: %d MHz", static_cast<int>(data.gpuFreq));
+            snprintf(buf, sizeof(buf), "Freq: %d MHz", static_cast<int>(curClock));
         }
         emit(buf);
     }
-    if (data.gpuPower > 0.0) {
-        snprintf(buf, sizeof(buf), "Power: %.2f W", data.gpuPower / 1000.0);
+    if (g && g->memClockMhz > 0) {
+        snprintf(buf, sizeof(buf), "Mem clk: %d MHz", g->memClockMhz);
         emit(buf);
     }
+
+    const double powerMw = (g && g->powerMw > 0) ? g->powerMw : data.gpuPower;
+    if (powerMw > 0.0) {
+        if (g && g->powerLimitMw > 0.0) {
+            snprintf(buf, sizeof(buf), "Power: %.1f / %.0f W",
+                     powerMw / 1000.0, g->powerLimitMw / 1000.0);
+        } else {
+            snprintf(buf, sizeof(buf), "Power: %.1f W", powerMw / 1000.0);
+        }
+        emit(buf);
+    }
+
+    if (g && g->fanPercent >= 0) {
+        if (g->fanCount > 1) {
+            snprintf(buf, sizeof(buf), "Fan: %d%%  (%d fans)", g->fanPercent, g->fanCount);
+        } else {
+            snprintf(buf, sizeof(buf), "Fan: %d%%", g->fanPercent);
+        }
+        emit(buf);
+    }
+
     // Discrete GPUs only. Under unified memory this figure is system RAM and
     // reads as VRAM, so it is not shown at all.
     const bool unified = g ? g->unified : data.gpuUnified;
@@ -2289,6 +2322,13 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         const uint64_t used = static_cast<uint64_t>(mem * memPct / 100.0);
         emit("VRAM: " + FormatSize(used) + " / " + FormatSize(mem));
     }
+
+    if (g && g->pcieGen > 0 && g->pcieWidth > 0) {
+        snprintf(buf, sizeof(buf), "PCIe: Gen%u x%u", g->pcieGen, g->pcieWidth);
+        emit(buf);
+    }
+    if (g && !g->serial.empty()) emit("Serial: " + g->serial);
+    if (g && !g->vbios.empty()) emit("VBIOS: " + g->vbios);
 
     {
         std::string hint = Tr("details.close");

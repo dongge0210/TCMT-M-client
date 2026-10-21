@@ -129,7 +129,12 @@ inline std::string GpusToJson(const std::vector<Gpu>& gpus) {
            << ",\"usage\":" << gpus[i].usage
            << ",\"temperature\":" << gpus[i].temperature
            << ",\"isVirtual\":" << (gpus[i].isVirtual ? "true" : "false")
-           << ",\"unified\":" << (gpus[i].isUnified ? "true" : "false") << "}";
+           << ",\"unified\":" << (gpus[i].isUnified ? "true" : "false")
+           << ",\"coreCount\":" << gpus[i].coreCount
+           << ",\"maxClock\":" << gpus[i].maxClock
+           << ",\"power\":" << gpus[i].powerMw
+           << ",\"powerLimit\":" << gpus[i].powerLimitMw
+           << ",\"fanPercent\":" << gpus[i].fanPercent << "}";
     }
     js << "]";
     return js.str();
@@ -235,6 +240,18 @@ struct GpuSpec {
     bool isVirtual = false;   // Is virtual GPU
     bool isUnified = false;   // memory 报的其实是统一内存
     double usage = 0;         // GPU usage (0-100)
+    // ---- NVIDIA via NVML (Windows). Other platforms leave these at zero. ----
+    int nvmlIndex = -1;       // device index for live refresh; -1 = not NVIDIA
+    int coreCount = 0;        // shader cores
+    int maxClock = 0;         // MHz, graphics clock ceiling
+    int memClock = 0;         // MHz, memory clock
+    double powerMw = 0;       // current draw, milliwatts
+    double powerLimitMw = 0;  // enforced limit, milliwatts
+    int fanPercent = -1;      // % of max, -1 when the card reports none
+    std::string serial;       // board serial
+    std::string vbios;        // VBIOS version
+    unsigned int pcieGen = 0; // current link generation
+    unsigned int pcieWidth = 0;  // current link width (lanes)
 };
 
 // Network adapter info

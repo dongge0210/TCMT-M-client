@@ -57,7 +57,23 @@ public:
         // platform has no readable value.
         std::string driver;
         // Apple Silicon: core count from AGXAccelerator ("gpu-core-count").
+        // NVIDIA on Windows: nvmlDeviceGetNumGpuCores.
         int coreCount = 0;
+        // ---- NVML per-device readings (Windows, NVIDIA only) ----
+        // Each NVIDIA adapter gets its own NVML handle; -1 means "not mapped".
+        int nvmlIndex = -1;
+        uint64_t memoryUsed = 0;        // bytes
+        double memoryPercent = 0.0;     // VRAM usage %
+        int maxCoreClock = 0;           // MHz, nvmlDeviceGetMaxClockInfo
+        int memClock = 0;               // MHz, memory clock
+        int fanPercent = -1;            // % of max; -1 when the card reports none
+        int fanCount = 0;
+        unsigned int powerMw = 0;       // current draw, milliwatts
+        unsigned int powerLimitMw = 0;  // enforced limit, milliwatts
+        std::string serial;             // nvmlDeviceGetSerial
+        std::string vbios;              // nvmlDeviceGetVbiosVersion
+        unsigned int pcieGen = 0;       // current link generation
+        unsigned int pcieWidth = 0;     // current link width (lanes)
     };
 
 #ifdef TCMT_WINDOWS
@@ -78,6 +94,19 @@ public:
     };
     // Returns per-fan speeds via NVML (NVML reports % of max, not actual RPM)
     static std::vector<GpuFanInfo> GetGpuFans();
+    // Per-device live readings for one NVML index. The single-value getters
+    // above always read device 0; this one walks the list so a multi-GPU
+    // machine gets each card's own numbers.
+    struct NvidiaLive {
+        bool valid = false;
+        double usage = 0;          // 0-100
+        double temperature = 0;    // C
+        double memoryPercent = 0;  // VRAM used %
+        double powerMw = 0;        // milliwatts
+        double clockMhz = 0;       // graphics clock
+        double memClockMhz = 0;    // memory clock
+    };
+    static NvidiaLive GetNvidiaLive(int nvmlIndex);
 #else
     GpuInfo();
 #endif
@@ -89,6 +118,9 @@ public:
 private:
     void DetectGpusViaWmi();
     void QueryIntelGpuInfo(int index);
+    // Fills GpuData::nvmlIndex by matching WMI adapter names to NVML device
+    // names, falling back to declaration order.
+    void AssignNvmlDevices();
     void QueryNvidiaGpuInfo(int index);
     bool IsVirtualGpu(const std::wstring& name);
     WmiManager& wmiManager;

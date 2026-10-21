@@ -677,6 +677,17 @@ static GpuSpec MakeGpuSpec(const GpuInfo::GpuData& gpu) {
     spec.isVirtual = gpu.isVirtual;
     spec.isUnified = gpu.isUnified;
     spec.usage = gpu.usage;
+    spec.nvmlIndex = gpu.nvmlIndex;
+    spec.coreCount = gpu.coreCount;
+    spec.maxClock = gpu.maxCoreClock;
+    spec.memClock = gpu.memClock;
+    spec.powerMw = static_cast<double>(gpu.powerMw);
+    spec.powerLimitMw = static_cast<double>(gpu.powerLimitMw);
+    spec.fanPercent = gpu.fanPercent;
+    spec.serial = gpu.serial;
+    spec.vbios = gpu.vbios;
+    spec.pcieGen = gpu.pcieGen;
+    spec.pcieWidth = gpu.pcieWidth;
     return spec;
 }
 
@@ -1612,6 +1623,36 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     if (nvmlVramPct >= 0) sysInfo.gpus[0].memoryPercent = nvmlVramPct;
                     sysInfo.gpus[0].isVirtual = sysInfo.gpuIsVirtual;
 
+                    // Per-GPU live readings, applied after the primary-card
+                    // assignments above so each NVIDIA card shows its own
+                    // numbers. The cache is the startup snapshot; without this
+                    // refresh every card kept reporting its first-second value.
+                    static std::chrono::steady_clock::time_point nvmlLiveAt{};
+                    static std::vector<GpuInfo::NvidiaLive> nvmlLive;
+                    const auto liveNow = std::chrono::steady_clock::now();
+                    const bool liveDue = nvmlLiveAt.time_since_epoch().count() == 0 ||
+                        std::chrono::duration_cast<std::chrono::milliseconds>(liveNow - nvmlLiveAt).count() >= 1000;
+                    if (liveDue) {
+                        nvmlLiveAt = liveNow;
+                        nvmlLive.clear();
+                        nvmlLive.reserve(sysInfo.gpus.size());
+                        for (const auto& g : sysInfo.gpus) {
+                            nvmlLive.push_back(g.nvmlIndex >= 0
+                                ? GpuInfo::GetNvidiaLive(g.nvmlIndex)
+                                : GpuInfo::NvidiaLive{});
+                        }
+                    }
+                    for (size_t gi = 0; gi < sysInfo.gpus.size() && gi < nvmlLive.size(); ++gi) {
+                        const auto& live = nvmlLive[gi];
+                        if (!live.valid) continue;
+                        sysInfo.gpus[gi].usage = live.usage;
+                        sysInfo.gpus[gi].temperature = live.temperature;
+                        sysInfo.gpus[gi].memoryPercent = live.memoryPercent;
+                        sysInfo.gpus[gi].coreClock = live.clockMhz;
+                        sysInfo.gpus[gi].memClock = static_cast<int>(live.memClockMhz);
+                        sysInfo.gpus[gi].powerMw = live.powerMw;
+                    }
+
                     if (isFirstRun) {
                         Logger::Debug("Added " + std::to_string(sysInfo.gpus.size()) +
                                      " GPU(s), primary: " + cachedGpuName +
@@ -1907,6 +1948,18 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         e.memoryPercent = g.memoryPercent;
                         e.unified = g.isUnified;
                         e.isVirtual = g.isVirtual;
+                        e.coreCount = g.coreCount;
+                        e.temperature = g.temperature;
+                        e.clockMhz = g.coreClock;
+                        e.maxClock = g.maxClock;
+                        e.memClockMhz = g.memClock;
+                        e.powerMw = g.powerMw;
+                        e.powerLimitMw = g.powerLimitMw;
+                        e.fanPercent = g.fanPercent;
+                        e.serial = g.serial;
+                        e.vbios = g.vbios;
+                        e.pcieGen = g.pcieGen;
+                        e.pcieWidth = g.pcieWidth;
                         tuiData.gpus.push_back(e);
                     }
                 }
