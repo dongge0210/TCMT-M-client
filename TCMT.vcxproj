@@ -78,6 +78,10 @@
            linker warns LNK4075. Keep the project's non-incremental linking
            and drop EditAndContinue. -->
       <EditAndContinue>false</EditAndContinue>
+      <!-- EditAndContinue=false alone still left Debug's default /ZI in the
+           command line on newer toolsets, so ConfigManager.obj was built for
+           EnC and the linker kept warning LNK4075. Pin the format. -->
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;WIN32_LEAN_AND_MEAN;TCMT_WINDOWS;
 NOMINMAX;
 PDC_NCMOUSE;
