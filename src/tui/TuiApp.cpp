@@ -3028,7 +3028,16 @@ int TuiApp::MapMouseEvent(int rows, int cols) {
 }
 
 void TuiApp::Run() {
+#ifdef _WIN32
+    // PDC_WIDE decodes narrow addstr() input through the C locale. On Windows
+    // setlocale("") resolves to the "C" locale, which would decode our UTF-8
+    // strings as the ANSI code page; ".UTF-8" is the UCRT name that makes the
+    // conversion correct. Keep the environment-based fallback for systems
+    // without UCRT UTF-8 support (older Windows 10).
+    if (!std::setlocale(LC_ALL, ".UTF-8")) std::setlocale(LC_ALL, "en_US.UTF-8");
+#else
     setlocale(LC_ALL, "");
+#endif
 
     // Downgrade switches (#11), read once at startup:
     //   NO_COLOR      — any non-empty value disables color output.
@@ -3039,8 +3048,12 @@ void TuiApp::Run() {
     noColor_ = (noColorEnv != nullptr) && (*noColorEnv != '\0');
     const char* asciiEnv = std::getenv("TCMT_ASCII");
     const char* curLocale = std::setlocale(LC_ALL, nullptr);
+    // UCRT may report the locale as "...65001" instead of "...UTF-8", so the
+    // code page number counts as well.
     const bool utf8Locale = curLocale &&
-        (std::strstr(curLocale, "UTF-8") != nullptr || std::strstr(curLocale, "utf-8") != nullptr);
+        (std::strstr(curLocale, "UTF-8") != nullptr ||
+         std::strstr(curLocale, "utf-8") != nullptr ||
+         std::strstr(curLocale, "65001") != nullptr);
     // i18n: TCMT_LANG > ui.language from config > active locale > en; non-UTF-8 forces en.
     // I18nSelect only looks at the "zh" prefix, so the saved config value
     // ("zh-Hans" / "en") rides the same slot as the locale.

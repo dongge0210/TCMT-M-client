@@ -2396,7 +2396,12 @@ int main(int argc, char* argv[]) {
     SetConsoleCP(65001);
     SetConsoleOutputCP(65001);
     
-    setlocale(LC_ALL, "en_US.UTF-8");
+    // UCRT's UTF-8 locale is ".UTF-8"; the glibc-style name fails on MSVC and
+    // silently leaves the "C" locale. PDCurses is built with PDC_WIDE, so a
+    // non-UTF-8 locale makes addstr() decode UTF-8 bytes as the ANSI code
+    // page — every Chinese string then renders as mojibake.
+    if (!setlocale(LC_ALL, ".UTF-8"))
+        setlocale(LC_ALL, "en_US.UTF-8");
     
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
