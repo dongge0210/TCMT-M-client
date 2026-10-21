@@ -54,6 +54,35 @@ static constexpr unsigned int NVAPI_Initialize_ID        = 0x0150E828;
 static constexpr unsigned int NVAPI_EnumPhysicalGPUs_ID  = 0xE5AC921F;
 static constexpr unsigned int NVAPI_GPU_GetCoolerSettings_ID = 0xDA141340;
 static constexpr unsigned int NVAPI_GPU_ClientFanCoolersGetStatus_ID = 0x35AED5E8;
+// Undocumented power monitor: the only source of a draw reading on laptop
+// dGPUs whose NVML power query answers N/A. IDs from pynvraw / RTSS.
+static constexpr unsigned int NVAPI_GPU_POWER_MONITOR_GET_STATUS_ID = 0xF40238EF;
+
+// NV_POWER_MONITOR_STATUS (V1). Entries are packed; the outer struct is not.
+// sizeof == 1436 == 0x59C, which is why the magic version is 0x1059C.
+#pragma pack(push, 1)
+struct NvPowerMonitorChannelStatus {
+    unsigned int powerAvgMw;
+    unsigned int powerMinMw;
+    unsigned int powerMaxMw;
+    unsigned int currentMa;
+    unsigned int voltageUv;
+    unsigned long long energyMj;
+    unsigned char reserved[16];
+};
+#pragma pack(pop)
+
+struct NvPowerMonitorStatus {
+    unsigned int version;      // sizeof | (1 << 16)
+    unsigned int channelMask;
+    unsigned int totalPowerMw; // board/GPU power, milliwatts
+    unsigned char reserved[16];
+    NvPowerMonitorChannelStatus channels[32];
+};
+static_assert(sizeof(NvPowerMonitorStatus) == 1436,
+              "NV_POWER_MONITOR_STATUS layout changed");
+using NvPowerMonitorGetStatusFn =
+    int (*)(NvPhysicalGpuHandle, NvPowerMonitorStatus*);
 
 struct NvapiCooler {
     unsigned int type;       // 1=RPM, 2=duty%
@@ -86,6 +115,7 @@ struct NvapiState {
     bool ready = false;
     NvPhysicalGpuHandle gpus[NV_MAX_PHYSICAL_GPUS] = {};
     unsigned int gpuCount = 0;
+    NvPowerMonitorGetStatusFn powerGetStatus = nullptr;
 };
 
 static NvapiState& GetNvapi() {
@@ -105,10 +135,36 @@ static NvapiState& GetNvapi() {
             Logger::Debug("GPU_FAN: NVAPI EnumPhysicalGPUs rc=" + std::to_string(rc) + " count=" + std::to_string(ns.gpuCount));
             return ns;
         }
+        ns.powerGetStatus = (NvPowerMonitorGetStatusFn)
+            ns.query(NVAPI_GPU_POWER_MONITOR_GET_STATUS_ID);
         ns.ready = true;
-        Logger::Debug("NVAPI: " + std::to_string(ns.gpuCount) + " GPU(s)");
+        Logger::Debug("NVAPI: " + std::to_string(ns.gpuCount) + " GPU(s)" +
+                      (ns.powerGetStatus ? ", power monitor available"
+                                         : ", no power monitor"));
     }
     return ns;
+}
+
+// Total GPU power from NVAPI's power monitor, in milliwatts. This is the
+// reading monitoring tools show on laptops where nvidia-smi prints N/A.
+// Returns -1 when the interface or the reading is unavailable.
+static double QueryNvapiPowerMw(unsigned int gpuIndex) {
+    auto& ns = GetNvapi();
+    if (!ns.ready || !ns.powerGetStatus || gpuIndex >= ns.gpuCount) return -1;
+
+    NvPowerMonitorStatus status{};
+    status.version = static_cast<unsigned int>(sizeof(NvPowerMonitorStatus)) | (1u << 16);
+    const int rc = ns.powerGetStatus(ns.gpus[gpuIndex], &status);
+    if (rc != NVAPI_OK) {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            Logger::Debug("NVAPI: power monitor GetStatus failed rc=" +
+                          std::to_string(rc));
+        }
+        return -1;
+    }
+    return static_cast<double>(status.totalPowerMw);
 }
 
 // ======================== NVML Dynamic Loading ========================
@@ -443,6 +499,11 @@ double GpuInfo::GetGpuPower() {
     const double instant = QueryInstantPowerMw(s.device);
     if (instant > 0) return instant;
 
+    // NVAPI's power monitor is what laptop monitoring tools use when every
+    // NVML power entry answers N/A.
+    const double nvapi = QueryNvapiPowerMw(0);
+    if (nvapi > 0) return nvapi;
+
     // Slot 15 is reserved for this caller so it does not share a baseline with
     // the per-GPU path below.
     const double derived = DerivePowerMw(s.device, 15);
@@ -687,6 +748,11 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
         const double instant = QueryInstantPowerMw(dev);
         if (instant > 0) gpu.powerMw = static_cast<int>(instant);
     }
+    if (gpu.powerMw <= 0 && gpu.nvmlIndex >= 0) {
+        // Last public-ish source: NVAPI's power monitor.
+        const double nvapi = QueryNvapiPowerMw(static_cast<unsigned int>(gpu.nvmlIndex));
+        if (nvapi > 0) gpu.powerMw = static_cast<int>(nvapi);
+    }
     if (s.api->getEnforcedPowerLimit && NVML_SUCCESS == s.api->getEnforcedPowerLimit(dev, &value))
         gpu.powerLimitMw = value;
 
@@ -783,8 +849,11 @@ GpuInfo::NvidiaLive GpuInfo::GetNvidiaLive(int nvmlIndex) {
         // The plain query is unavailable; NVML_FI_DEV_POWER_INSTANT usually
         // still has it. The energy counter is the last resort.
         const double instant = QueryInstantPowerMw(dev);
-        if (instant >= 0) {
+        const double nvapi = QueryNvapiPowerMw(static_cast<unsigned int>(nvmlIndex));
+        if (instant > 0) {
             out.powerMw = instant;
+        } else if (nvapi > 0) {
+            out.powerMw = nvapi;
         } else {
             const double derived = DerivePowerMw(dev, nvmlIndex);
             if (derived >= 0) {
