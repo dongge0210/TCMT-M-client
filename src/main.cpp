@@ -1653,6 +1653,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         sysInfo.gpus[gi].coreClock = live.clockMhz;
                         sysInfo.gpus[gi].memClock = static_cast<int>(live.memClockMhz);
                         if (live.powerMw >= 0) sysInfo.gpus[gi].powerMw = live.powerMw;
+                        // The PCIe link re-negotiates as the card idles and
+                        // wakes, so the width has to be sampled live too.
+                        if (live.pcieGen > 0) sysInfo.gpus[gi].pcieGen = live.pcieGen;
+                        if (live.pcieWidth > 0) sysInfo.gpus[gi].pcieWidth = live.pcieWidth;
                     }
 
                     if (isFirstRun) {

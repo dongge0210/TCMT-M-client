@@ -654,6 +654,10 @@ GpuInfo::NvidiaLive GpuInfo::GetNvidiaLive(int nvmlIndex) {
         out.clockMhz = static_cast<double>(value);
     if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_MEM, &value))
         out.memClockMhz = static_cast<double>(value);
+    if (s.api->getPcieGen && NVML_SUCCESS == s.api->getPcieGen(dev, &value))
+        out.pcieGen = value;
+    if (s.api->getPcieWidth && NVML_SUCCESS == s.api->getPcieWidth(dev, &value))
+        out.pcieWidth = value;
     if (s.api->getMemoryInfo && NVML_SUCCESS == s.api->getMemoryInfo(dev, &memory) && memory.total > 0)
         out.memoryPercent = 100.0 * static_cast<double>(memory.used) /
                             static_cast<double>(memory.total);

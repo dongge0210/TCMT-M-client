@@ -109,6 +109,10 @@ public:
         double powerMw = -1;       // milliwatts, -1 when unreadable
         double clockMhz = 0;       // graphics clock
         double memClockMhz = 0;    // memory clock
+        // The link re-negotiates on its own (x16 when busy, x1/x2 when the
+        // card is power-gated), so these are sampled with everything else.
+        unsigned int pcieGen = 0;
+        unsigned int pcieWidth = 0;
     };
     static NvidiaLive GetNvidiaLive(int nvmlIndex);
 #else
