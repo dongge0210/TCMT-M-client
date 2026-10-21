@@ -16,28 +16,31 @@ static const struct {
     uint16_t halfAddr;
     int halfBit;
 } TEMP_SOURCES[] = {
-    {"MB_PECI_0",              0x0073, 0x0074, 7},
-    {"MB_CPUTIN",              0x0075, 0x0076, 7},
-    {"MB_SYSTIN",              0x0077, 0x0078, 7},
-    {"MB_AUXTIN0",             0x0079, 0x007A, 7},
-    {"MB_AUXTIN1",             0x007B, 0x007C, 7},
-    {"MB_AUXTIN2",             0x007D, 0x007E, 7},
-    {"MB_AUXTIN3",             0x04A0, 0x049E, 6},
-    {"MB_AUXTIN4",             0x0027, 0,      0},
-    {"MB_TSENSOR",             0x04A2, 0x04A1, 7},
-    {"MB_SMBUSMASTER0",        0x0150, 0x0151, 7},
-    {"MB_SMBUSMASTER1",        0x0670, 0,      0},
-    {"MB_PECI_1",              0x0672, 0,      0},
-    {"MB_PCH_CHIP_CPU_MAX",    0x0674, 0,      0},
-    {"MB_PCH_CHIP",            0x0676, 0,      0},
-    {"MB_PCH_CPU",             0x0678, 0,      0},
-    {"MB_PCH_MCH",             0x067A, 0,      0},
-    {"MB_AGENT0_DIMM0",        0x0405, 0,      0},
-    {"MB_AGENT0_DIMM1",        0x0406, 0,      0},
-    {"MB_AGENT1_DIMM0",        0x0407, 0,      0},
-    {"MB_AGENT1_DIMM1",        0x0408, 0,      0},
-    {"MB_BYTE_TEMP0",          0x0419, 0,      0},
-    {"MB_BYTE_TEMP1",          0x041A, 0,      0},
+    // Names are what the Temps panel prints. "Aux N" is deliberate: the board
+    // vendor decides what those pins are wired to (VRM, chipset, a header),
+    // and guessing "VRM" from the register number mislabeles half the boards.
+    {"CPU (PECI)",             0x0073, 0x0074, 7},
+    {"CPU (Socket)",           0x0075, 0x0076, 7},
+    {"System",                 0x0077, 0x0078, 7},
+    {"Aux 0",                  0x0079, 0x007A, 7},
+    {"Aux 1",                  0x007B, 0x007C, 7},
+    {"Aux 2",                  0x007D, 0x007E, 7},
+    {"Aux 3",                  0x04A0, 0x049E, 6},
+    {"Aux 4",                  0x0027, 0,      0},
+    {"Board",                  0x04A2, 0x04A1, 7},
+    {"SMBus 0",                0x0150, 0x0151, 7},
+    {"SMBus 1",                0x0670, 0,      0},
+    {"PECI 1",                 0x0672, 0,      0},
+    {"PCH Max",                0x0674, 0,      0},
+    {"PCH",                    0x0676, 0,      0},
+    {"PCH CPU",                0x0678, 0,      0},
+    {"PCH MCH",                0x067A, 0,      0},
+    {"DIMM A1",                0x0405, 0,      0},
+    {"DIMM A2",                0x0406, 0,      0},
+    {"DIMM B1",                0x0407, 0,      0},
+    {"DIMM B2",                0x0408, 0,      0},
+    {"Temp 0",                 0x0419, 0,      0},
+    {"Temp 1",                 0x041A, 0,      0},
 };
 
 static std::vector<uint8_t> LoadResource(const wchar_t* name) {
@@ -114,8 +117,15 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         regIn[0] = 0x21; regOut[0] = 0;
         s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr);
         uint8_t chipRev = (uint8_t)(regOut[0] & 0xFF);
-        Logger::Info(std::string("BoardTemp: chip=0x") + std::to_string((int)chipId) +
-                     " rev=0x" + std::to_string((int)chipRev));
+        {
+            char info[64];
+            snprintf(info, sizeof(info), "BoardTemp: chip=0x%02X rev=0x%02X", chipId, chipRev);
+            Logger::Info(info);
+            // The register table below is NCT6798D's; any other Nuvoton part
+            // may answer at the same ports with a different map.
+            if (chipId != 0xD4)
+                Logger::Debug("BoardTemp: unexpected Super I/O ID, values may be wrong");
+        }
 
         // Step 4: FindBars (must be in config mode)
         if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr)) {
