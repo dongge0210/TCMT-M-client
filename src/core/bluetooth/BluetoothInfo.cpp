@@ -14,9 +14,11 @@
 
 #pragma comment(lib, "Bthprops.lib")
 
+#include <algorithm>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Helper: convert WCHAR (UTF-16) to UTF-8 std::string
@@ -94,36 +96,58 @@ void BluetoothInfo::Detect() {
     BluetoothFindRadioClose(hRadioFind);
 
     // -----------------------------------------------------------------------
-    // Step 2: enumerate connected devices only
+    // Step 2: devices — connected first, then the paired list
     // -----------------------------------------------------------------------
-    BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams;
-    std::memset(&searchParams, 0, sizeof(searchParams));
-    searchParams.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
-    searchParams.fReturnConnected = TRUE;
-    searchParams.fReturnRemembered = FALSE;
-    searchParams.fReturnAuthenticated = FALSE;
-    searchParams.fReturnUnknown = FALSE;
-    searchParams.fIssueInquiry = FALSE;
-    searchParams.cTimeoutMultiplier = 0;
-    searchParams.hRadio = nullptr;
+    // Two passes because neither flag set alone is enough: a pass with only
+    // fReturnConnected misses connected audio/BLE devices Windows does not
+    // flag as such, and fConnected on a remembered-only enumeration is not
+    // reliable either. The union marks a device connected if either pass has
+    // seen it connected, and still lists every paired device.
+    auto enumerateDevices = [](BOOL connected, BOOL remembered, BOOL authenticated,
+                               std::vector<BLUETOOTH_DEVICE_INFO>& out) {
+        BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams;
+        std::memset(&searchParams, 0, sizeof(searchParams));
+        searchParams.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
+        searchParams.fReturnConnected = connected;
+        searchParams.fReturnRemembered = remembered;
+        searchParams.fReturnAuthenticated = authenticated;
+        searchParams.fReturnUnknown = FALSE;
+        searchParams.fIssueInquiry = FALSE;
+        searchParams.cTimeoutMultiplier = 0;
+        searchParams.hRadio = nullptr;
 
-    BLUETOOTH_DEVICE_INFO deviceInfo;
-    std::memset(&deviceInfo, 0, sizeof(deviceInfo));
-    deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
+        BLUETOOTH_DEVICE_INFO deviceInfo;
+        std::memset(&deviceInfo, 0, sizeof(deviceInfo));
+        deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
 
-    HBLUETOOTH_DEVICE_FIND hDeviceFind = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
-    if (hDeviceFind != nullptr) {
+        HBLUETOOTH_DEVICE_FIND hFind = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
+        if (hFind == nullptr) return;
         do {
-            BluetoothDeviceData dev;
-            dev.name = WCharToUtf8(deviceInfo.szName);
-            dev.address = FormatBtAddress(deviceInfo.Address);
-            dev.connected = (deviceInfo.fConnected == TRUE);
-            dev.remembered = (deviceInfo.fRemembered == TRUE);
-            data_.devices.push_back(std::move(dev));
-
+            out.push_back(deviceInfo);
             deviceInfo.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
-        } while (BluetoothFindNextDevice(hDeviceFind, &deviceInfo));
-        BluetoothFindDeviceClose(hDeviceFind);
+        } while (BluetoothFindNextDevice(hFind, &deviceInfo));
+        BluetoothFindDeviceClose(hFind);
+    };
+
+    std::vector<BLUETOOTH_DEVICE_INFO> connected;
+    enumerateDevices(TRUE, FALSE, FALSE, connected);
+
+    std::vector<BLUETOOTH_DEVICE_INFO> all;
+    enumerateDevices(TRUE, TRUE, TRUE, all);
+
+    for (const auto& info : all) {
+        BluetoothDeviceData dev;
+        dev.name = WCharToUtf8(info.szName);
+        dev.address = FormatBtAddress(info.Address);
+        const BTH_ADDR addr = BtAddrToUlong(info.Address);
+        const bool inConnectedPass =
+            std::any_of(connected.begin(), connected.end(),
+                        [addr](const BLUETOOTH_DEVICE_INFO& c) {
+                            return BtAddrToUlong(c.Address) == addr;
+                        });
+        dev.connected = (info.fConnected == TRUE) || inConnectedPass;
+        dev.remembered = (info.fRemembered == TRUE);
+        data_.devices.push_back(std::move(dev));
     }
 
     // NOTE: Inquiry scan (fIssueInquiry=TRUE) is intentionally NOT performed

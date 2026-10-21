@@ -1895,6 +1895,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     // describing the primary GPU for IPC and JSON.
                     tuiData.gpus.clear();
                     for (const auto& g : sysInfo.gpus) {
+                        // Virtual display adapters (RDP, Parsec, VMware...) are
+                        // not GPUs; listing them made the panel show a software
+                        // adapter as if it were the real card.
+                        if (g.isVirtual) continue;
                         tcmt::TuiData::GpuEntry e;
                         e.name = g.name;
                         e.driver = g.driver;
