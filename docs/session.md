@@ -618,6 +618,24 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
   Release 实跑 6 秒，日志有 `MainWindow initialized and hardware monitoring started`。
 - 未验证：Windows 的 `TCMT_WINDOWS` 分支只做了条件编译审查，本机编不了。
 
+## 2026-10-21 — GPU 详情页补全、Windows 功耗与逐核温度
+
+- GPU 采集（Windows）：每张 NVIDIA 卡绑定自己的 `nvmlDeviceGetHandleByIndex`（之前所有卡都查设备 0，
+  双 N 卡机器上第二张显示第一张的数据）。新增核心数、最高/显存频率、功耗与功耗墙、风扇数量/百分比、
+  序列号、VBIOS、PCIe 代际与宽度。
+- GPU 功耗的取值顺序：`nvmlDeviceGetPowerUsage` → `nvmlDeviceGetFieldValues` 的
+  `NVML_FI_DEV_POWER_INSTANT`（字段 186）→ NVAPI `NvAPI_GPU_PowerMonitorGetStatus`（ID `0xF40238EF`，
+  结构 1436 字节，版本 `0x1059C`）→ 能量计数器差分。笔记本 4060 上前两级都返回 N/A，第三级读出
+  55 W，与 HWiNFO 一致（见记忆 `windows-gpu-power-sources`）。
+- GPU 详情页：新增 Temp / Mem clk / Power（当前与上限）/ Fan / PCIe（当前与上限）/ Serial / VBIOS /
+  `Driver (KMD)` / `CUDA UMD`；NVIDIA 卡标 `CUDA cores`。PCIe 当前宽度每秒刷新（空闲会降到 x1/x2），
+  上限来自 `nvmlDeviceGetMaxPcieLinkWidth`。
+- 修正：`NVML_CLOCK_GRAPHICS` 原写成 1（那是 SM 时钟），按手册改为 0。
+- Windows 磁盘详情：SMART 属性名之前没抄进 TUI（`main.cpp` 漏了 `sa.name`），左列全空。
+- Windows 逐核温度：此前 `perCoreTemp`/`perCoreCount` 从未填过，逐核面板根本不出现。现在用同一
+  PawnIO 会话按物理核读一次 `IA32_THERM_STATUS`（P 核在前，最多 16 列），1 秒一次。
+- 未验证：以上 Windows 改动均未在本机编译；需在 Windows 端 Debug 构建确认。
+
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
   这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出
