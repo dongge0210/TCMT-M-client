@@ -2321,9 +2321,9 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    // Wider than the other overlays: physical-disk models plus SMART
-    // attribute names need the room, and this page has no graph to fill.
-    const int W = (std::min)(100, cols - 6);
+    // Follow the terminal width: disk model names and the SMART grid are the
+    // content, and there is no graph to absorb the extra columns.
+    const int W = (std::min)(cols - 6, 160);
     const int H = (std::min)(rows - 4, 26);
     const int x0 = (std::max)(1, (cols - W) / 2);
     const int y0 = (std::max)(2, (rows - H) / 2);
@@ -2433,25 +2433,50 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             }
 
             wattron(stdscr, A_DIM);
-            // Column header instead of the raw numeric attribute ID: the
-            // hex ID means nothing to a reader, the name and the two
-            // counters do.
-            if (y < bottom) {
-                std::string hdr = PadCell("Attribute", 28);
-                snprintf(buf, sizeof(buf), "  %3s/%3s  %10s", "Cur", "Wor", "Raw");
-                hdr += buf;
-                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(hdr, W - 6).c_str());
-            }
-            for (const auto& a : pd.attributes) {
-                if (y >= bottom) break;
-                // PadCell measures display columns: attribute names are
-                // localized (CJK), so %-28s would misalign every row.
-                std::string row = PadCell(a.name, 28);
-                snprintf(buf, sizeof(buf), "  %3u/%3u  %10llu",
+            // Attribute grid: two columns once the box is wide enough, since
+            // real drives report 20-30 attributes and a single column wastes
+            // the horizontal space.
+            const int nameW = 24;
+            const int attrW = nameW + 2 + 7 + 2 + 8;   // name, cur/wor, raw
+            const bool twoCol = (W - 6) >= (attrW * 2 + 2);
+            const int cellW = twoCol ? (W - 6 - 2) / 2 : (W - 6);
+
+            auto attrCell = [&](const TuiData::SmAttributeInfo& a) {
+                std::string row = PadCell(a.name, nameW);
+                snprintf(buf, sizeof(buf), "  %3u/%3u  %8llu",
                          a.current, a.worst,
                          static_cast<unsigned long long>(a.rawValue));
                 row += buf;
-                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(row, W - 6).c_str());
+                return PadCell(row, cellW);
+            };
+            auto attrHeader = [&]() {
+                std::string h = PadCell("Attribute", nameW);
+                snprintf(buf, sizeof(buf), "  %3s/%3s  %8s", "Cur", "Wor", "Raw");
+                h += buf;
+                return PadCell(h, cellW);
+            };
+
+            if (y < bottom) {
+                std::string hdr = attrHeader();
+                if (twoCol) hdr += "  " + attrHeader();
+                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(hdr, W - 6).c_str());
+            }
+            if (twoCol) {
+                const int n = static_cast<int>(pd.attributes.size());
+                const int half = (n + 1) / 2;
+                for (int i = 0; i < half; ++i) {
+                    if (y >= bottom) break;
+                    std::string line = attrCell(pd.attributes[i]);
+                    if (i + half < n) line += "  " + attrCell(pd.attributes[i + half]);
+                    mvwprintw(stdscr, y++, x0 + 3, "%s",
+                              utf8_truncate(line, W - 6).c_str());
+                }
+            } else {
+                for (const auto& a : pd.attributes) {
+                    if (y >= bottom) break;
+                    mvwprintw(stdscr, y++, x0 + 3, "%s",
+                              utf8_truncate(attrCell(a), W - 6).c_str());
+                }
             }
             wattroff(stdscr, A_DIM);
             if (y < bottom) y++;
