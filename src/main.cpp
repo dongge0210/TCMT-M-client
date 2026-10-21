@@ -1998,6 +1998,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         ai2.current = sa.current;
                         ai2.worst = sa.worst;
                         ai2.rawValue = sa.rawValue;
+                        ai2.name = WinUtils::WstringToString(sa.name);
                         pi.attributes.push_back(ai2);
                     }
                     tuiData.physicalDisks.push_back(pi);
