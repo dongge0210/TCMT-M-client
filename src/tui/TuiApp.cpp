@@ -2301,13 +2301,19 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     // failed query keeps -1 and falls back to the system-level value.
     double powerMw = (g && g->powerMw >= 0) ? g->powerMw : -1.0;
     if (powerMw < 0 && !multi && data.gpuPower > 0) powerMw = data.gpuPower;
+    const bool haveLimit = g && g->powerLimitMw > 0.0;
     if (powerMw >= 0) {
-        if (g && g->powerLimitMw > 0.0) {
+        if (haveLimit) {
             snprintf(buf, sizeof(buf), "Power: %.1f / %.0f W",
                      powerMw / 1000.0, g->powerLimitMw / 1000.0);
         } else {
             snprintf(buf, sizeof(buf), "Power: %.1f W", powerMw / 1000.0);
         }
+        emit(buf);
+    } else if (haveLimit) {
+        // The card exposes a limit but no draw sensor (common on laptop
+        // dGPUs); nvidia-smi prints N/A for the same reason.
+        snprintf(buf, sizeof(buf), "Power: N/A / %.0f W", g->powerLimitMw / 1000.0);
         emit(buf);
     }
 
