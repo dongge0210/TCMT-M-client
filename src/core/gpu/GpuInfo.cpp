@@ -7,6 +7,7 @@
 #include <comutil.h>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cwctype>
 
 // ======================== NVML Dynamic Loading ========================
@@ -140,6 +141,10 @@ using NvmlDeviceGetCurrPcieLinkGenerationFn = nvmlReturn_t (*)(nvmlDevice_t, uns
 using NvmlDeviceGetCurrPcieLinkWidthFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetMaxPcieLinkGenerationFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetMaxPcieLinkWidthFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+// Cumulative energy in millijoules since driver reload. Used to recover a
+// wattage when the instantaneous power query reads 0.
+using NvmlDeviceGetTotalEnergyConsumptionFn =
+    nvmlReturn_t (*)(nvmlDevice_t, unsigned long long*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -169,6 +174,7 @@ struct NvmlApi {
     NvmlDeviceGetCurrPcieLinkWidthFn getPcieWidth = nullptr;
     NvmlDeviceGetMaxPcieLinkGenerationFn getMaxPcieGen = nullptr;
     NvmlDeviceGetMaxPcieLinkWidthFn getMaxPcieWidth = nullptr;
+    NvmlDeviceGetTotalEnergyConsumptionFn getTotalEnergy = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -243,6 +249,8 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetMaxPcieLinkGeneration"));
         api.getMaxPcieWidth = reinterpret_cast<NvmlDeviceGetMaxPcieLinkWidthFn>(
             GetProcAddress(api.module, "nvmlDeviceGetMaxPcieLinkWidth"));
+        api.getTotalEnergy = reinterpret_cast<NvmlDeviceGetTotalEnergyConsumptionFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetTotalEnergyConsumption"));
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -304,6 +312,37 @@ GpuInfo::~GpuInfo() {
     Logger::Info("GPU information detection complete");
 }
 
+// Some laptop GPUs answer nvmlDeviceGetPowerUsage with 0 mW while idle or
+// power-gated even though the card is drawing something. The cumulative energy
+// counter keeps counting in that state, and millijoules per second is exactly
+// milliwatts, so two samples recover a wattage. Returns -1 until a delta
+// exists or when the driver has no energy counter.
+// `slot` keeps the sample history per caller: the single-value getter and the
+// per-GPU live path would otherwise reset each other's baseline every second.
+static double DerivePowerMw(nvmlDevice_t dev, int slot) {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getTotalEnergy || slot < 0 || slot >= 16) return -1;
+
+    unsigned long long mj = 0;
+    if (NVML_SUCCESS != s.api->getTotalEnergy(dev, &mj)) return -1;
+
+    struct Sample {
+        unsigned long long mj;
+        std::chrono::steady_clock::time_point at;
+        bool valid;
+    };
+    static Sample samples[16] = {};
+    Sample& st = samples[slot];
+    const auto now = std::chrono::steady_clock::now();
+    double mw = -1;
+    if (st.valid && mj >= st.mj) {
+        const double dt = std::chrono::duration<double>(now - st.at).count();
+        if (dt >= 0.2) mw = static_cast<double>(mj - st.mj) / dt;
+    }
+    st = Sample{mj, now, true};
+    return mw;
+}
+
 double GpuInfo::GetVramUsagePercent() {
     auto& s = GetNvmlSession();
     if (!s.ok || !s.api->getMemoryInfo) return -1;
@@ -332,10 +371,19 @@ double GpuInfo::GetGpuTemperature() {
 // 不用自己去乘电压电流：NVML 直接给这个数，而用户态也拿不到 VRM 的电压电流。
 double GpuInfo::GetGpuPower() {
     auto& s = GetNvmlSession();
-    if (!s.ok || !s.api->getPowerUsage) return -1;
+    if (!s.ok) return -1;
+
     unsigned int mw = 0;
-    if (NVML_SUCCESS != s.api->getPowerUsage(s.device, &mw)) return -1;
-    return static_cast<double>(mw);
+    const bool read = s.api->getPowerUsage &&
+        NVML_SUCCESS == s.api->getPowerUsage(s.device, &mw);
+    if (read && mw > 0) return static_cast<double>(mw);
+
+    // 0 W usually means "not reported right now", not "idle at exactly zero".
+    // Slot 15 is reserved for this caller so it does not share a baseline with
+    // the per-GPU path below.
+    const double derived = DerivePowerMw(s.device, 15);
+    if (derived >= 0) return derived;
+    return read ? static_cast<double>(mw) : -1;
 }
 
 bool GpuInfo::IsVirtualGpu(const std::wstring& name) {
@@ -647,9 +695,23 @@ GpuInfo::NvidiaLive GpuInfo::GetNvidiaLive(int nvmlIndex) {
     if (s.api->getTemperature && NVML_SUCCESS == s.api->getTemperature(dev, NVML_TEMPERATURE_GPU, &value))
         out.temperature = static_cast<double>(value);
     if (s.api->getPowerUsage && NVML_SUCCESS == s.api->getPowerUsage(dev, &value))
-        out.powerMw = static_cast<double>(value);  // includes a real 0 W
+        out.powerMw = static_cast<double>(value);
     else
         out.powerMw = -1;
+    if (out.powerMw <= 0) {
+        // 0 from the driver is "not reported"; the energy counter still knows.
+        const double derived = DerivePowerMw(dev, nvmlIndex);
+        if (derived >= 0) {
+            out.powerMw = derived;
+            // Once per run, not per sample: this path runs every second.
+            static bool logged = false;
+            if (!logged) {
+                logged = true;
+                Logger::Debug("NVML: power reads 0, using energy delta ("
+                              + std::to_string(static_cast<int>(derived)) + " mW)");
+            }
+        }
+    }
     if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_GRAPHICS, &value))
         out.clockMhz = static_cast<double>(value);
     if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_MEM, &value))
