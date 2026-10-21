@@ -686,6 +686,7 @@ static GpuSpec MakeGpuSpec(const GpuInfo::GpuData& gpu) {
     spec.fanPercent = gpu.fanPercent;
     spec.serial = gpu.serial;
     spec.vbios = gpu.vbios;
+    spec.cudaVersion = gpu.cudaVersion;
     spec.pcieGen = gpu.pcieGen;
     spec.pcieWidth = gpu.pcieWidth;
     spec.maxPcieGen = gpu.maxPcieGen;
@@ -1964,6 +1965,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         e.fanPercent = g.fanPercent;
                         e.serial = g.serial;
                         e.vbios = g.vbios;
+                        e.cudaVersion = g.cudaVersion;
                         e.pcieGen = g.pcieGen;
                         e.pcieWidth = g.pcieWidth;
                         e.maxPcieGen = g.maxPcieGen;

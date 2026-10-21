@@ -145,6 +145,8 @@ using NvmlDeviceGetMaxPcieLinkWidthFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned 
 // wattage when the instantaneous power query reads 0.
 using NvmlDeviceGetTotalEnergyConsumptionFn =
     nvmlReturn_t (*)(nvmlDevice_t, unsigned long long*);
+// CUDA user-mode driver version, e.g. 13040 = 13.4.
+using NvmlSystemGetCudaDriverVersionFn = nvmlReturn_t (*)(int*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -175,6 +177,7 @@ struct NvmlApi {
     NvmlDeviceGetMaxPcieLinkGenerationFn getMaxPcieGen = nullptr;
     NvmlDeviceGetMaxPcieLinkWidthFn getMaxPcieWidth = nullptr;
     NvmlDeviceGetTotalEnergyConsumptionFn getTotalEnergy = nullptr;
+    NvmlSystemGetCudaDriverVersionFn getCudaDriverVersion = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -251,6 +254,11 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetMaxPcieLinkWidth"));
         api.getTotalEnergy = reinterpret_cast<NvmlDeviceGetTotalEnergyConsumptionFn>(
             GetProcAddress(api.module, "nvmlDeviceGetTotalEnergyConsumption"));
+        api.getCudaDriverVersion = reinterpret_cast<NvmlSystemGetCudaDriverVersionFn>(
+            GetProcAddress(api.module, "nvmlSystemGetCudaDriverVersion"));
+        if (!api.getCudaDriverVersion)
+            api.getCudaDriverVersion = reinterpret_cast<NvmlSystemGetCudaDriverVersionFn>(
+                GetProcAddress(api.module, "nvmlSystemGetCudaDriverVersion_v2"));
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -674,6 +682,16 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
         if (NVML_SUCCESS == s.api->systemGetDriverVersion(driver, sizeof(driver)) &&
             driver[0] != '\0') {
             gpu.driver = driver;
+        }
+    }
+
+    // CUDA user-mode driver version ("13.4"), the same number nvidia-smi
+    // prints in its header. The API returns e.g. 13040.
+    if (s.api->getCudaDriverVersion) {
+        int cuda = 0;
+        if (NVML_SUCCESS == s.api->getCudaDriverVersion(&cuda) && cuda > 0) {
+            gpu.cudaVersion = std::to_string(cuda / 1000) + "." +
+                              std::to_string((cuda % 1000) / 10);
         }
     }
 }

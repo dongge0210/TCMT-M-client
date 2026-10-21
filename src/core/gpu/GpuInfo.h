@@ -74,6 +74,7 @@ public:
         unsigned int powerLimitMw = 0;  // enforced limit, milliwatts
         std::string serial;             // nvmlDeviceGetSerial
         std::string vbios;              // nvmlDeviceGetVbiosVersion
+        std::string cudaVersion;        // "13.4", nvmlSystemGetCudaDriverVersion
         unsigned int pcieGen = 0;       // current link generation
         unsigned int pcieWidth = 0;     // current link width (lanes)
         unsigned int maxPcieGen = 0;    // link generation this device+system can do

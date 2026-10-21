@@ -126,6 +126,7 @@ struct TuiData {
         unsigned int maxPcieWidth = 0;
         std::string serial;
         std::string vbios;
+        std::string cudaVersion;     // CUDA UMD version, NVIDIA only
     };
     std::vector<GpuEntry> gpus;
     double gpuUsage = 0.0;

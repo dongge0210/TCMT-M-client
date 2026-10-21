@@ -250,6 +250,7 @@ struct GpuSpec {
     int fanPercent = -1;      // % of max, -1 when the card reports none
     std::string serial;       // board serial
     std::string vbios;        // VBIOS version
+    std::string cudaVersion;  // CUDA UMD version, e.g. "13.4"
     unsigned int pcieGen = 0; // current link generation
     unsigned int pcieWidth = 0;  // current link width (lanes)
     unsigned int maxPcieGen = 0;   // negotiated ceiling for this slot + card

@@ -2250,13 +2250,19 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     }
 
     const std::string name = g ? g->name : data.gpuName;
+    const bool isNvidia = name.find("NVIDIA") != std::string::npos;
     if (!name.empty()) emit("Name: " + name);
-    if (g && !g->driver.empty()) emit("Driver: " + g->driver);
+    if (g && !g->driver.empty()) {
+        // nvidia-smi calls this number KMD Version; same string, and only
+        // spelled out for NVIDIA cards.
+        emit((isNvidia && !g->cudaVersion.empty() ? "Driver (KMD): " : "Driver: ")
+             + g->driver);
+    }
+    if (g && !g->cudaVersion.empty()) emit("CUDA UMD: " + g->cudaVersion);
     const int coreCount = g ? g->coreCount : data.gpuCoreCount;
     if (coreCount > 0) {
         // NVIDIA calls them CUDA cores; "GPU cores" is only right for the
         // Apple/AMD/Intel side.
-        const bool isNvidia = name.find("NVIDIA") != std::string::npos;
         snprintf(buf, sizeof(buf), "%s: %d",
                  isNvidia ? "CUDA cores" : "GPU cores", coreCount);
         emit(buf);
