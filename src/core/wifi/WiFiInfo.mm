@@ -168,13 +168,16 @@ void WiFiInfo::RequestLocationAuthorization() {
         Logger::Warn("Location Services: running as root, authorization cannot be requested");
         return;
     }
-    static dispatch_once_t s_onceToken;
-    dispatch_once(&s_onceToken, ^{
-        @autoreleasepool {
-            s_locMgr = [[CLLocationManager alloc] init];
-            [s_locMgr requestWhenInUseAuthorization];
-        }
-    });
+    // No dispatch_once here. The startup call (RequestLocationAuthorization-
+    // IfNeeded) can fire before the app has a run loop and be swallowed; a
+    // once-token would then turn every later R press into a no-op for the
+    // rest of the process. Re-requesting after a decision is a no-op anyway.
+    @autoreleasepool {
+        if (!s_locMgr) s_locMgr = [[CLLocationManager alloc] init];
+        [s_locMgr requestWhenInUseAuthorization];
+        Logger::Debug("Location Services: authorization requested (status=" +
+                      std::to_string(static_cast<int>([CLLocationManager authorizationStatus])) + ")");
+    }
 }
 
 void WiFiInfo::RequestLocationAuthorizationIfNeeded() {
