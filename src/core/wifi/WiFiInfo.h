@@ -36,9 +36,16 @@ public:
     // Ask the user for Location Services authorization (system prompt).
     // Idempotent; must be triggered by the user, never automatically.
     static void RequestLocationAuthorization();
-    // Ask once at startup when the user has not decided yet. A determined
-    // state (granted or denied) is left alone, so this never prompts twice.
-    static void RequestLocationAuthorizationIfNeeded();
+#ifdef TCMT_MACOS
+    // True when no fresh SSID hand-off file exists, i.e. the startup fetch
+    // should run once through the app bundle.
+    static bool NeedsSsidHandoff();
+    // Run the authorization request with a live run loop and wait for the
+    // user's decision. Only a LaunchServices-launched instance can raise the
+    // prompt, so the TUI re-opens the bundle with --request-location and this
+    // runs there. Returns 0 not determined, 1 denied, 2 authorized.
+    static int RunLocationRequestBlocking(int timeoutSeconds);
+#endif
 
     void Detect();
     const WiFiData& GetData() const;

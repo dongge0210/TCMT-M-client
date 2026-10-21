@@ -10,8 +10,13 @@
 #import <CoreLocation/CoreLocation.h>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <atomic>
+#include <cstdio>
+#include <ctime>
+#include <fstream>
 #include <mutex>
+#include <string>
 #include <thread>
 
 // Convert CWSecurity enum to a human-readable string.
@@ -41,6 +46,36 @@ static std::string s_cachedSSID, s_cachedBSSID, s_cachedSecurity;
 static int s_cachedRSSI = 0, s_cachedChannel = 0;
 static double s_cachedTxRate = 0;
 static std::string s_cachedChipset;
+
+// ---------------------------------------------------------------------------
+// SSID hand-off for the terminal TUI. TCC authorizes the *responsible
+// process*: the LaunchServices instance can read the SSID, the process the
+// terminal spawned cannot, and the grant does not transfer. The authorized
+// instance therefore writes what it read to a user-owned file and the TUI
+// reads that instead of asking Location Services itself.
+// ---------------------------------------------------------------------------
+static constexpr const char* kWifiInfoPath = "/tmp/tcmt-wifi-info";
+
+static void WriteWifiInfoFile(const std::string& ssid, const std::string& bssid) {
+    FILE* f = std::fopen(kWifiInfoPath, "w");
+    if (!f) return;
+    ::fchmod(fileno(f), 0600);
+    std::fprintf(f, "%s\n%s\n%lld\n", ssid.c_str(), bssid.c_str(),
+                 static_cast<long long>(std::time(nullptr)));
+    std::fclose(f);
+}
+
+static bool ReadWifiInfoFile(std::string& ssid, std::string& bssid) {
+    struct stat st {};
+    if (stat(kWifiInfoPath, &st) != 0) return false;
+    if (st.st_uid != getuid()) return false;              // never trust another user's file
+    if (std::time(nullptr) - st.st_mtime > 300) return false;  // stale helper output
+    std::ifstream f(kWifiInfoPath);
+    if (!f) return false;
+    std::getline(f, ssid);
+    std::getline(f, bssid);
+    return !ssid.empty() || !bssid.empty();
+}
 
 // "spairport_wireless_card_type_wifi (0x14E4, 0x4387)" → "BCM4387".
 // Vendor 0x14E4 is Broadcom; the Bluetooth profile names the same silicon
@@ -180,11 +215,46 @@ void WiFiInfo::RequestLocationAuthorization() {
     }
 }
 
-void WiFiInfo::RequestLocationAuthorizationIfNeeded() {
-    if (geteuid() == 0) return;
-    if ([CLLocationManager authorizationStatus] == kCLAuthorizationStatusNotDetermined) {
-        RequestLocationAuthorization();
+bool WiFiInfo::NeedsSsidHandoff() {
+    std::string ssid, bssid;
+    return !ReadWifiInfoFile(ssid, bssid);
+}
+
+int WiFiInfo::RunLocationRequestBlocking(int timeoutSeconds) {
+    // Called by the --request-location launch mode: an instance started by
+    // LaunchServices has the GUI session a prompt needs, unlike the TUI's
+    // terminal child, where the request is silently dropped.
+    if (geteuid() == 0) return 0;
+
+    int result = 0;
+    @autoreleasepool {
+        if (!s_locMgr) s_locMgr = [[CLLocationManager alloc] init];
+        [s_locMgr requestWhenInUseAuthorization];
+
+        NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutSeconds];
+        while ([deadline timeIntervalSinceNow] > 0) {
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+            const CLAuthorizationStatus st = [CLLocationManager authorizationStatus];
+            if (st == kCLAuthorizationStatusAuthorizedAlways) { result = 2; break; }
+            if (st == kCLAuthorizationStatusDenied ||
+                st == kCLAuthorizationStatusRestricted) { result = 1; break; }
+        }
+
+        // Authorized: read what the TUI cannot and hand it over.
+        if (result == 2) {
+            std::string ssid, bssid;
+            CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
+            if (iface) {
+                NSString* s = iface.ssid;
+                NSString* b = iface.bssid;
+                if (s) ssid = s.UTF8String;
+                if (b) bssid = b.UTF8String;
+            }
+            WriteWifiInfoFile(ssid, bssid);
+        }
     }
+    return result;
 }
 
 void WiFiInfo::Detect() {
@@ -305,6 +375,19 @@ void WiFiInfo::Detect() {
         if (!data_.powerOn && !iface) {
             data_.powerOn = false;
         }
+        // SSID/BSSID handed over by an authorized (LaunchServices) instance.
+        // The terminal-spawned process is never granted Location itself, so
+        // this is the only path that yields the name for the TUI.
+        if (!locationOK) {
+            std::string helperSsid, helperBssid;
+            if (ReadWifiInfoFile(helperSsid, helperBssid)) {
+                if (!helperSsid.empty()) data_.ssid = helperSsid;
+                if (!helperBssid.empty()) data_.bssid = helperBssid;
+                data_.locationStatus = 2;
+                data_.locationDenied = false;
+            }
+        }
+
         // Only SSID/BSSID are gated by Location Services. RSSI, channel, PHY
         // and rate are readable without it (including as root), so an
         // association is also proved by a live RSSI or channel — otherwise a

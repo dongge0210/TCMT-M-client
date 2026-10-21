@@ -51,6 +51,7 @@
 #include "core/coordinator/ModuleCoordinator.h"
 #include "core/Utils/Logger.h"
 #include "core/Utils/UserIdentity.h"
+#include "core/Utils/WinUtils.h"
 #include "tui/TuiApp.h"
 #include "tui/MacLogWindow.h"
 
@@ -383,6 +384,23 @@ int main(int argc, char* argv[]) {
         std::cerr << "TCMT-M: unavailable under root. Run without sudo as your login user.\n"
                   << "TCMT-M: root 下不可用，请去掉 sudo 以登录用户运行。\n";
         return 1;
+    }
+
+    // --request-location: re-launched through LaunchServices by the TUI's R
+    // key. Such an instance has the GUI session a Location prompt needs; ask,
+    // wait for the decision, write the outcome and exit. Handled before any
+    // initialisation because LaunchServices starts it with cwd "/", where the
+    // log file cannot be opened.
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--request-location") == 0) {
+            const int st = WiFiInfo::RunLocationRequestBlocking(60);
+            {
+                std::ofstream statusFile("/tmp/tcmt-location-status");
+                statusFile << st << "\n";
+            }
+            std::fprintf(stderr, "TCMT-M location request: status=%d\n", st);
+            return st == 2 ? 0 : (st == 1 ? 2 : 1);
+        }
     }
 
     // Setup signal handlers
@@ -933,13 +951,34 @@ int main(int argc, char* argv[]) {
     // Under sudo there is no granted identity to prompt for, so the key is
     // not advertised at all (the WiFi panel explains the root case).
     if (geteuid() != 0) {
-        tuiApp.SetLocationRequestHandler([] {
+        auto fetchSsid = [] {
+            // A terminal-launched process has no session the Location prompt
+            // can attach to; macOS drops the request silently. Re-open the
+            // bundle through LaunchServices, whose instance asks, reads the
+            // SSID and hands it over through /tmp/tcmt-wifi-info.
+            const std::string dir = WinUtils::GetExecutableDirectory();  // .../Contents/MacOS
+            auto up = [](const std::string& p) {
+                const size_t pos = p.find_last_of('/');
+                return pos == std::string::npos ? p : p.substr(0, pos);
+            };
+            const std::string app = up(up(dir));
+            bool opened = false;
+            if (!app.empty()) {
+                const std::string cmd =
+                    "/usr/bin/open -n \"" + app + "\" --args --request-location";
+                opened = (std::system(cmd.c_str()) == 0);
+            }
+            Logger::Info(opened
+                ? "Location: asked the app bundle to request authorization"
+                : "Location: could not re-open the app bundle");
+            // Best effort for the sessions where the direct request works.
             WiFiInfo::RequestLocationAuthorization();
-        });
-        // A rebuild gets a fresh code signature, so TCC forgets the grant and
-        // the dashboard asks for R again. Ask once at startup while the state
-        // is still undetermined; a granted or denied app is left alone.
-        WiFiInfo::RequestLocationAuthorizationIfNeeded();
+        };
+        tuiApp.SetLocationRequestHandler(fetchSsid);
+        // Nothing handed over yet (first run, or the file went stale): fetch
+        // once at startup through the bundle, so a rebuild does not require
+        // pressing R.
+        if (WiFiInfo::NeedsSsidHandoff()) fetchSsid();
     }
     // Server push settings (TUI settings page, press S) -> persist + apply.
     tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec,

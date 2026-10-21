@@ -559,8 +559,6 @@ void WiFiInfo::Clear() {
     data_ = WiFiData{};
 }
 
-void WiFiInfo::RequestLocationAuthorizationIfNeeded() {}
-
 void WiFiInfo::RequestLocationAuthorization() {
     // Linux has no Location Services gate for SSID; nothing to ask for.
 }
