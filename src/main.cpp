@@ -688,6 +688,8 @@ static GpuSpec MakeGpuSpec(const GpuInfo::GpuData& gpu) {
     spec.vbios = gpu.vbios;
     spec.pcieGen = gpu.pcieGen;
     spec.pcieWidth = gpu.pcieWidth;
+    spec.maxPcieGen = gpu.maxPcieGen;
+    spec.maxPcieWidth = gpu.maxPcieWidth;
     return spec;
 }
 
@@ -1650,7 +1652,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         sysInfo.gpus[gi].memoryPercent = live.memoryPercent;
                         sysInfo.gpus[gi].coreClock = live.clockMhz;
                         sysInfo.gpus[gi].memClock = static_cast<int>(live.memClockMhz);
-                        sysInfo.gpus[gi].powerMw = live.powerMw;
+                        if (live.powerMw >= 0) sysInfo.gpus[gi].powerMw = live.powerMw;
                     }
 
                     if (isFirstRun) {
@@ -1960,6 +1962,8 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         e.vbios = g.vbios;
                         e.pcieGen = g.pcieGen;
                         e.pcieWidth = g.pcieWidth;
+                        e.maxPcieGen = g.maxPcieGen;
+                        e.maxPcieWidth = g.maxPcieWidth;
                         tuiData.gpus.push_back(e);
                     }
                 }

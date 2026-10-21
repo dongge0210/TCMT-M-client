@@ -2254,7 +2254,11 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     if (g && !g->driver.empty()) emit("Driver: " + g->driver);
     const int coreCount = g ? g->coreCount : data.gpuCoreCount;
     if (coreCount > 0) {
-        snprintf(buf, sizeof(buf), "GPU cores: %d", coreCount);
+        // NVIDIA calls them CUDA cores; "GPU cores" is only right for the
+        // Apple/AMD/Intel side.
+        const bool isNvidia = name.find("NVIDIA") != std::string::npos;
+        snprintf(buf, sizeof(buf), "%s: %d",
+                 isNvidia ? "CUDA cores" : "GPU cores", coreCount);
         emit(buf);
     }
 
@@ -2293,8 +2297,11 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         emit(buf);
     }
 
-    const double powerMw = (g && g->powerMw > 0) ? g->powerMw : data.gpuPower;
-    if (powerMw > 0.0) {
+    // A card that reports 0 W while power-gated is a valid reading; only a
+    // failed query keeps -1 and falls back to the system-level value.
+    double powerMw = (g && g->powerMw >= 0) ? g->powerMw : -1.0;
+    if (powerMw < 0 && !multi && data.gpuPower > 0) powerMw = data.gpuPower;
+    if (powerMw >= 0) {
         if (g && g->powerLimitMw > 0.0) {
             snprintf(buf, sizeof(buf), "Power: %.1f / %.0f W",
                      powerMw / 1000.0, g->powerLimitMw / 1000.0);
@@ -2324,7 +2331,16 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     }
 
     if (g && g->pcieGen > 0 && g->pcieWidth > 0) {
-        snprintf(buf, sizeof(buf), "PCIe: Gen%u x%u", g->pcieGen, g->pcieWidth);
+        // The negotiated link drops to x1/x2 while the card idles, so the
+        // capability is shown next to it; "Gen4 x2" alone reads like a fault.
+        if (g->maxPcieWidth > g->pcieWidth || g->maxPcieGen > g->pcieGen) {
+            snprintf(buf, sizeof(buf), "PCIe: Gen%u x%u  (max Gen%u x%u)",
+                     g->pcieGen, g->pcieWidth,
+                     g->maxPcieGen > 0 ? g->maxPcieGen : g->pcieGen,
+                     g->maxPcieWidth);
+        } else {
+            snprintf(buf, sizeof(buf), "PCIe: Gen%u x%u", g->pcieGen, g->pcieWidth);
+        }
         emit(buf);
     }
     if (g && !g->serial.empty()) emit("Serial: " + g->serial);

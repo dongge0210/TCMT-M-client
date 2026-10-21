@@ -116,12 +116,14 @@ struct TuiData {
         double clockMhz = 0.0;       // current graphics clock
         int maxClock = 0;            // MHz ceiling
         int memClockMhz = 0;         // memory clock
-        double powerMw = 0.0;        // current draw
+        double powerMw = -1.0;       // current draw; -1 = unreadable
         double powerLimitMw = 0.0;   // enforced limit
         int fanPercent = -1;         // -1 when the card reports no fan
         int fanCount = 0;
         unsigned int pcieGen = 0;
         unsigned int pcieWidth = 0;
+        unsigned int maxPcieGen = 0;
+        unsigned int maxPcieWidth = 0;
         std::string serial;
         std::string vbios;
     };

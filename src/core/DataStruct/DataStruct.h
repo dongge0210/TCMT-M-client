@@ -245,13 +245,15 @@ struct GpuSpec {
     int coreCount = 0;        // shader cores
     int maxClock = 0;         // MHz, graphics clock ceiling
     int memClock = 0;         // MHz, memory clock
-    double powerMw = 0;       // current draw, milliwatts
+    double powerMw = -1;      // current draw, milliwatts; -1 = unreadable
     double powerLimitMw = 0;  // enforced limit, milliwatts
     int fanPercent = -1;      // % of max, -1 when the card reports none
     std::string serial;       // board serial
     std::string vbios;        // VBIOS version
     unsigned int pcieGen = 0; // current link generation
     unsigned int pcieWidth = 0;  // current link width (lanes)
+    unsigned int maxPcieGen = 0;   // negotiated ceiling for this slot + card
+    unsigned int maxPcieWidth = 0;
 };
 
 // Network adapter info

@@ -68,12 +68,16 @@ public:
         int memClock = 0;               // MHz, memory clock
         int fanPercent = -1;            // % of max; -1 when the card reports none
         int fanCount = 0;
-        unsigned int powerMw = 0;       // current draw, milliwatts
+        // Current draw in milliwatts. -1 = not readable (as opposed to a real
+        // 0 W reading on an idle, power-gated laptop GPU).
+        int powerMw = -1;
         unsigned int powerLimitMw = 0;  // enforced limit, milliwatts
         std::string serial;             // nvmlDeviceGetSerial
         std::string vbios;              // nvmlDeviceGetVbiosVersion
         unsigned int pcieGen = 0;       // current link generation
         unsigned int pcieWidth = 0;     // current link width (lanes)
+        unsigned int maxPcieGen = 0;    // link generation this device+system can do
+        unsigned int maxPcieWidth = 0;  // link width this device+system can do
     };
 
 #ifdef TCMT_WINDOWS
@@ -102,7 +106,7 @@ public:
         double usage = 0;          // 0-100
         double temperature = 0;    // C
         double memoryPercent = 0;  // VRAM used %
-        double powerMw = 0;        // milliwatts
+        double powerMw = -1;       // milliwatts, -1 when unreadable
         double clockMhz = 0;       // graphics clock
         double memClockMhz = 0;    // memory clock
     };

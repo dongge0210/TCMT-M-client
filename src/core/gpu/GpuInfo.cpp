@@ -138,6 +138,8 @@ using NvmlDeviceGetSerialFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int
 using NvmlDeviceGetVbiosVersionFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
 using NvmlDeviceGetCurrPcieLinkGenerationFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetCurrPcieLinkWidthFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetMaxPcieLinkGenerationFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
+using NvmlDeviceGetMaxPcieLinkWidthFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
@@ -165,6 +167,8 @@ struct NvmlApi {
     NvmlDeviceGetVbiosVersionFn getVbiosVersion = nullptr;
     NvmlDeviceGetCurrPcieLinkGenerationFn getPcieGen = nullptr;
     NvmlDeviceGetCurrPcieLinkWidthFn getPcieWidth = nullptr;
+    NvmlDeviceGetMaxPcieLinkGenerationFn getMaxPcieGen = nullptr;
+    NvmlDeviceGetMaxPcieLinkWidthFn getMaxPcieWidth = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -235,6 +239,10 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetCurrPcieLinkGeneration"));
         api.getPcieWidth = reinterpret_cast<NvmlDeviceGetCurrPcieLinkWidthFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCurrPcieLinkWidth"));
+        api.getMaxPcieGen = reinterpret_cast<NvmlDeviceGetMaxPcieLinkGenerationFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetMaxPcieLinkGeneration"));
+        api.getMaxPcieWidth = reinterpret_cast<NvmlDeviceGetMaxPcieLinkWidthFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetMaxPcieLinkWidth"));
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -550,8 +558,16 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
         gpu.coreCount = static_cast<int>(value);
 
     // Power: milliwatts, the unit SystemInfo::gpuPower and the TUI use.
-    if (s.api->getPowerUsage && NVML_SUCCESS == s.api->getPowerUsage(dev, &value))
-        gpu.powerMw = value;
+    if (s.api->getPowerUsage) {
+        nvmlReturn_t prc = s.api->getPowerUsage(dev, &value);
+        if (NVML_SUCCESS == prc) {
+            gpu.powerMw = static_cast<int>(value);
+        } else {
+            // 0 is a real reading on an idling laptop GPU; a failed query is
+            // not, and the TUI must not print "0.0 W" for it.
+            Logger::Debug("NVML: power query failed (code=" + std::to_string(prc) + ")");
+        }
+    }
     if (s.api->getEnforcedPowerLimit && NVML_SUCCESS == s.api->getEnforcedPowerLimit(dev, &value))
         gpu.powerLimitMw = value;
 
@@ -559,6 +575,13 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
         gpu.pcieGen = value;
     if (s.api->getPcieWidth && NVML_SUCCESS == s.api->getPcieWidth(dev, &value))
         gpu.pcieWidth = value;
+    // Current width/gen is the negotiated link, which sits at x1/x2 while the
+    // card idles. The max is what the slot and card can actually do; without
+    // both, "Gen4 x2" reads as a broken slot.
+    if (s.api->getMaxPcieGen && NVML_SUCCESS == s.api->getMaxPcieGen(dev, &value))
+        gpu.maxPcieGen = value;
+    if (s.api->getMaxPcieWidth && NVML_SUCCESS == s.api->getMaxPcieWidth(dev, &value))
+        gpu.maxPcieWidth = value;
 
     // Fans: per-fan % of max, averaged the way every monitor UI shows it.
     unsigned int fanCount = 0;
@@ -624,7 +647,9 @@ GpuInfo::NvidiaLive GpuInfo::GetNvidiaLive(int nvmlIndex) {
     if (s.api->getTemperature && NVML_SUCCESS == s.api->getTemperature(dev, NVML_TEMPERATURE_GPU, &value))
         out.temperature = static_cast<double>(value);
     if (s.api->getPowerUsage && NVML_SUCCESS == s.api->getPowerUsage(dev, &value))
-        out.powerMw = static_cast<double>(value);
+        out.powerMw = static_cast<double>(value);  // includes a real 0 W
+    else
+        out.powerMw = -1;
     if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_GRAPHICS, &value))
         out.clockMhz = static_cast<double>(value);
     if (s.api->getClockInfo && NVML_SUCCESS == s.api->getClockInfo(dev, NVML_CLOCK_MEM, &value))
