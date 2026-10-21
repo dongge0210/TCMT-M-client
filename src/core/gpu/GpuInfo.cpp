@@ -148,6 +148,31 @@ using NvmlDeviceGetTotalEnergyConsumptionFn =
 // CUDA user-mode driver version, e.g. 13040 = 13.4.
 using NvmlSystemGetCudaDriverVersionFn = nvmlReturn_t (*)(int*);
 
+// nvmlDeviceGetFieldValues: on laptop GPUs where nvmlDeviceGetPowerUsage
+// answers 0/N/A, the NVML_FI_DEV_POWER_INSTANT field still carries the draw.
+// Layout is nvml.h's nvmlFieldValue_t (not in the runtime DLL).
+struct NvmlFieldValue {
+    unsigned int fieldId;
+    unsigned int scopeId;
+    long long timestamp;
+    long long latencyUsec;
+    int valueType;            // nvmlValueType_t
+    nvmlReturn_t nvmlReturn;  // per-field status
+    union {
+        double dVal;
+        int siVal;
+        unsigned int uiVal;
+        unsigned long ulVal;
+        unsigned long long ullVal;
+        long long sllVal;
+        unsigned short usVal;
+    } value;
+};
+// nvmlFieldValueIds_t: NVML_FI_DEV_POWER_INSTANT = 186 ("Current GPU power,
+// supported on all architectures"), NVML_FI_DEV_POWER_AVERAGE = 185.
+constexpr unsigned int NVML_FI_DEV_POWER_INSTANT = 186;
+using NvmlDeviceGetFieldValuesFn = nvmlReturn_t (*)(nvmlDevice_t, int, NvmlFieldValue*);
+
 // Runtime NVML function table -- loaded once on first use
 struct NvmlApi {
     HMODULE module = nullptr;
@@ -178,6 +203,7 @@ struct NvmlApi {
     NvmlDeviceGetMaxPcieLinkWidthFn getMaxPcieWidth = nullptr;
     NvmlDeviceGetTotalEnergyConsumptionFn getTotalEnergy = nullptr;
     NvmlSystemGetCudaDriverVersionFn getCudaDriverVersion = nullptr;
+    NvmlDeviceGetFieldValuesFn getFieldValues = nullptr;
 };
 
 // Singleton accessor: loads nvml.dll on first call, returns the function table.
@@ -259,6 +285,8 @@ static NvmlApi& GetNvmlApi() {
         if (!api.getCudaDriverVersion)
             api.getCudaDriverVersion = reinterpret_cast<NvmlSystemGetCudaDriverVersionFn>(
                 GetProcAddress(api.module, "nvmlSystemGetCudaDriverVersion_v2"));
+        api.getFieldValues = reinterpret_cast<NvmlDeviceGetFieldValuesFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetFieldValues"));
         api.getDeviceCount = reinterpret_cast<NvmlDeviceGetCountFn>(
             GetProcAddress(api.module, "nvmlDeviceGetCount_v2"));
         if (!api.getDeviceCount)
@@ -318,6 +346,30 @@ GpuInfo::GpuInfo(WmiManager& manager) : wmiManager(manager) {
 
 GpuInfo::~GpuInfo() {
     Logger::Info("GPU information detection complete");
+}
+
+// NVML_FI_DEV_POWER_INSTANT through nvmlDeviceGetFieldValues. On laptop GPUs
+// where nvmlDeviceGetPowerUsage answers N/A (the same N/A nvidia-smi prints),
+// this field still returns the live draw. Returns -1 when unreadable.
+static double QueryInstantPowerMw(nvmlDevice_t dev) {
+    auto& s = GetNvmlSession();
+    if (!s.ok || !s.api->getFieldValues || !dev) return -1;
+
+    NvmlFieldValue fv{};
+    fv.fieldId = NVML_FI_DEV_POWER_INSTANT;
+    if (NVML_SUCCESS != s.api->getFieldValues(dev, 1, &fv)) return -1;
+    if (NVML_SUCCESS != fv.nvmlReturn) return -1;
+
+    switch (fv.valueType) {
+        case 0: return fv.value.dVal;                                 // DOUBLE
+        case 1: return static_cast<double>(fv.value.uiVal);           // UNSIGNED_INT
+        case 2: return static_cast<double>(fv.value.ulVal);           // UNSIGNED_LONG
+        case 3: return static_cast<double>(fv.value.ullVal);          // UNSIGNED_LONG_LONG
+        case 4: return static_cast<double>(fv.value.sllVal);          // SIGNED_LONG_LONG
+        case 5: return static_cast<double>(fv.value.siVal);           // SIGNED_INT
+        case 6: return static_cast<double>(fv.value.usVal);           // UNSIGNED_SHORT
+        default: return -1;
+    }
 }
 
 // Some laptop GPUs answer nvmlDeviceGetPowerUsage with 0 mW while idle or
@@ -387,10 +439,15 @@ double GpuInfo::GetGpuPower() {
     if (read && mw > 0) return static_cast<double>(mw);
 
     // 0 W usually means "not reported right now", not "idle at exactly zero".
+    // The instantaneous field value works where the plain query does not.
+    const double instant = QueryInstantPowerMw(s.device);
+    if (instant > 0) return instant;
+
     // Slot 15 is reserved for this caller so it does not share a baseline with
     // the per-GPU path below.
     const double derived = DerivePowerMw(s.device, 15);
     if (derived >= 0) return derived;
+    if (instant >= 0) return instant;   // the counter itself says 0 W
     return read ? static_cast<double>(mw) : -1;
 }
 
@@ -624,6 +681,12 @@ void GpuInfo::QueryNvidiaGpuInfo(int index) {
             Logger::Debug("NVML: power query failed (code=" + std::to_string(prc) + ")");
         }
     }
+    if (gpu.powerMw <= 0) {
+        // Laptop SKUs answer the query above with N/A; the instant field still
+        // carries the draw (this is what HWiNFO-class tools read).
+        const double instant = QueryInstantPowerMw(dev);
+        if (instant > 0) gpu.powerMw = static_cast<int>(instant);
+    }
     if (s.api->getEnforcedPowerLimit && NVML_SUCCESS == s.api->getEnforcedPowerLimit(dev, &value))
         gpu.powerLimitMw = value;
 
@@ -717,16 +780,22 @@ GpuInfo::NvidiaLive GpuInfo::GetNvidiaLive(int nvmlIndex) {
     else
         out.powerMw = -1;
     if (out.powerMw <= 0) {
-        // 0 from the driver is "not reported"; the energy counter still knows.
-        const double derived = DerivePowerMw(dev, nvmlIndex);
-        if (derived >= 0) {
-            out.powerMw = derived;
-            // Once per run, not per sample: this path runs every second.
-            static bool logged = false;
-            if (!logged) {
-                logged = true;
-                Logger::Debug("NVML: power reads 0, using energy delta ("
-                              + std::to_string(static_cast<int>(derived)) + " mW)");
+        // The plain query is unavailable; NVML_FI_DEV_POWER_INSTANT usually
+        // still has it. The energy counter is the last resort.
+        const double instant = QueryInstantPowerMw(dev);
+        if (instant >= 0) {
+            out.powerMw = instant;
+        } else {
+            const double derived = DerivePowerMw(dev, nvmlIndex);
+            if (derived >= 0) {
+                out.powerMw = derived;
+                // Once per run, not per sample: this path runs every second.
+                static bool logged = false;
+                if (!logged) {
+                    logged = true;
+                    Logger::Debug("NVML: power reads 0, using energy delta ("
+                                  + std::to_string(static_cast<int>(derived)) + " mW)");
+                }
             }
         }
     }
