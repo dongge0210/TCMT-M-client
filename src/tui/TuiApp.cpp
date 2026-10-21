@@ -2321,7 +2321,9 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    const int W = (std::min)(78, cols - 6);
+    // Wider than the other overlays: physical-disk models plus SMART
+    // attribute names need the room, and this page has no graph to fill.
+    const int W = (std::min)(100, cols - 6);
     const int H = (std::min)(rows - 4, 26);
     const int x0 = (std::max)(1, (cols - W) / 2);
     const int y0 = (std::max)(2, (rows - H) / 2);
@@ -2431,14 +2433,21 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             }
 
             wattron(stdscr, A_DIM);
+            // Column header instead of the raw numeric attribute ID: the
+            // hex ID means nothing to a reader, the name and the two
+            // counters do.
+            if (y < bottom) {
+                std::string hdr = PadCell("Attribute", 28);
+                snprintf(buf, sizeof(buf), "  %3s/%3s  %10s", "Cur", "Wor", "Raw");
+                hdr += buf;
+                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(hdr, W - 6).c_str());
+            }
             for (const auto& a : pd.attributes) {
                 if (y >= bottom) break;
                 // PadCell measures display columns: attribute names are
-                // localized (CJK), so %-24s would misalign every row.
-                snprintf(buf, sizeof(buf), "ID %02X  ", a.id);
-                std::string row = buf;
-                row += PadCell(a.name, 24);
-                snprintf(buf, sizeof(buf), " %3u/%3u  %llu",
+                // localized (CJK), so %-28s would misalign every row.
+                std::string row = PadCell(a.name, 28);
+                snprintf(buf, sizeof(buf), "  %3u/%3u  %10llu",
                          a.current, a.worst,
                          static_cast<unsigned long long>(a.rawValue));
                 row += buf;
