@@ -936,6 +936,10 @@ int main(int argc, char* argv[]) {
         tuiApp.SetLocationRequestHandler([] {
             WiFiInfo::RequestLocationAuthorization();
         });
+        // A rebuild gets a fresh code signature, so TCC forgets the grant and
+        // the dashboard asks for R again. Ask once at startup while the state
+        // is still undetermined; a granted or denied app is left alone.
+        WiFiInfo::RequestLocationAuthorizationIfNeeded();
     }
     // Server push settings (TUI settings page, press S) -> persist + apply.
     tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec,

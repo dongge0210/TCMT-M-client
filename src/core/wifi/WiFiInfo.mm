@@ -177,6 +177,13 @@ void WiFiInfo::RequestLocationAuthorization() {
     });
 }
 
+void WiFiInfo::RequestLocationAuthorizationIfNeeded() {
+    if (geteuid() == 0) return;
+    if ([CLLocationManager authorizationStatus] == kCLAuthorizationStatusNotDetermined) {
+        RequestLocationAuthorization();
+    }
+}
+
 void WiFiInfo::Detect() {
     Clear();
 
@@ -197,7 +204,9 @@ void WiFiInfo::Detect() {
         data_.locationRoot = (geteuid() == 0);
 
         CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
-        bool locationOK = (auth == kCLAuthorizationStatusAuthorized);
+        // macOS only reports Always (kCLAuthorizationStatusAuthorized is its
+        // deprecated alias); the When In Use value is iOS-only.
+        bool locationOK = (auth == kCLAuthorizationStatusAuthorizedAlways);
         if (auth == kCLAuthorizationStatusDenied || auth == kCLAuthorizationStatusRestricted) {
             data_.locationStatus = 1;
             data_.locationDenied = true;

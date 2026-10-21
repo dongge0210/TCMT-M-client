@@ -36,6 +36,9 @@ public:
     // Ask the user for Location Services authorization (system prompt).
     // Idempotent; must be triggered by the user, never automatically.
     static void RequestLocationAuthorization();
+    // Ask once at startup when the user has not decided yet. A determined
+    // state (granted or denied) is left alone, so this never prompts twice.
+    static void RequestLocationAuthorizationIfNeeded();
 
     void Detect();
     const WiFiData& GetData() const;
