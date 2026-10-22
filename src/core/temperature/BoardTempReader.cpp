@@ -104,6 +104,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     tcmt::IsaLock isaLock;
     static uint8_t s_cr28 = 0xFF;
     static uint8_t s_cr30 = 0xFF;
+    static uint16_t s_smba = 0;
     if (!isaLock.held()) {
         static bool loggedNoMutex = false;
         if (!loggedNoMutex) {
@@ -212,6 +213,13 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
             }
         }
         s_base = base;
+        // SMBus base lives next to the hardware-monitor base in the same
+        // logical device; if the two ever overlap, the SMBus module's register
+        // writes land inside the sensor window.
+        regIn[0] = 0x62;
+        uint64_t smbOut[1] = {0};
+        if (s_pa.Execute("ioctl_superio_inw", regIn, 1, smbOut, 1, nullptr))
+            s_smba = (uint16_t)(smbOut[0] & 0xFFFF);
         {
             char info[48];
             snprintf(info, sizeof(info), "BoardTemp: base=0x%04X", s_base);
@@ -335,8 +343,8 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (++passes <= 8) {
         char sample[96];
         snprintf(sample, sizeof(sample),
-                 " base=0x%04X cr28=0x%02X cr30=0x%02X cfg=%s tries=%d%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
-                 s_base, s_cr28, s_cr30, cfgOpen ? "open" : "closed", attemptsUsed,
+                 " base=0x%04X smba=0x%04X cr28=0x%02X cr30=0x%02X cfg=%s tries=%d%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 s_base, s_smba, s_cr28, s_cr30, cfgOpen ? "open" : "closed", attemptsUsed,
                  isaLock.held() ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
