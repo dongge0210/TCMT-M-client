@@ -1,6 +1,6 @@
 name: Build TCMT-M
 
-# 这些是每次推 dev / 开 PR 都出的测试构建，没有 manifest.json 也没有签名，自动更新器拿到也用不了；
+# 这些是每次推 main / 开 PR 都出的测试构建，没有 manifest.json 也没有签名，自动更新器拿到也用不了；
 # 而且 draft/prerelease 根本不进 /releases/latest。所以不发 release，只上传 workflow artifact
 # （要下载的人去 Actions 页拿，过期自动清）。真正的发布走 tools/release-mac.sh。
 #
@@ -10,18 +10,30 @@ name: Build TCMT-M
 on:
   # Cache scope: PR runs write to refs/pull/N/merge, which no other branch can read.
   # Without a push run there is never a branch-level cache, so every new PR pays the
-  # full cold cost (~9 min extra). Pushing dev seeds the dev-scoped caches.
+  # full cold cost (~9 min extra). Pushing main seeds the main-scoped caches.
   push:
-    branches: [ dev ]
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'designs/**'
+      - '**.md'
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'designs/**'
+      - '**.md'
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  # Limit runner use to the allowlisted account; manual runs are dev-only and PR authors are checked below.
+  # Limit runner use to the allowlisted account; manual runs are main-only and PR authors are checked below.
   build-windows:
     name: Windows (MSBuild + CUDA)
     if: >-
@@ -32,7 +44,7 @@ jobs:
       ) &&
       (
         github.event_name != 'workflow_dispatch' ||
-        github.ref == 'refs/heads/dev'
+        github.ref == 'refs/heads/main'
       )
     runs-on: windows-latest
 
@@ -193,7 +205,7 @@ jobs:
       ) &&
       (
         github.event_name != 'workflow_dispatch' ||
-        github.ref == 'refs/heads/dev'
+        github.ref == 'refs/heads/main'
       )
     runs-on: macos-latest
     env:
@@ -265,7 +277,7 @@ jobs:
       ) &&
       (
         github.event_name != 'workflow_dispatch' ||
-        github.ref == 'refs/heads/dev'
+        github.ref == 'refs/heads/main'
       )
     runs-on: ubuntu-latest
 
