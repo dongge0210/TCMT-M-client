@@ -19,8 +19,8 @@ static const struct {
     // Names are what the Temps panel prints. "Aux N" is deliberate: the board
     // vendor decides what those pins are wired to (VRM, chipset, a header),
     // and guessing "VRM" from the register number mislabeles half the boards.
-    {"CPU (PECI)",             0x0073, 0x0074, 7},
-    {"CPU (Socket)",           0x0075, 0x0076, 7},
+    {"CPU PECI",               0x0073, 0x0074, 7},
+    {"CPU Socket",             0x0075, 0x0076, 7},
     {"System",                 0x0077, 0x0078, 7},
     {"Aux 0",                  0x0079, 0x007A, 7},
     {"Aux 1",                  0x007B, 0x007C, 7},

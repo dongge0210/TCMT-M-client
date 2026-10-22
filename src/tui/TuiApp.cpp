@@ -983,7 +983,6 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     DrawPanelTitle(win, y, x0, maxW, "Temps", IsPanelFocused(PanelId::Temp));
     int lines = 1;
 
-    int halfW = maxW / 2;
     // Grow the grid with the space actually available below the title
     // (content may run down to row LINES-5, see Run), capped at 8 rows:
     // with room, every sensor is visible at once and no paging happens;
@@ -999,14 +998,22 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     for (const auto& [name, temp] : data.temperatures)
         displayTemps.push_back({name, temp});
 
-    int perPage = contentRows * 2;
+    // Two columns normally. When the list overflows the rows the panel has,
+    // a third column keeps every sensor on one page; rotating pages made the
+    // extra sensors look like they flashed and vanished every three seconds.
+    int cols = 2;
+    if (maxW / 3 >= 18 && static_cast<int>(displayTemps.size()) > contentRows * 2)
+        cols = 3;
+    const int colW = maxW / cols;
+
+    int perPage = contentRows * cols;
     int totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
     bool needPaging = totalPages > 1;
     if (needPaging) {
         // The page indicator owns a row of its own: take it from the grid so
         // the panel keeps the height it reported to the layout.
         contentRows = (std::max)(1, contentRows - 1);
-        perPage = contentRows * 2;
+        perPage = contentRows * cols;
         totalPages = (std::max)(1, (static_cast<int>(displayTemps.size()) + perPage - 1) / perPage);
     }
 
@@ -1024,35 +1031,31 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     }
 
     int actualRows = 0;
-    int startIdx = currentPage * contentRows * 2;
-    int limit = needPaging ? contentRows : static_cast<int>(displayTemps.size());
-    for (int p = 0; p < limit; p++) {
-        int leftIdx = startIdx + p * 2;
-        if (leftIdx >= static_cast<int>(displayTemps.size())) break;
+    const int startIdx = currentPage * perPage;
+    const int total = static_cast<int>(displayTemps.size());
+    // Clamp the label field: colW shrinks with the panel and a negative
+    // width would wrap to size_t and blank the name out entirely.
+    const int labelW = (std::max)(1, colW - 8);
+    for (int r = 0; r < contentRows; ++r) {
+        bool drew = false;
+        for (int c = 0; c < cols; ++c) {
+            const int idx = startIdx + r * cols + c;
+            if (idx >= total) break;
 
-        auto& [nameL, tempL] = displayTemps[leftIdx];
-        // Clamp the label field: halfW shrinks with the panel and a negative
-        // width would wrap to size_t and blank the name out entirely.
-        const int labelW = (std::max)(1, halfW - 10);
-        auto labelL = TrimRight(nameL, labelW);
-        const int tcL = HighIsWorsePair(tempL, kTempWarn, kTempCrit);
-        if (tcL >= 0) wattron(win, COLOR_PAIR(tcL));
-        // Labels pad into a fixed field so every temperature value in the
-        // column shares one left edge (#6); sensor names are ASCII.
-        mvwprintw(win, y + lines, x0 + 2, "%-*s %.1f C", labelW, labelL.c_str(), tempL);
-        if (tcL >= 0) wattroff(win, COLOR_PAIR(tcL));
-
-        int rightIdx = leftIdx + 1;
-        if (rightIdx < static_cast<int>(displayTemps.size())) {
-            auto& [nameR, tempR] = displayTemps[rightIdx];
-            auto labelR = TrimRight(nameR, labelW);
-            const int tcR = HighIsWorsePair(tempR, kTempWarn, kTempCrit);
-            if (tcR >= 0) wattron(win, COLOR_PAIR(tcR));
-            mvwprintw(win, y + lines, x0 + 2 + halfW, "%-*s %.1f C", labelW, labelR.c_str(), tempR);
-            if (tcR >= 0) wattroff(win, COLOR_PAIR(tcR));
+            auto& [nameS, tempS] = displayTemps[idx];
+            auto label = TrimRight(nameS, labelW);
+            const int tc = HighIsWorsePair(tempS, kTempWarn, kTempCrit);
+            if (tc >= 0) wattron(win, COLOR_PAIR(tc));
+            // Labels pad into a fixed field so every temperature value in the
+            // column shares one left edge (#6); sensor names are ASCII.
+            mvwprintw(win, y + lines, x0 + 2 + c * colW, "%-*s %.1f C",
+                      labelW, label.c_str(), tempS);
+            if (tc >= 0) wattroff(win, COLOR_PAIR(tc));
+            drew = true;
         }
+        if (!drew) break;
         lines++;
-        actualRows = p + 1;
+        actualRows = r + 1;
     }
 
     if (needPaging) {
