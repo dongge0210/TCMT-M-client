@@ -1,6 +1,7 @@
 #ifdef TCMT_WINDOWS
 #include "MemoryTempReader.h"
 #include "PawnIOWrapper.h"
+#include "../Utils/IsaLock.h"
 #include "../Utils/Logger.h"
 
 #include <algorithm>
@@ -66,6 +67,11 @@ std::vector<DimmTempInfo> MemoryTempReader::ReadAll() {
     static PawnIOWrapper s_pa;
     static std::string s_funcName;
     static bool s_probed = false;
+
+    // The NCT6793 SMBus module enters the same Super I/O config space the
+    // board sensor reader uses; hold the ISA bus mutex for the whole pass so
+    // the two cannot interleave.
+    tcmt::IsaLock isaLock;
 
     if (!s_probed) {
         s_probed = true;

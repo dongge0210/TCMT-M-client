@@ -1,6 +1,7 @@
 #ifdef TCMT_WINDOWS
 #include "BoardTempReader.h"
 #include "../memory/PawnIOWrapper.h"
+#include "../Utils/IsaLock.h"
 #include "../Utils/Logger.h"
 
 static const wchar_t* LPCIO_RES = L"LPC_IO";
@@ -92,31 +93,6 @@ static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint16_t addr) {
 // ISA/LPC legacy ports.
 static bool ValidIoBase(uint16_t b) { return b >= 0x100 && b != 0xFFFF; }
 
-// The Super I/O config ports (0x2E/0x2F) are shared with every other hardware
-// monitor on the machine. OpenHardwareMonitor established the name below and
-// HWiNFO, LibreHardwareMonitor and nwinfo all honour it; without it the two
-// sides interleave config-index writes and the reads come back as 0xFFFF.
-static HANDLE IsaIoMutex() {
-    static HANDLE h = [] {
-        HANDLE m = OpenMutexW(SYNCHRONIZE, FALSE, L"Global\\Access_ISABUS.HTP.Method");
-        if (!m) m = CreateMutexW(nullptr, FALSE, L"Global\\Access_ISABUS.HTP.Method");
-        return m;
-    }();
-    return h;
-}
-
-struct IsaIoLock {
-    HANDLE h = nullptr;
-    bool held = false;
-    IsaIoLock() {
-        h = IsaIoMutex();
-        held = h && WaitForSingleObject(h, 2000) == WAIT_OBJECT_0;
-    }
-    ~IsaIoLock() { if (held) ReleaseMutex(h); }
-    IsaIoLock(const IsaIoLock&) = delete;
-    IsaIoLock& operator=(const IsaIoLock&) = delete;
-};
-
 std::vector<BoardTemp> BoardTempReader::ReadAll() {
     std::vector<BoardTemp> result;
     static PawnIOWrapper s_pa;
@@ -125,9 +101,9 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
 
     // Held for the whole detection + read sequence: the config index port is
     // a single hardware register shared by every monitoring agent.
-    IsaIoLock isaLock;
+    tcmt::IsaLock isaLock;
     static uint8_t s_cr28 = 0xFF;
-    if (!isaLock.held) {
+    if (!isaLock.held()) {
         static bool loggedNoMutex = false;
         if (!loggedNoMutex) {
             loggedNoMutex = true;
@@ -318,7 +294,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         char sample[96];
         snprintf(sample, sizeof(sample),
                  " base=0x%04X cr28=0x%02X%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
-                 s_base, s_cr28, isaLock.held ? "" : "(noisa)",
+                 s_base, s_cr28, isaLock.held() ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
                      " valid=" + std::to_string(rawValid) +
