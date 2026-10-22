@@ -2,6 +2,7 @@
 #include "../Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
+#include <cstdlib>
 #include "../memory/MemoryTempReader.h"
 #include "../cpu/CpuTempReader.h"
 #include "../cpu/RyzenSmuReader.h"
@@ -48,15 +49,19 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
         Logger::Debug("GpuInfo::GetGpuTemperature: exception");
     }
 
-    // DIMM temperature via PawnIO SMBus
-    try {
-        auto dimms = MemoryTempReader::ReadAll();
-        for (const auto& d : dimms) {
-            if (d.temperature > 0)
-                temps.push_back({d.name, d.temperature});
+    // DIMM temperature via PawnIO SMBus. TCMT_NO_DIMM=1 skips it: the NCT6793
+    // SMBus module opens the Super I/O config space, which is the remaining
+    // suspect for the board sensors dying after the first pass.
+    if (!std::getenv("TCMT_NO_DIMM")) {
+        try {
+            auto dimms = MemoryTempReader::ReadAll();
+            for (const auto& d : dimms) {
+                if (d.temperature > 0)
+                    temps.push_back({d.name, d.temperature});
+            }
+        } catch (...) {
+            Logger::Debug("MemoryTempReader: exception");
         }
-    } catch (...) {
-        Logger::Debug("MemoryTempReader: exception");
     }
 
     // Motherboard temperature via PawnIO LpcIO (NCT6798D Super I/O)
