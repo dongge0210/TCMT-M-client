@@ -265,6 +265,14 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         uint64_t exitAA[2] = { 0x2E, 0xAA };
         s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
     }
+    // Probe that the exit actually took: outside configuration mode the chip
+    // ignores index writes, so re-reading the chip-ID register returns 0xFF.
+    bool cfgOpen = false;
+    {
+        uint64_t idx[1] = { 0x20 }, probe[1] = { 0 };
+        if (s_pa.Execute("ioctl_superio_inb", idx, 1, probe, 1, nullptr))
+            cfgOpen = (uint8_t)(probe[0] & 0xFF) != 0xFF;
+    }
 
     const int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
     int rawValid = 0;
@@ -320,8 +328,9 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (++passes <= 8) {
         char sample[96];
         snprintf(sample, sizeof(sample),
-                 " base=0x%04X cr28=0x%02X cr30=0x%02X%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
-                 s_base, s_cr28, s_cr30, isaLock.held() ? "" : "(noisa)",
+                 " base=0x%04X cr28=0x%02X cr30=0x%02X cfg=%s%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 s_base, s_cr28, s_cr30, cfgOpen ? "open" : "closed",
+                 isaLock.held() ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
                      " valid=" + std::to_string(rawValid) +
