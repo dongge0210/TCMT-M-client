@@ -93,13 +93,16 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     static uint16_t s_base = 0;
     static bool s_ready = false;
 
-    if (!s_ready) {
-        s_ready = true;
-        if (!s_pa.Open()) return result;
+    // Full Super I/O detection. Can be re-run: the chip's IO-space lock and
+    // base address are not guaranteed to survive forever (another user of the
+    // same chip, a suspend/resume, a driver reload), and after that every
+    // register read returns 0xFF and the sensor list silently empties.
+    auto detect = [&]() -> bool {
+        if (!s_pa.Open()) return false;
         auto data = LoadResource(LPCIO_RES);
-        if (data.empty()) { Logger::Debug("BoardTemp: LPCIO resource not found"); return result; }
+        if (data.empty()) { Logger::Debug("BoardTemp: LPCIO resource not found"); return false; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "LpcIO")) {
-            Logger::Debug("BoardTemp: LpcIO module failed to load"); return result;
+            Logger::Debug("BoardTemp: LpcIO module failed to load"); return false;
         }
 
         // Step 1: SelectSlot — matches LpcPort constructor
@@ -134,7 +137,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
             Logger::Info("BoardTemp: find_bars failed (chip may not be supported)");
             uint64_t exitAA[2] = { 0x2E, 0xAA };
             s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
-            return result;
+            return false;
         }
         Logger::Info("BoardTemp: find_bars succeeded");
 
@@ -164,31 +167,57 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         // Step 8: Exit config mode
         uint64_t exitAA[2] = { 0x2E, 0xAA };
         s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
+        return s_base >= 0x100;
+    };
+
+    if (!s_ready) {
+        s_ready = true;
+        detect();
     }
 
     if (s_base == 0 || s_base < 0x100) return result;
 
-    // Read temperature sources using NCT6798D protocol
-    int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
+    // Read temperature sources using NCT6798D protocol. Two attempts: if the
+    // whole pass comes back dead, re-detect once and read again.
+    const int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
     int rawValid = 0;
-    for (int i = 0; i < count; i++) {
-        uint8_t raw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].addr);
-        if (raw == 0xFF || raw == 0x00) continue;
-        ++rawValid;
+    uint8_t head[4] = {0};
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        result.clear();
+        rawValid = 0;
+        for (int i = 0; i < count; i++) {
+            uint8_t raw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].addr);
+            if (i < 4) head[i] = raw;
+            if (raw == 0xFF || raw == 0x00) continue;
+            ++rawValid;
 
-        // NCT6798D formula: (signed_byte << 1) | halfBit, then * 0.5
-        int value = (int8_t)raw << 1;
-        if (TEMP_SOURCES[i].halfBit > 0) {
-            uint8_t halfRaw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].halfAddr);
-            value |= (halfRaw >> TEMP_SOURCES[i].halfBit) & 0x1;
+            // NCT6798D formula: (signed_byte << 1) | halfBit, then * 0.5
+            int value = (int8_t)raw << 1;
+            if (TEMP_SOURCES[i].halfBit > 0) {
+                uint8_t halfRaw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].halfAddr);
+                value |= (halfRaw >> TEMP_SOURCES[i].halfBit) & 0x1;
+            }
+            double temp = value * 0.5;
+            if (temp <= -55.0 || temp >= 125.0) continue;
+
+            BoardTemp bt;
+            bt.name = TEMP_SOURCES[i].name;
+            bt.temperature = temp;
+            result.push_back(bt);
         }
-        double temp = value * 0.5;
-        if (temp <= -55.0 || temp >= 125.0) continue;
-
-        BoardTemp bt;
-        bt.name = TEMP_SOURCES[i].name;
-        bt.temperature = temp;
-        result.push_back(bt);
+        static bool loggedDead = false;
+        if (rawValid > 0) {
+            if (loggedDead) Logger::Info("BoardTemp: registers answering again");
+            loggedDead = false;
+            break;
+        }
+        if (attempt == 0) {
+            if (!loggedDead) {
+                loggedDead = true;
+                Logger::Info("BoardTemp: no readable register, re-detecting Super I/O");
+            }
+            if (!detect()) break;
+        }
     }
 
     // Sensor count changing between reads means the register reads are
@@ -202,9 +231,12 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     // (raw drops to 0) from "values fell out of range" (raw stays, kept drops).
     static int passes = 0;
     if (++passes <= 5) {
+        char sample[64];
+        snprintf(sample, sizeof(sample), " raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
-                     " raw=" + std::to_string(rawValid) +
-                     " kept=" + std::to_string(result.size()));
+                     " valid=" + std::to_string(rawValid) +
+                     " kept=" + std::to_string(result.size()) + sample);
     }
 
     return result;
