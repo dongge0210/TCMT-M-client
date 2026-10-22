@@ -2,7 +2,6 @@
 #include "../Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
-#include <cstdlib>
 #include "../memory/MemoryTempReader.h"
 #include "../cpu/CpuTempReader.h"
 #include "../cpu/RyzenSmuReader.h"
@@ -49,29 +48,15 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
         Logger::Debug("GpuInfo::GetGpuTemperature: exception");
     }
 
-    // DIMM temperature via PawnIO SMBus. TCMT_NO_DIMM=1 skips it: the NCT6793
-    // SMBus module opens the Super I/O config space, which is the remaining
-    // suspect for the board sensors dying after the first pass. _dupenv_s is
-    // the MSVC-safe form; plain getenv trips C4996 under /WX.
-    bool skipDimm = false;
-    {
-        char* envValue = nullptr;
-        size_t envLen = 0;
-        if (_dupenv_s(&envValue, &envLen, "TCMT_NO_DIMM") == 0 && envValue) {
-            skipDimm = envValue[0] != '\0' && envValue[0] != '0';
-            free(envValue);
+    // DIMM temperature via PawnIO SMBus
+    try {
+        auto dimms = MemoryTempReader::ReadAll();
+        for (const auto& d : dimms) {
+            if (d.temperature > 0)
+                temps.push_back({d.name, d.temperature});
         }
-    }
-    if (!skipDimm) {
-        try {
-            auto dimms = MemoryTempReader::ReadAll();
-            for (const auto& d : dimms) {
-                if (d.temperature > 0)
-                    temps.push_back({d.name, d.temperature});
-            }
-        } catch (...) {
-            Logger::Debug("MemoryTempReader: exception");
-        }
+    } catch (...) {
+        Logger::Debug("MemoryTempReader: exception");
     }
 
     // Motherboard temperature via PawnIO LpcIO (NCT6798D Super I/O)
