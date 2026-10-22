@@ -361,10 +361,12 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     int rawValid = 0;
     int attemptsUsed = 0;
     uint8_t head[4] = {0};
+    std::string dropped;
     for (int attempt = 0; attempt < 4; ++attempt) {
         attemptsUsed = attempt + 1;
         result.clear();
         rawValid = 0;
+        dropped.clear();
         for (int i = 0; i < count; i++) {
             uint8_t raw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].addr);
             if (i < 4) head[i] = raw;
@@ -378,7 +380,15 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
                 value |= (halfRaw >> TEMP_SOURCES[i].halfBit) & 0x1;
             }
             double temp = value * 0.5;
-            if (temp <= -55.0 || temp >= 125.0) continue;
+            // Unconnected NCT6798D inputs float at 0x7F/0x80 (+127 C / -128 C)
+            // and drift across any bound placed near 125 C, so the sensor list
+            // gained and lost entries between passes. No board sensor is real
+            // outside this band.
+            if (temp <= -40.0 || temp >= 115.0) {
+                if (!dropped.empty()) dropped += ",";
+                dropped += TEMP_SOURCES[i].name;
+                continue;
+            }
 
             BoardTemp bt;
             bt.name = TEMP_SOURCES[i].name;
@@ -425,7 +435,8 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
                      " valid=" + std::to_string(rawValid) +
-                     " kept=" + std::to_string(result.size()) + sample);
+                     " kept=" + std::to_string(result.size()) + sample +
+                     " drop=" + (dropped.empty() ? std::string("-") : dropped));
     }
 
     return result;
