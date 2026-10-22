@@ -69,12 +69,14 @@ static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint16_t addr) {
     uint64_t args[2];
     uint64_t out[1] = {0};
 
-    if (bank != 0) {
-        args[0] = port + 5; args[1] = 0x4E;
-        pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
-        args[0] = port + 6; args[1] = bank;
-        pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
-    }
+    // The bank select is sticky, so it has to be re-issued for bank 0 as well.
+    // Skipping it made the bank-0 reads that follow a bank-4 read land on the
+    // wrong register: the first call (chip still on bank 0 after config mode)
+    // looked fine, every later call started on bank 4 and lost those sensors.
+    args[0] = port + 5; args[1] = 0x4E;
+    pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
+    args[0] = port + 6; args[1] = bank;
+    pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
 
     args[0] = port + 5; args[1] = reg;
     pa.Execute("ioctl_pio_outb", args, 2, nullptr, 0, nullptr);
@@ -185,6 +187,14 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         bt.name = TEMP_SOURCES[i].name;
         bt.temperature = temp;
         result.push_back(bt);
+    }
+
+    // Sensor count changing between reads means the register reads are
+    // unstable, not that the board lost a sensor; log the transitions once.
+    static int lastCount = -1;
+    if (static_cast<int>(result.size()) != lastCount) {
+        lastCount = static_cast<int>(result.size());
+        Logger::Info("BoardTemp: " + std::to_string(result.size()) + " readable sensor(s)");
     }
 
     return result;
