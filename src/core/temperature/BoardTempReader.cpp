@@ -170,9 +170,11 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
 
     // Read temperature sources using NCT6798D protocol
     int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
+    int rawValid = 0;
     for (int i = 0; i < count; i++) {
         uint8_t raw = HwMonReadByte(s_pa, s_base, TEMP_SOURCES[i].addr);
         if (raw == 0xFF || raw == 0x00) continue;
+        ++rawValid;
 
         // NCT6798D formula: (signed_byte << 1) | halfBit, then * 0.5
         int value = (int8_t)raw << 1;
@@ -195,6 +197,14 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (static_cast<int>(result.size()) != lastCount) {
         lastCount = static_cast<int>(result.size());
         Logger::Info("BoardTemp: " + std::to_string(result.size()) + " readable sensor(s)");
+    }
+    // First few passes only: distinguishes "registers stopped answering"
+    // (raw drops to 0) from "values fell out of range" (raw stays, kept drops).
+    static int passes = 0;
+    if (++passes <= 5) {
+        Logger::Info("BoardTemp: pass " + std::to_string(passes) +
+                     " raw=" + std::to_string(rawValid) +
+                     " kept=" + std::to_string(result.size()));
     }
 
     return result;

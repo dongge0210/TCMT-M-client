@@ -580,10 +580,13 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
 
             std::lock_guard<std::mutex> lock(data_.tempMutex);
             data_.temperatures = temps;
-            static bool tempLogged = false;
-            if (!tempLogged && !temps.empty()) {
-                Logger::Info("TemperatureLoop: got " + std::to_string(temps.size()) + " sensors");
-                tempLogged = true;
+            // Log the transitions, not every pass: a count that drops from 15
+            // to 8 after startup is the sensor list losing entries, which the
+            // Temps panel then shows as "the extra sensors vanished".
+            static std::size_t lastTempCount = static_cast<std::size_t>(-1);
+            if (temps.size() != lastTempCount) {
+                lastTempCount = temps.size();
+                Logger::Info("TemperatureLoop: " + std::to_string(temps.size()) + " sensors");
             }
             data_.cpuTemperature = 0.0;
             data_.cpuPcoreTemperature = 0.0;
