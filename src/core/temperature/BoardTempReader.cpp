@@ -103,6 +103,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     // a single hardware register shared by every monitoring agent.
     tcmt::IsaLock isaLock;
     static uint8_t s_cr28 = 0xFF;
+    static uint8_t s_cr30 = 0xFF;
     if (!isaLock.held()) {
         static bool loggedNoMutex = false;
         if (!loggedNoMutex) {
@@ -168,6 +169,23 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         // Step 5: Select HW monitor logical device (0x0B)
         uint64_t devSel[2] = { 0x07, 0x0B };
         s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
+
+        // The device can be switched off (CR30 bit 0 = 0) while its base-address
+        // register keeps the old value. The lock then reads back clear and the
+        // base looks valid, yet every HW-monitor read returns 0xFF because the
+        // IO decode is off. Turn it back on before reading anything.
+        regIn[0] = 0x30; regOut[0] = 0;
+        if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr)) {
+            const uint8_t ctl = (uint8_t)(regOut[0] & 0xFF);
+            s_cr30 = ctl;
+            if ((ctl & 0x01) == 0) {
+                uint64_t enableArgs[2] = { 0x30, (uint64_t)(ctl | 0x01) };
+                s_pa.Execute("ioctl_superio_outb", enableArgs, 2, nullptr, 0, nullptr);
+                s_cr30 = (uint8_t)(ctl | 0x01);
+                if (verbose) Logger::Info("BoardTemp: HW monitor device was disabled, re-enabled");
+                else Logger::Debug("BoardTemp: HW monitor device was disabled, re-enabled");
+            }
+        }
 
         // Step 6: Read base address via ReadWord (register 0x60).
         // The value comes back 0xFFFF when the logical-device selection did not
@@ -293,8 +311,8 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (++passes <= 8) {
         char sample[96];
         snprintf(sample, sizeof(sample),
-                 " base=0x%04X cr28=0x%02X%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
-                 s_base, s_cr28, isaLock.held() ? "" : "(noisa)",
+                 " base=0x%04X cr28=0x%02X cr30=0x%02X%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 s_base, s_cr28, s_cr30, isaLock.held() ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
                      " valid=" + std::to_string(rawValid) +
