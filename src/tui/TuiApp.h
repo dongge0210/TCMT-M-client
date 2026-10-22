@@ -590,6 +590,9 @@ private:
     std::string segShade_ = "\xe2\x96\x91";   // ░ title-strip remainder (B · powerline; ASCII '-')
     std::string barFill_ = "\xe2\x96\xb0";    // ▰ usage-bar fill (ASCII '=')
     std::string barTrack_ = "\xe2\x96\xb1";   // ▱ usage-bar track (ASCII '-')
+    // Bottom status row: the glyph set in use and, on Windows, which console
+    // backend PDCurses picked ("UTF-8 / Windows Terminal", "ASCII / conhost").
+    std::string consoleMode_;
 
     TuiData data_;
     mutable std::mutex dataMutex_;

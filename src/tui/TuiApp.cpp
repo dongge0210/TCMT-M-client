@@ -3252,6 +3252,13 @@ void TuiApp::Run() {
 #ifndef __PDCURSES__
     ESCDELAY = 25;   // 25ms Esc timeout (default 1000ms) — fix "half-exit" feel
 #endif
+
+    consoleMode_ = asciiMode_ ? "ASCII" : "UTF-8";
+#ifdef __PDCURSES__
+    consoleMode_ += std::string(" / ") + (pdc_wt ? "Windows Terminal"
+                                          : pdc_conemu ? "ConEmu" : "conhost");
+#endif
+
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
@@ -3741,7 +3748,7 @@ void TuiApp::Run() {
         // machine-wide numbers; under sudo it is the only place the login
         // account is visible without leaving the dashboard.
         if (data.uptimeSeconds > 0 || data.loadAvg1 > 0 || data.processCount > 0 ||
-            !data.loginUser.empty()) {
+            !data.loginUser.empty() || !consoleMode_.empty()) {
             std::string sysStr;
             if (data.uptimeSeconds > 0) {
                 uint64_t days = data.uptimeSeconds / 86400;
@@ -3763,6 +3770,9 @@ void TuiApp::Run() {
             if (!data.loginUser.empty()) {
                 sysStr += "   User: " + data.loginUser;
                 if (data.elevatedViaSudo) sysStr += " (sudo)";
+            }
+            if (!consoleMode_.empty()) {
+                sysStr += "   Mode: " + consoleMode_;
             }
             mvwprintw(stdscr, rows - 4, 2, "%s",
                       TrimRight(sysStr, cols - 4).c_str());
