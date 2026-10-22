@@ -69,7 +69,9 @@ static int portable_wcswidth(const wchar_t* wcs, size_t n) {
 // CJK glyph; in legacy console-buffer mode (WriteConsoleOutput) the glyph
 // occupies two cells but the backend writes only one, so the glyph eats the
 // cell after it. Fixed-width fields need a filler cell in the latter case.
-extern "C" { extern bool pdc_ansi; }
+extern "C" {
+extern bool pdc_ansi, pdc_wt, pdc_conemu;
+}
 #endif
 
 namespace tcmt {
@@ -3221,6 +3223,9 @@ void TuiApp::Run() {
                configuredLang_.empty() ? curLocale : configuredLang_.c_str(),
                utf8Locale);
     asciiMode_ = (asciiEnv != nullptr && std::strcmp(asciiEnv, "0") != 0) || !utf8Locale;
+    Logger::Debug(std::string("TUI: locale=") + (curLocale ? curLocale : "(null)") +
+                  " ascii=" + (asciiMode_ ? "1" : "0") +
+                  " TCMT_ASCII=" + (asciiEnv ? asciiEnv : "(unset)"));
     if (asciiMode_) {
         sparkChars_ = " .:-=+*#";    // 8 ink-ascending levels, index 0 = empty
         degSuffixTemp_ = "C";
@@ -3240,6 +3245,8 @@ void TuiApp::Run() {
     // names and SSIDs turn into mojibake. The ANSI path writes the whole line
     // with WriteConsoleA, where the console's UTF-8 code page decodes it.
     // PDCurses enables VT processing before emitting its escapes.
+    Logger::Debug(std::string("TUI: terminal=") + (pdc_wt ? "windows-terminal"
+                                                   : pdc_conemu ? "conemu" : "conhost"));
     pdc_ansi = true;
 #endif
 #ifndef __PDCURSES__
