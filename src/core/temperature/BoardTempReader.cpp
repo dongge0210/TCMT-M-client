@@ -87,6 +87,11 @@ static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint16_t addr) {
     return (uint8_t)(out[0] & 0xFF);
 }
 
+// 0xFFFF is the Super I/O's "unassigned" erase value for a base-address
+// register, not an address; 0 and anything below 0x100 would collide with the
+// ISA/LPC legacy ports.
+static bool ValidIoBase(uint16_t b) { return b >= 0x100 && b != 0xFFFF; }
+
 std::vector<BoardTemp> BoardTempReader::ReadAll() {
     std::vector<BoardTemp> result;
     static PawnIOWrapper s_pa;
@@ -97,7 +102,10 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     // base address are not guaranteed to survive forever (another user of the
     // same chip, a suspend/resume, a driver reload), and after that every
     // register read returns 0xFF and the sensor list silently empties.
+    static bool firstDetect = true;
     auto detect = [&]() -> bool {
+        const bool verbose = firstDetect;
+        firstDetect = false;
         if (!s_pa.Open()) return false;
         auto data = LoadResource(LPCIO_RES);
         if (data.empty()) { Logger::Debug("BoardTemp: LPCIO resource not found"); return false; }
@@ -125,7 +133,8 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         {
             char info[64];
             snprintf(info, sizeof(info), "BoardTemp: chip=0x%02X rev=0x%02X", chipId, chipRev);
-            Logger::Info(info);
+            if (verbose) Logger::Info(info);
+            else Logger::Debug(info);
             // The register table below is NCT6798D's; any other Nuvoton part
             // may answer at the same ports with a different map.
             if (chipId != 0xD4)
@@ -134,23 +143,43 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
 
         // Step 4: FindBars (must be in config mode)
         if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr)) {
-            Logger::Info("BoardTemp: find_bars failed (chip may not be supported)");
+            if (verbose) Logger::Info("BoardTemp: find_bars failed (chip may not be supported)");
+            else Logger::Debug("BoardTemp: find_bars failed");
             uint64_t exitAA[2] = { 0x2E, 0xAA };
             s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
             return false;
         }
-        Logger::Info("BoardTemp: find_bars succeeded");
+        if (verbose) Logger::Info("BoardTemp: find_bars succeeded");
+        else Logger::Debug("BoardTemp: find_bars succeeded");
 
         // Step 5: Select HW monitor logical device (0x0B)
         uint64_t devSel[2] = { 0x07, 0x0B };
         s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
 
-        // Step 6: Read base address via ReadWord (register 0x60)
-        uint64_t wOut[1] = {0};
-        regIn[0] = 0x60;
-        if (s_pa.Execute("ioctl_superio_inw", regIn, 1, wOut, 1, nullptr)) {
-            s_base = (uint16_t)(wOut[0] & 0xFFFF);
-            Logger::Info(std::string("BoardTemp: base=0x") + std::to_string(s_base));
+        // Step 6: Read base address via ReadWord (register 0x60).
+        // The value comes back 0xFFFF when the logical-device selection did not
+        // stick, which happens when another monitoring agent (HWiNFO, a vendor
+        // control centre) is walking the same config index port at the same
+        // time. Re-select the device and read again before believing it.
+        uint16_t base = 0;
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            if (attempt > 0) Sleep(5);
+            s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
+            uint64_t wOut[1] = {0};
+            regIn[0] = 0x60;
+            if (s_pa.Execute("ioctl_superio_inw", regIn, 1, wOut, 1, nullptr)) {
+                base = (uint16_t)(wOut[0] & 0xFFFF);
+                if (ValidIoBase(base)) break;
+            }
+        }
+        s_base = base;
+        {
+            char info[48];
+            snprintf(info, sizeof(info), "BoardTemp: base=0x%04X", s_base);
+            // A valid base on a later attempt means the chip came back; that
+            // is worth an INFO line even when this is not the first detect.
+            if (verbose || ValidIoBase(s_base)) Logger::Info(info);
+            else Logger::Debug(info);
         }
 
         // Step 7: NuvotonDisableIOSpaceLock (register 0x28) for NCT6798D
@@ -160,22 +189,26 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
             if (options & 0x10) {
                 uint64_t unlockArgs[2] = { 0x28, (uint64_t)(options & ~0x10) };
                 s_pa.Execute("ioctl_superio_outb", unlockArgs, 2, nullptr, 0, nullptr);
-                Logger::Info("BoardTemp: disabled IO space lock");
+                if (verbose) Logger::Info("BoardTemp: disabled IO space lock");
+                else Logger::Debug("BoardTemp: disabled IO space lock");
             }
         }
 
         // Step 8: Exit config mode
         uint64_t exitAA[2] = { 0x2E, 0xAA };
         s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
-        return s_base >= 0x100;
+        return ValidIoBase(s_base);
     };
 
-    if (!s_ready) {
+    // A missing/erased base is retried on the next pass: the chip may be held
+    // by another agent right now, and giving up permanently is what left the
+    // panel stuck on the eight sensors that come from other readers.
+    if (!s_ready || !ValidIoBase(s_base)) {
         s_ready = true;
         detect();
     }
 
-    if (s_base == 0 || s_base < 0x100) return result;
+    if (!ValidIoBase(s_base)) return result;
 
     // Read temperature sources using NCT6798D protocol. Two attempts: if the
     // whole pass comes back dead, re-detect once and read again.
