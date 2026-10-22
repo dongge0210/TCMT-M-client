@@ -2019,7 +2019,9 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
                     static_cast<int>(data.perCoreFreqCount)}),
         16);
     const int W = (std::min)(76, cols - 6);
-    const int H = (std::min)(rows - 4, (std::max)(12, 11 + count));
+    // The table needs one row per core plus twelve for the summary, the
+    // header, the blank line, the footer and the two borders.
+    const int H = (std::min)(rows - 2, (std::max)(12, 12 + count));
     const int x0 = (std::max)(1, (cols - W) / 2);
     const int y0 = (std::max)(2, (rows - H) / 2);
 

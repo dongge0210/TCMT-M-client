@@ -289,8 +289,11 @@ const std::vector<CpuInfo::CoreSample>& CpuInfo::SamplePerCore() {
     // Topology: one entry per physical core, same enumeration order as
     // CpuTempReader::PhysicalCoreFirstThreads, so the arrays line up.
     if (coreTopology.empty()) {
+        // The sizing call fails with ERROR_INSUFFICIENT_BUFFER by design; only
+        // the length it writes is meaningful, so its return value is ignored.
         DWORD len = 0;
-        if (GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len) && len > 0) {
+        GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+        if (len > 0) {
             std::vector<BYTE> buf(len);
             if (GetLogicalProcessorInformationEx(RelationProcessorCore,
                     reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buf.data()), &len)) {

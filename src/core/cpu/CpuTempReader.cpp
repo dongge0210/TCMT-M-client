@@ -86,8 +86,13 @@ TempReaderState& TempState() {
 // same die sensor, so one read per core is enough.
 std::vector<int> PhysicalCoreFirstThreads() {
     std::vector<int> first;
+    // The sizing call fails with ERROR_INSUFFICIENT_BUFFER by design; only the
+    // length it writes is meaningful. Treating that FALSE as a failure used to
+    // drop the whole enumeration and fall back to the first 16 logical CPUs,
+    // which on a hybrid part are all P-core threads.
     DWORD len = 0;
-    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len) || len == 0)
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+    if (len == 0)
         return first;
 
     std::vector<unsigned char> buf(len);
