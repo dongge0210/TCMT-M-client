@@ -14,7 +14,12 @@ class IsaLock {
 public:
     IsaLock() {
         handle_ = Mutex();
-        held_ = handle_ && WaitForSingleObject(handle_, 2000) == WAIT_OBJECT_0;
+        if (!handle_) return;
+        const DWORD r = WaitForSingleObject(handle_, 2000);
+        // WAIT_ABANDONED still grants ownership: the previous owner died while
+        // holding it, and the kernel hands the mutex to us. Treating it as a
+        // failure would leave it owned and never released.
+        held_ = (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED);
     }
     ~IsaLock() {
         if (held_) ReleaseMutex(handle_);
@@ -27,7 +32,10 @@ public:
 private:
     static HANDLE Mutex() {
         static HANDLE h = [] {
-            HANDLE m = OpenMutexW(SYNCHRONIZE, FALSE, L"Global\\Access_ISABUS.HTP.Method");
+            // MUTEX_MODIFY_STATE is required for ReleaseMutex; SYNCHRONIZE
+            // alone would hand out a handle this process could never unlock.
+            HANDLE m = OpenMutexW(MUTEX_MODIFY_STATE | SYNCHRONIZE, FALSE,
+                                  L"Global\\Access_ISABUS.HTP.Method");
             if (!m) m = CreateMutexW(nullptr, FALSE, L"Global\\Access_ISABUS.HTP.Method");
             return m;
         }();
