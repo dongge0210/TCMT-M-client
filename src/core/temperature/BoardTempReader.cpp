@@ -104,6 +104,10 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     tcmt::IsaLock isaLock;
     static uint8_t s_cr28 = 0xFF;
     static uint8_t s_cr30 = 0xFF;
+    // What the chip reported before any repair, so the pass log shows drift
+    // instead of the value we just wrote back.
+    static uint8_t s_cr28Seen = 0xFF;
+    static uint8_t s_cr30Seen = 0xFF;
     static uint16_t s_smba = 0;
     if (!isaLock.held()) {
         static bool loggedNoMutex = false;
@@ -117,25 +121,44 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     // base address are not guaranteed to survive forever (another user of the
     // same chip, a suspend/resume, a driver reload), and after that every
     // register read returns 0xFF and the sensor list silently empties.
-    static bool firstDetect = true;
-    auto detect = [&]() -> bool {
-        const bool verbose = firstDetect;
-        firstDetect = false;
+    static bool s_moduleLoaded = false;
+    auto ensureModule = [&]() -> bool {
+        if (s_moduleLoaded) return true;
         if (!s_pa.Open()) return false;
         auto data = LoadResource(LPCIO_RES);
         if (data.empty()) { Logger::Debug("BoardTemp: LPCIO resource not found"); return false; }
         if (!s_pa.LoadModuleFromMemory(data.data(), data.size(), "LpcIO")) {
             Logger::Debug("BoardTemp: LpcIO module failed to load"); return false;
         }
-
-        // Step 1: SelectSlot — matches LpcPort constructor
-        uint64_t slotIn[1] = { 0 }; // 0=0x2E, 1=0x4E
-        s_pa.Execute("ioctl_select_slot", slotIn, 1, nullptr, 0, nullptr);
-
-        // Step 2: Enter config mode (WinbondNuvotonFintekEnter)
+        s_moduleLoaded = true;
+        return true;
+    };
+    auto enterConfig = [&]() {
         uint64_t enter87[2] = { 0x2E, 0x87 };
         s_pa.Execute("ioctl_pio_outb", enter87, 2, nullptr, 0, nullptr);
         s_pa.Execute("ioctl_pio_outb", enter87, 2, nullptr, 0, nullptr);
+    };
+    auto exitConfig = [&]() {
+        uint64_t exitAA[2] = { 0x2E, 0xAA };
+        s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
+    };
+    auto selectMonitor = [&]() {
+        uint64_t devSel[2] = { 0x07, 0x0B };
+        s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
+    };
+
+    static bool firstDetect = true;
+    auto detect = [&]() -> bool {
+        const bool verbose = firstDetect;
+        firstDetect = false;
+        if (!ensureModule()) return false;
+
+        // SelectSlot resets the module's allowed-port list, so it has to be
+        // followed by find_bars before any pio access can succeed.
+        uint64_t slotIn[1] = { 0 }; // 0=0x2E, 1=0x4E
+        s_pa.Execute("ioctl_select_slot", slotIn, 1, nullptr, 0, nullptr);
+
+        enterConfig();
 
         // Step 3: Read chip ID (register 0x20) and revision (register 0x21)
         uint64_t regIn[1], regOut[1] = {0};
@@ -160,16 +183,14 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         if (!s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr)) {
             if (verbose) Logger::Info("BoardTemp: find_bars failed (chip may not be supported)");
             else Logger::Debug("BoardTemp: find_bars failed");
-            uint64_t exitAA[2] = { 0x2E, 0xAA };
-            s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
+            exitConfig();
             return false;
         }
         if (verbose) Logger::Info("BoardTemp: find_bars succeeded");
         else Logger::Debug("BoardTemp: find_bars succeeded");
 
         // Step 5: Select HW monitor logical device (0x0B)
-        uint64_t devSel[2] = { 0x07, 0x0B };
-        s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
+        selectMonitor();
 
         // The device can be switched off (CR30 bit 0 = 0) while its base-address
         // register keeps the old value. The lock then reads back clear and the
@@ -179,6 +200,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr)) {
             const uint8_t ctl = (uint8_t)(regOut[0] & 0xFF);
             s_cr30 = ctl;
+            s_cr30Seen = ctl;
             if ((ctl & 0x01) == 0) {
                 uint64_t enableArgs[2] = { 0x30, (uint64_t)(ctl | 0x01) };
                 s_pa.Execute("ioctl_superio_outb", enableArgs, 2, nullptr, 0, nullptr);
@@ -196,7 +218,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         uint16_t base = 0;
         for (int attempt = 0; attempt < 5; ++attempt) {
             if (attempt > 0) Sleep(5);
-            s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
+            selectMonitor();
             // Read the selector back: when another agent moved the index port
             // between the write and the read, the selection silently did not
             // stick and 0x60 returns the erase value.
@@ -234,6 +256,7 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr)) {
             uint8_t options = (uint8_t)(regOut[0] & 0xFF);
             s_cr28 = options;
+            s_cr28Seen = options;
             if (options & 0x10) {
                 uint64_t unlockArgs[2] = { 0x28, (uint64_t)(options & ~0x10) };
                 s_pa.Execute("ioctl_superio_outb", unlockArgs, 2, nullptr, 0, nullptr);
@@ -248,31 +271,83 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         }
 
         // Step 8: Exit config mode
-        uint64_t exitAA[2] = { 0x2E, 0xAA };
-        s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
+        exitConfig();
         return ValidIoBase(s_base);
+    };
+
+    // Everything that can silently close the monitor window is re-read from
+    // the chip here, every pass: the cached copies were what made the log
+    // claim "cr28=0x00" while the window returned 0xFF. If one of them has
+    // drifted, repair it in place instead of waiting for a full re-detect.
+    auto refreshState = [&]() {
+        enterConfig();
+        selectMonitor();
+
+        uint64_t regIn[1], regOut[1] = {0};
+        regIn[0] = 0x07;
+        const bool selected =
+            s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr) &&
+            (uint8_t)(regOut[0] & 0xFF) == 0x0B;
+
+        regIn[0] = 0x30; regOut[0] = 0;
+        if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr))
+            s_cr30 = (uint8_t)(regOut[0] & 0xFF);
+        s_cr30Seen = s_cr30;
+        if ((s_cr30 & 0x01) == 0) {
+            uint64_t args[2] = { 0x30, (uint64_t)(s_cr30 | 0x01) };
+            s_pa.Execute("ioctl_superio_outb", args, 2, nullptr, 0, nullptr);
+            s_cr30 = (uint8_t)(s_cr30 | 0x01);
+        }
+
+        uint64_t wOut[1] = {0};
+        regIn[0] = 0x60;
+        if (s_pa.Execute("ioctl_superio_inw", regIn, 1, wOut, 1, nullptr)) {
+            const uint16_t base = (uint16_t)(wOut[0] & 0xFFFF);
+            if (ValidIoBase(base) && base != s_base) {
+                // The module only allows the ports it found last time, so a
+                // moved base needs find_bars re-run before it can be read.
+                s_base = base;
+                s_pa.Execute("ioctl_find_bars", nullptr, 0, nullptr, 0, nullptr);
+                // find_bars walks every logical device and leaves the chip on
+                // the last one it probed.
+                selectMonitor();
+            }
+        }
+        regIn[0] = 0x62; wOut[0] = 0;
+        if (s_pa.Execute("ioctl_superio_inw", regIn, 1, wOut, 1, nullptr))
+            s_smba = (uint16_t)(wOut[0] & 0xFFFF);
+
+        regIn[0] = 0x28; regOut[0] = 0;
+        if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr)) {
+            s_cr28 = (uint8_t)(regOut[0] & 0xFF);
+            s_cr28Seen = s_cr28;
+            if (s_cr28 & 0x10) {
+                uint64_t args[2] = { 0x28, (uint64_t)(s_cr28 & ~0x10) };
+                s_pa.Execute("ioctl_superio_outb", args, 2, nullptr, 0, nullptr);
+                s_cr28 = (uint8_t)(s_cr28 & ~0x10);
+            }
+        }
+
+        exitConfig();
+        return selected;
     };
 
     // A missing/erased base is retried on the next pass: the chip may be held
     // by another agent right now, and giving up permanently is what left the
     // panel stuck on the eight sensors that come from other readers.
+    bool ldnSelected = true;
     if (!s_ready || !ValidIoBase(s_base)) {
         s_ready = true;
         detect();
+    } else {
+        ldnSelected = refreshState();
     }
 
     if (!ValidIoBase(s_base)) return result;
 
-    // Read temperature sources using NCT6798D protocol. Two attempts: if the
-    // whole pass comes back dead, re-detect once and read again.
     // The DIMM reader's SMBus module enters the chip's configuration mode and
-    // does not leave it. The hardware-monitor window is not decoded while the
-    // config space is open on this part, so every read comes back as 0xFF.
-    // Closing config mode here is harmless when it is already closed.
-    {
-        uint64_t exitAA[2] = { 0x2E, 0xAA };
-        s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
-    }
+    // never leaves it; close it again before touching the monitor window.
+    exitConfig();
     // Probe that the exit actually took: outside configuration mode the chip
     // ignores index writes, so re-reading the chip-ID register returns 0xFF.
     bool cfgOpen = false;
@@ -343,8 +418,9 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (++passes <= 8) {
         char sample[96];
         snprintf(sample, sizeof(sample),
-                 " base=0x%04X smba=0x%04X cr28=0x%02X cr30=0x%02X cfg=%s tries=%d%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
-                 s_base, s_smba, s_cr28, s_cr30, cfgOpen ? "open" : "closed", attemptsUsed,
+                 " base=0x%04X smba=0x%04X cr28=0x%02X cr30=0x%02X ld=%s cfg=%s tries=%d%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 s_base, s_smba, s_cr28Seen, s_cr30Seen, ldnSelected ? "ok" : "no",
+                 cfgOpen ? "open" : "closed", attemptsUsed,
                  isaLock.held() ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
