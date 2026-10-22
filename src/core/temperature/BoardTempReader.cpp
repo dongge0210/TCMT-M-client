@@ -92,11 +92,40 @@ static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint16_t addr) {
 // ISA/LPC legacy ports.
 static bool ValidIoBase(uint16_t b) { return b >= 0x100 && b != 0xFFFF; }
 
+// The Super I/O config ports (0x2E/0x2F) are shared with every other hardware
+// monitor on the machine. OpenHardwareMonitor established the name below and
+// HWiNFO, LibreHardwareMonitor and nwinfo all honour it; without it the two
+// sides interleave config-index writes and the reads come back as 0xFFFF.
+static HANDLE IsaIoMutex() {
+    static HANDLE h = [] {
+        HANDLE m = OpenMutexW(SYNCHRONIZE, FALSE, L"Global\\Access_ISABUS.HTP.Method");
+        if (!m) m = CreateMutexW(nullptr, FALSE, L"Global\\Access_ISABUS.HTP.Method");
+        return m;
+    }();
+    return h;
+}
+
+struct IsaIoLock {
+    HANDLE h = nullptr;
+    bool held = false;
+    IsaIoLock() {
+        h = IsaIoMutex();
+        held = h && WaitForSingleObject(h, 2000) == WAIT_OBJECT_0;
+    }
+    ~IsaIoLock() { if (held) ReleaseMutex(h); }
+    IsaIoLock(const IsaIoLock&) = delete;
+    IsaIoLock& operator=(const IsaIoLock&) = delete;
+};
+
 std::vector<BoardTemp> BoardTempReader::ReadAll() {
     std::vector<BoardTemp> result;
     static PawnIOWrapper s_pa;
     static uint16_t s_base = 0;
     static bool s_ready = false;
+
+    // Held for the whole detection + read sequence: the config index port is
+    // a single hardware register shared by every monitoring agent.
+    IsaIoLock isaLock;
 
     // Full Super I/O detection. Can be re-run: the chip's IO-space lock and
     // base address are not guaranteed to survive forever (another user of the
@@ -165,6 +194,14 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         for (int attempt = 0; attempt < 5; ++attempt) {
             if (attempt > 0) Sleep(5);
             s_pa.Execute("ioctl_superio_outb", devSel, 2, nullptr, 0, nullptr);
+            // Read the selector back: when another agent moved the index port
+            // between the write and the read, the selection silently did not
+            // stick and 0x60 returns the erase value.
+            regIn[0] = 0x07; regOut[0] = 0;
+            if (!s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr) ||
+                (uint8_t)(regOut[0] & 0xFF) != 0x0B) {
+                continue;
+            }
             uint64_t wOut[1] = {0};
             regIn[0] = 0x60;
             if (s_pa.Execute("ioctl_superio_inw", regIn, 1, wOut, 1, nullptr)) {
