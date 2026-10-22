@@ -126,6 +126,14 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     // Held for the whole detection + read sequence: the config index port is
     // a single hardware register shared by every monitoring agent.
     IsaIoLock isaLock;
+    static uint8_t s_cr28 = 0xFF;
+    if (!isaLock.held) {
+        static bool loggedNoMutex = false;
+        if (!loggedNoMutex) {
+            loggedNoMutex = true;
+            Logger::Debug("BoardTemp: ISABUS mutex unavailable, accessing unserialized");
+        }
+    }
 
     // Full Super I/O detection. Can be re-run: the chip's IO-space lock and
     // base address are not guaranteed to survive forever (another user of the
@@ -223,9 +231,15 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
         regIn[0] = 0x28; regOut[0] = 0;
         if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr)) {
             uint8_t options = (uint8_t)(regOut[0] & 0xFF);
+            s_cr28 = options;
             if (options & 0x10) {
                 uint64_t unlockArgs[2] = { 0x28, (uint64_t)(options & ~0x10) };
                 s_pa.Execute("ioctl_superio_outb", unlockArgs, 2, nullptr, 0, nullptr);
+                // Read it back: if the lock is still set, every HW-monitor read
+                // returns 0xFF no matter how often detection is repeated.
+                regIn[0] = 0x28; regOut[0] = 0;
+                if (s_pa.Execute("ioctl_superio_inb", regIn, 1, regOut, 1, nullptr))
+                    s_cr28 = (uint8_t)(regOut[0] & 0xFF);
                 if (verbose) Logger::Info("BoardTemp: disabled IO space lock");
                 else Logger::Debug("BoardTemp: disabled IO space lock");
             }
@@ -300,9 +314,11 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     // First few passes only: distinguishes "registers stopped answering"
     // (raw drops to 0) from "values fell out of range" (raw stays, kept drops).
     static int passes = 0;
-    if (++passes <= 5) {
-        char sample[64];
-        snprintf(sample, sizeof(sample), " raw=0x%02X,0x%02X,0x%02X,0x%02X",
+    if (++passes <= 8) {
+        char sample[96];
+        snprintf(sample, sizeof(sample),
+                 " base=0x%04X cr28=0x%02X%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 s_base, s_cr28, isaLock.held ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
                      " valid=" + std::to_string(rawValid) +
