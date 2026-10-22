@@ -257,6 +257,15 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
 
     // Read temperature sources using NCT6798D protocol. Two attempts: if the
     // whole pass comes back dead, re-detect once and read again.
+    // The DIMM reader's SMBus module enters the chip's configuration mode and
+    // does not leave it. The hardware-monitor window is not decoded while the
+    // config space is open on this part, so every read comes back as 0xFF.
+    // Closing config mode here is harmless when it is already closed.
+    {
+        uint64_t exitAA[2] = { 0x2E, 0xAA };
+        s_pa.Execute("ioctl_pio_outb", exitAA, 2, nullptr, 0, nullptr);
+    }
+
     const int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
     int rawValid = 0;
     uint8_t head[4] = {0};
