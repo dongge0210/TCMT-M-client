@@ -980,7 +980,13 @@ int TuiApp::DrawPhysicalDiskPanel(WINDOW* win, const TuiData& data, int y, int x
 
 int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
-    DrawPanelTitle(win, y, x0, maxW, "Temps", IsPanelFocused(PanelId::Temp));
+    // The count is part of the title so "the extra sensors disappeared" can be
+    // told apart from "the panel shows fewer rows": 15 that do not fit page,
+    // 8 means the list itself shrank.
+    const std::string title = data.temperatures.empty()
+        ? std::string("Temps")
+        : "Temps (" + std::to_string(data.temperatures.size()) + ")";
+    DrawPanelTitle(win, y, x0, maxW, title.c_str(), IsPanelFocused(PanelId::Temp));
     int lines = 1;
 
     // Grow the grid with the space actually available below the title
