@@ -276,8 +276,10 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
 
     const int count = sizeof(TEMP_SOURCES) / sizeof(TEMP_SOURCES[0]);
     int rawValid = 0;
+    int attemptsUsed = 0;
     uint8_t head[4] = {0};
-    for (int attempt = 0; attempt < 2; ++attempt) {
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        attemptsUsed = attempt + 1;
         result.clear();
         rawValid = 0;
         for (int i = 0; i < count; i++) {
@@ -312,6 +314,11 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
                 Logger::Info("BoardTemp: no readable register, re-detecting Super I/O");
             }
             if (!detect()) break;
+        } else {
+            // The window can also be blocked for a few milliseconds by the
+            // firmware or an external agent walking the same chip; give it a
+            // short pause and try the whole pass again before declaring it dead.
+            Sleep(20);
         }
     }
 
@@ -328,8 +335,8 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
     if (++passes <= 8) {
         char sample[96];
         snprintf(sample, sizeof(sample),
-                 " base=0x%04X cr28=0x%02X cr30=0x%02X cfg=%s%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
-                 s_base, s_cr28, s_cr30, cfgOpen ? "open" : "closed",
+                 " base=0x%04X cr28=0x%02X cr30=0x%02X cfg=%s tries=%d%s raw=0x%02X,0x%02X,0x%02X,0x%02X",
+                 s_base, s_cr28, s_cr30, cfgOpen ? "open" : "closed", attemptsUsed,
                  isaLock.held() ? "" : "(noisa)",
                  head[0], head[1], head[2], head[3]);
         Logger::Info("BoardTemp: pass " + std::to_string(passes) +
