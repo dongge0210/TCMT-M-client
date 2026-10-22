@@ -2117,26 +2117,41 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
         }
         const int barX = x0 + 8;
         const int barW = (std::max)(10, W - 24 - (anyPerCoreTemp ? 6 : 0));
-        auto coreLabel = [&](int i) {
-            char lb[8];
-            if (data.perCorePEKnown && data.performanceCores > 0) {
-                if (i < data.performanceCores) snprintf(lb, sizeof(lb), "P%d", i);
-                else snprintf(lb, sizeof(lb), "E%d", i - data.performanceCores);
-            } else {
-                snprintf(lb, sizeof(lb), "C%02d", i);
+        // Windows reports the type of each physical core, and hybrid parts
+        // interleave them; macOS only guarantees P cores first, so that case
+        // still numbers by index.
+        bool anyECore = false;
+        for (int i = 0; i < count; ++i) {
+            if (data.perCoreIsE[i]) { anyECore = true; break; }
+        }
+        std::vector<std::string> coreLabels(static_cast<size_t>(count));
+        {
+            int p = 0, e = 0;
+            for (int i = 0; i < count; ++i) {
+                char lb[8];
+                if (data.perCorePEKnown && anyECore) {
+                    if (data.perCoreIsE[i]) snprintf(lb, sizeof(lb), "E%d", e++);
+                    else snprintf(lb, sizeof(lb), "P%d", p++);
+                } else if (data.perCorePEKnown && data.performanceCores > 0) {
+                    if (i < data.performanceCores) snprintf(lb, sizeof(lb), "P%d", i);
+                    else snprintf(lb, sizeof(lb), "E%d", i - data.performanceCores);
+                } else {
+                    snprintf(lb, sizeof(lb), "C%02d", i);
+                }
+                coreLabels[i] = lb;
             }
-            return std::string(lb);
-        };
+        }
 
         mvwprintw(stdscr, tableY, x0 + 3, "%s", "Core   Usage");
         for (int i = 0; i < count; ++i) {
             const int ty = tableY + 1 + i;
             if (ty >= y0 + H - 2) break;
 
-            mvwprintw(stdscr, ty, x0 + 3, "%-4s", coreLabel(i).c_str());
+            mvwprintw(stdscr, ty, x0 + 3, "%-4s", coreLabels[i].c_str());
 
-            double pct = static_cast<double>(data.perCoreUsage[i]);
-            if (pct < 0) pct = 0;
+            const double rawPct = static_cast<double>(data.perCoreUsage[i]);
+            const bool usageKnown = rawPct >= 0.0;
+            double pct = usageKnown ? rawPct : 0.0;
             if (pct > 100) pct = 100;
             const int nFill = static_cast<int>(pct * barW / 100.0);
             const int sev = HighIsWorsePair(pct, kUsageWarn, kUsageCrit);
@@ -2149,7 +2164,13 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
             wattroff(stdscr, A_DIM);
 
             char val[48];
-            if (data.perCoreFreq[i] > 0) {
+            if (!usageKnown) {
+                if (data.perCoreFreq[i] > 0)
+                    snprintf(val, sizeof(val), "    --  %5.0fM",
+                             static_cast<double>(data.perCoreFreq[i]));
+                else
+                    snprintf(val, sizeof(val), "    --      -");
+            } else if (data.perCoreFreq[i] > 0) {
                 snprintf(val, sizeof(val), " %5.1f%% %5.0fM", pct,
                          static_cast<double>(data.perCoreFreq[i]));
             } else {

@@ -8,6 +8,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <intrin.h>
+#include <climits>
 #include <pdh.h>
 
 #pragma comment(lib, "pdh.lib")
@@ -154,6 +155,10 @@ void CpuInfo::CleanupCounter() {
         PdhCloseQuery((PDH_HQUERY)queryHandle);
         counterInitialized = false;
     }
+    if (coreQuery) {
+        PdhCloseQuery((PDH_HQUERY)coreQuery);
+        coreQuery = nullptr;
+    }
 }
 
 void CpuInfo::DetectCores() {
@@ -241,6 +246,161 @@ double CpuInfo::updateUsage() {
 }
 
 double CpuInfo::GetUsage() { return updateUsage(); }
+
+// One NtQuerySystemInformation record per logical processor. KernelTime
+// already contains IdleTime, so busy = Kernel + User - Idle.
+struct LpPerformance {
+    LARGE_INTEGER IdleTime;
+    LARGE_INTEGER KernelTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER DpcTime;
+    LARGE_INTEGER InterruptTime;
+    ULONG InterruptCount;
+};
+
+static bool QueryLpPerformance(std::vector<LpPerformance>& out) {
+    using NtQuerySystemInformationFn = LONG(NTAPI*)(ULONG, PVOID, ULONG, PULONG);
+    static auto fn = reinterpret_cast<NtQuerySystemInformationFn>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQuerySystemInformation"));
+    if (!fn) return false;
+
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    const size_t count = si.dwNumberOfProcessors;
+    out.resize(count);
+    ULONG len = 0;
+    // SystemProcessorPerformanceInformation = 8
+    return fn(8, out.data(), static_cast<ULONG>(count * sizeof(LpPerformance)), &len) == 0;
+}
+
+// Hybrid parts report a different "~MHz" per logical processor, so the clock
+// a "% Processor Performance" reading refers to has to be looked up per CPU.
+static double RegistryLpBaseFreq(int lp) {
+    wchar_t key[128];
+    swprintf_s(key, 128, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\%d", lp);
+    DWORD speed = 0, size = sizeof(speed);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, key, L"~MHz", RRF_RT_DWORD,
+                     nullptr, &speed, &size) == ERROR_SUCCESS)
+        return static_cast<double>(speed);
+    return 0.0;
+}
+
+const std::vector<CpuInfo::CoreSample>& CpuInfo::SamplePerCore() {
+    // Topology: one entry per physical core, same enumeration order as
+    // CpuTempReader::PhysicalCoreFirstThreads, so the arrays line up.
+    if (coreTopology.empty()) {
+        DWORD len = 0;
+        if (GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len) && len > 0) {
+            std::vector<BYTE> buf(len);
+            if (GetLogicalProcessorInformationEx(RelationProcessorCore,
+                    reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buf.data()), &len)) {
+                for (DWORD off = 0; off < len; ) {
+                    auto* info = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(
+                        buf.data() + off);
+                    if (info->Size == 0) break;
+                    if (info->Relationship == RelationProcessorCore) {
+                        CoreTopology ct;
+                        ct.mask = static_cast<uint64_t>(info->Processor.GroupMask[0].Mask);
+                        ct.efficiencyClass = info->Processor.EfficiencyClass;
+                        coreTopology.push_back(ct);
+                    }
+                    off += info->Size;
+                }
+            }
+        }
+        // Lower EfficiencyClass = faster core. Comparing against the minimum
+        // keeps the split right whether the part numbers P cores 0 and E
+        // cores 1, or the other way around.
+        int minClass = INT_MAX;
+        for (const auto& c : coreTopology)
+            if (c.efficiencyClass < minClass) minClass = c.efficiencyClass;
+        for (auto& c : coreTopology)
+            c.isE = c.efficiencyClass > minClass;
+    }
+    if (coreTopology.empty()) return coreSamples;
+
+    if (!coreQuery) {
+        PDH_HQUERY q = nullptr;
+        if (PdhOpenQuery(NULL, 0, &q) == ERROR_SUCCESS) {
+            coreQuery = q;
+            lpPerfCounters.assign(totalCores, nullptr);
+            lpBaseFreq.assign(totalCores, 0.0);
+            for (int lp = 0; lp < totalCores; ++lp) {
+                wchar_t path[128];
+                swprintf_s(path, 128,
+                           L"\\Processor Information(0,%d)\\%% Processor Performance", lp);
+                PDH_HCOUNTER h = nullptr;
+                if (PdhAddEnglishCounter(q, path, 0, &h) == ERROR_SUCCESS)
+                    lpPerfCounters[lp] = h;
+                lpBaseFreq[lp] = RegistryLpBaseFreq(lp);
+            }
+            // First collection only primes the counters.
+            PdhCollectQueryData(q);
+        }
+    }
+
+    std::vector<double> lpFreq(static_cast<size_t>(totalCores), 0.0);
+    if (coreQuery && PdhCollectQueryData((PDH_HQUERY)coreQuery) == ERROR_SUCCESS) {
+        for (int lp = 0; lp < totalCores; ++lp) {
+            const double pct = ReadPdhPctValue(lpPerfCounters[lp]);
+            if (lpBaseFreq[lp] > 0.0)
+                lpFreq[lp] = pct > 0.0 ? lpBaseFreq[lp] * (pct / 100.0) : lpBaseFreq[lp];
+        }
+    }
+
+    std::vector<LpPerformance> perf;
+    const bool perfOk = QueryLpPerformance(perf);
+    if (perfOk && prevLpTotal.size() != perf.size()) {
+        prevLpTotal.assign(perf.size(), 0);
+        prevLpIdle.assign(perf.size(), 0);
+        corePrimed = false;
+    }
+
+    coreSamples.resize(coreTopology.size());
+    for (size_t i = 0; i < coreTopology.size(); ++i) {
+        const CoreTopology& ct = coreTopology[i];
+        CoreSample& cs = coreSamples[i];
+        cs.type = static_cast<uint8_t>(ct.isE ? 1 : 0);
+
+        double freqSum = 0.0;
+        int freqCount = 0;
+        uint64_t busy = 0, total = 0;
+        for (int lp = 0; lp < totalCores && lp < 64; ++lp) {
+            if ((ct.mask & (uint64_t(1) << lp)) == 0) continue;
+            if (lp < static_cast<int>(lpFreq.size()) && lpFreq[lp] > 0.0) {
+                freqSum += lpFreq[lp];
+                ++freqCount;
+            }
+            if (perfOk && corePrimed && lp < static_cast<int>(perf.size())) {
+                const uint64_t lpTotal = static_cast<uint64_t>(perf[lp].KernelTime.QuadPart) +
+                                         static_cast<uint64_t>(perf[lp].UserTime.QuadPart);
+                const uint64_t lpIdle = static_cast<uint64_t>(perf[lp].IdleTime.QuadPart);
+                if (lpTotal > prevLpTotal[lp]) {
+                    const uint64_t lpDelta = lpTotal - prevLpTotal[lp];
+                    const uint64_t idleDelta = lpIdle >= prevLpIdle[lp]
+                        ? lpIdle - prevLpIdle[lp] : 0;
+                    total += lpDelta;
+                    busy += lpDelta > idleDelta ? lpDelta - idleDelta : 0;
+                }
+            }
+        }
+        cs.freqMHz = freqCount > 0 ? freqSum / freqCount : 0.0;
+        cs.usage = (perfOk && corePrimed && total > 0)
+            ? 100.0 * static_cast<double>(busy) / static_cast<double>(total)
+            : -1.0;
+    }
+
+    if (perfOk) {
+        for (size_t i = 0; i < perf.size(); ++i) {
+            prevLpTotal[i] = static_cast<uint64_t>(perf[i].KernelTime.QuadPart) +
+                             static_cast<uint64_t>(perf[i].UserTime.QuadPart);
+            prevLpIdle[i] = static_cast<uint64_t>(perf[i].IdleTime.QuadPart);
+        }
+        corePrimed = true;
+    }
+
+    return coreSamples;
+}
 
 std::string CpuInfo::GetNameFromRegistry() {
     HKEY hKey;

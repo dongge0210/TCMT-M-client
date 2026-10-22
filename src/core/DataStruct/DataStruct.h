@@ -385,6 +385,10 @@ struct SystemInfo {
     // Linux-only for now: /proc/stat per-logical-CPU usage. TuiData has no
     // counterpart, so this does not reach the TUI yet.
     float perCoreUsage[16] = {};
+    // 1 = efficiency core, from the CPU topology (Windows hybrid parts).
+    // perCorePEKnown is false when the machine does not report a split.
+    uint8_t perCoreIsE[16] = {};
+    bool perCorePEKnown = false;
     int perCoreCount = 0;
 
     // 7. Battery detail (extended)

@@ -40,6 +40,21 @@ public:
     void SamplePerCoreUsage();
 #endif
 
+    // One physical core's live state. type comes from the topology
+    // (EfficiencyClass), so P and E cores are told apart even when their
+    // logical processor numbers interleave.
+    struct CoreSample {
+        uint8_t type = 0;      // 0 = performance, 1 = efficiency
+        double freqMHz = 0.0;  // 0 = unknown
+        double usage = -1.0;   // percent; -1 = no previous sample yet
+    };
+#ifdef TCMT_WINDOWS
+    // One entry per physical core, in the order CpuTempReader::ReadPerCore
+    // walks the same topology. Samples usage from the NT counters and clock
+    // from the per-processor "% Processor Performance" counters.
+    const std::vector<CoreSample>& SamplePerCore();
+#endif
+
     // Last CPU usage sample interval (ms)
     double GetLastSampleIntervalMs() const { return lastSampleIntervalMs; }
 
@@ -78,6 +93,21 @@ private:
     uint32_t lastUpdateTime;
     uint32_t lastSampleTick;
     uint32_t prevSampleTick;
+
+    // Per-physical-core sampling for the CPU details table.
+    struct CoreTopology {
+        uint64_t mask = 0;          // logical processors in this core
+        int efficiencyClass = 0;    // lower = faster; equal values = no hybrid
+        bool isE = false;
+    };
+    std::vector<CoreTopology> coreTopology;
+    std::vector<CoreSample> coreSamples;
+    std::vector<void*> lpPerfCounters;   // PDH_HCOUNTER per logical CPU
+    std::vector<double> lpBaseFreq;      // nominal MHz per logical CPU
+    std::vector<uint64_t> prevLpIdle;
+    std::vector<uint64_t> prevLpTotal;
+    void* coreQuery = nullptr;           // PDH_HQUERY
+    bool corePrimed = false;
 #endif
 
 #ifdef TCMT_MACOS

@@ -2094,14 +2094,15 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 
                 tuiData.osVersion = sysInfo.osVersion;
 
-                // ─── Per-core die temperatures ───
-                // MSR reads need one call per core, so they run on the 1 s
-                // cadence instead of every UI frame. Windows had no per-core
-                // values at all before this; the panel was hidden because
-                // perCoreCount stayed 0.
+                // ─── Per-core die temperatures and live per-core state ───
+                // MSR and PDH reads need one call per core, so they run on the
+                // 1 s cadence instead of every UI frame. SamplePerCore walks
+                // the same topology as ReadPerCore, so index i is the same
+                // physical core in both arrays.
                 {
                     static std::chrono::steady_clock::time_point coreTempAt{};
                     static std::vector<float> coreTemps;
+                    static std::vector<CpuInfo::CoreSample> coreSamples;
                     const auto nowT = std::chrono::steady_clock::now();
                     const bool due = coreTempAt.time_since_epoch().count() == 0 ||
                         std::chrono::duration_cast<std::chrono::milliseconds>(nowT - coreTempAt).count() >= 1000;
@@ -2109,21 +2110,39 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         coreTempAt = nowT;
                         const auto temps = CpuTempReader::ReadPerCore();
                         coreTemps.assign(temps.begin(), temps.end());
+                        if (cpuInfo) coreSamples = cpuInfo->SamplePerCore();
                     }
-                    const int n = std::min(static_cast<int>(coreTemps.size()), 16);
-                    if (n > 0) {
-                        sysInfo.perCoreCount = n;
-                        for (int ci = 0; ci < n; ++ci)
-                            sysInfo.perCoreTemp[ci] = coreTemps[ci];
+                    const int n = std::min(static_cast<int>((std::max)(
+                        coreTemps.size(), coreSamples.size())), 16);
+                    bool hybrid = false;
+                    sysInfo.perCoreCount = n;
+                    for (int ci = 0; ci < n; ++ci) {
+                        sysInfo.perCoreTemp[ci] = ci < static_cast<int>(coreTemps.size())
+                            ? coreTemps[ci] : 0.0f;
+                        if (ci < static_cast<int>(coreSamples.size())) {
+                            sysInfo.perCoreFreq[ci] = static_cast<float>(coreSamples[ci].freqMHz);
+                            sysInfo.perCoreUsage[ci] = static_cast<float>(coreSamples[ci].usage);
+                            sysInfo.perCoreIsE[ci] = coreSamples[ci].type;
+                            if (coreSamples[ci].type == 1) hybrid = true;
+                        } else {
+                            sysInfo.perCoreFreq[ci] = 0.0f;
+                            sysInfo.perCoreUsage[ci] = -1.0f;
+                            sysInfo.perCoreIsE[ci] = 0;
+                        }
                     }
+                    sysInfo.perCorePEKnown = hybrid;
                 }
 
                 // ─── Per-core sensors ───
                 tuiData.perCoreCount = std::min((int)sysInfo.perCoreCount, 16);
+                tuiData.perCoreUsageCount = tuiData.perCoreCount;
+                tuiData.perCoreFreqCount = tuiData.perCoreCount;
+                tuiData.perCorePEKnown = sysInfo.perCorePEKnown;
                 for (int ci = 0; ci < tuiData.perCoreCount; ci++) {
                     tuiData.perCoreTemp[ci] = sysInfo.perCoreTemp[ci];
                     tuiData.perCoreFreq[ci] = sysInfo.perCoreFreq[ci];
                     tuiData.perCoreUsage[ci] = sysInfo.perCoreUsage[ci];
+                    tuiData.perCoreIsE[ci] = sysInfo.perCoreIsE[ci];
                 }
 
                 // ─── Network traffic history (sparkline) ───

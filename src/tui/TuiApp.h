@@ -382,11 +382,12 @@ struct TuiData {
     // Per-core sensor data (up to 16 cores)
     float perCoreTemp[16] = {};
     float perCoreFreq[16] = {};
-    float perCoreUsage[16] = {};
+    float perCoreUsage[16] = {};    // percent; < 0 = not sampled yet
+    uint8_t perCoreIsE[16] = {};    // 1 = efficiency core, when the topology says so
     uint8_t perCoreCount = 0;       // cores with temperature/frequency data
     uint8_t perCoreUsageCount = 0;  // cores with usage data (macOS samples these alone)
     uint8_t perCoreFreqCount = 0;   // cores with frequency data (macOS per-core IOReport)
-    bool perCorePEKnown = false;    // P cores first, then E (macOS core numbering)
+    bool perCorePEKnown = false;    // P/E split known (macOS: P first; Windows: perCoreIsE)
 
     // Network traffic sparkline history (last 40 samples)
     static constexpr int NET_HISTORY_MAX = 40;
