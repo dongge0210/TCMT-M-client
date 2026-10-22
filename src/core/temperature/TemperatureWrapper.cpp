@@ -51,8 +51,18 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
 
     // DIMM temperature via PawnIO SMBus. TCMT_NO_DIMM=1 skips it: the NCT6793
     // SMBus module opens the Super I/O config space, which is the remaining
-    // suspect for the board sensors dying after the first pass.
-    if (!std::getenv("TCMT_NO_DIMM")) {
+    // suspect for the board sensors dying after the first pass. _dupenv_s is
+    // the MSVC-safe form; plain getenv trips C4996 under /WX.
+    bool skipDimm = false;
+    {
+        char* envValue = nullptr;
+        size_t envLen = 0;
+        if (_dupenv_s(&envValue, &envLen, "TCMT_NO_DIMM") == 0 && envValue) {
+            skipDimm = envValue[0] != '\0' && envValue[0] != '0';
+            free(envValue);
+        }
+    }
+    if (!skipDimm) {
         try {
             auto dimms = MemoryTempReader::ReadAll();
             for (const auto& d : dimms) {
