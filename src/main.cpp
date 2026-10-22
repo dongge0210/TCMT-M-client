@@ -263,6 +263,16 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
         Logger::Info("Received shutdown signal, exiting safely...");
         g_shouldExit = true;
         SafeConsoleOutput("Exiting program...\n", 14);
+        // The cooperative path can still block in a hardware ioctl or a thread
+        // join. Never leave the console hung after Ctrl+C: if the process is
+        // still alive five seconds from now, end it.
+        try {
+            std::thread([] {
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                TerminateProcess(GetCurrentProcess(), 0);
+            }).detach();
+        } catch (...) {
+        }
         return TRUE;
     }
     }
@@ -2472,6 +2482,12 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
             continue;
         }
     }
+
+    // Staged on purpose: if Ctrl+C ever stops short, the log shows which
+    // thread join never returned.
+    Logger::Info("Monitoring loop finished, stopping collection threads");
+    coordinator.Stop();
+    Logger::Info("Collection threads stopped");
 }
 
 int main(int argc, char* argv[]) {
@@ -2664,11 +2680,12 @@ int main(int argc, char* argv[]) {
 
         // Close the log window before tearing down the TUI/logger.
         logWindow.Shutdown();
+        Logger::Info("Log window closed");
 
         // Stop TUI before cleanup
         try {
             tuiApp.Stop();
-            Logger::Debug("TUI stopped");
+            Logger::Info("TUI stopped");
         }
         catch (const std::exception& e) {
             Logger::Error("Error stopping TUI: " + std::string(e.what()));
