@@ -4,8 +4,6 @@
 #include "LogBuffer.h"
 #endif
 
-#include <filesystem>
-
 std::ofstream Logger::logFile;
 std::mutex Logger::logMutex;
 bool Logger::consoleOutputEnabled = true;
@@ -87,14 +85,11 @@ namespace {
 #include <vector>
 
 void Logger::Initialize(const std::string& logFilePath) {
-    // Rotate log if it exceeds ~10 MB
-    std::error_code ec;
-    auto fileSize = std::filesystem::file_size(logFilePath, ec);
-    if (!ec && fileSize > 10 * 1024 * 1024) {
-        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
-        (void)ec;
-    }
-    logFile.open(logFilePath, std::ios::binary | std::ios::app);
+    // Every run starts a fresh file: appending mixed this run's lines with the
+    // previous run's, and the only way to read a single run was to delete the
+    // file first. The 10 MB rotation this replaces is moot once the file is
+    // truncated at startup.
+    logFile.open(logFilePath, std::ios::binary | std::ios::trunc);
     if (!logFile.is_open()) {
         throw std::runtime_error("Cannot open log file");
     }
@@ -208,14 +203,9 @@ static bool IsTTY() {
 }
 
 void Logger::Initialize(const std::string& logFilePath) {
-    // Rotate log if it exceeds ~10 MB
-    std::error_code ec;
-    auto fileSize = std::filesystem::file_size(logFilePath, ec);
-    if (!ec && fileSize > 10 * 1024 * 1024) {
-        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
-        (void)ec;
-    }
-    logFile.open(logFilePath, std::ios::binary | std::ios::app);
+    // Every run starts a fresh file (see the Windows block above): appending
+    // mixed runs together and forced a manual delete before each test.
+    logFile.open(logFilePath, std::ios::binary | std::ios::trunc);
     if (!logFile.is_open()) {
         throw std::runtime_error("Cannot open log file: " + logFilePath);
     }
@@ -308,14 +298,11 @@ void Logger::Fatal(const std::string& message)    { WriteLog("FATAL",   message,
 #include <iostream>
 
 void Logger::Initialize(const std::string& logFilePath) {
-    // Rotate log if it exceeds ~10 MB
-    std::error_code ec;
-    auto fileSize = std::filesystem::file_size(logFilePath, ec);
-    if (!ec && fileSize > 10 * 1024 * 1024) {
-        std::filesystem::rename(logFilePath, logFilePath + ".old", ec);
-        (void)ec;
-    }
-    logFile.open(logFilePath, std::ios::binary | std::ios::app);
+    // Every run starts a fresh file: appending mixed this run's lines with the
+    // previous run's, and the only way to read a single run was to delete the
+    // file first. The 10 MB rotation this replaces is moot once the file is
+    // truncated at startup.
+    logFile.open(logFilePath, std::ios::binary | std::ios::trunc);
     if (!logFile.is_open()) {
         throw std::runtime_error("Cannot open log file");
     }
