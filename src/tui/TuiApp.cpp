@@ -1061,8 +1061,6 @@ int TuiApp::DrawTempPanel(WINDOW* win, const TuiData& data, int y, int x0, int m
     // a third column keeps every sensor on one page; rotating pages made the
     // extra sensors look like they flashed and vanished every three seconds.
     int cols = 2;
-    if (maxW / 3 >= 18 && static_cast<int>(displayTemps.size()) > contentRows * 2)
-        cols = 3;
     const int colW = maxW / cols;
 
     int perPage = contentRows * cols;
