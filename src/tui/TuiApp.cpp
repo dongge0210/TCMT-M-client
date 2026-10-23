@@ -2024,12 +2024,13 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
                                static_cast<int>(data.perCoreUsageCount)),
                     static_cast<int>(data.perCoreFreqCount)}),
         16);
-    const int W = (std::min)(76, cols - 6);
-    // The table needs one row per core plus twelve for the summary, the
-    // header, the blank line, the footer and the two borders.
-    const int H = (std::min)(rows - 2, (std::max)(12, 12 + count));
-    const int x0 = (std::max)(1, (cols - W) / 2);
-    const int y0 = (std::max)(2, (rows - H) / 2);
+    // Edge to edge like the other overlays. The per-core bars below take the
+    // width left after the label and the value column, so extra columns turn
+    // into a longer bar rather than blank space.
+    const int W = cols;
+    const int H = rows;
+    const int x0 = 0;
+    const int y0 = 0;
 
     erase();
     DrawOverlayFrame(y0, x0, W, H);
@@ -2225,10 +2226,10 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         return;
     }
 
-    const int W = (std::min)(70, cols - 6);
-    const int H = (std::min)(19, rows - 4);
-    const int x0 = (std::max)(1, (cols - W) / 2);
-    const int y0 = (std::max)(2, (rows - H) / 2);
+    const int W = cols;
+    const int H = rows;
+    const int x0 = 0;
+    const int y0 = 0;
 
     erase();
     DrawOverlayFrame(y0, x0, W, H);
@@ -2505,53 +2506,41 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
                 ? (W - 6 - 2 * (gridCols - 1)) / gridCols
                 : (W - 6);
 
-            // Pad by display width, not bytes: translated names are Chinese on
-            // most drives, and a byte-count pad shifts every following column.
-            auto padDisplay = [](const std::string& s, int width) {
-                std::string out = s;
-                int w = utf8_display_width(out);
-                if (w > width) {
-                    out = utf8_truncate(out, width);
-                    w = utf8_display_width(out);
-                }
-                if (w < width) out.append(static_cast<size_t>(width - w), ' ');
-                return out;
-            };
-            auto attrCell = [&](const TuiData::SmAttributeInfo& a) {
-                std::string row = padDisplay(a.name, nameW);
-                snprintf(buf, sizeof(buf), "  %3u/%3u  %8llu",
-                         a.current, a.worst,
-                         static_cast<unsigned long long>(a.rawValue));
-                row += buf;
-                return padDisplay(row, cellW);
-            };
-            auto attrHeader = [&]() {
-                std::string h = PadCell("Attribute", nameW);
-                snprintf(buf, sizeof(buf), "  %3s/%3s  %8s", "Cur", "Wor", "Raw");
-                h += buf;
-                return PadCell(h, cellW);
-            };
+            // Every field goes to an absolute column. Attribute names are
+            // Chinese on most drives: one glyph is two cells but three bytes,
+            // so a single composed string drifts and every value after the
+            // name lands off its column.
+            const int rightEdge = x0 + W - 3;   // last usable content column
+            auto cellX = [&](int c) { return x0 + 3 + c * (cellW + 2); };
 
             if (y < bottom) {
-                std::string hdr;
                 for (int c = 0; c < gridCols; ++c) {
-                    if (c) hdr += "  ";
-                    hdr += attrHeader();
+                    const int cx = cellX(c);
+                    if (cx + cellW > rightEdge) break;
+                    mvwprintw(stdscr, y, cx, "%s", "Attribute");
+                    snprintf(buf, sizeof(buf), "  %3s/%3s  %8s", "Cur", "Wor", "Raw");
+                    mvwprintw(stdscr, y, cx + nameW, "%s", buf);
                 }
-                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(hdr, W - 6).c_str());
+                y++;
             }
             const int n = static_cast<int>(pd.attributes.size());
             const int perCol = (n + gridCols - 1) / gridCols;
             for (int i = 0; i < perCol; ++i) {
                 if (y >= bottom) break;
-                std::string line;
                 for (int c = 0; c < gridCols; ++c) {
                     const int idx = i + c * perCol;
                     if (idx >= n) break;
-                    if (c) line += "  ";
-                    line += attrCell(pd.attributes[idx]);
+                    const int cx = cellX(c);
+                    if (cx + cellW > rightEdge) break;
+                    const auto& a = pd.attributes[static_cast<size_t>(idx)];
+                    mvwprintw(stdscr, y, cx, "%s",
+                              utf8_truncate(a.name, nameW).c_str());
+                    snprintf(buf, sizeof(buf), "  %3u/%3u  %8llu",
+                             a.current, a.worst,
+                             static_cast<unsigned long long>(a.rawValue));
+                    mvwprintw(stdscr, y, cx + nameW, "%s", buf);
                 }
-                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(line, W - 6).c_str());
+                y++;
             }
             wattroff(stdscr, A_DIM);
             if (y < bottom) y++;
@@ -2589,10 +2578,10 @@ void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    const int W = (std::min)(70, cols - 6);
-    const int H = (std::min)(rows - 4, 22);
-    const int x0 = (std::max)(1, (cols - W) / 2);
-    const int y0 = (std::max)(2, (rows - H) / 2);
+    const int W = cols;
+    const int H = rows;
+    const int x0 = 0;
+    const int y0 = 0;
 
     erase();
     DrawOverlayFrame(y0, x0, W, H);
@@ -2745,13 +2734,12 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         }
     }
     if (trafficCols < 2) trafficCols = 0;
-    const int boxW = (trafficCols > 0) ? (12 + 44 * trafficCols) : 82;
-    const int W = (std::min)(boxW, cols - 6);
-    // Fill the terminal height: the traffic charts are the part that grows
-    // with the box, so a tall window gets a real graph instead of two rows.
-    const int H = (std::max)(12, rows - 4);
-    const int x0 = (std::max)(1, (cols - W) / 2);
-    const int y0 = (std::max)(2, (rows - H) / 2);
+    // Edge to edge: the per-interface charts divide W - 6 between them, so a
+    // wider terminal widens every chart instead of leaving a margin.
+    const int W = cols;
+    const int H = rows;
+    const int x0 = 0;
+    const int y0 = 0;
 
     erase();
     DrawOverlayFrame(y0, x0, W, H);
@@ -2809,7 +2797,6 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         // A per-interface layout spends one more line on the adapter name.
         int chartRows = (remaining - 6 - wifiReserve - btReserve - (trafficCols > 0 ? 2 : 0)) / 2;
         if (chartRows < 2) chartRows = 2;
-        if (chartRows > 14) chartRows = 14;
 
         // One D/U pair. cx/colW place it, so the same code draws the single
         // tall chart and the per-interface columns. Returns the row after the
@@ -2825,24 +2812,27 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
             cy++;
 
             // Value axis: the scale's top value on the first row and the unit
-            // on the last, so the bars read without the header line.
-            const int axisW = 9;
-            const int barX = cx + axisW + 1;
-            const int graphW = (std::max)(4, colW - axisW - 1);
+            // on the last, so the bars read without the header line. The
+            // column has to fit the widest label: a fixed nine columns clipped
+            // "560.3 KB/s" to "560.3 KB/".
             const char* unit = (scale >= 1000ull * 1000) ? "MB/s"
                              : (scale >= 1000ull ? "KB/s" : "B/s");
+            const std::string topLabel = FormatRate(scale);
+            const std::string zeroLabel = std::string("0 ") + unit;
+            const int axisW = (std::max)(9, (std::max)(static_cast<int>(topLabel.size()),
+                                                       static_cast<int>(zeroLabel.size())));
+            const int barX = cx + axisW + 1;
+            const int graphW = (std::max)(4, colW - axisW - 1);
 
             const int levelsPerRow = 8;
             for (int r = 0; r < chartRows && cy < bottom; ++r, ++cy) {
                 if (r == 0) {
-                    const std::string top = FormatRate(scale);
                     wattron(stdscr, A_DIM);
-                    mvwprintw(stdscr, cy, cx, "%*s", axisW, top.c_str());
+                    mvwprintw(stdscr, cy, cx, "%*s", axisW, topLabel.c_str());
                     wattroff(stdscr, A_DIM);
                 } else if (r == chartRows - 1) {
-                    const std::string zero = std::string("0 ") + unit;
                     wattron(stdscr, A_DIM);
-                    mvwprintw(stdscr, cy, cx, "%*s", axisW, zero.c_str());
+                    mvwprintw(stdscr, cy, cx, "%*s", axisW, zeroLabel.c_str());
                     wattroff(stdscr, A_DIM);
                 }
 
