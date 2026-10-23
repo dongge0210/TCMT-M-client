@@ -56,6 +56,83 @@ static std::string FormatBtAddress(const BLUETOOTH_ADDRESS& ba) {
     return oss.str();
 }
 
+// Bluetooth SIG company identifiers for the radios Windows machines ship
+// with. Unknown values keep the number so the field is never empty.
+static std::string BtVendorName(USHORT id) {
+    switch (id) {
+        case 0:   return "Ericsson";
+        case 1:   return "Nokia";
+        case 2:   return "Intel";
+        case 3:   return "IBM";
+        case 4:   return "Toshiba";
+        case 5:   return "3Com";
+        case 6:   return "Microsoft";
+        case 9:   return "Infineon";
+        case 10:  return "Qualcomm";
+        case 13:  return "Texas Instruments";
+        case 15:  return "Broadcom";
+        case 29:  return "Qualcomm";
+        case 70:  return "MediaTek";
+        case 76:  return "Apple";
+        case 93:  return "Realtek";
+        case 117: return "Samsung";
+        case 305: return "Cypress";
+        default:  return "vendor " + std::to_string(id);
+    }
+}
+
+// Class-of-Device major/minor classes (Bluetooth Assigned Numbers). Only the
+// kinds of device you can actually pair are named; anything else stays empty
+// and the UI simply omits the column.
+static std::string BtDeviceType(ULONG cod) {
+    const unsigned major = (cod >> 8) & 0x1F;
+    const unsigned minor = (cod >> 2) & 0x3F;
+    switch (major) {
+        case 0x01:  // Computer
+            switch (minor) {
+                case 1: return "Desktop";
+                case 2: return "Server";
+                case 3: return "Laptop";
+                case 4: return "Handheld";
+                case 6: return "Wearable";
+                case 7: return "Tablet";
+                default: return "Computer";
+            }
+        case 0x02:  // Phone
+            switch (minor) {
+                case 1: return "Phone";
+                case 2: return "Cordless phone";
+                default: return "Phone";
+            }
+        case 0x04:  // Audio/video
+            switch (minor) {
+                case 1: return "Headset";
+                case 2: return "Hands-free";
+                case 4: return "Microphone";
+                case 5: return "Speaker";
+                case 6: return "Headphones";
+                case 7: return "Portable audio";
+                case 8: return "Car audio";
+                case 10: return "Hi-Fi";
+                default: return "Audio";
+            }
+        case 0x05: {  // Peripheral: the top two minor bits pick the device kind
+            const unsigned sub = minor & 0x30;
+            if (sub == 0x10) return "Keyboard";
+            if (sub == 0x20) return "Mouse";
+            if (sub == 0x30) return "Keyboard/mouse";
+            if (minor == 0x01) return "Joystick";
+            if (minor == 0x02) return "Gamepad";
+            return "Peripheral";
+        }
+        case 0x06: return "Imaging";
+        case 0x07: return "Wearable";
+        case 0x08: return "Toy";
+        case 0x09: return "Health";
+        default: return {};
+    }
+}
+
 void BluetoothInfo::Clear() {
     data_ = BluetoothData{};
 }
@@ -86,6 +163,9 @@ void BluetoothInfo::Detect() {
         if (BluetoothGetRadioInfo(hRadio, &radioInfo) == ERROR_SUCCESS) {
             data_.adapter.name = WCharToUtf8(radioInfo.szName);
             data_.adapter.address = FormatBtAddress(radioInfo.address);
+            // The Win32 radio info carries the SIG manufacturer ID, not a
+            // chip name; that is the closest Windows gets to one.
+            data_.adapter.chipset = BtVendorName(radioInfo.manufacturer);
             data_.adapter.powerOn = true;
             break;
         }
@@ -139,6 +219,7 @@ void BluetoothInfo::Detect() {
         BluetoothDeviceData dev;
         dev.name = WCharToUtf8(info.szName);
         dev.address = FormatBtAddress(info.Address);
+        dev.type = BtDeviceType(info.ulClassofDevice);
         const BTH_ADDR addr = BtAddrToUlong(info.Address);
         const bool inConnectedPass =
             std::any_of(connected.begin(), connected.end(),

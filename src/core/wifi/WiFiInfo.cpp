@@ -31,6 +31,7 @@ void WiFiInfo::Detect() {
     data_.band        = wd.band;
     data_.wifiGen     = wd.wifiGen;
     data_.txRate      = wd.txRate;
+    data_.chipset     = wd.chipset;
 
     if (!data_.isConnected) {
         Logger::Debug("WiFiInfo: Wi-Fi adapter on, not connected");

@@ -2212,11 +2212,14 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                   tuiData.hasWiFi = wd.powerOn;
                   tuiData.wifiConnected = wd.isConnected;
                   tuiData.wifiSSID = wd.ssid;
+                  tuiData.wifiBSSID = wd.bssid;
                   tuiData.wifiRSSI = wd.rssi;
                   tuiData.wifiChannel = wd.channel;
                   tuiData.wifiSecurity = wd.security;
                   tuiData.wifiBand = wd.band;
                   tuiData.wifiGen = wd.wifiGen;
+                  tuiData.wifiTxRate = wd.txRate;
+                  tuiData.wifiChipset = wd.chipset;
                   sysInfo.wifiPowerOn = wd.powerOn;
                   sysInfo.wifiIsConnected = wd.isConnected;
                   sysInfo.wifiSSID = wd.ssid;
@@ -2228,6 +2231,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                   const auto& bd = s_bt.GetData();
                   tuiData.hasBluetooth = bd.adapter.powerOn || !bd.devices.empty();
                   tuiData.btPowerOn = bd.adapter.powerOn;
+                  tuiData.btChipset = bd.adapter.chipset;
                   tuiData.btDevices.clear();
                   int btConnected = 0;
                   for (const auto& dev : bd.devices) {

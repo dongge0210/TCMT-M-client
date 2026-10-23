@@ -3013,7 +3013,15 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
             radio += "Tx " + std::to_string(static_cast<int>(data.wifiTxRate)) + " Mbps";
         }
         if (!radio.empty()) emit(radio);
-        if (!data.wifiChipset.empty()) emit("Chip: " + data.wifiChipset);
+        if (!data.wifiChipset.empty() || !data.wifiBSSID.empty()) {
+            std::string hw;
+            if (!data.wifiChipset.empty()) hw = "Chip: " + data.wifiChipset;
+            if (!data.wifiBSSID.empty()) {
+                if (!hw.empty()) hw += "   ";
+                hw += "BSSID " + data.wifiBSSID;
+            }
+            emit(hw);
+        }
         if (y < bottom) y++;
     }
 

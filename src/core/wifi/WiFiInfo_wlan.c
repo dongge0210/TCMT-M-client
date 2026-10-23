@@ -15,11 +15,16 @@
 
 #pragma comment(lib, "wlanapi.lib")
 
-// dot11TxRate was removed from WLAN_ASSOCIATION_ATTRIBUTES in SDK 10.0.26100+.
-// Use a simple thunk so the build works across all SDK versions.
-static ULONG GetTxRate(const PWLAN_CONNECTION_ATTRIBUTES pConn) {
+// dot11TxRate was replaced by ulTxRate/ulRxRate (in Kbps) in the Windows 10
+// 2004 SDK, which is also the point where the old 500 kbps field started
+// disappearing from the headers. Both paths return Mbps; older SDKs report 0.
+static double GetTxRateMbps(const PWLAN_CONNECTION_ATTRIBUTES pConn) {
+#if defined(NTDDI_WIN10_VB) && (NTDDI_VERSION >= NTDDI_WIN10_VB)
+    return pConn->wlanAssociationAttributes.ulTxRate / 1000.0;
+#else
     (void)pConn;
-    return 0;
+    return 0.0;
+#endif
 }
 
 bool WlanDetect(WlanData* out) {
@@ -41,6 +46,11 @@ bool WlanDetect(WlanData* out) {
 
     const PWLAN_INTERFACE_INFO pIfInfo = &pIfList->InterfaceInfo[0];
     const GUID* pGuid = &pIfInfo->InterfaceGuid;
+
+    /* The driver description names the radio itself ("Intel(R) Wi-Fi 6 AX200
+       160MHz"), which is the closest thing Windows gives us to a chip model. */
+    WideCharToMultiByte(CP_UTF8, 0, pIfInfo->strInterfaceDescription, -1,
+                        out->chipset, WLAN_CHIPSET_MAX_LEN, NULL, NULL);
 
     out->powerOn = (pIfInfo->isState != wlan_interface_state_not_ready);
 
@@ -105,8 +115,7 @@ bool WlanDetect(WlanData* out) {
                      pConn->wlanAssociationAttributes.dot11Bssid[4],
                      pConn->wlanAssociationAttributes.dot11Bssid[5]);
 
-            // Tx rate (500 bps units -> Mbps); field absent in newer SDKs
-            out->txRate = GetTxRate(pConn) / 2000.0;
+            out->txRate = GetTxRateMbps(pConn);
 
             // Security
             switch (pConn->wlanSecurityAttributes.dot11AuthAlgorithm) {
