@@ -2495,6 +2495,14 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
                 wattroff(stdscr, A_DIM);
             }
 
+            // Live throughput, sampled once per tick. R and W are kept on
+            // fixed columns so a changing rate does not shift the other one.
+            if (y < bottom) {
+                std::string rates = "Read " + FormatRate(pd.readBps)
+                                  + "   Write " + FormatRate(pd.writeBps);
+                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(rates, W - 6).c_str());
+            }
+
             wattron(stdscr, A_DIM);
             // Attribute grid: as many columns as the width allows. Real drives
             // report 20-30 attributes, so a full-width terminal fits three or

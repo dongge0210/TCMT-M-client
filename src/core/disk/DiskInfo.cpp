@@ -7,7 +7,10 @@
 #include "../Utils/WinUtils.h"
 #include "../Utils/WmiManager.h"
 #include <wbemidl.h>
+#include <pdh.h>
+#include <cwctype>
 #pragma comment(lib, "wbemuuid.lib")
+#pragma comment(lib, "pdh.lib")
 
 DiskInfo::DiskInfo() { QueryDrives(); }
 
@@ -170,6 +173,59 @@ void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
         if (sysInfo.physicalDisks.size() >= 8) break;
     }
     Logger::Debug("Physical disk info enumeration complete: " + std::to_string(sysInfo.physicalDisks.size()));
+}
+
+// Live per-disk throughput from the PDH PhysicalDisk counters. Instance names
+// are "0 C:", "2 E:" (index plus the letters mountable on it) or a bare "0"
+// for a disk with no mounted volume, so the leading integer is the physical
+// index. PDH turns two collects into a rate, so the first call only seeds the
+// query and leaves the counters at zero.
+void DiskInfo::SampleIoRates(std::vector<PhysicalDiskSmartData>& disks) {
+    if (disks.empty()) return;
+    static PDH_HQUERY query = nullptr;
+    static PDH_HCOUNTER readCtr = nullptr;
+    static PDH_HCOUNTER writeCtr = nullptr;
+    if (!query) {
+        if (PdhOpenQuery(nullptr, 0, &query) != ERROR_SUCCESS) {
+            query = nullptr;
+            return;
+        }
+        if (PdhAddEnglishCounterW(query, L"\\PhysicalDisk(*)\\Disk Read Bytes/sec", 0, &readCtr) != ERROR_SUCCESS
+            || PdhAddEnglishCounterW(query, L"\\PhysicalDisk(*)\\Disk Write Bytes/sec", 0, &writeCtr) != ERROR_SUCCESS) {
+            PdhCloseQuery(query);
+            query = nullptr;
+            return;
+        }
+        PdhCollectQueryData(query);   // seed: PDH needs a previous sample
+        return;
+    }
+    if (PdhCollectQueryData(query) != ERROR_SUCCESS) return;
+
+    auto apply = [&disks](PDH_HCOUNTER counter, bool isRead) {
+        DWORD size = 0, count = 0;
+        if (PdhGetFormattedCounterArray(counter, PDH_FMT_DOUBLE, &size, &count, nullptr) != PDH_MORE_DATA
+            || size == 0) return;
+        std::vector<BYTE> buf(size);
+        auto* items = reinterpret_cast<PDH_FMT_COUNTERVALUE_ITEM_W*>(buf.data());
+        if (PdhGetFormattedCounterArray(counter, PDH_FMT_DOUBLE, &size, &count, items) != ERROR_SUCCESS) return;
+        for (DWORD i = 0; i < count; ++i) {
+            const wchar_t* inst = items[i].szName;
+            if (!inst || !iswdigit(inst[0])) continue;   // skips _Total
+            const int idx = _wtoi(inst);
+            const DWORD st = items[i].FmtValue.CStatus;
+            const double v = (st == PDH_CSTATUS_VALID_DATA || st == PDH_CSTATUS_NEW_DATA)
+                           ? items[i].FmtValue.doubleValue : 0.0;
+            for (auto& d : disks) {
+                if (d.physicalIndex != idx) continue;
+                const uint64_t bps = v > 0.0 ? static_cast<uint64_t>(v) : 0;
+                if (isRead) d.readBytesPerSec = bps;
+                else d.writeBytesPerSec = bps;
+                break;
+            }
+        }
+    };
+    apply(readCtr, true);
+    apply(writeCtr, false);
 }
 
 void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
@@ -350,8 +406,12 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
 
 #include <dirent.h>
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <map>
 #include <set>
 #include <cstring>
+#include <utility>
 #include <sys/attr.h>    // getattrlist / ATTR_VOL_NAME
 #include <sys/param.h>   // MAXPATHLEN
 
@@ -545,11 +605,82 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
             if (bsd.rfind("disk", 0) == 0) {
                 try { diskIdx = std::stoi(bsd.substr(4)); } catch(...) {}
             }
+            sysInfo.physicalDisks.back().physicalIndex = diskIdx;
             SmartReader::Read(diskIdx, sysInfo.physicalDisks.back());
         }
     }
 
     Logger::Debug("DiskInfo: SMART collected " + std::to_string(sysInfo.physicalDisks.size()) + " disks");
+}
+
+// Live per-disk throughput from IOBlockStorageDriver's cumulative byte
+// counters. The driver's IOMedia parent carries the BSD name, which is where
+// physicalIndex comes from, so disk0/disk1 line up with the SMART list.
+void DiskInfo::SampleIoRates(std::vector<PhysicalDiskSmartData>& disks) {
+    if (disks.empty()) return;
+    static std::map<int, std::pair<uint64_t, uint64_t>> lastBytes;
+    static std::map<int, std::chrono::steady_clock::time_point> lastTime;
+
+    io_iterator_t iter = IO_OBJECT_NULL;
+    if (IOServiceGetMatchingServices(kIOMasterPortDefault,
+            IOServiceMatching("IOBlockStorageDriver"), &iter) != KERN_SUCCESS)
+        return;
+    const auto now = std::chrono::steady_clock::now();
+
+    io_service_t drv = IO_OBJECT_NULL;
+    while ((drv = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
+        // The driver publishes the whole-disk IOMedia as its child; that node
+        // is where the BSD name lives. Partitions sit one level further down.
+        char bsd[32] = {0};
+        io_registry_entry_t child = IO_OBJECT_NULL;
+        if (IORegistryEntryGetChildEntry(drv, kIOServicePlane, &child) == KERN_SUCCESS) {
+            CFTypeRef name = IORegistryEntryCreateCFProperty(
+                child, CFSTR("BSD Name"), kCFAllocatorDefault, 0);
+            if (name && CFGetTypeID(name) == CFStringGetTypeID())
+                CFStringGetCString(static_cast<CFStringRef>(name), bsd, sizeof(bsd),
+                                   kCFStringEncodingUTF8);
+            if (name) CFRelease(name);
+            IOObjectRelease(child);
+        }
+
+        bool haveStats = false;
+        uint64_t readBytes = 0, writeBytes = 0;
+        CFTypeRef stats = IORegistryEntryCreateCFProperty(
+            drv, CFSTR("Statistics"), kCFAllocatorDefault, 0);
+        if (stats && CFGetTypeID(stats) == CFDictionaryGetTypeID()) {
+            auto number = [&](CFStringRef key) -> uint64_t {
+                CFTypeRef v = CFDictionaryGetValue(static_cast<CFDictionaryRef>(stats), key);
+                if (!v || CFGetTypeID(v) != CFNumberGetTypeID()) return 0;
+                int64_t n = 0;
+                CFNumberGetValue(static_cast<CFNumberRef>(v), kCFNumberSInt64Type, &n);
+                return static_cast<uint64_t>(n);
+            };
+            readBytes = number(CFSTR("Bytes (Read)"));
+            writeBytes = number(CFSTR("Bytes (Write)"));
+            haveStats = true;
+        }
+        if (stats) CFRelease(stats);
+        IOObjectRelease(drv);
+
+        if (!haveStats || std::strncmp(bsd, "disk", 4) != 0) continue;
+        const int idx = std::atoi(bsd + 4);
+        auto prev = lastBytes.find(idx);
+        auto prevT = lastTime.find(idx);
+        for (auto& d : disks) {
+            if (d.physicalIndex != idx) continue;
+            if (prev != lastBytes.end() && prevT != lastTime.end()) {
+                const double dt = std::chrono::duration<double>(now - prevT->second).count();
+                if (dt > 0.05 && readBytes >= prev->second.first && writeBytes >= prev->second.second) {
+                    d.readBytesPerSec = static_cast<uint64_t>((readBytes - prev->second.first) / dt);
+                    d.writeBytesPerSec = static_cast<uint64_t>((writeBytes - prev->second.second) / dt);
+                }
+            }
+            break;
+        }
+        lastBytes[idx] = {readBytes, writeBytes};
+        lastTime[idx] = now;
+    }
+    IOObjectRelease(iter);
 }
 
 #elif defined(TCMT_LINUX)
@@ -1060,6 +1191,10 @@ void DiskInfo::CollectSmartData(SystemInfo& sysInfo) {
     Logger::Debug("DiskInfo: found " + std::to_string(sysInfo.physicalDisks.size())
                   + " physical disks on Linux");
 }
+
+// Linux already fills readBytesPerSec/writeBytesPerSec in CollectSmartData
+// from /proc/diskstats, so the per-tick hook stays empty.
+void DiskInfo::SampleIoRates(std::vector<PhysicalDiskSmartData>&) {}
 
 #else
 #error "Unsupported platform"

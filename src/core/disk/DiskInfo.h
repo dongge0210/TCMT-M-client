@@ -45,6 +45,12 @@ public:
     // Collect SMART data (DeviceIoControl on Windows, IOKit on macOS)
     static void CollectSmartData(SystemInfo& sysInfo);
 
+    // Live per-disk read/write throughput in bytes/s, computed against the
+    // previous call. Call about once a second; the first call only seeds the
+    // counters and reports zero. Entries whose counters cannot be read keep
+    // their old value. No-op on Linux, which has its own /proc/diskstats path.
+    static void SampleIoRates(std::vector<PhysicalDiskSmartData>& disks);
+
 private:
     void QueryDrives();
     std::vector<DriveInfo> drives;

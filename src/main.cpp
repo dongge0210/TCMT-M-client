@@ -2053,6 +2053,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 }
 
                 // Physical disks (SMART)
+                // Throughput comes from the PDH PhysicalDisk counters and is
+                // sampled every tick, unlike the 60 s SMART scan above.
+                DiskInfo::SampleIoRates(sysInfo.physicalDisks);
                 for (const auto& pd : sysInfo.physicalDisks) {
                     tcmt::TuiData::PhysicalDiskInfo pi;
                     pi.model = WinUtils::WstringToString(pd.model);
@@ -2065,6 +2068,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     pi.smartSupported = pd.smartSupported;
                     pi.powerOnHours = pd.powerOnHours;
                     pi.wearLeveling = pd.wearLeveling;
+                    pi.index = pd.physicalIndex;
+                    pi.readBps = pd.readBytesPerSec;
+                    pi.writeBps = pd.writeBytesPerSec;
                     for (int ai = 0; ai < pd.attributeCount && ai < 32; ai++) {
                         const auto& sa = pd.attributes[ai];
                         tcmt::TuiData::SmAttributeInfo ai2;

@@ -1706,7 +1706,16 @@ int main(int argc, char* argv[]) {
                     }
                     return out;
                 };
-                for (const auto& src : cachedSmart) {
+                // Throughput is a per-tick delta over IOBlockStorageDriver's
+                // cumulative counters, so it is sampled here rather than with
+                // the 60 s SMART scan.
+                std::vector<PhysicalDiskSmartData> ioDisks;
+                {
+                    std::lock_guard<std::mutex> lk(smartMutex);
+                    ioDisks = cachedSmart;
+                }
+                DiskInfo::SampleIoRates(ioDisks);
+                for (const auto& src : ioDisks) {
                     tcmt::TuiData::PhysicalDiskInfo pi;
                     pi.model = w2u(src.model, 63);
                     pi.serial = w2u(src.serialNumber, 63);
@@ -1716,6 +1725,9 @@ int main(int argc, char* argv[]) {
                     pi.smartSupported = src.smartSupported;
                     pi.powerOnHours = src.powerOnHours;
                     pi.wearLeveling = src.wearLeveling;
+                    pi.index = src.physicalIndex;
+                    pi.readBps = src.readBytesPerSec;
+                    pi.writeBps = src.writeBytesPerSec;
                     pi.diskType = w2u(src.diskType, 15);
                     pi.interfaceType = w2u(src.interfaceType, 15);
                     pi.attributes.clear();

@@ -170,6 +170,9 @@ struct TuiData {
         bool smartSupported = false;
         uint64_t powerOnHours = 0;
         double wearLeveling = 0;
+        int index = -1;          // physical index (Windows) / diskN (macOS)
+        uint64_t readBps = 0;    // live read throughput, bytes/s
+        uint64_t writeBps = 0;   // live write throughput, bytes/s
         std::vector<SmAttributeInfo> attributes;
     };
     std::vector<PhysicalDiskInfo> physicalDisks;
