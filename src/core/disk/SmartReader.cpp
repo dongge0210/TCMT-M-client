@@ -3,6 +3,7 @@
 #include "SmartReader.h"
 #include "NVMe_HealthLog.h"
 #include "../DataStruct/DataStruct.h"
+#include "../I18n.h"   // attribute names are prose, so they live in the table
 #include "../Utils/Logger.h"
 
 #ifdef TCMT_WINDOWS
@@ -76,86 +77,23 @@ typedef struct _SENDCMDOUTPARAMS {
 // ====================================================================
 // SMART attribute ID to human-readable name & description (Chinese)
 // ====================================================================
-static const wchar_t* GetSmartAttrName(uint8_t id) {
-    switch (id) {
-        case 1:   return L"读取错误率";
-        case 3:   return L"硬盘启动时间";
-        case 4:   return L"启停次数";
-        case 5:   return L"重映射扇区计数";
-        case 7:   return L"寻道错误率";
-        case 9:   return L"通电时间";
-        case 10:  return L"启动重试次数";
-        case 12:  return L"通电次数";
-        case 148: return L"预留";
-        case 149: return L"预留";
-        case 167: return L"固态硬盘保护模式";
-        case 168: return L"SATA 物理层错误计数";
-        case 169: return L"剩余寿命";
-        case 170: return L"可用预留空间";
-        case 171: return L"SSD 编程失败计数";
-        case 172: return L"SSD 擦除失败计数";
-        case 173: return L"SSD 磨损均衡计数";
-        case 174: return L"意外断电计数";
-        case 175: return L"通电时间";
-        case 176: return L"擦除失败计数";
-        case 177: return L"磨损均衡计数";
-        case 179: return L"已用预留块计数";
-        case 180: return L"编程失败计数";
-        case 181: return L"编程失败计数";
-        case 182: return L"擦除失败计数";
-        case 183: return L"SATA 下行计数";
-        case 184: return L"端到端错误";
-        case 187: return L"报告不可校正错误";
-        case 188: return L"命令超时";
-        case 189: return L"工厂坏块";
-        case 190: return L"气流温度";
-        case 191: return L"G-Sense 错误率";
-        case 192: return L"断电撤回计数";
-        case 193: return L"加载卸载计数";
-        case 194: return L"温度";
-        case 195: return L"硬件 ECC 恢复";
-        case 196: return L"重新分配事件";
-        case 197: return L"当前待处理扇区";
-        case 198: return L"脱机不可校正";
-        case 199: return L"CRC 错误计数";
-        case 200: return L"写入错误率";
-        case 201: return L"软读取错误率";
-        case 202: return L"数据地址标记错误";
-        case 203: return L"耗尽取消";
-        case 204: return L"软 ECC 修正";
-        case 205: return L"热糙度";
-        case 206: return L"磁头高度";
-        case 207: return L"硬盘旋转震动";
-        case 208: return L"硬盘写入震动";
-        case 210: return L"RAID 恢复";
-        case 218: return L"CRC 错误计数";
-        case 220: return L"磁盘偏移";
-        case 222: return L"已加载小时";
-        case 223: return L"加载卸载重试";
-        case 224: return L"负载摩擦";
-        case 225: return L"负载卸载计数";
-        case 226: return L"负载时间";
-        case 227: return L"扭矩放大计数";
-        case 228: return L"断电撤回计数";
-        case 230: return L"SSD 寿命";
-        case 231: return L"SSD 剩余寿命";
-        case 232: return L"可用预留空间";
-        case 233: return L"NAND 写入总量";
-        case 234: return L"平均擦除次数";
-        case 235: return L"最大擦除次数";
-        case 240: return L"磁头飞行时间";
-        case 241: return L"主机总计写入";
-        case 242: return L"主机总计读取";
-        case 244: return L"平均擦除次数";
-        case 245: return L"最大擦除次数";
-        case 246: return L"总计擦除次数";
-        case 247: return L"主机读取量";
-        case 248: return L"主机写入量";
-        case 249: return L"NAND 读取量";
-        case 250: return L"读取错误重试率";
-        case 251: return L"剩余备用容量";
-        default:  return L"";
+// i18n ids are UTF-8; the SMART structs carry wide strings. The buffer is
+// static, so every caller copies immediately (wcsncpy_s into attr.name).
+static const wchar_t* WideFromUtf8(const char* utf8) {
+    static wchar_t buf[192];
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf,
+                            static_cast<int>(sizeof(buf) / sizeof(buf[0]))) <= 0) {
+        buf[0] = 0;
     }
+    return buf;
+}
+
+// Attribute names live in the i18n table (smart.<ATA id>), so a SATA drive
+// and an NVMe drive show the same words and both follow the UI language.
+static const wchar_t* GetSmartAttrName(uint8_t id) {
+    char key[24];
+    snprintf(key, sizeof(key), "smart.%u", static_cast<unsigned>(id));
+    return WideFromUtf8(tcmt::Tr(key));
 }
 static const wchar_t* GetSmartAttrDesc(uint8_t id) {
     switch (id) {
@@ -433,17 +371,19 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                     wcsncpy_s(a.name, name, _TRUNCATE);
                     wcsncpy_s(a.description, desc, _TRUNCATE);
                 };
-                addAttr(0x01, raw[0], raw[0], L"Critical Warning",
-                    L"NVMe critical warning flags: 0=OK, non-zero indicates serious issue");
+                // Names go through the same i18n table as the ATA path, so a
+                // SATA and an NVMe drive never disagree about the language.
+                addAttr(0x01, raw[0], raw[0], WideFromUtf8(tcmt::Tr("smart.nvme.warning")),
+                    L"NVMe 关键警告：0=正常，非0表示存在严重问题");
                 addAttr(0x02, (uint8_t)(raw[1] | (raw[2] << 8)) - 273,
-                            raw[1] | (raw[2] << 8), L"Temperature",
-                    L"NVMe composite temperature sensor (Celsius)");
-                addAttr(0x03, raw[3], raw[3], L"Available Spare",
-                    L"Remaining spare space for bad block replacement");
-                addAttr(0x04, raw[4], raw[4], L"Available Spare Threshold",
-                    L"Spare threshold that triggers warning when breached");
-                addAttr(0x05, raw[5], raw[5], L"Percentage Used",
-                    L"Percentage of rated write endurance consumed (100=exhausted)");
+                            raw[1] | (raw[2] << 8), WideFromUtf8(tcmt::Tr("smart.nvme.temp")),
+                    L"NVMe 复合温度传感器（摄氏度）");
+                addAttr(0x03, raw[3], raw[3], WideFromUtf8(tcmt::Tr("smart.nvme.avail_spare")),
+                    L"剩余可替换坏块的备用空间百分比");
+                addAttr(0x04, raw[4], raw[4], WideFromUtf8(tcmt::Tr("smart.nvme.spare_thresh")),
+                    L"备用空间低于此阈值时触发警告");
+                addAttr(0x05, raw[5], raw[5], WideFromUtf8(tcmt::Tr("smart.nvme.pct_used")),
+                    L"已消耗的额定写入寿命百分比，100=寿命耗尽");
                 uint64_t v6=0,v7=0,v8=0,v9=0,v10=0,v11=0,v12=0,v13=0,v14=0,v15=0;
                 memcpy(&v6,  raw + NVMeHealthLog::kDataUnitsReadOffset, 8);
                 memcpy(&v7,  raw + NVMeHealthLog::kDataUnitsWrittenOffset, 8);
@@ -455,16 +395,26 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 memcpy(&v13, raw + NVMeHealthLog::kUnsafeShutdownsOffset, 8);
                 memcpy(&v14, raw + NVMeHealthLog::kMediaDataIntegrityErrorsOffset, 8);
                 memcpy(&v15, raw + NVMeHealthLog::kErrorLogEntriesOffset, 8);
-                addAttr(0x06, 0, v6,  L"Data Units Read", L"Total data read from NVMe drive (units of 512 bytes)");
-                addAttr(0x07, 0, v7,  L"Data Units Written", L"Total data written to NVMe drive (units of 512 bytes)");
-                addAttr(0x08, 0, v8,  L"Host Read Commands", L"Total read commands issued by host");
-                addAttr(0x09, 0, v9,  L"Host Write Commands", L"Total write commands issued by host");
-                addAttr(0x0A, 0, v10, L"Controller Busy Time", L"Total time controller was busy processing commands (minutes)");
-                addAttr(0x0B, 0, v11, L"Power Cycles", L"Total power on/off cycles");
-                addAttr(0x0C, 0, v12, L"Power On Hours", L"Total power-on hours");
-                addAttr(0x0D, 0, v13, L"Unsafe Shutdowns", L"Total unsafe/abnormal power-down events");
-                addAttr(0x0E, 0, v14, L"Media & Integrity Errors", L"Total media errors and data integrity errors");
-                addAttr(0x0F, 0, v15, L"Error Log Entries", L"Number of entries in the NVMe error information log");
+                addAttr(0x06, 0, v6,  WideFromUtf8(tcmt::Tr("smart.nvme.data_read")),
+                    L"NVMe 盘累计读取的数据量（512 字节单位）");
+                addAttr(0x07, 0, v7,  WideFromUtf8(tcmt::Tr("smart.nvme.data_written")),
+                    L"NVMe 盘累计写入的数据量（512 字节单位）");
+                addAttr(0x08, 0, v8,  WideFromUtf8(tcmt::Tr("smart.nvme.host_reads")),
+                    L"主机下发的读命令总数");
+                addAttr(0x09, 0, v9,  WideFromUtf8(tcmt::Tr("smart.nvme.host_writes")),
+                    L"主机下发的写命令总数");
+                addAttr(0x0A, 0, v10, WideFromUtf8(tcmt::Tr("smart.nvme.busy_time")),
+                    L"控制器处理命令累计忙碌时间（分钟）");
+                addAttr(0x0B, 0, v11, WideFromUtf8(tcmt::Tr("smart.nvme.power_cycles")),
+                    L"累计开关机次数");
+                addAttr(0x0C, 0, v12, WideFromUtf8(tcmt::Tr("smart.nvme.power_on")),
+                    L"累计通电运行小时数");
+                addAttr(0x0D, 0, v13, WideFromUtf8(tcmt::Tr("smart.nvme.unsafe_shutdowns")),
+                    L"非正常掉电累计次数");
+                addAttr(0x0E, 0, v14, WideFromUtf8(tcmt::Tr("smart.nvme.media_errors")),
+                    L"介质错误与数据完整性错误总数");
+                addAttr(0x0F, 0, v15, WideFromUtf8(tcmt::Tr("smart.nvme.error_log")),
+                    L"NVMe 错误信息日志中的条目数");
             } else {
                 Logger::Debug("SMART disk" + std::to_string(diskIndex) + " NVMe IOCTL fail err=" +
                     std::to_string(GetLastError()));

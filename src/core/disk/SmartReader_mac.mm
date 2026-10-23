@@ -12,6 +12,7 @@
 
 #include "SmartReader.h"
 #include "../DataStruct/DataStruct.h"
+#include "../I18n.h"   // attribute names are prose, so they live in the table
 #include "../Utils/Logger.h"
 
 #include <algorithm>
@@ -109,89 +110,42 @@ static io_service_t FindATABlockDevice(io_service_t media) {
 // SMART attribute ID to human-readable name & description (Chinese)
 // On macOS WCHAR = char16_t, so use u"" literals not L"".
 // ====================================================================
-static const WCHAR* GetSmartAttrName(uint8_t id) {
-    switch (id) {
-        case 1:   return u"读取错误率";
-        case 3:   return u"硬盘启动时间";
-        case 4:   return u"启停次数";
-        case 5:   return u"重映射扇区计数";
-        case 7:   return u"寻道错误率";
-        case 9:   return u"通电时间";
-        case 10:  return u"启动重试次数";
-        case 12:  return u"通电次数";
-        case 15:  return u"数据完整性错误";
-        case 16:  return u"错误日志条目数";
-        case 148: return u"预留";
-        case 149: return u"预留";
-        case 167: return u"固态硬盘保护模式";
-        case 168: return u"SATA 物理层错误计数";
-        case 169: return u"剩余寿命";
-        case 170: return u"可用预留空间";
-        case 171: return u"SSD 编程失败计数";
-        case 172: return u"SSD 擦除失败计数";
-        case 173: return u"SSD 磨损均衡计数";
-        case 174: return u"意外断电计数";
-        case 175: return u"通电时间";
-        case 176: return u"擦除失败计数";
-        case 177: return u"磨损均衡计数";
-        case 179: return u"已用预留块计数";
-        case 180: return u"编程失败计数";
-        case 181: return u"编程失败计数";
-        case 182: return u"擦除失败计数";
-        case 183: return u"SATA 下行计数";
-        case 184: return u"端到端错误";
-        case 187: return u"报告不可校正错误";
-        case 188: return u"命令超时";
-        case 189: return u"工厂坏块";
-        case 190: return u"气流温度";
-        case 191: return u"G-Sense 错误率";
-        case 192: return u"断电撤回计数";
-        case 193: return u"加载卸载计数";
-        case 194: return u"温度";
-        case 195: return u"硬件 ECC 恢复";
-        case 196: return u"重新分配事件";
-        case 197: return u"当前待处理扇区";
-        case 198: return u"脱机不可校正";
-        case 199: return u"CRC 错误计数";
-        case 200: return u"写入错误率";
-        case 201: return u"软读取错误率";
-        case 202: return u"已用寿命百分比";
-        case 203: return u"耗尽取消";
-        case 204: return u"软 ECC 修正";
-        case 205: return u"热糙度";
-        case 206: return u"磁头高度";
-        case 207: return u"硬盘旋转震动";
-        case 208: return u"硬盘写入震动";
-        case 210: return u"RAID 恢复";
-        case 218: return u"CRC 错误计数";
-        case 220: return u"磁盘偏移";
-        case 222: return u"已加载小时";
-        case 223: return u"加载卸载重试";
-        case 224: return u"负载摩擦";
-        case 225: return u"负载卸载计数";
-        case 226: return u"负载时间";
-        case 227: return u"扭矩放大计数";
-        case 228: return u"断电撤回计数";
-        case 230: return u"SSD 寿命";
-        case 231: return u"SSD 剩余寿命";
-        case 232: return u"可用预留空间";
-        case 233: return u"NAND 写入总量";
-        case 234: return u"平均擦除次数";
-        case 235: return u"最大擦除次数";
-        case 240: return u"磁头飞行时间";
-        case 241: return u"主机总计写入";
-        case 242: return u"主机总计读取";
-        case 244: return u"平均擦除次数";
-        case 245: return u"最大擦除次数";
-        case 246: return u"总计擦除次数";
-        case 247: return u"主机读取量";
-        case 248: return u"主机写入量";
-        case 249: return u"NAND 读取量";
-        case 250: return u"读取错误重试率";
-        case 251: return u"剩余备用容量";
-        default:  return u"";
+// UTF-8 → UTF-16 (WCHAR is char16_t here). Static buffer: callers copy
+// immediately, which is what every call site does.
+static const WCHAR* WideFromUtf8(const char* s) {
+    static WCHAR buf[192];
+    size_t o = 0;
+    const auto* p = reinterpret_cast<const unsigned char*>(s);
+    while (*p && o + 2 < sizeof(buf) / sizeof(buf[0])) {
+        uint32_t cp;
+        int extra;
+        if (*p < 0x80)            { cp = *p;        extra = 0; }
+        else if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1F; extra = 1; }
+        else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0F; extra = 2; }
+        else                      { cp = *p & 0x07; extra = 3; }
+        ++p;
+        for (int i = 0; i < extra && (*p & 0xC0) == 0x80; ++i, ++p)
+            cp = (cp << 6) | (*p & 0x3F);
+        if (cp > 0xFFFF) {          // surrogate pair
+            cp -= 0x10000;
+            buf[o++] = static_cast<WCHAR>(0xD800 + (cp >> 10));
+            buf[o++] = static_cast<WCHAR>(0xDC00 + (cp & 0x3FF));
+        } else {
+            buf[o++] = static_cast<WCHAR>(cp);
+        }
     }
+    buf[o] = 0;
+    return buf;
 }
+
+// Attribute names come from the shared i18n table, the same entries the
+// Windows reader uses, so both platforms and both SMART paths agree.
+static const WCHAR* GetSmartAttrName(uint8_t id) {
+    char key[24];
+    snprintf(key, sizeof(key), "smart.%u", static_cast<unsigned>(id));
+    return WideFromUtf8(tcmt::Tr(key));
+}
+
 static const WCHAR* GetSmartAttrDesc(uint8_t id) {
     switch (id) {
         case 1:   return u"底层数据读取错误率，反映磁盘表面或磁头读取可靠性";
@@ -287,17 +241,23 @@ static bool ReadNVMeSmart(int diskIndex, PhysicalDiskSmartData &out) {
                     wcs_ncopy(a.description, desc, 127);
                 };
                 addAttr(0x01, raw.CRITICAL_WARNING, raw.CRITICAL_WARNING,
-                    u"严重警告标志", u"NVMe 关键警告：0=正常，非0表示存在严重问题");
+                    WideFromUtf8(tcmt::Tr("smart.nvme.warning")),
+                    u"NVMe 关键警告：0=正常，非0表示存在严重问题");
                 addAttr(0x02, (uint8_t)tempC, raw.TEMPERATURE,
-                    u"温度", u"NVMe 复合温度传感器（摄氏度）");
+                    WideFromUtf8(tcmt::Tr("smart.nvme.temp")),
+                    u"NVMe 复合温度传感器（摄氏度）");
                 addAttr(0x03, raw.AVAILABLE_SPARE, raw.AVAILABLE_SPARE,
-                    u"可用备用空间", u"剩余可替换坏块的备用空间百分比");
+                    WideFromUtf8(tcmt::Tr("smart.nvme.avail_spare")),
+                    u"剩余可替换坏块的备用空间百分比");
                 addAttr(0x04, raw.AVAILABLE_SPARE_THRESHOLD, raw.AVAILABLE_SPARE_THRESHOLD,
-                    u"可用备用空间阈值", u"备用空间低于此阈值时触发警告");
+                    WideFromUtf8(tcmt::Tr("smart.nvme.spare_thresh")),
+                    u"备用空间低于此阈值时触发警告");
                 addAttr(0x05, raw.PERCENTAGE_USED, raw.PERCENTAGE_USED,
-                    u"已用寿命百分比", u"已消耗的额定写入寿命百分比，100=寿命耗尽");
+                    WideFromUtf8(tcmt::Tr("smart.nvme.pct_used")),
+                    u"已消耗的额定写入寿命百分比，100=寿命耗尽");
                 addAttr(0x0B, 0, raw.POWER_ON_HOURS[0],
-                    u"通电时间", u"NVMe 盘累计通电运行小时数");
+                    WideFromUtf8(tcmt::Tr("smart.nvme.power_on")),
+                    u"NVMe 盘累计通电运行小时数");
 
                 ok = true;
             }
