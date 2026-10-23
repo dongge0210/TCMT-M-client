@@ -2404,12 +2404,13 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    // Follow the terminal width: disk model names and the SMART grid are the
-    // content, and there is no graph to absorb the extra columns.
-    const int W = (std::min)(cols - 6, 160);
-    const int H = (std::min)(rows - 4, 26);
-    const int x0 = (std::max)(1, (cols - W) / 2);
-    const int y0 = (std::max)(2, (rows - H) / 2);
+    // Take the whole terminal: model names and the SMART grid are the content,
+    // there is no graph to absorb the extra space, and clipping to a smaller
+    // frame just hides attributes that already fit on screen.
+    const int W = (std::max)(20, cols - 2);
+    const int H = (std::max)(8, rows - 2);
+    const int x0 = (std::max)(0, (cols - W) / 2);
+    const int y0 = (std::max)(0, (rows - H) / 2);
 
     erase();
     std::string hlineStr(W, '-');
@@ -2516,13 +2517,15 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             }
 
             wattron(stdscr, A_DIM);
-            // Attribute grid: two columns once the box is wide enough, since
-            // real drives report 20-30 attributes and a single column wastes
-            // the horizontal space.
+            // Attribute grid: as many columns as the width allows. Real drives
+            // report 20-30 attributes, so a full-width terminal fits three or
+            // four and the grid stops being the thing that clips.
             const int nameW = 24;
             const int attrW = nameW + 2 + 7 + 2 + 8;   // name, cur/wor, raw
-            const bool twoCol = (W - 6) >= (attrW * 2 + 2);
-            const int cellW = twoCol ? (W - 6 - 2) / 2 : (W - 6);
+            const int gridCols = (std::max)(1, (std::min)(4, (W - 6 + 2) / (attrW + 2)));
+            const int cellW = gridCols > 1
+                ? (W - 6 - 2 * (gridCols - 1)) / gridCols
+                : (W - 6);
 
             auto attrCell = [&](const TuiData::SmAttributeInfo& a) {
                 std::string row = PadCell(a.name, nameW);
@@ -2540,26 +2543,25 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             };
 
             if (y < bottom) {
-                std::string hdr = attrHeader();
-                if (twoCol) hdr += "  " + attrHeader();
+                std::string hdr;
+                for (int c = 0; c < gridCols; ++c) {
+                    if (c) hdr += "  ";
+                    hdr += attrHeader();
+                }
                 mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(hdr, W - 6).c_str());
             }
-            if (twoCol) {
-                const int n = static_cast<int>(pd.attributes.size());
-                const int half = (n + 1) / 2;
-                for (int i = 0; i < half; ++i) {
-                    if (y >= bottom) break;
-                    std::string line = attrCell(pd.attributes[i]);
-                    if (i + half < n) line += "  " + attrCell(pd.attributes[i + half]);
-                    mvwprintw(stdscr, y++, x0 + 3, "%s",
-                              utf8_truncate(line, W - 6).c_str());
+            const int n = static_cast<int>(pd.attributes.size());
+            const int perCol = (n + gridCols - 1) / gridCols;
+            for (int i = 0; i < perCol; ++i) {
+                if (y >= bottom) break;
+                std::string line;
+                for (int c = 0; c < gridCols; ++c) {
+                    const int idx = i + c * perCol;
+                    if (idx >= n) break;
+                    if (c) line += "  ";
+                    line += attrCell(pd.attributes[idx]);
                 }
-            } else {
-                for (const auto& a : pd.attributes) {
-                    if (y >= bottom) break;
-                    mvwprintw(stdscr, y++, x0 + 3, "%s",
-                              utf8_truncate(attrCell(a), W - 6).c_str());
-                }
+                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(line, W - 6).c_str());
             }
             wattroff(stdscr, A_DIM);
             if (y < bottom) y++;
