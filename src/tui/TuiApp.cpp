@@ -407,47 +407,6 @@ static std::string utf8_truncate(const std::string& s, int maxW) {
     return out;
 }
 
-// Insert one filler cell after every two-column character. Only the wincon
-// buffer renderer needs this: it writes one cell per glyph while the console
-// paints the glyph across two, so without the filler every CJK character
-// silently shifts the rest of the row one column to the left.
-static bool PdcWideNeedsFiller() {
-#ifdef _WIN32
-    return !pdc_ansi;
-#else
-    return false;
-#endif
-}
-
-static std::string utf8_wide_fillers(const std::string& s) {
-    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
-    if (wlen == (size_t)-1) return s;
-    std::wstring wstr(wlen, L'\0');
-    std::mbstowcs(&wstr[0], s.c_str(), wlen);
-
-    std::string out;
-    for (size_t i = 0; i < wlen; ++i) {
-        const wchar_t wc = wstr[i];
-        const unsigned int uc = static_cast<unsigned int>(wc);
-        if (uc < 0x80) {
-            out += static_cast<char>(uc);
-        } else if (uc < 0x800) {
-            out += static_cast<char>(0xC0 | (uc >> 6));
-            out += static_cast<char>(0x80 | (uc & 0x3F));
-        } else if (uc < 0x10000) {
-            out += static_cast<char>(0xE0 | (uc >> 12));
-            out += static_cast<char>(0x80 | ((uc >> 6) & 0x3F));
-            out += static_cast<char>(0x80 | (uc & 0x3F));
-        } else {
-            out += static_cast<char>(0xF0 | (uc >> 18));
-            out += static_cast<char>(0x80 | ((uc >> 12) & 0x3F));
-            out += static_cast<char>(0x80 | ((uc >> 6) & 0x3F));
-            out += static_cast<char>(0x80 | (uc & 0x3F));
-        }
-        if (wcwidth(wc) == 2) out += ' ';
-    }
-    return out;
-}
 // ─────────────────────────────────────────────────────────────────────
 
 // Same result as a byte prefix for ASCII, which is every numeric row — but a
@@ -1497,7 +1456,6 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
             name = utf8_truncate(name, nameW);
             dw = utf8_display_width(name);
         }
-        if (PdcWideNeedsFiller()) name = utf8_wide_fillers(name);
         if (dw < nameW) name.append(nameW - dw, ' ');
 
         // Format PID
@@ -1516,10 +1474,18 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
         const bool selected = (p.pid == selPid_);
         if (selected) wattron(win, A_REVERSE);
 
-        char headBuf[512];
-        snprintf(headBuf, sizeof(headBuf), "%s %6s %4s ",
-                 name.c_str(), pidStr.c_str(), memStr.c_str());
-        mvwprintw(win, y + lines, x0 + 2, "%s", headBuf);
+        // The wincon backend re-positions the cursor absolutely at every
+        // attribute run, but a single run that carries UTF-8 bytes drifts from
+        // the console's own column count (one extra column per CJK character).
+        // Drawing the name and the numbers as separate runs, split by an
+        // invisible dim space, makes every field land where it belongs and
+        // leaves nothing behind when the row is erased.
+        mvwprintw(win, y + lines, x0 + 2, "%s", name.c_str());
+        wattron(win, A_DIM);
+        mvwaddch(win, y + lines, x0 + 2 + nameW, ' ');
+        wattroff(win, A_DIM);
+        mvwprintw(win, y + lines, x0 + 2 + nameW + 1, "%6s", pidStr.c_str());
+        mvwprintw(win, y + lines, x0 + 2 + nameW + 8, "%4s", memStr.c_str());
 
         // Column of "%5.1f%%": name (padded to nameW) + " %6s %4s " above.
         // Only out-of-range CPU% gets a color (severity table, #5); the
