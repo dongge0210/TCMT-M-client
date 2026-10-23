@@ -104,6 +104,21 @@ static constexpr double kBattWarn = 50.0, kBattCrit = 20.0;      // battery char
 static int utf8_display_width(const std::string& s);
 static std::string utf8_truncate(const std::string& s, int maxW);
 
+// Every detail overlay draws the same box: W columns wide counting both
+// corner cells, H rows tall, side borders at x0 and x0 + W - 1. The inline
+// version this replaces printed W + 2 dashes between the corners, so the top
+// and bottom rows ran two columns past the side borders and wrapped.
+static void DrawOverlayFrame(int y0, int x0, int W, int H) {
+    const std::string line =
+        "+" + std::string(static_cast<size_t>(W > 2 ? W - 2 : 0), '-') + "+";
+    mvwprintw(stdscr, y0, x0, "%s", line.c_str());
+    for (int r = y0 + 1; r < y0 + H - 1; r++) {
+        mvwprintw(stdscr, r, x0, "|");
+        mvwprintw(stdscr, r, x0 + W - 1, "|");
+    }
+    mvwprintw(stdscr, y0 + H - 1, x0, "%s", line.c_str());
+}
+
 // ============================================================================
 // TuiApp
 // ============================================================================
@@ -1623,13 +1638,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
 
     erase();
     // Outer frame (ASCII-safe for both curses and PDCurses)
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " %s ",
               utf8_truncate(Tr("settings.title"), W - 6).c_str());
 
@@ -1835,13 +1844,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     const int y0 = 2;
 
     erase();
-    std::string hlineStr(W, '-');  // NB: not 'hline' — that is a curses function
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " Key Bindings ");
 
     int y = y0 + 1;
@@ -1934,13 +1937,7 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
     const int y0 = std::max(1, (rows - H) / 2);
 
     erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " %s ",
               utf8_truncate(Tr("conn.title"), W - 6).c_str());
 
@@ -2035,13 +2032,7 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
     const int y0 = (std::max)(2, (rows - H) / 2);
 
     erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " CPU Details ");
 
     int y = y0 + 2;
@@ -2240,13 +2231,7 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     const int y0 = (std::max)(2, (rows - H) / 2);
 
     erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " GPU Details ");
 
     int y = y0 + 2;
@@ -2404,22 +2389,15 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    // Take the whole terminal: model names and the SMART grid are the content,
-    // there is no graph to absorb the extra space, and clipping to a smaller
-    // frame just hides attributes that already fit on screen.
-    const int W = (std::max)(20, cols - 2);
-    const int H = (std::max)(8, rows - 2);
-    const int x0 = (std::max)(0, (cols - W) / 2);
-    const int y0 = (std::max)(0, (rows - H) / 2);
+    // Edge to edge, like the main frame: model names and the SMART grid are
+    // the content, and any margin here just hides columns that already fit.
+    const int W = cols;
+    const int H = rows;
+    const int x0 = 0;
+    const int y0 = 0;
 
     erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " Disk Details ");
 
     int y = y0 + 2;
@@ -2527,13 +2505,25 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
                 ? (W - 6 - 2 * (gridCols - 1)) / gridCols
                 : (W - 6);
 
+            // Pad by display width, not bytes: translated names are Chinese on
+            // most drives, and a byte-count pad shifts every following column.
+            auto padDisplay = [](const std::string& s, int width) {
+                std::string out = s;
+                int w = utf8_display_width(out);
+                if (w > width) {
+                    out = utf8_truncate(out, width);
+                    w = utf8_display_width(out);
+                }
+                if (w < width) out.append(static_cast<size_t>(width - w), ' ');
+                return out;
+            };
             auto attrCell = [&](const TuiData::SmAttributeInfo& a) {
-                std::string row = PadCell(a.name, nameW);
+                std::string row = padDisplay(a.name, nameW);
                 snprintf(buf, sizeof(buf), "  %3u/%3u  %8llu",
                          a.current, a.worst,
                          static_cast<unsigned long long>(a.rawValue));
                 row += buf;
-                return PadCell(row, cellW);
+                return padDisplay(row, cellW);
             };
             auto attrHeader = [&]() {
                 std::string h = PadCell("Attribute", nameW);
@@ -2605,13 +2595,7 @@ void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
     const int y0 = (std::max)(2, (rows - H) / 2);
 
     erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " Battery Details ");
 
     int y = y0 + 2;
@@ -2770,13 +2754,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     const int y0 = (std::max)(2, (rows - H) / 2);
 
     erase();
-    std::string hlineStr(W, '-');
-    mvwprintw(stdscr, y0, x0, "%s", ("+" + hlineStr + "+").c_str());
-    for (int r = y0 + 1; r < y0 + H - 1; r++) {
-        mvwprintw(stdscr, r, x0, "|");
-        mvwprintw(stdscr, r, x0 + W - 1, "|");
-    }
-    mvwprintw(stdscr, y0 + H - 1, x0, "%s", ("+" + hlineStr + "+").c_str());
+    DrawOverlayFrame(y0, x0, W, H);
     mvwprintw(stdscr, y0, x0 + 3, " Network Details ");
 
     int y = y0 + 2;
