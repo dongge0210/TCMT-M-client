@@ -8,6 +8,7 @@
 #include "../Utils/WmiManager.h"
 #include <wbemidl.h>
 #include <pdh.h>
+#include <pdhmsg.h>   // PDH_MORE_DATA / PDH_CSTATUS_*: not pulled in by pdh.h here
 #include <cwctype>
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "pdh.lib")
