@@ -64,14 +64,12 @@ static int portable_wcswidth(const wchar_t* wcs, size_t n) {
 // ─────────────────────────────────────────────────────────────────────
 
 #ifdef _WIN32
-// PDCurses' wincon backend switches between two renderers. In VT mode
-// (Windows Terminal, ConEmu) the terminal itself advances two columns for a
-// CJK glyph; in legacy console-buffer mode (WriteConsoleOutput) the glyph
-// occupies two cells but the backend writes only one, so the glyph eats the
-// cell after it. Fixed-width fields need a filler cell in the latter case.
 extern "C" {
 extern bool pdc_ansi, pdc_wt, pdc_conemu;
 }
+// Declared rather than including <windows.h>: its min/max macros would
+// collide with the std:: calls in this file.
+extern "C" __declspec(dllimport) unsigned int __stdcall GetConsoleOutputCP(void);
 #endif
 
 namespace tcmt {
@@ -353,58 +351,51 @@ void TuiApp::DrawLabeledValue(WINDOW* win, int y, int x0, int maxW,
 }
 
 // ── UTF-8 display width helpers (CJK-aware) ──────────────────────────
+// Decode one code point from UTF-8 without going through the C locale:
+// mbstowcs decodes with whatever locale the CRT happens to have, and on a
+// GBK-locale Windows box it rejects UTF-8 outright and the width silently
+// falls back to the byte count — which is what pushed CJK rows two columns
+// out of line.
+static uint32_t Utf8Next(const std::string& s, size_t& i) {
+    const unsigned char c = static_cast<unsigned char>(s[i++]);
+    if (c < 0x80) return c;
+    int extra = (c >= 0xF0) ? 3 : (c >= 0xE0) ? 2 : (c >= 0xC0) ? 1 : 0;
+    uint32_t cp = c & (extra == 3 ? 0x07u : extra == 2 ? 0x0Fu : extra == 1 ? 0x1Fu : 0x3Fu);
+    while (extra-- > 0 && i < s.size())
+        cp = (cp << 6) | (static_cast<unsigned char>(s[i++]) & 0x3F);
+    return cp;
+}
+
+static int Utf8CodepointWidth(uint32_t cp) {
+    const int w = portable_wcwidth(static_cast<wchar_t>(cp));
+    return w < 0 ? 1 : w;
+}
+
 // Returns column display width of a UTF-8 string (2 for CJK chars).
 static int utf8_display_width(const std::string& s) {
-    if (s.empty()) return 0;
-    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
-    if (wlen == (size_t)-1) return (int)s.size();  // not valid UTF-8, fallback
-    std::wstring wstr(wlen, L'\0');
-    std::mbstowcs(&wstr[0], s.c_str(), wlen);
-    int w = wcswidth(wstr.c_str(), wlen);
-    return (w >= 0) ? w : (int)s.size();
+    int w = 0;
+    size_t i = 0;
+    while (i < s.size()) w += Utf8CodepointWidth(Utf8Next(s, i));
+    return w;
 }
 
 // Truncate a UTF-8 string so its display width ≤ maxW, appending "~" if cut.
+// Slices on code point boundaries only.
 static std::string utf8_truncate(const std::string& s, int maxW) {
     if (maxW < 1) return std::string();
     if (utf8_display_width(s) <= maxW) return s;
 
-    size_t wlen = std::mbstowcs(nullptr, s.c_str(), 0);
-    if (wlen == (size_t)-1) {
-        // Fallback: byte truncation
-        return s.substr(0, std::max(0, maxW - 1)) + "~";
-    }
-    std::wstring wstr(wlen, L'\0');
-    std::mbstowcs(&wstr[0], s.c_str(), wlen);
-
-    int targetW = maxW - 1;  // leave room for "~"
+    const int targetW = maxW - 1;  // leave room for "~"
     int curW = 0;
-    size_t i = 0;
-    for (; i < wlen; i++) {
-        int cw = wcwidth(wstr[i]);
-        if (cw < 0) cw = 1;
+    size_t i = 0, cut = 0;
+    while (i < s.size()) {
+        const size_t start = i;
+        const int cw = Utf8CodepointWidth(Utf8Next(s, i));
         if (curW + cw > targetW) break;
         curW += cw;
+        cut = i;
     }
-
-    // Convert wide chars back to UTF-8
-    std::string out;
-    for (size_t j = 0; j < i; j++) {
-        wchar_t wc = wstr[j];
-        unsigned int uc = (unsigned int)wc;
-        if (uc < 0x80)      { out += (char)uc; }
-        else if (uc < 0x800) { out += (char)(0xC0 | (uc >> 6));
-                                out += (char)(0x80 | (uc & 0x3F)); }
-        else if (uc < 0x10000) { out += (char)(0xE0 | (uc >> 12));
-                                out += (char)(0x80 | ((uc >> 6) & 0x3F));
-                                out += (char)(0x80 | (uc & 0x3F)); }
-        else                { out += (char)(0xF0 | (uc >> 18));
-                                out += (char)(0x80 | ((uc >> 12) & 0x3F));
-                                out += (char)(0x80 | ((uc >> 6) & 0x3F));
-                                out += (char)(0x80 | (uc & 0x3F)); }
-    }
-    out += "~";
-    return out;
+    return s.substr(0, cut) + "~";
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -3226,10 +3217,18 @@ void TuiApp::Run() {
     const char* curLocale = std::setlocale(LC_ALL, nullptr);
     // UCRT may report the locale as "...65001" instead of "...UTF-8", so the
     // code page number counts as well.
-    const bool utf8Locale = curLocale &&
+#ifdef _WIN32
+    // What decodes our output is the console code page (main.cpp sets it to
+    // UTF-8). The CRT locale can still be the ANSI one, which used to force
+    // the whole UI into ASCII fallback even though every glyph rendered.
+    const bool utf8Console = GetConsoleOutputCP() == 65001;
+#else
+    const bool utf8Console = false;
+#endif
+    const bool utf8Locale = utf8Console || (curLocale &&
         (std::strstr(curLocale, "UTF-8") != nullptr ||
          std::strstr(curLocale, "utf-8") != nullptr ||
-         std::strstr(curLocale, "65001") != nullptr);
+         std::strstr(curLocale, "65001") != nullptr));
     // i18n: TCMT_LANG > ui.language from config > active locale > en; non-UTF-8 forces en.
     // I18nSelect only looks at the "zh" prefix, so the saved config value
     // ("zh-Hans" / "en") rides the same slot as the locale.
@@ -3268,6 +3267,12 @@ void TuiApp::Run() {
 #endif
 
     consoleMode_ = asciiMode_ ? "ASCII" : "UTF-8";
+#ifdef _WIN32
+    // Show the locale that triggered the downgrade; without it the status row
+    // only says "ASCII" and the cause has to be guessed.
+    if (asciiMode_ && curLocale)
+        consoleMode_ += std::string(" (locale=") + curLocale + ")";
+#endif
 #ifdef __PDCURSES__
     consoleMode_ += std::string(" / ") + (pdc_wt ? "Windows Terminal"
                                           : pdc_conemu ? "ConEmu" : "conhost");
