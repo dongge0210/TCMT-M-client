@@ -2748,16 +2748,18 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    // Several Wi-Fi interfaces get one chart column each, so the box widens
-    // with the column count instead of squeezing every plot into 82 columns.
-    int wifiCharts = 0;
+    // More than one connected interface gets one chart column each, so the
+    // box widens with the column count instead of squeezing every plot into
+    // 82 columns. It used to plot adapter 0 only, which on a wired + wireless
+    // machine meant the other NIC never had a chart at all.
+    int trafficCols = 0;
     if (data.adapterHistory.size() == data.adapters.size()) {
         for (const auto& a : data.adapters) {
-            if (a.type.find("ireless") != std::string::npos && ++wifiCharts >= 3) break;
+            if ((!a.ip.empty() || a.speed > 0) && ++trafficCols >= 3) break;
         }
     }
-    if (wifiCharts < 2) wifiCharts = 0;
-    const int boxW = (wifiCharts > 0) ? (12 + 44 * wifiCharts) : 82;
+    if (trafficCols < 2) trafficCols = 0;
+    const int boxW = (trafficCols > 0) ? (12 + 44 * trafficCols) : 82;
     const int W = (std::min)(boxW, cols - 6);
     // Fill the terminal height: the traffic charts are the part that grows
     // with the box, so a tall window gets a real graph instead of two rows.
@@ -2825,7 +2827,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         const int wifiReserve = data.hasWiFi ? 7 : 0;
         const int btReserve = data.hasBluetooth ? 5 : 0;
         // A per-interface layout spends one more line on the adapter name.
-        int chartRows = (remaining - 6 - wifiReserve - btReserve - (wifiCharts > 0 ? 2 : 0)) / 2;
+        int chartRows = (remaining - 6 - wifiReserve - btReserve - (trafficCols > 0 ? 2 : 0)) / 2;
         if (chartRows < 2) chartRows = 2;
         if (chartRows > 14) chartRows = 14;
 
@@ -2927,12 +2929,12 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
             return peak;
         };
 
-        if (wifiCharts >= 2) {
-            // One column per Wi-Fi interface. Each keeps its own history and
-            // scale, so a busy 2.4 GHz link cannot flatten the plot beside it.
+        if (trafficCols >= 2) {
+            // One column per connected interface. Each keeps its own history
+            // and scale, so a busy link cannot flatten the plot beside it.
             std::vector<int> cols;
             for (size_t i = 0; i < data.adapters.size() && cols.size() < 3; ++i) {
-                if (data.adapters[i].type.find("ireless") != std::string::npos)
+                if (!data.adapters[i].ip.empty() || data.adapters[i].speed > 0)
                     cols.push_back(static_cast<int>(i));
             }
             const int perCol = (W - 6) / static_cast<int>(cols.size());
