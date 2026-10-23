@@ -2152,16 +2152,40 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 static uint64_t s_ulHist[tcmt::TuiData::NET_HISTORY_MAX] = {};
                 static int s_histPos = 0;
                 static int s_histLen = 0;
+                // Per-adapter rings: a machine with two Wi-Fi interfaces gets
+                // one chart column each instead of a single series that only
+                // ever carried adapter 0.
+                static constexpr int kMaxAdapterHist = 8;
+                static uint64_t s_adl[kMaxAdapterHist][tcmt::TuiData::NET_HISTORY_MAX] = {};
+                static uint64_t s_aul[kMaxAdapterHist][tcmt::TuiData::NET_HISTORY_MAX] = {};
+                static int s_apos[kMaxAdapterHist] = {};
+                static int s_alen[kMaxAdapterHist] = {};
                 if (!tuiData.adapters.empty()) {
                     s_dlHist[s_histPos] = tuiData.adapters[0].downloadSpeed;
                     s_ulHist[s_histPos] = tuiData.adapters[0].uploadSpeed;
                     s_histPos = (s_histPos + 1) % tcmt::TuiData::NET_HISTORY_MAX;
                     if (s_histLen < tcmt::TuiData::NET_HISTORY_MAX) ++s_histLen;
                 }
+                const int nAdapt = (std::min)(static_cast<int>(tuiData.adapters.size()),
+                                              kMaxAdapterHist);
+                for (int ai = 0; ai < nAdapt; ++ai) {
+                    s_adl[ai][s_apos[ai]] = tuiData.adapters[ai].downloadSpeed;
+                    s_aul[ai][s_apos[ai]] = tuiData.adapters[ai].uploadSpeed;
+                    s_apos[ai] = (s_apos[ai] + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                    if (s_alen[ai] < tcmt::TuiData::NET_HISTORY_MAX) ++s_alen[ai];
+                }
                 std::memcpy(tuiData.dlHistory, s_dlHist, sizeof(s_dlHist));
                 std::memcpy(tuiData.ulHistory, s_ulHist, sizeof(s_ulHist));
                 tuiData.dlHistoryPos = s_histPos;
                 tuiData.dlHistoryLen = s_histLen;
+                tuiData.adapterHistory.resize(static_cast<size_t>(nAdapt));
+                for (int ai = 0; ai < nAdapt; ++ai) {
+                    auto& h = tuiData.adapterHistory[ai];
+                    std::memcpy(h.dl, s_adl[ai], sizeof(h.dl));
+                    std::memcpy(h.ul, s_aul[ai], sizeof(h.ul));
+                    h.pos = s_apos[ai];
+                    h.len = s_alen[ai];
+                }
                 tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
                 if (ipcServer) {
                     auto ct = ipcServer->GetClientTypes();

@@ -2791,7 +2791,17 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         data = data_;
     }
 
-    const int W = (std::min)(82, cols - 6);
+    // Several Wi-Fi interfaces get one chart column each, so the box widens
+    // with the column count instead of squeezing every plot into 82 columns.
+    int wifiCharts = 0;
+    if (data.adapterHistory.size() == data.adapters.size()) {
+        for (const auto& a : data.adapters) {
+            if (a.type.find("ireless") != std::string::npos && ++wifiCharts >= 3) break;
+        }
+    }
+    if (wifiCharts < 2) wifiCharts = 0;
+    const int boxW = (wifiCharts > 0) ? (12 + 44 * wifiCharts) : 82;
+    const int W = (std::min)(boxW, cols - 6);
     // Fill the terminal height: the traffic charts are the part that grows
     // with the box, so a tall window gets a real graph instead of two rows.
     const int H = (std::max)(12, rows - 4);
@@ -2857,114 +2867,154 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         // splits evenly between the two charts.
         const int wifiReserve = data.hasWiFi ? 7 : 0;
         const int btReserve = data.hasBluetooth ? 5 : 0;
-        int chartRows = (remaining - 6 - wifiReserve - btReserve) / 2;
+        // A per-interface layout spends one more line on the adapter name.
+        int chartRows = (remaining - 6 - wifiReserve - btReserve - (wifiCharts > 0 ? 2 : 0)) / 2;
         if (chartRows < 2) chartRows = 2;
         if (chartRows > 14) chartRows = 14;
 
-        // 3-col left margin + 9-col value axis + 1-col gap + right margin.
-        const int graphW = (std::min)(W - 16, data.dlHistoryLen);
-        if (graphW >= 4) {
-            // Each direction gets its own scale. A shared one made the upload
-            // chart invisible whenever the download side had a single spike
-            // anywhere in the window.
-            uint64_t dlMax = 1, ulMax = 1;
-            for (int i = 0; i < data.dlHistoryLen; ++i) {
-                const int idx = (data.dlHistoryPos - 1 - i + TuiData::NET_HISTORY_MAX)
-                              % TuiData::NET_HISTORY_MAX;
-                if (data.dlHistory[idx] > dlMax) dlMax = data.dlHistory[idx];
-                if (data.ulHistory[idx] > ulMax) ulMax = data.ulHistory[idx];
+        // One D/U pair. cx/colW place it, so the same code draws the single
+        // tall chart and the per-interface columns. Returns the row after the
+        // pair's time axis.
+        auto drawChart = [&](int cx, int cy, int colW, const char* label,
+                             const uint64_t* hist, int pos,
+                             uint64_t now, uint64_t scale, int pair) -> int {
+            if (cy >= bottom) return cy;
+            char head[96];
+            snprintf(head, sizeof(head), "%s  %s", label, FormatRate(now).c_str());
+            wattron(stdscr, COLOR_PAIR(pair));
+            mvwprintw(stdscr, cy, cx, "%s", head);
+            cy++;
+
+            // Value axis: the scale's top value on the first row and the unit
+            // on the last, so the bars read without the header line.
+            const int axisW = 9;
+            const int barX = cx + axisW + 1;
+            const int graphW = (std::max)(4, colW - axisW - 1);
+            const char* unit = (scale >= 1000ull * 1000) ? "MB/s"
+                             : (scale >= 1000ull ? "KB/s" : "B/s");
+
+            const int levelsPerRow = 8;
+            for (int r = 0; r < chartRows && cy < bottom; ++r, ++cy) {
+                if (r == 0) {
+                    const std::string top = FormatRate(scale);
+                    wattron(stdscr, A_DIM);
+                    mvwprintw(stdscr, cy, cx, "%*s", axisW, top.c_str());
+                    wattroff(stdscr, A_DIM);
+                } else if (r == chartRows - 1) {
+                    const std::string zero = std::string("0 ") + unit;
+                    wattron(stdscr, A_DIM);
+                    mvwprintw(stdscr, cy, cx, "%*s", axisW, zero.c_str());
+                    wattroff(stdscr, A_DIM);
+                }
+
+                // Left boundary: one column of '|' from the peak down to zero,
+                // so the bar area reads as a chart and not as floating blocks.
+                wattron(stdscr, A_DIM);
+                mvwaddstr(stdscr, cy, barX - 1, "|");
+                wattroff(stdscr, A_DIM);
+
+                // Each cell holds 8 sublevels; the row's band from the bottom
+                // is (chartRows-1-r).
+                const uint64_t band = static_cast<uint64_t>(chartRows - 1 - r) * levelsPerRow;
+                std::string row;
+                row.reserve(static_cast<size_t>(graphW) * 3);
+                for (int c = 0; c < graphW; ++c) {
+                    const int idx = (pos - graphW + c
+                                     + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
+                    // Total fill in sublevels (0 .. chartRows*8).
+                    const int total = static_cast<int>(hist[idx] * chartRows * levelsPerRow / scale);
+                    int cell = total - static_cast<int>(band);
+                    if (cell > levelsPerRow) cell = levelsPerRow;
+                    if (cell < 0) cell = 0;
+                    row += BlockGlyph(cell);
+                }
+                mvwprintw(stdscr, cy, barX, "%s", row.c_str());
             }
+            wattroff(stdscr, COLOR_PAIR(pair));
 
-            auto drawChart = [&](const char* label, const uint64_t* hist,
-                                 uint64_t now, uint64_t scale, int pair) {
-                if (y >= bottom) return;
-                char head[96];
-                snprintf(head, sizeof(head), "%s  %s", label, FormatRate(now).c_str());
-                wattron(stdscr, COLOR_PAIR(pair));
-                mvwprintw(stdscr, y++, x0 + 3, "%s", head);
-
-                // Value axis: the scale's top value on the first row and the
-                // unit on the last, so the bars read without the header line.
-                const int axisW = 9;
-                const int barX = x0 + 3 + axisW + 1;
-                const char* unit = (scale >= 1000ull * 1000) ? "MB/s"
-                                 : (scale >= 1000ull ? "KB/s" : "B/s");
-
-                const int levelsPerRow = 8;
-                for (int r = 0; r < chartRows && y < bottom; ++r, ++y) {
-                    if (r == 0) {
-                        const std::string top = FormatRate(scale);
-                        wattron(stdscr, A_DIM);
-                        mvwprintw(stdscr, y, x0 + 3, "%*s", axisW, top.c_str());
-                        wattroff(stdscr, A_DIM);
-                    } else if (r == chartRows - 1) {
-                        const std::string zero = std::string("0 ") + unit;
-                        wattron(stdscr, A_DIM);
-                        mvwprintw(stdscr, y, x0 + 3, "%*s", axisW, zero.c_str());
-                        wattroff(stdscr, A_DIM);
-                    }
-
-                    // Left boundary: one column of '|' from the peak down to
-                    // zero, so the bar area reads as a chart and not as
-                    // floating blocks.
-                    wattron(stdscr, A_DIM);
-                    mvwaddstr(stdscr, y, barX - 1, "|");
-                    wattroff(stdscr, A_DIM);
-
-                    // Each cell holds 8 sublevels; the row's band from the
-                    // bottom is (chartRows-1-r).
-                    const uint64_t band = static_cast<uint64_t>(chartRows - 1 - r) * levelsPerRow;
-                    std::string row;
-                    row.reserve(static_cast<size_t>(graphW) * 3);
-                    for (int c = 0; c < graphW; ++c) {
-                        const int idx = (data.dlHistoryPos - graphW + c
-                                         + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
-                        // Total fill in sublevels (0 .. chartRows*8).
-                        const int total = static_cast<int>(hist[idx] * chartRows * levelsPerRow / scale);
-                        int cell = total - static_cast<int>(band);
-                        if (cell > levelsPerRow) cell = levelsPerRow;
-                        if (cell < 0) cell = 0;
-                        row += BlockGlyph(cell);
-                    }
-                    mvwprintw(stdscr, y, barX, "%s", row.c_str());
+            // Time axis: one column is one history sample, appended once per
+            // heavy frame (~the sample interval). Four ticks, the rightmost
+            // column being "now".
+            if (cy < bottom) {
+                const double colSec =
+                    (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0;
+                const int ticks = graphW >= 30 ? 4 : 2;
+                wattron(stdscr, A_DIM);
+                for (int t = 0; t < ticks; ++t) {
+                    const int c = (graphW - 1) - t * (graphW - 1) / (ticks - 1);
+                    const int secs = static_cast<int>((graphW - 1 - c) * colSec + 0.5);
+                    char lb[16];
+                    if (secs == 0) snprintf(lb, sizeof(lb), "now");
+                    else snprintf(lb, sizeof(lb), "-%ds", secs);
+                    int lx = barX + c;
+                    const int maxX = barX + graphW - static_cast<int>(std::strlen(lb));
+                    if (lx > maxX) lx = maxX;
+                    if (lx < barX) lx = barX;
+                    mvwprintw(stdscr, cy, lx, "%s", lb);
                 }
-                wattroff(stdscr, COLOR_PAIR(pair));
+                wattroff(stdscr, A_DIM);
+                cy++;
+            }
+            return cy;
+        };
 
-                // Time axis: one column is one history sample, appended once
-                // per heavy frame (~the sample interval). Four ticks, the
-                // rightmost column being "now".
-                if (y < bottom) {
-                    const double colSec =
-                        (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0;
-                    const int ticks = graphW >= 30 ? 4 : 2;
-                    wattron(stdscr, A_DIM);
-                    for (int t = 0; t < ticks; ++t) {
-                        const int c = (graphW - 1) - t * (graphW - 1) / (ticks - 1);
-                        const int secs = static_cast<int>((graphW - 1 - c) * colSec + 0.5);
-                        char lb[16];
-                        if (secs == 0) snprintf(lb, sizeof(lb), "now");
-                        else snprintf(lb, sizeof(lb), "-%ds", secs);
-                        int lx = barX + c;
-                        const int maxX = x0 + W - 3 - static_cast<int>(std::strlen(lb));
-                        if (lx > maxX) lx = maxX;
-                        if (lx < barX) lx = barX;
-                        mvwprintw(stdscr, y, lx, "%s", lb);
-                    }
-                    wattroff(stdscr, A_DIM);
-                    y++;
-                }
-            };
+        // Each direction gets its own scale. A shared one made the upload
+        // chart invisible whenever the download side had a single spike.
+        auto peakOf = [](const uint64_t* hist, int pos, int len) {
+            uint64_t peak = 1;
+            for (int i = 0; i < len; ++i) {
+                const int idx = (pos - 1 - i + TuiData::NET_HISTORY_MAX)
+                              % TuiData::NET_HISTORY_MAX;
+                if (hist[idx] > peak) peak = hist[idx];
+            }
+            return peak;
+        };
 
-            const int last = (data.dlHistoryPos - 1 + TuiData::NET_HISTORY_MAX)
-                           % TuiData::NET_HISTORY_MAX;
-            drawChart("D", data.dlHistory, data.dlHistory[last], dlMax, 6);
-            drawChart("U", data.ulHistory, data.ulHistory[last], ulMax, 2);
+        if (wifiCharts >= 2) {
+            // One column per Wi-Fi interface. Each keeps its own history and
+            // scale, so a busy 2.4 GHz link cannot flatten the plot beside it.
+            std::vector<int> cols;
+            for (size_t i = 0; i < data.adapters.size() && cols.size() < 3; ++i) {
+                if (data.adapters[i].type.find("ireless") != std::string::npos)
+                    cols.push_back(static_cast<int>(i));
+            }
+            const int perCol = (W - 6) / static_cast<int>(cols.size());
+            int endY = y;
+            for (size_t j = 0; j < cols.size(); ++j) {
+                const auto& h = data.adapterHistory[static_cast<size_t>(cols[j])];
+                if (h.len < 2) continue;
+                const int cx = x0 + 3 + static_cast<int>(j) * perCol;
+                mvwprintw(stdscr, y, cx, "%s",
+                          utf8_truncate(data.adapters[static_cast<size_t>(cols[j])].name,
+                                        perCol - 2).c_str());
+                const int last = (h.pos - 1 + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+                int cy = drawChart(cx, y + 1, perCol - 1, "D", h.dl, h.pos,
+                                   h.dl[last], peakOf(h.dl, h.pos, h.len), 6);
+                cy = drawChart(cx, cy, perCol - 1, "U", h.ul, h.pos,
+                               h.ul[last], peakOf(h.ul, h.pos, h.len), 2);
+                if (cy > endY) endY = cy;
+            }
+            y = endY;
+        } else {
+            // 3-col left margin + 9-col value axis + 1-col gap + right margin.
+            const int colW = (std::min)(W - 6, data.dlHistoryLen + 10);
+            if (colW - 10 >= 4) {
+                const uint64_t dlMax = peakOf(data.dlHistory, data.dlHistoryPos, data.dlHistoryLen);
+                const uint64_t ulMax = peakOf(data.ulHistory, data.dlHistoryPos, data.dlHistoryLen);
+                const int last = (data.dlHistoryPos - 1 + TuiData::NET_HISTORY_MAX)
+                               % TuiData::NET_HISTORY_MAX;
+                int cy = drawChart(x0 + 3, y, colW, "D", data.dlHistory, data.dlHistoryPos,
+                                   data.dlHistory[last], dlMax, 6);
+                cy = drawChart(x0 + 3, cy, colW, "U", data.ulHistory, data.dlHistoryPos,
+                               data.ulHistory[last], ulMax, 2);
+                y = cy;
 
-            snprintf(buf, sizeof(buf), "now %s down / %s up   peak D %s   U %s",
-                     FormatRate(data.dlHistory[last]).c_str(),
-                     FormatRate(data.ulHistory[last]).c_str(),
-                     FormatRate(dlMax).c_str(), FormatRate(ulMax).c_str());
-            emitDim(buf);
+                snprintf(buf, sizeof(buf), "now %s down / %s up   peak D %s   U %s",
+                         FormatRate(data.dlHistory[last]).c_str(),
+                         FormatRate(data.ulHistory[last]).c_str(),
+                         FormatRate(dlMax).c_str(), FormatRate(ulMax).c_str());
+                emitDim(buf);
+            }
         }
         if (y < bottom) y++;
     }
@@ -3013,15 +3063,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
             radio += "Tx " + std::to_string(static_cast<int>(data.wifiTxRate)) + " Mbps";
         }
         if (!radio.empty()) emit(radio);
-        if (!data.wifiChipset.empty() || !data.wifiBSSID.empty()) {
-            std::string hw;
-            if (!data.wifiChipset.empty()) hw = "Chip: " + data.wifiChipset;
-            if (!data.wifiBSSID.empty()) {
-                if (!hw.empty()) hw += "   ";
-                hw += "BSSID " + data.wifiBSSID;
-            }
-            emit(hw);
-        }
+        if (!data.wifiChipset.empty()) emit("Chip: " + data.wifiChipset);
         if (y < bottom) y++;
     }
 

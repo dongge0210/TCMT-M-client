@@ -396,6 +396,17 @@ struct TuiData {
     int dlHistoryPos = 0;
     int dlHistoryLen = 0;
 
+    // One history ring per adapter, index-aligned with `adapters`. The
+    // details page draws a column per wireless adapter; the single ring above
+    // stays as the total/primary series and the fallback when this is empty.
+    struct AdapterHistory {
+        uint64_t dl[NET_HISTORY_MAX] = {};
+        uint64_t ul[NET_HISTORY_MAX] = {};
+        int pos = 0;
+        int len = 0;
+    };
+    std::vector<AdapterHistory> adapterHistory;
+
     // Timestamp
     std::string timestamp;
 };
