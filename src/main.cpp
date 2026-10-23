@@ -2192,6 +2192,31 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     h.pos = s_apos[ai];
                     h.len = s_alen[ai];
                 }
+
+                // ─── Disk throughput history ───
+                // Same static-ring pattern as the adapters: one series per
+                // physical disk, index-aligned with tuiData.physicalDisks.
+                static constexpr int kMaxDiskHist = 8;
+                static uint64_t s_drd[kMaxDiskHist][tcmt::TuiData::NET_HISTORY_MAX] = {};
+                static uint64_t s_dwr[kMaxDiskHist][tcmt::TuiData::NET_HISTORY_MAX] = {};
+                static int s_dpos[kMaxDiskHist] = {};
+                static int s_dlen[kMaxDiskHist] = {};
+                const int nDiskHist = (std::min)(
+                    static_cast<int>(tuiData.physicalDisks.size()), kMaxDiskHist);
+                for (int k = 0; k < nDiskHist; ++k) {
+                    s_drd[k][s_dpos[k]] = tuiData.physicalDisks[k].readBps;
+                    s_dwr[k][s_dpos[k]] = tuiData.physicalDisks[k].writeBps;
+                    s_dpos[k] = (s_dpos[k] + 1) % tcmt::TuiData::NET_HISTORY_MAX;
+                    if (s_dlen[k] < tcmt::TuiData::NET_HISTORY_MAX) ++s_dlen[k];
+                }
+                tuiData.diskHistory.resize(static_cast<size_t>(nDiskHist));
+                for (int k = 0; k < nDiskHist; ++k) {
+                    auto& h = tuiData.diskHistory[k];
+                    std::memcpy(h.rd, s_drd[k], sizeof(h.rd));
+                    std::memcpy(h.wr, s_dwr[k], sizeof(h.wr));
+                    h.pos = s_dpos[k];
+                    h.len = s_dlen[k];
+                }
                 tuiData.connectionCount = ipcServer ? ipcServer->GetClientCount() : 0;
                 if (ipcServer) {
                     auto ct = ipcServer->GetClientTypes();

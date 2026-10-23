@@ -1835,6 +1835,7 @@ void TuiApp::RenderHelpPage(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || ch == '?') {
         helpPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -1922,6 +1923,7 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || isEnter) {
         connListPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -2008,6 +2010,7 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
         cpuPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -2223,6 +2226,7 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
         gpuPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -2381,6 +2385,7 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
         diskPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -2448,7 +2453,8 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
 
     if (!data.physicalDisks.empty()) {
         section("Physical disks");
-        for (const auto& pd : data.physicalDisks) {
+        for (size_t di = 0; di < data.physicalDisks.size(); ++di) {
+            const auto& pd = data.physicalDisks[di];
             if (y + 1 >= bottom) break;
             std::string head = pd.model;
             if (!pd.diskType.empty()) head += "  " + pd.diskType;
@@ -2495,12 +2501,51 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
                 wattroff(stdscr, A_DIM);
             }
 
-            // Live throughput, sampled once per tick. R and W are kept on
-            // fixed columns so a changing rate does not shift the other one.
+            // Live throughput with a one-row history graph. Each cell is one
+            // sample and eight levels, scaled to the peak of the window, so a
+            // quiet disk stays flat instead of showing a bouncing axis.
+            const TuiData::DiskHistory* hist =
+                (di < data.diskHistory.size()) ? &data.diskHistory[di] : nullptr;
+            auto sparkLine = [&](const char* label, uint64_t now,
+                                 const uint64_t* series) -> std::string {
+                // Fixed-width head so the two graphs start on the same column
+                // even when the rates differ in length by a digit or a unit.
+                char head[64];
+                snprintf(head, sizeof(head), "%-5s %10s   ", label,
+                         FormatRate(now).c_str());
+                std::string line = head;
+                if (!hist || hist->len < 2) return line;
+                uint64_t peak = 1;
+                for (int i = 0; i < hist->len; ++i) {
+                    const int idx = (hist->pos - 1 - i + TuiData::NET_HISTORY_MAX)
+                                  % TuiData::NET_HISTORY_MAX;
+                    if (series[idx] > peak) peak = series[idx];
+                }
+                line += "   ";
+                const int cap = (std::max)(8, W - 6 - 20);
+                const int width = (std::min)(hist->len, cap);
+                for (int c = 0; c < width; ++c) {
+                    const int idx = (hist->pos - width + c
+                                     + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
+                    int level = static_cast<int>(series[idx] * 8 / peak);
+                    if (level > 8) level = 8;
+                    line += BlockGlyph(level);
+                }
+                return line;
+            };
             if (y < bottom) {
-                std::string rates = "Read " + FormatRate(pd.readBps)
-                                  + "   Write " + FormatRate(pd.writeBps);
-                mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(rates, W - 6).c_str());
+                mvwprintw(stdscr, y++, x0 + 3, "%s",
+                          utf8_truncate(sparkLine("Read ", pd.readBps,
+                                                  hist ? hist->rd : nullptr), W - 6).c_str());
+            }
+            if (y < bottom && hist) {
+                mvwprintw(stdscr, y++, x0 + 3, "%s",
+                          utf8_truncate(sparkLine("Write", pd.writeBps, hist->wr), W - 6).c_str());
+            } else if (y < bottom) {
+                char wh[64];
+                snprintf(wh, sizeof(wh), "%-5s %10s   ", "Write",
+                         FormatRate(pd.writeBps).c_str());
+                mvwprintw(stdscr, y++, x0 + 3, "%s", wh);
             }
 
             wattron(stdscr, A_DIM);
@@ -2577,6 +2622,7 @@ void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
         batteryPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -2722,6 +2768,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     if (ch == 27 || ch == 'q' || ch == 'Q' || ch == ' ' || isEnter) {
         networkPage_ = false;
         clear();
+        touchwin(stdscr);   // wide-glyph halves survive clear() alone on PDCurses
         return;
     }
 
@@ -3495,22 +3542,34 @@ void TuiApp::Run() {
         // Space expands the focused panel. CPU and GPU have detail views; a
         // double-click on either arrives here as a synthetic space.
         if (ch == ' ') {
+            bool pageOpened = false;
             if (focusedPanel_ == PanelId::Cpu) {
                 cpuPage_ = true;
                 clear();
+                pageOpened = true;
             } else if (focusedPanel_ == PanelId::Gpu) {
                 gpuPage_ = true;
                 clear();
+                pageOpened = true;
             } else if (focusedPanel_ == PanelId::Disk) {
                 diskPage_ = true;
                 clear();
+                pageOpened = true;
             } else if (focusedPanel_ == PanelId::Power) {
                 batteryPage_ = true;
                 clear();
+                pageOpened = true;
             } else if (focusedPanel_ == PanelId::Network) {
                 networkPage_ = true;
                 clear();
+                pageOpened = true;
             }
+            // PDCurses counts one cell per UTF-8 byte, so the second column
+            // of a wide glyph lands in a cell it believes is blank and never
+            // repaints — the leftover half-glyph stays on screen. Touching
+            // the window makes the first frame of the page rewrite every
+            // cell, which is exactly what clear() alone fails to do.
+            if (pageOpened) touchwin(stdscr);
         }
 
         // Dashboard-local keys need the current snapshot, so they are

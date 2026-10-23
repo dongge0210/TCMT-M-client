@@ -410,6 +410,17 @@ struct TuiData {
     };
     std::vector<AdapterHistory> adapterHistory;
 
+    // One history ring per physical disk, index-aligned with `physicalDisks`.
+    // The details page turns it into read/write charts; empty until the
+    // second throughput sample.
+    struct DiskHistory {
+        uint64_t rd[NET_HISTORY_MAX] = {};
+        uint64_t wr[NET_HISTORY_MAX] = {};
+        int pos = 0;
+        int len = 0;
+    };
+    std::vector<DiskHistory> diskHistory;
+
     // Timestamp
     std::string timestamp;
 };
