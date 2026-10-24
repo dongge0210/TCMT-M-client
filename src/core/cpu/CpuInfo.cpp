@@ -8,7 +8,9 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <intrin.h>
+#include <algorithm>
 #include <climits>
+#include <vector>
 #include <pdh.h>
 
 #pragma comment(lib, "pdh.lib")
@@ -186,22 +188,37 @@ void CpuInfo::DetectCores() {
         return;
     }
 
+    // PROCESSOR_RELATIONSHIP.EfficiencyClass: a higher value means more
+    // performance and less efficiency, so the P cores carry the maximum
+    // class and the E cores the minimum (on Alder Lake that is 1 and 0).
+    // The name reads backwards; treating 1 as E flipped every count.
+    std::vector<BYTE> classes;
     BYTE* ptr = buffer.data();
     DWORD offset = 0;
     while (offset < bufferSize) {
         auto* info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(ptr + offset);
         if (info->Size == 0) break;
-        if (info->Relationship == RelationProcessorCore) {
-            // EfficiencyClass: 0=unknown, 1=E-core, 2=P-core (Win10 21H2+)
-            if (info->Processor.EfficiencyClass == 1)
-                smallCores++;
-            else
-                largeCores++;
-        }
+        if (info->Relationship == RelationProcessorCore)
+            classes.push_back(info->Processor.EfficiencyClass);
         offset += info->Size;
     }
 
-    // If no distinction found (pre-Win10 or non-hybrid), treat all as P-core
+    if (!classes.empty()) {
+        const BYTE maxClass = *std::max_element(classes.begin(), classes.end());
+        const BYTE minClass = *std::min_element(classes.begin(), classes.end());
+        if (maxClass == minClass) {
+            // Homogeneous (or pre-Win10): every core is a performance core.
+            largeCores = static_cast<int>(classes.size());
+            smallCores = 0;
+        } else {
+            for (BYTE c : classes) {
+                if (c == maxClass) largeCores++;
+                else if (c == minClass) smallCores++;
+            }
+        }
+    }
+
+    // If nothing was parsed, treat all cores as P.
     if (largeCores == 0) {
         largeCores = totalCores;
         smallCores = 0;
@@ -311,14 +328,17 @@ const std::vector<CpuInfo::CoreSample>& CpuInfo::SamplePerCore() {
                 }
             }
         }
-        // Lower EfficiencyClass = faster core. Comparing against the minimum
-        // keeps the split right whether the part numbers P cores 0 and E
-        // cores 1, or the other way around.
-        int minClass = INT_MAX;
-        for (const auto& c : coreTopology)
+        // Higher EfficiencyClass = faster core (Microsoft's definition, and
+        // Alder Lake reports 1 for P cores, 0 for E cores). Everything below
+        // the maximum is an E core; a homogeneous system has no maximum
+        // spread at all, so nothing is marked E.
+        int maxClass = INT_MIN, minClass = INT_MAX;
+        for (const auto& c : coreTopology) {
+            if (c.efficiencyClass > maxClass) maxClass = c.efficiencyClass;
             if (c.efficiencyClass < minClass) minClass = c.efficiencyClass;
+        }
         for (auto& c : coreTopology)
-            c.isE = c.efficiencyClass > minClass;
+            c.isE = (maxClass != minClass) && (c.efficiencyClass < maxClass);
     }
     if (coreTopology.empty()) return coreSamples;
 
