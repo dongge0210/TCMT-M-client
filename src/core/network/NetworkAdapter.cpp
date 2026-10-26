@@ -2,6 +2,39 @@
 #include "../Utils/Logger.h"
 #include "../Utils/WinUtils.h"
 
+#include <map>
+#include <string>
+#include <tuple>
+
+// Per-interface throughput, shared by all three platform implementations. The
+// counters are cumulative, so a sample is (now - prev) / elapsed. Two things
+// have already gone wrong here, which is why the arithmetic lives in one
+// place: a counter that shrinks means the interface restarted (link down,
+// adapter re-enumerated) and must read as zero instead of wrapping the
+// uint64 into a ~1.8e19 spike, and a zero interval must not divide. The key
+// is the normalised MAC on Windows and the interface name elsewhere; the two
+// forms cannot collide.
+using ThroughputCache = std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>>;
+static ThroughputCache g_throughputCache;
+
+static void ThroughputDelta(const std::string& key, uint64_t rx, uint64_t tx,
+                            uint64_t nowMs, uint64_t& downBps, uint64_t& upBps) {
+    downBps = 0;
+    upBps = 0;
+    const auto it = g_throughputCache.find(key);
+    if (it != g_throughputCache.end()) {
+        const uint64_t prevMs = std::get<2>(it->second);
+        if (nowMs > prevMs) {
+            const uint64_t prevRx = std::get<0>(it->second);
+            const uint64_t prevTx = std::get<1>(it->second);
+            const uint64_t dt = nowMs - prevMs;
+            downBps = (rx >= prevRx ? rx - prevRx : 0) * 1000 / dt;
+            upBps = (tx >= prevTx ? tx - prevTx : 0) * 1000 / dt;
+        }
+    }
+    g_throughputCache[key] = {rx, tx, nowMs};
+}
+
 #ifdef TCMT_WINDOWS
 #include "WmiManager.h"
 // ======================== Windows Implementation ========================
@@ -22,10 +55,6 @@
 #include <map>
 #include <chrono>
 #include <tuple>
-
-// Static cache for network throughput delta calculation (key: normalized MAC address)
-// Stores {prev_rx_bytes, prev_tx_bytes, timestamp_ms}
-static std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> g_throughputCache;
 
 static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters) {
     PMIB_IF_TABLE2 table = nullptr;
@@ -62,18 +91,8 @@ static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters)
             uint64_t rx = row.InOctets;
             uint64_t tx = row.OutOctets;
 
-            auto it = g_throughputCache.find(macKey);
-            if (it != g_throughputCache.end()) {
-                uint64_t prevRx = std::get<0>(it->second);
-                uint64_t prevTx = std::get<1>(it->second);
-                uint64_t prevTime = std::get<2>(it->second);
-                uint64_t dt = now - prevTime;
-                if (dt > 0) {
-                    adapters[idx].downloadSpeed = (rx - prevRx) * 1000 / dt; // bytes/sec
-                    adapters[idx].uploadSpeed = (tx - prevTx) * 1000 / dt;
-                }
-            }
-            g_throughputCache[macKey] = {rx, tx, now};
+            ThroughputDelta(macKey, rx, tx, now,
+                            adapters[idx].downloadSpeed, adapters[idx].uploadSpeed);
             break;
         }
     }
@@ -533,9 +552,6 @@ void NetworkAdapter::QueryAdapterInfo() {
     UpdateThroughput(this->adapters);
 }
 
-// macOS throughput delta static cache
-static std::map<std::string, std::tuple<uint64_t, uint64_t, uint64_t>> g_throughputCacheMac;
-
 static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters) {
     struct ifaddrs* ifaddr = nullptr;
     if (getifaddrs(&ifaddr) != 0) return;
@@ -556,18 +572,8 @@ static void UpdateThroughput(std::vector<NetworkAdapter::AdapterInfo>& adapters)
             uint64_t rx = ifData->ifi_ibytes;
             uint64_t tx = ifData->ifi_obytes;
 
-            auto it = g_throughputCacheMac.find(adapter.name);
-            if (it != g_throughputCacheMac.end()) {
-                uint64_t prevRx = std::get<0>(it->second);
-                uint64_t prevTx = std::get<1>(it->second);
-                uint64_t prevTime = std::get<2>(it->second);
-                uint64_t dt = now - prevTime;
-                if (dt > 0) {
-                    adapter.downloadSpeed = (rx - prevRx) * 1000 / dt; // bytes/sec
-                    adapter.uploadSpeed = (tx - prevTx) * 1000 / dt;
-                }
-            }
-            g_throughputCacheMac[adapter.name] = {rx, tx, now};
+            ThroughputDelta(adapter.name, rx, tx, static_cast<uint64_t>(now),
+                            adapter.downloadSpeed, adapter.uploadSpeed);
             break;
         }
     }
@@ -754,12 +760,6 @@ std::string NetworkAdapter::FormatSpeed(uint64_t bitsPerSecond) const {
     return FormatSpd(bitsPerSecond);
 }
 
-// Throughput delta cache. It must outlive the NetworkAdapter instance:
-// NetworkLoop constructs a new adapter for every sample, so instance members
-// would start empty and every delta would be discarded. Key: interface name.
-// Value: {rx bytes, tx bytes, steady-clock milliseconds}.
-static std::map<std::string, std::tuple<uint64_t, uint64_t, int64_t>>
-    g_throughputCacheLinux;
 
 void NetworkAdapter::QueryAdapterInfo() {
     struct ifaddrs* ifaddr = nullptr;
@@ -860,23 +860,9 @@ void NetworkAdapter::QueryAdapterInfo() {
         // Throughput from /proc/net/dev deltas.
         const auto counter = counters.find(ifname);
         if (counter != counters.end()) {
-            const uint64_t rxBytes = counter->second.first;
-            const uint64_t txBytes = counter->second.second;
-            const auto prev = g_throughputCacheLinux.find(ifname);
-            if (prev != g_throughputCacheLinux.end()) {
-                const int64_t prevMs = std::get<2>(prev->second);
-                const uint64_t dt =
-                    now > prevMs ? static_cast<uint64_t>(now - prevMs) : 0;
-                if (dt > 0) {
-                    const uint64_t prevRx = std::get<0>(prev->second);
-                    const uint64_t prevTx = std::get<1>(prev->second);
-                    const uint64_t rxDelta = rxBytes >= prevRx ? rxBytes - prevRx : 0;
-                    const uint64_t txDelta = txBytes >= prevTx ? txBytes - prevTx : 0;
-                    info.downloadSpeed = rxDelta * 1000 / dt;
-                    info.uploadSpeed = txDelta * 1000 / dt;
-                }
-            }
-            g_throughputCacheLinux[ifname] = {rxBytes, txBytes, now};
+            ThroughputDelta(ifname, counter->second.first, counter->second.second,
+                            static_cast<uint64_t>(now),
+                            info.downloadSpeed, info.uploadSpeed);
         }
 
         adapters.push_back(std::move(info));
