@@ -2891,10 +2891,43 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     // box widens with the column count instead of squeezing every plot into
     // 82 columns. It used to plot adapter 0 only, which on a wired + wireless
     // machine meant the other NIC never had a chart at all.
+    // Which adapter the Wi-Fi radio belongs to. Windows reports the WLAN
+    // interface with its driver description, which is the same string the
+    // adapter list uses as the name, so that match is exact. macOS describes
+    // the chip instead ("BCM4387"), so fall back to the adapter typed
+    // wireless — there is normally only one.
+    int wifiAdapter = -1;
+    if (data.hasWiFi) {
+        for (size_t i = 0; i < data.adapters.size(); ++i) {
+            if (!data.wifiChipset.empty() && data.adapters[i].name == data.wifiChipset) {
+                wifiAdapter = static_cast<int>(i);
+                break;
+            }
+        }
+        if (wifiAdapter < 0) {
+            for (size_t i = 0; i < data.adapters.size(); ++i) {
+                const std::string& t = data.adapters[i].type;
+                if (t.find("Wireless") != std::string::npos ||
+                    t.find("Wi-Fi") != std::string::npos) {
+                    wifiAdapter = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+    }
+    // A radio that is off or unassociated carries no traffic; its column
+    // would only ever be two flat charts, so leave it out.
+    const bool wifiOffline = data.hasWiFi && (!data.wifiPowerOn || !data.wifiConnected);
+    auto hasTrafficColumn = [&](size_t i) {
+        const auto& a = data.adapters[i];
+        if (a.ip.empty() && a.speed == 0) return false;
+        return !(static_cast<int>(i) == wifiAdapter && wifiOffline);
+    };
+
     int trafficCols = 0;
     if (data.adapterHistory.size() == data.adapters.size()) {
-        for (const auto& a : data.adapters) {
-            if ((!a.ip.empty() || a.speed > 0) && ++trafficCols >= 3) break;
+        for (size_t i = 0; i < data.adapters.size(); ++i) {
+            if (hasTrafficColumn(i) && ++trafficCols >= 3) break;
         }
     }
     if (trafficCols < 2) trafficCols = 0;
@@ -2928,31 +2961,6 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
     };
     char buf[192];
-
-    // Which adapter the Wi-Fi radio belongs to. Windows reports the WLAN
-    // interface with its driver description, which is the same string the
-    // adapter list uses as the name, so that match is exact. macOS describes
-    // the chip instead ("BCM4387"), so fall back to the adapter typed
-    // wireless — there is normally only one.
-    int wifiAdapter = -1;
-    if (data.hasWiFi) {
-        for (size_t i = 0; i < data.adapters.size(); ++i) {
-            if (!data.wifiChipset.empty() && data.adapters[i].name == data.wifiChipset) {
-                wifiAdapter = static_cast<int>(i);
-                break;
-            }
-        }
-        if (wifiAdapter < 0) {
-            for (size_t i = 0; i < data.adapters.size(); ++i) {
-                const std::string& t = data.adapters[i].type;
-                if (t.find("Wireless") != std::string::npos ||
-                    t.find("Wi-Fi") != std::string::npos) {
-                    wifiAdapter = static_cast<int>(i);
-                    break;
-                }
-            }
-        }
-    }
 
     if (!data.adapters.empty()) {
         section("Adapters");
@@ -3011,8 +3019,7 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
             // and scale, so a busy link cannot flatten the plot beside it.
             std::vector<int> cols;
             for (size_t i = 0; i < data.adapters.size() && cols.size() < 3; ++i) {
-                if (!data.adapters[i].ip.empty() || data.adapters[i].speed > 0)
-                    cols.push_back(static_cast<int>(i));
+                if (hasTrafficColumn(i)) cols.push_back(static_cast<int>(i));
             }
             const int perCol = (W - 6) / static_cast<int>(cols.size());
             int endY = y;
