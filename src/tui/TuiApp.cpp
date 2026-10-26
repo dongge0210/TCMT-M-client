@@ -2613,10 +2613,10 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
                     const int last = (h.pos - 1 + TuiData::NET_HISTORY_MAX)
                                    % TuiData::NET_HISTORY_MAX;
                     int cy = DrawRateChart(cx, y + 1, perCol - 1, chartRows, bottom, "Read",
-                                           h.rd, h.pos, h.rd[last],
+                                           h.rd, h.pos, h.len, h.rd[last],
                                            PeakOf(h.rd, h.pos, h.len), 6, colSec);
                     DrawRateChart(cx, cy, perCol - 1, chartRows, bottom, "Write",
-                                  h.wr, h.pos, h.wr[last],
+                                  h.wr, h.pos, h.len, h.wr[last],
                                   PeakOf(h.wr, h.pos, h.len), 2, colSec);
                 }
             }
@@ -2781,7 +2781,7 @@ void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
 // and disk pages both call this, so the two read the same; the disk charts are
 // simply given fewer rows. Returns the row after the time axis.
 int TuiApp::DrawRateChart(int cx, int cy, int colW, int rows, int bottom,
-                          const char* label, const uint64_t* hist, int pos,
+                          const char* label, const uint64_t* hist, int pos, int len,
                           uint64_t now, uint64_t scale, int pair, double colSec) {
     if (cy >= bottom) return cy;
     char head[96];
@@ -2800,7 +2800,11 @@ int TuiApp::DrawRateChart(int cx, int cy, int colW, int rows, int bottom,
     const int axisW = (std::max)(9, (std::max)(static_cast<int>(topLabel.size()),
                                                static_cast<int>(zeroLabel.size())));
     const int barX = cx + axisW + 1;
-    const int graphW = (std::max)(4, colW - axisW - 1);
+    // Never wider than the history it holds. The ring is read modulo its
+    // length, so a wider graph wraps around and draws the older samples a
+    // second time — seen as "the left half repeats the right half".
+    int graphW = (std::max)(4, colW - axisW - 1);
+    if (len > 0 && graphW > len) graphW = len;
 
     const int levelsPerRow = 8;
     for (int r = 0; r < rows && cy < bottom; ++r, ++cy) {
@@ -3001,9 +3005,9 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         // tall chart and the per-interface columns. Returns the row after the
         // pair's time axis.
         auto drawChart = [&](int cx, int cy, int colW, const char* label,
-                             const uint64_t* hist, int pos,
+                             const uint64_t* hist, int pos, int len,
                              uint64_t now, uint64_t scale, int pair) -> int {
-            return DrawRateChart(cx, cy, colW, chartRows, bottom, label, hist, pos,
+            return DrawRateChart(cx, cy, colW, chartRows, bottom, label, hist, pos, len,
                                  now, scale, pair,
                                  (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0);
         };
@@ -3031,9 +3035,9 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
                           utf8_truncate(data.adapters[static_cast<size_t>(cols[j])].name,
                                         perCol - 2).c_str());
                 const int last = (h.pos - 1 + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
-                int cy = drawChart(cx, y + 1, perCol - 1, "D", h.dl, h.pos,
+                int cy = drawChart(cx, y + 1, perCol - 1, "D", h.dl, h.pos, h.len,
                                    h.dl[last], peakOf(h.dl, h.pos, h.len), 6);
-                cy = drawChart(cx, cy, perCol - 1, "U", h.ul, h.pos,
+                cy = drawChart(cx, cy, perCol - 1, "U", h.ul, h.pos, h.len,
                                h.ul[last], peakOf(h.ul, h.pos, h.len), 2);
                 if (cy > endY) endY = cy;
             }
@@ -3047,9 +3051,9 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
                 const int last = (data.dlHistoryPos - 1 + TuiData::NET_HISTORY_MAX)
                                % TuiData::NET_HISTORY_MAX;
                 int cy = drawChart(x0 + 3, y, colW, "D", data.dlHistory, data.dlHistoryPos,
-                                   data.dlHistory[last], dlMax, 6);
+                                   data.dlHistoryLen, data.dlHistory[last], dlMax, 6);
                 cy = drawChart(x0 + 3, cy, colW, "U", data.ulHistory, data.dlHistoryPos,
-                               data.ulHistory[last], ulMax, 2);
+                               data.dlHistoryLen, data.ulHistory[last], ulMax, 2);
                 y = cy;
 
                 snprintf(buf, sizeof(buf), "now %s down / %s up   peak D %s   U %s",

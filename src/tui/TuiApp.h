@@ -510,7 +510,7 @@ private:
     // Shared rate chart (network adapter traffic, disk read/write): header,
     // value axis, block columns, time axis. Returns the row after the axis.
     int DrawRateChart(int cx, int cy, int colW, int rows, int bottom,
-                      const char* label, const uint64_t* hist, int pos,
+                      const char* label, const uint64_t* hist, int pos, int len,
                       uint64_t now, uint64_t scale, int pair, double colSec);
     // Full-screen splash while the first collection round is still landing.
     void RenderLoadingScreen(int rows, int cols, int done, int total);
