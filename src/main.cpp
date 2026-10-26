@@ -2310,6 +2310,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 }
 
                 tuiData.timestamp = FormatDateTime(std::chrono::system_clock::now());
+                // dashboard header 左上角那个 "Sample: Nms"。macOS 一直有，
+                // Windows 这条路径从来没填过，所以那边一直不显示。
+                tuiData.sampleIntervalMs = g_sampleIntervalMs.load();
 
                 tuiApp.UpdateData(tuiData);
 

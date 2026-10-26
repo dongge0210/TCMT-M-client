@@ -104,6 +104,16 @@ static constexpr double kBattWarn = 50.0, kBattCrit = 20.0;      // battery char
 static int utf8_display_width(const std::string& s);
 static std::string utf8_truncate(const std::string& s, int maxW);
 
+// Highest sample in a history window, never zero: it is the chart's scale.
+static uint64_t PeakOf(const uint64_t* hist, int pos, int len) {
+    uint64_t peak = 1;
+    for (int i = 0; i < len; ++i) {
+        const int idx = (pos - 1 - i + TuiData::NET_HISTORY_MAX) % TuiData::NET_HISTORY_MAX;
+        if (hist[idx] > peak) peak = hist[idx];
+    }
+    return peak;
+}
+
 // Every detail overlay draws the same box: W columns wide counting both
 // corner cells, H rows tall, side borders at x0 and x0 + W - 1. The inline
 // version this replaces printed W + 2 dashes between the corners, so the top
@@ -2501,51 +2511,13 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
                 wattroff(stdscr, A_DIM);
             }
 
-            // Live throughput with a one-row history graph. Each cell is one
-            // sample and eight levels, scaled to the peak of the window, so a
-            // quiet disk stays flat instead of showing a bouncing axis.
-            const TuiData::DiskHistory* hist =
-                (di < data.diskHistory.size()) ? &data.diskHistory[di] : nullptr;
-            auto sparkLine = [&](const char* label, uint64_t now,
-                                 const uint64_t* series) -> std::string {
-                // Fixed-width head so the two graphs start on the same column
-                // even when the rates differ in length by a digit or a unit.
-                char head[64];
-                snprintf(head, sizeof(head), "%-5s %10s   ", label,
-                         FormatRate(now).c_str());
-                std::string line = head;
-                if (!hist || hist->len < 2) return line;
-                uint64_t peak = 1;
-                for (int i = 0; i < hist->len; ++i) {
-                    const int idx = (hist->pos - 1 - i + TuiData::NET_HISTORY_MAX)
-                                  % TuiData::NET_HISTORY_MAX;
-                    if (series[idx] > peak) peak = series[idx];
-                }
-                line += "   ";
-                const int cap = (std::max)(8, W - 6 - 20);
-                const int width = (std::min)(hist->len, cap);
-                for (int c = 0; c < width; ++c) {
-                    const int idx = (hist->pos - width + c
-                                     + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
-                    int level = static_cast<int>(series[idx] * 8 / peak);
-                    if (level > 8) level = 8;
-                    line += BlockGlyph(level);
-                }
-                return line;
-            };
+            // Live throughput, one line. The graphs themselves are drawn once
+            // for all disks at the bottom of the page.
             if (y < bottom) {
-                mvwprintw(stdscr, y++, x0 + 3, "%s",
-                          utf8_truncate(sparkLine("Read ", pd.readBps,
-                                                  hist ? hist->rd : nullptr), W - 6).c_str());
-            }
-            if (y < bottom && hist) {
-                mvwprintw(stdscr, y++, x0 + 3, "%s",
-                          utf8_truncate(sparkLine("Write", pd.writeBps, hist->wr), W - 6).c_str());
-            } else if (y < bottom) {
-                char wh[64];
-                snprintf(wh, sizeof(wh), "%-5s %10s   ", "Write",
-                         FormatRate(pd.writeBps).c_str());
-                mvwprintw(stdscr, y++, x0 + 3, "%s", wh);
+                char rateLine[96];
+                snprintf(rateLine, sizeof(rateLine), "Read %s   Write %s",
+                         FormatRate(pd.readBps).c_str(), FormatRate(pd.writeBps).c_str());
+                mvwprintw(stdscr, y++, x0 + 3, "%s", rateLine);
             }
 
             wattron(stdscr, A_DIM);
@@ -2597,6 +2569,49 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             }
             wattroff(stdscr, A_DIM);
             if (y < bottom) y++;
+        }
+    }
+
+    // Throughput: the network page's chart, drawn once for every disk, read
+    // above write. Only when the SMART grids left enough height — the charts
+    // are the part that gives way first.
+    if (!data.physicalDisks.empty() && data.diskHistory.size() >= data.physicalDisks.size()) {
+        const int nDisk = (std::min)(static_cast<int>(data.physicalDisks.size()), 3);
+        bool anyHistory = false;
+        for (int k = 0; k < nDisk; ++k) {
+            if (data.diskHistory[static_cast<size_t>(k)].len >= 2) { anyHistory = true; break; }
+        }
+        if (anyHistory) {
+            section("Throughput");
+            // Per column: the disk name, then two charts of header + rows +
+            // time axis.
+            const int chartRows = (bottom - y - 1 - 4) / 2;
+            if (chartRows >= 2) {
+                // No wider than the history it holds, or the columns wrap
+                // around and the chart repeats old samples to fill the space.
+                int maxLen = 1;
+                for (int k = 0; k < nDisk; ++k)
+                    maxLen = (std::max)(maxLen, data.diskHistory[static_cast<size_t>(k)].len);
+                const int perCol = (std::max)(20, (std::min)((W - 6) / nDisk, maxLen + 10));
+                const double colSec =
+                    (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0;
+                for (int k = 0; k < nDisk; ++k) {
+                    const auto& h = data.diskHistory[static_cast<size_t>(k)];
+                    if (h.len < 2) continue;
+                    const int cx = x0 + 3 + k * perCol;
+                    mvwprintw(stdscr, y, cx, "%s",
+                              utf8_truncate(data.physicalDisks[static_cast<size_t>(k)].model,
+                                            perCol - 2).c_str());
+                    const int last = (h.pos - 1 + TuiData::NET_HISTORY_MAX)
+                                   % TuiData::NET_HISTORY_MAX;
+                    int cy = DrawRateChart(cx, y + 1, perCol - 1, chartRows, bottom, "Read",
+                                           h.rd, h.pos, h.rd[last],
+                                           PeakOf(h.rd, h.pos, h.len), 6, colSec);
+                    DrawRateChart(cx, cy, perCol - 1, chartRows, bottom, "Write",
+                                  h.wr, h.pos, h.wr[last],
+                                  PeakOf(h.wr, h.pos, h.len), 2, colSec);
+                }
+            }
         }
     }
 
@@ -2753,6 +2768,92 @@ void TuiApp::RenderBatteryDetails(int rows, int cols, int ch) {
               utf8_truncate(Tr("details.close"), W - 6).c_str());
 }
 
+// One direction's rate chart: a coloured header carrying the current value, a
+// value axis, block columns (8 levels per cell) and a time axis. The network
+// and disk pages both call this, so the two read the same; the disk charts are
+// simply given fewer rows. Returns the row after the time axis.
+int TuiApp::DrawRateChart(int cx, int cy, int colW, int rows, int bottom,
+                          const char* label, const uint64_t* hist, int pos,
+                          uint64_t now, uint64_t scale, int pair, double colSec) {
+    if (cy >= bottom) return cy;
+    char head[96];
+    snprintf(head, sizeof(head), "%s  %s", label, FormatRate(now).c_str());
+    wattron(stdscr, COLOR_PAIR(pair));
+    mvwprintw(stdscr, cy, cx, "%s", head);
+    cy++;
+
+    // Value axis: the scale's top value on the first row and the unit on the
+    // last, so the bars read without the header line. The column has to fit
+    // the widest label: a fixed nine columns clipped "560.3 KB/s".
+    const char* unit = (scale >= 1000ull * 1000) ? "MB/s"
+                     : (scale >= 1000ull ? "KB/s" : "B/s");
+    const std::string topLabel = FormatRate(scale);
+    const std::string zeroLabel = std::string("0 ") + unit;
+    const int axisW = (std::max)(9, (std::max)(static_cast<int>(topLabel.size()),
+                                               static_cast<int>(zeroLabel.size())));
+    const int barX = cx + axisW + 1;
+    const int graphW = (std::max)(4, colW - axisW - 1);
+
+    const int levelsPerRow = 8;
+    for (int r = 0; r < rows && cy < bottom; ++r, ++cy) {
+        if (r == 0) {
+            wattron(stdscr, A_DIM);
+            mvwprintw(stdscr, cy, cx, "%*s", axisW, topLabel.c_str());
+            wattroff(stdscr, A_DIM);
+        } else if (r == rows - 1) {
+            wattron(stdscr, A_DIM);
+            mvwprintw(stdscr, cy, cx, "%*s", axisW, zeroLabel.c_str());
+            wattroff(stdscr, A_DIM);
+        }
+
+        // Left boundary: one column of '|' from the peak down to zero, so the
+        // bar area reads as a chart and not as floating blocks.
+        wattron(stdscr, A_DIM);
+        mvwaddstr(stdscr, cy, barX - 1, "|");
+        wattroff(stdscr, A_DIM);
+
+        // Each cell holds 8 sublevels; the row's band from the bottom is
+        // (rows-1-r).
+        const uint64_t band = static_cast<uint64_t>(rows - 1 - r) * levelsPerRow;
+        std::string row;
+        row.reserve(static_cast<size_t>(graphW) * 3);
+        for (int c = 0; c < graphW; ++c) {
+            const int idx = (pos - graphW + c
+                             + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
+            // Total fill in sublevels (0 .. rows*8).
+            const int total = static_cast<int>(hist[idx] * rows * levelsPerRow / scale);
+            int cell = total - static_cast<int>(band);
+            if (cell > levelsPerRow) cell = levelsPerRow;
+            if (cell < 0) cell = 0;
+            row += BlockGlyph(cell);
+        }
+        mvwprintw(stdscr, cy, barX, "%s", row.c_str());
+    }
+    wattroff(stdscr, COLOR_PAIR(pair));
+
+    // Time axis: one column is one history sample, appended once per heavy
+    // frame (~the sample interval). Rightmost column is "now".
+    if (cy < bottom) {
+        const int ticks = graphW >= 30 ? 4 : 2;
+        wattron(stdscr, A_DIM);
+        for (int t = 0; t < ticks; ++t) {
+            const int c = (graphW - 1) - t * (graphW - 1) / (ticks - 1);
+            const int secs = static_cast<int>((graphW - 1 - c) * colSec + 0.5);
+            char lb[16];
+            if (secs == 0) snprintf(lb, sizeof(lb), "now");
+            else snprintf(lb, sizeof(lb), "-%ds", secs);
+            int lx = barX + c;
+            const int maxX = barX + graphW - static_cast<int>(std::strlen(lb));
+            if (lx > maxX) lx = maxX;
+            if (lx < barX) lx = barX;
+            mvwprintw(stdscr, cy, lx, "%s", lb);
+        }
+        wattroff(stdscr, A_DIM);
+        cy++;
+    }
+    return cy;
+}
+
 // Network detail overlay — Space on the Network panel, or a double-click on
 // it. Holds what the dashboard panels have no room for: every adapter with
 // its addresses and rates, the traffic history as a wide sparkline, the WiFi
@@ -2859,99 +2960,15 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         auto drawChart = [&](int cx, int cy, int colW, const char* label,
                              const uint64_t* hist, int pos,
                              uint64_t now, uint64_t scale, int pair) -> int {
-            if (cy >= bottom) return cy;
-            char head[96];
-            snprintf(head, sizeof(head), "%s  %s", label, FormatRate(now).c_str());
-            wattron(stdscr, COLOR_PAIR(pair));
-            mvwprintw(stdscr, cy, cx, "%s", head);
-            cy++;
-
-            // Value axis: the scale's top value on the first row and the unit
-            // on the last, so the bars read without the header line. The
-            // column has to fit the widest label: a fixed nine columns clipped
-            // "560.3 KB/s" to "560.3 KB/".
-            const char* unit = (scale >= 1000ull * 1000) ? "MB/s"
-                             : (scale >= 1000ull ? "KB/s" : "B/s");
-            const std::string topLabel = FormatRate(scale);
-            const std::string zeroLabel = std::string("0 ") + unit;
-            const int axisW = (std::max)(9, (std::max)(static_cast<int>(topLabel.size()),
-                                                       static_cast<int>(zeroLabel.size())));
-            const int barX = cx + axisW + 1;
-            const int graphW = (std::max)(4, colW - axisW - 1);
-
-            const int levelsPerRow = 8;
-            for (int r = 0; r < chartRows && cy < bottom; ++r, ++cy) {
-                if (r == 0) {
-                    wattron(stdscr, A_DIM);
-                    mvwprintw(stdscr, cy, cx, "%*s", axisW, topLabel.c_str());
-                    wattroff(stdscr, A_DIM);
-                } else if (r == chartRows - 1) {
-                    wattron(stdscr, A_DIM);
-                    mvwprintw(stdscr, cy, cx, "%*s", axisW, zeroLabel.c_str());
-                    wattroff(stdscr, A_DIM);
-                }
-
-                // Left boundary: one column of '|' from the peak down to zero,
-                // so the bar area reads as a chart and not as floating blocks.
-                wattron(stdscr, A_DIM);
-                mvwaddstr(stdscr, cy, barX - 1, "|");
-                wattroff(stdscr, A_DIM);
-
-                // Each cell holds 8 sublevels; the row's band from the bottom
-                // is (chartRows-1-r).
-                const uint64_t band = static_cast<uint64_t>(chartRows - 1 - r) * levelsPerRow;
-                std::string row;
-                row.reserve(static_cast<size_t>(graphW) * 3);
-                for (int c = 0; c < graphW; ++c) {
-                    const int idx = (pos - graphW + c
-                                     + TuiData::NET_HISTORY_MAX * 2) % TuiData::NET_HISTORY_MAX;
-                    // Total fill in sublevels (0 .. chartRows*8).
-                    const int total = static_cast<int>(hist[idx] * chartRows * levelsPerRow / scale);
-                    int cell = total - static_cast<int>(band);
-                    if (cell > levelsPerRow) cell = levelsPerRow;
-                    if (cell < 0) cell = 0;
-                    row += BlockGlyph(cell);
-                }
-                mvwprintw(stdscr, cy, barX, "%s", row.c_str());
-            }
-            wattroff(stdscr, COLOR_PAIR(pair));
-
-            // Time axis: one column is one history sample, appended once per
-            // heavy frame (~the sample interval). Four ticks, the rightmost
-            // column being "now".
-            if (cy < bottom) {
-                const double colSec =
-                    (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0;
-                const int ticks = graphW >= 30 ? 4 : 2;
-                wattron(stdscr, A_DIM);
-                for (int t = 0; t < ticks; ++t) {
-                    const int c = (graphW - 1) - t * (graphW - 1) / (ticks - 1);
-                    const int secs = static_cast<int>((graphW - 1 - c) * colSec + 0.5);
-                    char lb[16];
-                    if (secs == 0) snprintf(lb, sizeof(lb), "now");
-                    else snprintf(lb, sizeof(lb), "-%ds", secs);
-                    int lx = barX + c;
-                    const int maxX = barX + graphW - static_cast<int>(std::strlen(lb));
-                    if (lx > maxX) lx = maxX;
-                    if (lx < barX) lx = barX;
-                    mvwprintw(stdscr, cy, lx, "%s", lb);
-                }
-                wattroff(stdscr, A_DIM);
-                cy++;
-            }
-            return cy;
+            return DrawRateChart(cx, cy, colW, chartRows, bottom, label, hist, pos,
+                                 now, scale, pair,
+                                 (data.sampleIntervalMs > 0 ? data.sampleIntervalMs : 500) / 1000.0);
         };
 
         // Each direction gets its own scale. A shared one made the upload
         // chart invisible whenever the download side had a single spike.
         auto peakOf = [](const uint64_t* hist, int pos, int len) {
-            uint64_t peak = 1;
-            for (int i = 0; i < len; ++i) {
-                const int idx = (pos - 1 - i + TuiData::NET_HISTORY_MAX)
-                              % TuiData::NET_HISTORY_MAX;
-                if (hist[idx] > peak) peak = hist[idx];
-            }
-            return peak;
+            return PeakOf(hist, pos, len);
         };
 
         if (trafficCols >= 2) {

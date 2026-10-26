@@ -506,6 +506,11 @@ private:
     void RenderDiskDetails(int rows, int cols, int ch);
     void RenderBatteryDetails(int rows, int cols, int ch);
     void RenderNetworkDetails(int rows, int cols, int ch);
+    // Shared rate chart (network adapter traffic, disk read/write): header,
+    // value axis, block columns, time axis. Returns the row after the axis.
+    int DrawRateChart(int cx, int cy, int colW, int rows, int bottom,
+                      const char* label, const uint64_t* hist, int pos,
+                      uint64_t now, uint64_t scale, int pair, double colSec);
     // Full-screen splash while the first collection round is still landing.
     void RenderLoadingScreen(int rows, int cols, int done, int total);
     // Minimal mouse support: translate clicks/wheel into the equivalent
