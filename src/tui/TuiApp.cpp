@@ -2929,14 +2929,41 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     };
     char buf[192];
 
+    // Which adapter the Wi-Fi radio belongs to. Windows reports the WLAN
+    // interface with its driver description, which is the same string the
+    // adapter list uses as the name, so that match is exact. macOS describes
+    // the chip instead ("BCM4387"), so fall back to the adapter typed
+    // wireless — there is normally only one.
+    int wifiAdapter = -1;
+    if (data.hasWiFi) {
+        for (size_t i = 0; i < data.adapters.size(); ++i) {
+            if (!data.wifiChipset.empty() && data.adapters[i].name == data.wifiChipset) {
+                wifiAdapter = static_cast<int>(i);
+                break;
+            }
+        }
+        if (wifiAdapter < 0) {
+            for (size_t i = 0; i < data.adapters.size(); ++i) {
+                const std::string& t = data.adapters[i].type;
+                if (t.find("Wireless") != std::string::npos ||
+                    t.find("Wi-Fi") != std::string::npos) {
+                    wifiAdapter = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+    }
+
     if (!data.adapters.empty()) {
         section("Adapters");
-        for (const auto& a : data.adapters) {
+        for (size_t ai = 0; ai < data.adapters.size(); ++ai) {
+            const auto& a = data.adapters[ai];
             if (y + 1 >= bottom) break;
             std::string head = a.name;
             if (!a.type.empty()) head += "  " + a.type;
             if (a.speed > 0) head += "  " + FormatSpeed(a.speed);
             if (!a.ip.empty()) head += "  " + a.ip;
+            if (static_cast<int>(ai) == wifiAdapter) head += "  [WiFi]";
             emit(head);
             std::string meta;
             if (!a.mac.empty()) meta += "hw " + a.mac;
@@ -3029,18 +3056,14 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     }
 
     if (data.hasWiFi) {
-        // Bind the radio to the adapter it belongs to. The WLAN API and the
-        // adapter list describe the same device but nothing links the two, so
-        // pick the first adapter typed wireless and name it in the header.
+        // Name the adapter this radio belongs to, so the WiFi block is not a
+        // free-floating reading.
         std::string wifiTitle = "WiFi";
-        for (const auto& a : data.adapters) {
-            if (a.type.find("Wireless") != std::string::npos ||
-                a.type.find("Wi-Fi") != std::string::npos) {
-                wifiTitle += "  [" + a.name;
-                if (!a.mac.empty()) wifiTitle += "  " + a.mac;
-                wifiTitle += "]";
-                break;
-            }
+        if (wifiAdapter >= 0) {
+            const auto& a = data.adapters[static_cast<size_t>(wifiAdapter)];
+            wifiTitle += "  [" + a.name;
+            if (!a.mac.empty()) wifiTitle += "  " + a.mac;
+            wifiTitle += "]";
         }
         section(wifiTitle.c_str());
         emit(std::string("State: ") +
