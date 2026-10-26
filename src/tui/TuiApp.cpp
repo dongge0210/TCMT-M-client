@@ -779,6 +779,14 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
         wattroff(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, "n/a");
         lines++;
+    } else if (!data.wifiPowerOn) {
+        // Card present, radio switched off: say so instead of "Disconnected",
+        // which would suggest an association problem.
+        wattron(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 2, "WiFi:");
+        wattroff(win, COLOR_PAIR(5));
+        mvwprintw(win, y + lines, x0 + 8, "%.*s", maxW - 10, Tr("wifi.off"));
+        lines++;
     } else if (!data.wifiConnected) {
         wattron(win, COLOR_PAIR(5));
         mvwprintw(win, y + lines, x0 + 2, "WiFi:");
@@ -3021,9 +3029,23 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
     }
 
     if (data.hasWiFi) {
-        section("WiFi");
+        // Bind the radio to the adapter it belongs to. The WLAN API and the
+        // adapter list describe the same device but nothing links the two, so
+        // pick the first adapter typed wireless and name it in the header.
+        std::string wifiTitle = "WiFi";
+        for (const auto& a : data.adapters) {
+            if (a.type.find("Wireless") != std::string::npos ||
+                a.type.find("Wi-Fi") != std::string::npos) {
+                wifiTitle += "  [" + a.name;
+                if (!a.mac.empty()) wifiTitle += "  " + a.mac;
+                wifiTitle += "]";
+                break;
+            }
+        }
+        section(wifiTitle.c_str());
         emit(std::string("State: ") +
-             (data.wifiConnected ? Tr("wifi.connected") : Tr("wifi.disconnected")));
+             (!data.wifiPowerOn ? Tr("wifi.off")
+              : data.wifiConnected ? Tr("wifi.connected") : Tr("wifi.disconnected")));
 
         std::string ids;
         if (!data.wifiSSID.empty()) ids = "SSID: " + data.wifiSSID;
@@ -3033,12 +3055,14 @@ void TuiApp::RenderNetworkDetails(int rows, int cols, int ch) {
         }
         if (!ids.empty()) {
             emit(ids);
-        } else if (data.wifiLocationRoot) {
-            emit(Tr("wifi.ssid_root"));
-        } else if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) {
-            emit(Tr("wifi.ssid_denied"));
-        } else {
-            emit(Tr("wifi.loc_off"));
+        } else if (caps_.wifiLocationServices) {
+            // Only macOS hides the SSID behind Location Services. On Windows
+            // an empty SSID just means "not associated", and the State line
+            // already says that — the old code printed the Location hint
+            // there too, which read as a macOS leftover.
+            if (data.wifiLocationRoot) emit(Tr("wifi.ssid_root"));
+            else if (data.wifiLocationStatus == 1 || data.wifiLocationDenied) emit(Tr("wifi.ssid_denied"));
+            else emit(Tr("wifi.loc_off"));
         }
 
         std::string radio;

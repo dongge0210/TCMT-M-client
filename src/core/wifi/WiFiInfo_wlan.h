@@ -21,6 +21,7 @@ typedef struct {
     char wifiGen[16];   // "WiFi 4", "WiFi 5", "WiFi 6", "WiFi 6E", "WiFi 7"
     double txRate;
     char chipset[WLAN_CHIPSET_MAX_LEN];  // driver description, e.g. "Intel(R) Wi-Fi 6 AX200 160MHz"
+    bool hasAdapter;    // a WLAN interface exists (even while the radio is off)
     bool powerOn;
     bool isConnected;
 } WlanData;

@@ -256,7 +256,8 @@ struct TuiData {
     std::vector<std::pair<std::string, double>> temperatures;
 
     // WiFi (optional — only if WiFiInfo::Detect() was called)
-    bool hasWiFi = false;
+    bool hasWiFi = false;         // a Wi-Fi adapter exists (radio state is wifiPowerOn)
+    bool wifiPowerOn = false;     // radio on; false with hasWiFi means "switched off"
     bool wifiConnected = false;   // adapter on + associated (vs. merely present)
     std::string wifiSSID;
     std::string wifiBSSID;

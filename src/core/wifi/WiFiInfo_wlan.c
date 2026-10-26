@@ -46,6 +46,9 @@ bool WlanDetect(WlanData* out) {
 
     const PWLAN_INTERFACE_INFO pIfInfo = &pIfList->InterfaceInfo[0];
     const GUID* pGuid = &pIfInfo->InterfaceGuid;
+    // The interface stays enumerated while the radio is off, so this is the
+    // "there is a Wi-Fi card in this machine" signal; powerOn is the state.
+    out->hasAdapter = true;
 
     /* The driver description names the radio itself ("Intel(R) Wi-Fi 6 AX200
        160MHz"), which is the closest thing Windows gives us to a chip model. */

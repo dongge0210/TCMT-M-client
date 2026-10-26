@@ -21,6 +21,7 @@ void WiFiInfo::Detect() {
         return;
     }
 
+    data_.hasAdapter  = wd.hasAdapter;
     data_.powerOn     = wd.powerOn;
     data_.isConnected = wd.isConnected;
     data_.ssid        = wd.ssid;

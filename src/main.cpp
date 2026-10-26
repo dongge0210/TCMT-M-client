@@ -2264,7 +2264,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                       if (s_btNotify.Poll() || forcePoll) { try { s_bt.Detect(); } catch (...) {} }
                   }
                   const auto& wd = s_wifi.GetData();
-                  tuiData.hasWiFi = wd.powerOn;
+                  // hasWiFi 表示"这台机器有无线网卡"，和无线电开不开是两件事：
+                  // 关掉无线电时接口仍然枚举得到，界面要能说 Off 而不是整块消失。
+                  tuiData.hasWiFi = wd.hasAdapter;
+                  tuiData.wifiPowerOn = wd.powerOn;
                   tuiData.wifiConnected = wd.isConnected;
                   tuiData.wifiSSID = wd.ssid;
                   tuiData.wifiBSSID = wd.bssid;

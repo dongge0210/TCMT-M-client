@@ -295,6 +295,9 @@ void WiFiInfo::Detect() {
         // the user has granted Location Services.
         CWInterface* iface = [[CWWiFiClient sharedWiFiClient] interface];
         if (iface) {
+            // The interface object exists whether or not the radio is on, so
+            // its presence is the "this Mac has Wi-Fi" signal.
+            data_.hasAdapter = true;
             data_.powerOn = [iface powerOn];
             if (data_.powerOn && locationOK) {
                 NSString* ssidStr = [iface ssid];

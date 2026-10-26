@@ -140,6 +140,7 @@ void LogData(const WiFiData& data, const char* source) {
 // ============================================================================
 void DetectViaProc(WiFiData& data) {
     const std::vector<std::string> interfaces = ListWirelessInterfaces();
+    data.hasAdapter = !interfaces.empty();
 
     // powerOn reflects whether any wireless adapter is administratively up,
     // even when none is associated.
@@ -519,6 +520,7 @@ bool DetectViaNetworkManager(WiFiData& data, std::string& interfaceName) {
 
         if (!wifiDevices.empty()) {
             handled = true;
+            data.hasAdapter = true;   // a wireless device exists, radio state below
 
             // Prefer an associated device; otherwise report the first adapter.
             const WifiDevice* selected = &wifiDevices.front();

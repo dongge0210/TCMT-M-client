@@ -616,7 +616,8 @@ int main(int argc, char* argv[]) {
             }
             {
                 const auto& wd = s_wifi.GetData();
-                data.hasWiFi = wd.powerOn || wd.isConnected;
+                data.hasWiFi = wd.hasAdapter;
+                data.wifiPowerOn = wd.powerOn;
                 data.wifiConnected = wd.isConnected;
                 data.wifiSSID = wd.ssid;
                 data.wifiBSSID = wd.bssid;

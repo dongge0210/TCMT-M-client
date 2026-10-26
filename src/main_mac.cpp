@@ -1366,7 +1366,9 @@ int main(int argc, char* argv[]) {
             }
             {
               const auto& wd = s_wifi.GetData();
-              data.hasWiFi = wd.powerOn;
+              // 网卡存在与无线电开没开分开报告，关掉时界面显示 Off 而不是隐藏
+              data.hasWiFi = wd.hasAdapter;
+              data.wifiPowerOn = wd.powerOn;
               data.wifiConnected = wd.isConnected;
               data.wifiSSID = wd.ssid;
               data.wifiBSSID = wd.bssid;

@@ -13,6 +13,7 @@ struct WiFiData {
     std::string band;       // "2.4GHz", "5GHz", "6GHz"
     std::string wifiGen;    // "WiFi 4", "WiFi 5", "WiFi 6", "WiFi 7"
     double txRate = 0;      // Transmit rate in Mbps
+    bool hasAdapter = false; // a Wi-Fi adapter exists (even while the radio is off)
     bool powerOn = false;   // WiFi adapter enabled
     bool isConnected = false;
     // Wireless chip, e.g. "BCM4387" (macOS: system_profiler card type).

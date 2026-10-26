@@ -113,6 +113,7 @@ inline const I18nEntry kI18nTable[] = {
     // ── WiFi / Bluetooth ─────────────────────────────────────────────
     {"wifi.connected",       "Connected",                                    "已连接"},
     {"wifi.disconnected",    "Disconnected",                                 "未连接"},
+    {"wifi.off",             "Off",                                          "关闭"},
     {"wifi.loc_off",         "unknown (Location off)",                       "未知（定位关闭）"},
     {"wifi.loc_denied",      "unknown (Location denied)",                    "未知（定位被拒）"},
     {"wifi.press_r",         "press R to request Location Services",         "按 R 请求定位权限"},
