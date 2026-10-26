@@ -179,6 +179,11 @@ using NvmlDeviceGetCudaComputeCapabilityFn = nvmlReturn_t (*)(nvmlDevice_t, int*
 using NvmlDeviceGetNumFansFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
 using NvmlDeviceGetFanSpeedFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);  // v1: single fan
 using NvmlDeviceGetFanSpeedV2Fn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int, unsigned int*);  // v2: per-fan index
+// NVML >= 12.4 (API v12): documented RPM query. nvmlFanSpeedInfo_t is
+// { version, fan (in), speed (OUT, RPM) }; the version field follows NVML's
+// NVML_STRUCT_VERSION convention, sizeof | (version << 24).
+struct NvmlFanSpeedInfo { unsigned int version; unsigned int fan; unsigned int speed; };
+using NvmlDeviceGetFanSpeedRpmFn = nvmlReturn_t (*)(nvmlDevice_t, NvmlFanSpeedInfo*);
 using NvmlDeviceGetCountFn = nvmlReturn_t (*)(unsigned int*);
 // 功耗：毫瓦。这是 NVIDIA 卡上唯一不需要自己乘电压电流的功耗来源。
 using NvmlDeviceGetPowerUsageFn = nvmlReturn_t (*)(nvmlDevice_t, unsigned int*);
@@ -244,6 +249,7 @@ struct NvmlApi {
     NvmlDeviceGetNumFansFn getNumFans = nullptr;
     NvmlDeviceGetFanSpeedFn getFanSpeed = nullptr;
     NvmlDeviceGetFanSpeedV2Fn getFanSpeedV2 = nullptr;  // v2: per-fan index
+    NvmlDeviceGetFanSpeedRpmFn getFanSpeedRpm = nullptr;  // real RPM per fan
     NvmlDeviceGetCountFn getDeviceCount = nullptr;
     NvmlDeviceGetPowerUsageFn getPowerUsage = nullptr;              // mW
     NvmlDeviceGetEnforcedPowerLimitFn getEnforcedPowerLimit = nullptr;  // mW
@@ -308,6 +314,10 @@ static NvmlApi& GetNvmlApi() {
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed"));
         api.getFanSpeedV2 = reinterpret_cast<NvmlDeviceGetFanSpeedV2Fn>(
             GetProcAddress(api.module, "nvmlDeviceGetFanSpeed_v2"));
+        // Real RPM; only present on newer drivers, so it stays optional and
+        // the % fallback below still covers the rest.
+        api.getFanSpeedRpm = reinterpret_cast<NvmlDeviceGetFanSpeedRpmFn>(
+            GetProcAddress(api.module, "nvmlDeviceGetFanSpeedRPM"));
         api.systemGetDriverVersion = reinterpret_cast<NvmlSystemGetDriverVersionFn>(
             GetProcAddress(api.module, "nvmlSystemGetDriverVersion"));
 
@@ -888,6 +898,26 @@ const std::vector<GpuInfo::GpuData>& GpuInfo::GetGpuData() const { return gpuLis
 std::vector<GpuInfo::GpuFanInfo> GpuInfo::GetGpuFans() {
     std::vector<GpuFanInfo> result;
     auto& nvs = GetNvmlSession();
+
+    // ── Real RPM from NVML first: nvmlDeviceGetFanSpeedRPM is documented
+    //    (NVML 12.4+) and answers per fan index, so no NVAPI guesswork. ──
+    if (nvs.ok && nvs.api->getFanSpeedRpm && nvs.api->getNumFans) {
+        unsigned int numFans = 0;
+        if (nvs.api->getNumFans(nvs.device, &numFans) == NVML_SUCCESS && numFans > 0) {
+            for (unsigned int i = 0; i < numFans && i < 6; ++i) {
+                NvmlFanSpeedInfo info{};
+                info.version = static_cast<unsigned int>(sizeof(info)) | (1u << 24);
+                info.fan = i;
+                if (nvs.api->getFanSpeedRpm(nvs.device, &info) != NVML_SUCCESS) continue;
+                GpuFanInfo fi;
+                fi.index = i;
+                fi.speedRpm = static_cast<int>(info.speed);
+                fi.isRpm = true;
+                result.push_back(fi);
+            }
+            if (!result.empty()) return result;
+        }
+    }
 
     // ── Try NVAPI for actual RPM first ──
     auto& napi = GetNvapi();

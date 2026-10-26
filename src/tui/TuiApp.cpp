@@ -2346,7 +2346,19 @@ void TuiApp::RenderGpuDetails(int rows, int cols, int ch) {
         emit(buf);
     }
 
-    if (g && g->fanPercent >= 0) {
+    // Per-fan readings when the driver gives them: NVML's RPM query and NVAPI
+    // both report each fan, so two-fan cards are not collapsed into one %.
+    if (!data.gpuFans.empty()) {
+        std::string fans;
+        for (const auto& gf : data.gpuFans) {
+            if (!fans.empty()) fans += "   ";
+            char one[40];
+            snprintf(one, sizeof(one), "Fan#%u %d %s", gf.index, gf.speedRpm,
+                     gf.isRpm ? "RPM" : "%");
+            fans += one;
+        }
+        emit(fans);
+    } else if (g && g->fanPercent >= 0) {
         if (g->fanCount > 1) {
             snprintf(buf, sizeof(buf), "Fan: %d%%  (%d fans)", g->fanPercent, g->fanCount);
         } else {
