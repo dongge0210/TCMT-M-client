@@ -135,11 +135,49 @@ static const wchar_t* GetSmartAttrDesc(uint8_t id) {
 }
 
 // ====================================================================
+// Win32_DiskDrive.InterfaceType still answers "IDE" for SATA and NVMe drives:
+// it names the legacy ATA driver stack, not the bus the drive sits on. Ask
+// the storage stack for STORAGE_BUS_TYPE instead and map it to the word
+// people expect. Opening with FILE_READ_ATTRIBUTES needs no elevation.
+static void FillBusType(const wchar_t* path, PhysicalDiskSmartData& out) {
+    HANDLE h = CreateFileW(path, FILE_READ_ATTRIBUTES,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           nullptr, OPEN_EXISTING, 0, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+    STORAGE_PROPERTY_QUERY query{};
+    query.PropertyId = StorageDeviceProperty;
+    query.QueryType = PropertyStandardQuery;
+    alignas(STORAGE_DEVICE_DESCRIPTOR) BYTE buf[1024] = {};
+    DWORD returned = 0;
+    if (DeviceIoControl(h, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof(query),
+                        buf, sizeof(buf), &returned, nullptr)) {
+        auto* desc = reinterpret_cast<const STORAGE_DEVICE_DESCRIPTOR*>(buf);
+        const wchar_t* name = nullptr;
+        switch (desc->BusType) {
+            case BusTypeNvme:  name = L"NVMe"; break;
+            case BusTypeSata:  name = L"SATA"; break;
+            case BusTypeAta:   name = L"ATA";  break;
+            case BusTypeScsi:  name = L"SCSI"; break;
+            case BusTypeUsb:   name = L"USB";  break;
+            case BusTypeSd:    name = L"SD";   break;
+            case BusTypeMmc:   name = L"eMMC"; break;
+            case BusTypeRAID:  name = L"RAID"; break;
+            case BusTypeSpaces: name = L"Storage Spaces"; break;
+            case BusTypeVirtual:
+            case BusTypeFileBackedVirtual: name = L"Virtual"; break;
+            default: break;
+        }
+        if (name) wcsncpy_s(out.interfaceType, name, _TRUNCATE);
+    }
+    CloseHandle(h);
+}
+
 // Read SMART for one physical disk
 // ====================================================================
 bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
     wchar_t path[64];
     swprintf_s(path, 64, L"\\\\.\\PhysicalDrive%d", diskIndex);
+    FillBusType(path, smartData);
 
     HANDLE hDevice = CreateFileW(path,
                                   GENERIC_READ | GENERIC_WRITE,
