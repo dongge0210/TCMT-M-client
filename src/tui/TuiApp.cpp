@@ -2136,6 +2136,14 @@ void TuiApp::RenderCpuDetails(int rows, int cols, int ch) {
     }
 #endif
 
+    // Motherboard fans from the Super I/O (Windows). Each line is one
+    // tachometer input; the board decides what is plugged into it.
+    for (const auto& f : data.fans) {
+        if (f.second <= 0) continue;
+        snprintf(buf, sizeof(buf), "%s: %d RPM", f.first.c_str(), f.second);
+        emit(buf);
+    }
+
     if (count <= 0) {
         emit("");
         emit(Tr("cpu.no_percore"));

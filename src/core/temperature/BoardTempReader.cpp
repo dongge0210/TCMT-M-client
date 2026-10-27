@@ -93,7 +93,7 @@ static uint8_t HwMonReadByte(PawnIOWrapper& pa, uint16_t port, uint16_t addr) {
 // ISA/LPC legacy ports.
 static bool ValidIoBase(uint16_t b) { return b >= 0x100 && b != 0xFFFF; }
 
-std::vector<BoardTemp> BoardTempReader::ReadAll() {
+std::vector<BoardTemp> BoardTempReader::ReadAll(std::vector<BoardFan>* fansOut) {
     std::vector<BoardTemp> result;
     static PawnIOWrapper s_pa;
     static uint16_t s_base = 0;
@@ -412,6 +412,22 @@ std::vector<BoardTemp> BoardTempReader::ReadAll() {
             // firmware or an external agent walking the same chip; give it a
             // short pause and try the whole pass again before declaring it dead.
             Sleep(20);
+        }
+    }
+
+    // Fan tachometers live in the same banked window: bank 0, six 16-bit
+    // inputs at 0x04..0x0F. The count is 13 bits and the tach counts a fixed
+    // 1.35 MHz clock, so rpm = 1350000 / count. 0 and 0x1FFF are the chip's
+    // "no fan / not wired" values.
+    if (fansOut) {
+        fansOut->clear();
+        for (int i = 0; i < 6; ++i) {
+            const unsigned lo = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x0004 + i * 2));
+            const unsigned hi = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x0005 + i * 2));
+            const unsigned count = ((hi << 8) | lo) & 0x1FFF;
+            if (count == 0 || count == 0x1FFF) continue;
+            fansOut->push_back({"Fan " + std::to_string(i + 1),
+                                static_cast<int>(1350000u / count)});
         }
     }
 

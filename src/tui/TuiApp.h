@@ -258,6 +258,9 @@ struct TuiData {
     // Temperatures
     std::vector<std::pair<std::string, double>> temperatures;
 
+    // Motherboard fan tachometers from the Super I/O (Windows): name, RPM.
+    std::vector<std::pair<std::string, int>> fans;
+
     // WiFi (optional — only if WiFiInfo::Detect() was called)
     bool hasWiFi = false;         // a Wi-Fi adapter exists (radio state is wifiPowerOn)
     bool wifiPowerOn = false;     // radio on; false with hasWiFi means "switched off"

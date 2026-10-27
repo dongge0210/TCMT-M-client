@@ -2246,6 +2246,8 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         sysInfo.temperatures.push_back({"GPU Core", sysInfo.gpuTemperature});
                 }
                 tuiData.temperatures = sysInfo.temperatures;
+                // 主板风扇：Super I/O 的 tach，随温度那次读取一起刷新，这里只取缓存。
+                tuiData.fans = TemperatureWrapper::GetFans();
                 if (!sysInfo.tpms.empty() && sysInfo.tpms[0].isPresent) {
                     auto& tpm = sysInfo.tpms[0];
                     tuiData.tpmInfo = WinUtils::WstringToString(tpm.manufacturer)

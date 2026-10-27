@@ -1,6 +1,19 @@
 #include "TemperatureWrapper.h"
 #include "../Utils/Logger.h"
 
+#include <mutex>
+
+// Super I/O fan tachometers, refreshed by the board reader inside the same
+// temperature pass (the tachs sit behind the same banked window). Static
+// because the temperature thread writes it while the UI thread reads it.
+static std::vector<std::pair<std::string, int>> g_boardFans;
+static std::mutex g_boardFansMutex;
+
+std::vector<std::pair<std::string, int>> TemperatureWrapper::GetFans() {
+    std::lock_guard<std::mutex> lk(g_boardFansMutex);
+    return g_boardFans;
+}
+
 #ifdef TCMT_WINDOWS
 #include "../memory/MemoryTempReader.h"
 #include "../cpu/CpuTempReader.h"
@@ -61,9 +74,16 @@ std::vector<std::pair<std::string, double>> TemperatureWrapper::GetTemperaturesI
 
     // Motherboard temperature via PawnIO LpcIO (NCT6798D Super I/O)
     try {
-        auto boardTemps = BoardTempReader::ReadAll();
+        std::vector<BoardFan> fans;
+        auto boardTemps = BoardTempReader::ReadAll(&fans);
         for (const auto& bt : boardTemps)
             temps.push_back({bt.name, bt.temperature});
+        {
+            std::lock_guard<std::mutex> lk(g_boardFansMutex);
+            g_boardFans.clear();
+            for (const auto& f : fans)
+                g_boardFans.push_back({f.name, f.rpm});
+        }
     } catch (...) {
         Logger::Debug("BoardTempReader: exception");
     }
