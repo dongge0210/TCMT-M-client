@@ -421,14 +421,24 @@ std::vector<BoardTemp> BoardTempReader::ReadAll(std::vector<BoardFan>* fansOut) 
     // "no fan / not wired" values.
     if (fansOut) {
         fansOut->clear();
+        // First passes dump the raw 16-bit values: the tach map is only
+        // documented for the chip family, and a board that wires the inputs
+        // differently is much easier to spot with the counts than the RPM.
+        static int fanPasses = 0;
+        std::string rawDump;
         for (int i = 0; i < 6; ++i) {
             const unsigned lo = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x0004 + i * 2));
             const unsigned hi = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x0005 + i * 2));
-            const unsigned count = ((hi << 8) | lo) & 0x1FFF;
+            const unsigned raw16 = (hi << 8) | lo;
+            const unsigned count = raw16 & 0x1FFF;
+            char one[32];
+            snprintf(one, sizeof(one), " F%d=0x%04X/%u", i + 1, raw16, count);
+            rawDump += one;
             if (count == 0 || count == 0x1FFF) continue;
             fansOut->push_back({"Fan " + std::to_string(i + 1),
                                 static_cast<int>(1350000u / count)});
         }
+        if (fanPasses++ < 3) Logger::Info("BoardTemp: tach" + rawDump);
     }
 
     // Sensor count changing between reads means the register reads are
