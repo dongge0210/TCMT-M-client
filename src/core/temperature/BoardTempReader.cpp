@@ -433,26 +433,20 @@ std::vector<BoardTemp> BoardTempReader::ReadAll(std::vector<BoardFan>* fansOut) 
         fansOut->clear();
         static int fanPasses = 0;
         std::string rawDump;
-        std::string altDump;
         for (int i = 0; i < 7; ++i) {
             const unsigned high = HwMonReadByte(s_pa, s_base, FAN_COUNT_ADDR[i]);
             const unsigned low = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(FAN_COUNT_ADDR[i] + 1));
             const unsigned count = (high << 5) | (low & 0x1F);
             char one[40];
-            snprintf(one, sizeof(one), " F%d=%u(0x%02X%02X)", i + 1, count, high, low);
+            snprintf(one, sizeof(one), " F%d=%u", i + 1, count);
             rawDump += one;
             if (count >= 0x1FFF || count < 0x15) continue;
             fansOut->push_back({"Fan " + std::to_string(i + 1),
                                 static_cast<int>(1350000u / count)});
-            // Both byte orders of the 0x4C0 window are dumped alongside so one
-            // run is enough to tell which pair matches the board's own monitor.
-            const unsigned a = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x04C0 + i * 2));
-            const unsigned b = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x04C1 + i * 2));
-            char two[32];
-            snprintf(two, sizeof(two), " %u/%u", (a << 8) | b, (b << 8) | a);
-            altDump += two;
         }
-        if (fanPasses++ < 10) Logger::Info("BoardTemp: tach" + rawDump + " | 4C0" + altDump);
+        // First passes only: a board that reports different channel counts is
+        // easier to diagnose from the raw counters than from the RPM list.
+        if (fanPasses++ < 3) Logger::Info("BoardTemp: tach" + rawDump);
     }
 
     // Sensor count changing between reads means the register reads are
