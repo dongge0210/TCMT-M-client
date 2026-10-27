@@ -415,34 +415,44 @@ std::vector<BoardTemp> BoardTempReader::ReadAll(std::vector<BoardFan>* fansOut) 
         }
     }
 
-    // Fan tachometers: NCT6798D keeps seven 16-bit counters in bank 4 at
-    // 0x4C0..0x4CE (bank 0 0x04 answers 0xFF; that map belongs to the older
-    // NCT6775/6776 parts). The 13-bit count is packed, not left-aligned: the
-    // low five bits sit in the low byte and the remaining eight in the high
-    // byte, so decode as (lo & 0x1F) | (hi << 5). 0xFF1F in the high bits is
-    // the chip's "no fan" marker. No fan divisor applies on this family.
+    // Fan tachometers. The NCT6798D keeps its 13-bit counters in bank 4 at
+    // 0x4B0..0x4BA plus 0x4CC, one per channel, and each counter is stored
+    // big-endian: the even address holds the high byte, the odd address the
+    // low byte with only its bottom five bits in use.
+    //   count = (high << 5) | (low & 0x1F)
+    //   rpm   = 1350000 / count
+    // 0x4C0..0x4CE (what the Linux driver reads for this family) is a
+    // different window on this part and yields values that jump every pass.
+    // A count at or above 0x1FFF means the channel has no fan; below 0x15 the
+    // chip has already moved that channel to its 16-bit RPM register, so both
+    // are skipped instead of being divided into nonsense.
     if (fansOut) {
-        static const uint16_t FAN_ADDR[7] = {
-            0x04C0, 0x04C2, 0x04C4, 0x04C6, 0x04C8, 0x04CA, 0x04CE,
+        static const uint16_t FAN_COUNT_ADDR[7] = {
+            0x04B0, 0x04B2, 0x04B4, 0x04B6, 0x04B8, 0x04BA, 0x04CC,
         };
         fansOut->clear();
-        // First passes dump the raw 16-bit values so a board that wires the
-        // inputs differently can be diagnosed from the counts.
         static int fanPasses = 0;
         std::string rawDump;
+        std::string altDump;
         for (int i = 0; i < 7; ++i) {
-            const unsigned lo = HwMonReadByte(s_pa, s_base, FAN_ADDR[i]);
-            const unsigned hi = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(FAN_ADDR[i] + 1));
-            const unsigned raw16 = (hi << 8) | lo;
-            const unsigned count = (raw16 & 0x1F) | ((raw16 >> 8) << 5);
-            char one[32];
-            snprintf(one, sizeof(one), " F%d=0x%04X/%u", i + 1, raw16, count);
+            const unsigned high = HwMonReadByte(s_pa, s_base, FAN_COUNT_ADDR[i]);
+            const unsigned low = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(FAN_COUNT_ADDR[i] + 1));
+            const unsigned count = (high << 5) | (low & 0x1F);
+            char one[40];
+            snprintf(one, sizeof(one), " F%d=%u(0x%02X%02X)", i + 1, count, high, low);
             rawDump += one;
-            if (count == 0 || (raw16 & 0xFF1F) == 0xFF1F) continue;
+            if (count >= 0x1FFF || count < 0x15) continue;
             fansOut->push_back({"Fan " + std::to_string(i + 1),
                                 static_cast<int>(1350000u / count)});
+            // Both byte orders of the 0x4C0 window are dumped alongside so one
+            // run is enough to tell which pair matches the board's own monitor.
+            const unsigned a = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x04C0 + i * 2));
+            const unsigned b = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x04C1 + i * 2));
+            char two[32];
+            snprintf(two, sizeof(two), " %u/%u", (a << 8) | b, (b << 8) | a);
+            altDump += two;
         }
-        if (fanPasses++ < 3) Logger::Info("BoardTemp: tach" + rawDump);
+        if (fanPasses++ < 10) Logger::Info("BoardTemp: tach" + rawDump + " | 4C0" + altDump);
     }
 
     // Sensor count changing between reads means the register reads are
