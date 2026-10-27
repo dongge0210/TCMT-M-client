@@ -245,6 +245,7 @@ git submodule update --init --recursive
 | 「Windows 上共享内存里的字符串是 `wchar_t`(UTF-16)，要用 `ReadWString` 读」 | 两平台都写窄串 UTF-8，没有 UTF-16 字段。照旧规则读会把每个字符串都解成乱码，而且非空，`?? ReadString` 的回退永不触发 | 2026-10-16 |
 | 「CsWin32 / P/Invoke Rules」整节（原 15-18 条 + `SetupApi.cs` 事件） | 整节作废。LibreHardwareMonitor 子模块已由 `d98e601f` 移除；全仓已无 CsWin32 包引用、无 `NativeMethods.txt`、无 `PInvoke.` 调用（手动 `DllImport` 另存 5 处，与本规则无关） | 2026-10-13 |
 | `AvaloniaUI/Services/IPCServices/` | 目录不存在，实际是 `AvaloniaUI/Services/Hardware/IPC/` | 2026-10-13 |
+| 「NCT6798D 风扇转速计数器在 bank 4 的 `0x4C0` 起，照 Linux `nct6775` 的 `NCT6779_REG_FAN`」 | 那是另一个窗口。实际在 `0x4B0` `0x4B2` `0x4B4` `0x4B6` `0x4B8` `0x4BA` `0x4CC`，高字节在前，`count = high * 32 + (low & 0x1F)`，`rpm = 1350000 / count`。读 `0x4C0` 段时偶地址恒定、奇地址乱跳，就是这个错的直接症状 | 2026-10-27 |
 
 ## Scope & Boundaries
 - **Stay focused**: When debugging, focus narrowly on the specific error or crash. Do NOT deep-dive into unrelated internals, propose tangential refactors, or expand the scope without asking.

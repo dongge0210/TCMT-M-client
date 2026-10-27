@@ -637,6 +637,30 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
   不再有逐核面板（"Per-Core Sensors" 已移除，逐核温度列只在详情里出现）。
 - 未验证：以上 Windows 改动均未在本机编译；需在 Windows 端 Debug 构建确认。
 
+## 2026-10-27 — 磁盘吞吐图表、WiFi 绑定、RAM 插槽、主板风扇转速
+
+- 磁盘：每块物理盘加实时读写吞吐（Windows 走 PDH `\PhysicalDisk(*)\Disk Read/Write Bytes/sec`，
+  实例名前面的整数就是盘号；macOS 走 IOBlockStorageDriver Statistics 的 `Bytes (Read)` /
+  `Bytes (Write)`），TUI 复用网络那张 `DrawRateChart`，一块盘一列。总线类型改查
+  `IOCTL_STORAGE_QUERY_PROPERTY` 的 `STORAGE_DEVICE_DESCRIPTOR.BusType`，WMI 的 `InterfaceType`
+  在 NVMe 盘上也写 IDE。盘符到物理盘的映射靠 ASSOCIATORS 走 DiskDrive → DiskPartition → LogicalDisk。
+- 速率差分收敛成一个 `ThroughputDelta`：计数器在链路重连、设备重枚举时会归零，u64 相减溢出成
+  约 1.8e19，于是出现 1766 GB/s 这种瞬时值。三个平台原来各写一份缓存，合并后只剩一份。
+- WiFi：区分「有没有适配器」和「无线电开没开」，区块绑定到对应的网络适配器（先按芯片名匹配，
+  再退回无线类型），脱机时不画上传下载图表。
+- RAM：Windows 显示 `2/4 slots`，总数取 `Win32_PhysicalMemoryArray.MemoryDevices` 求和，
+  已用取 `Win32_PhysicalMemory` 实例数；macOS / Linux 没有等价接口，留空。
+- GPU：风扇改 `nvmlDeviceGetFanSpeedRPM`，拿到的是真实 RPM，百分比只作兜底。
+- 主板风扇（本次主线）：NCT6798D 的 13 位转速计数器在 bank 4 的
+  `0x4B0 0x4B2 0x4B4 0x4B6 0x4B8 0x4BA 0x4CC`，每个计数器高字节在前、低字节只用低 5 位：
+  `count = (high << 5) | (low & 0x1F)`，`rpm = 1350000 / count`。计数 ≥ `0x1FFF` 表示该通道
+  没接风扇，< `0x15` 表示芯片已经切到 16 位 RPM 寄存器，两种都跳过。Linux `nct6775` 的
+  `NCT6779_REG_FAN`（`0x4C0` 起）在 NCT6798D 上是另一个窗口，读出来每个通道的偶地址几乎不动、
+  只有奇地址乱跳，照它写的版本才会把 Fan 1 一直钉在 170 RPM 上。现在五个通道与板载监控对上了。
+- 风扇命名与分组（CPU_FAN / AIO_PUMP / 机箱）只能靠配置表，本次不做。
+- 未验证：以上 Windows 路径都要在 Windows 端实跑确认，本机的 macOS 构建碰不到这些
+  `#ifdef TCMT_WINDOWS` 分支。
+
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
   这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出
