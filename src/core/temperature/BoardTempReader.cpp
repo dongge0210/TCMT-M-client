@@ -415,26 +415,30 @@ std::vector<BoardTemp> BoardTempReader::ReadAll(std::vector<BoardFan>* fansOut) 
         }
     }
 
-    // Fan tachometers live in the same banked window: bank 0, six 16-bit
-    // inputs at 0x04..0x0F. The count is 13 bits and the tach counts a fixed
-    // 1.35 MHz clock, so rpm = 1350000 / count. 0 and 0x1FFF are the chip's
-    // "no fan / not wired" values.
+    // Fan tachometers: NCT6798D keeps seven 16-bit counters in bank 4 at
+    // 0x4C0..0x4CE (bank 0 0x04 answers 0xFF; that map belongs to the older
+    // NCT6775/6776 parts). The 13-bit count is packed, not left-aligned: the
+    // low five bits sit in the low byte and the remaining eight in the high
+    // byte, so decode as (lo & 0x1F) | (hi << 5). 0xFF1F in the high bits is
+    // the chip's "no fan" marker. No fan divisor applies on this family.
     if (fansOut) {
+        static const uint16_t FAN_ADDR[7] = {
+            0x04C0, 0x04C2, 0x04C4, 0x04C6, 0x04C8, 0x04CA, 0x04CE,
+        };
         fansOut->clear();
-        // First passes dump the raw 16-bit values: the tach map is only
-        // documented for the chip family, and a board that wires the inputs
-        // differently is much easier to spot with the counts than the RPM.
+        // First passes dump the raw 16-bit values so a board that wires the
+        // inputs differently can be diagnosed from the counts.
         static int fanPasses = 0;
         std::string rawDump;
-        for (int i = 0; i < 6; ++i) {
-            const unsigned lo = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x0004 + i * 2));
-            const unsigned hi = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(0x0005 + i * 2));
+        for (int i = 0; i < 7; ++i) {
+            const unsigned lo = HwMonReadByte(s_pa, s_base, FAN_ADDR[i]);
+            const unsigned hi = HwMonReadByte(s_pa, s_base, static_cast<uint16_t>(FAN_ADDR[i] + 1));
             const unsigned raw16 = (hi << 8) | lo;
-            const unsigned count = raw16 & 0x1FFF;
+            const unsigned count = (raw16 & 0x1F) | ((raw16 >> 8) << 5);
             char one[32];
             snprintf(one, sizeof(one), " F%d=0x%04X/%u", i + 1, raw16, count);
             rawDump += one;
-            if (count == 0 || count == 0x1FFF) continue;
+            if (count == 0 || (raw16 & 0xFF1F) == 0xFF1F) continue;
             fansOut->push_back({"Fan " + std::to_string(i + 1),
                                 static_cast<int>(1350000u / count)});
         }
