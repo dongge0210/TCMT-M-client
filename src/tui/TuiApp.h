@@ -91,6 +91,8 @@ struct TuiData {
     uint64_t swapTotal = 0;
     uint32_t ramSpeed = 0;
     char ramType[32] = {};
+    int ramSlotsTotal = 0;   // SMBIOS slot count; 0 = soldered / unknown
+    int ramSlotsUsed = 0;    // installed modules
 
     // GPU
     std::string gpuName;
@@ -171,6 +173,7 @@ struct TuiData {
         uint64_t powerOnHours = 0;
         double wearLeveling = 0;
         int index = -1;          // physical index (Windows) / diskN (macOS)
+        std::vector<char> driveLetters;  // Windows: "C", "D" living on this disk
         uint64_t readBps = 0;    // live read throughput, bytes/s
         uint64_t writeBps = 0;   // live write throughput, bytes/s
         std::vector<SmAttributeInfo> attributes;

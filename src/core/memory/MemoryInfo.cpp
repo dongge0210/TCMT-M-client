@@ -41,8 +41,10 @@ MemoryInfo::MemoryInfo() : ramSpeed(0) {
                 ULONG uReturn = 0;
                 uint32_t minSpeed = 0xFFFFFFFF;
                 int minType = 0;
+                int moduleCount = 0;
 
                 while (pEnum->Next(WBEM_INFINITE, 1, &pObj, &uReturn) == S_OK) {
+                    ++moduleCount;
                     VARIANT vt;
                     VariantInit(&vt);
 
@@ -60,6 +62,30 @@ MemoryInfo::MemoryInfo() : ramSpeed(0) {
                     pObj->Release();
                 }
                 if (minSpeed != 0xFFFFFFFF) ramSpeed = minSpeed;
+                ramSlotsUsed = moduleCount;
+
+                // Total slots live in the SMBIOS physical memory array
+                // (Type 16); Win32_PhysicalMemory only lists installed sticks,
+                // so an empty slot is invisible there.
+                IEnumWbemClassObject* pArr = nullptr;
+                if (SUCCEEDED(pSvc->ExecQuery(_bstr_t(L"WQL"),
+                        _bstr_t("SELECT MemoryDevices FROM Win32_PhysicalMemoryArray"),
+                        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                        nullptr, &pArr)) && pArr) {
+                    IWbemClassObject* pSlot = nullptr;
+                    ULONG retSlot = 0;
+                    while (pArr->Next(WBEM_INFINITE, 1, &pSlot, &retSlot) == S_OK) {
+                        VARIANT v;
+                        VariantInit(&v);
+                        if (SUCCEEDED(pSlot->Get(L"MemoryDevices", 0, &v, 0, 0))) {
+                            if (v.vt == VT_I4) ramSlotsTotal += v.intVal;
+                            else if (v.vt == VT_UI4) ramSlotsTotal += static_cast<int>(v.uintVal);
+                        }
+                        VariantClear(&v);
+                        pSlot->Release();
+                    }
+                    pArr->Release();
+                }
 
                 switch (minType) {
                 case 24: ramType = "DDR3"; break;
@@ -85,6 +111,8 @@ uint64_t MemoryInfo::GetAvailablePhysical() const  { return memStatus.ullAvailPh
 uint64_t MemoryInfo::GetTotalVirtual() const       { return memStatus.ullTotalVirtual; }
 uint32_t MemoryInfo::GetRamSpeed() const           { return ramSpeed; }
 std::string MemoryInfo::GetRamType() const         { return ramType; }
+int MemoryInfo::GetRamSlotsTotal() const           { return ramSlotsTotal; }
+int MemoryInfo::GetRamSlotsUsed() const            { return ramSlotsUsed; }
 
 #elif defined(TCMT_MACOS)
 // ======================== macOS Implementation ========================
@@ -149,6 +177,9 @@ uint64_t MemoryInfo::GetAvailablePhysical() const  { return availablePhysical; }
 uint64_t MemoryInfo::GetTotalVirtual() const       { return totalVirtual; }
 uint32_t MemoryInfo::GetRamSpeed() const           { return ramSpeed; }
 std::string MemoryInfo::GetRamType() const         { return ramType; }
+// Soldered unified memory: there are no slots to count.
+int MemoryInfo::GetRamSlotsTotal() const           { return 0; }
+int MemoryInfo::GetRamSlotsUsed() const            { return 0; }
 
 #elif defined(TCMT_LINUX)
 // ======================== Linux Implementation ========================
@@ -232,6 +263,8 @@ uint64_t MemoryInfo::GetAvailablePhysical() const  { return availablePhysical; }
 uint64_t MemoryInfo::GetTotalVirtual() const       { return totalVirtual; }
 uint32_t MemoryInfo::GetRamSpeed() const           { return ramSpeed; }
 std::string MemoryInfo::GetRamType() const         { return ramType; }
+int MemoryInfo::GetRamSlotsTotal() const           { return 0; }
+int MemoryInfo::GetRamSlotsUsed() const            { return 0; }
 
 #else
 #error "Unsupported platform"

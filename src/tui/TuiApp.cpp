@@ -15,6 +15,7 @@ extern "C" bool pdc_ansi;
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <map>
 #include <iomanip>
 #include <sstream>
 #include <chrono>
@@ -547,7 +548,17 @@ int TuiApp::DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int
     }
     if (data.ramSpeed > 0) {
         std::string ramStr = std::string(data.ramType) + "-" + std::to_string(data.ramSpeed);
+        if (data.ramSlotsTotal > 0) {
+            ramStr += "   " + std::to_string(data.ramSlotsUsed) + "/" +
+                      std::to_string(data.ramSlotsTotal) + " slots";
+        }
         mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, ramStr.c_str());
+        lines++;
+    } else if (data.ramSlotsTotal > 0) {
+        // Frequency unknown but the slot count is still worth a line.
+        std::string slots = std::to_string(data.ramSlotsUsed) + "/" +
+                            std::to_string(data.ramSlotsTotal) + " slots";
+        mvwprintw(win, y + lines, x0 + 2, "%.*s", maxW - 4, slots.c_str());
         lines++;
     }
 
@@ -2446,6 +2457,12 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
         wattroff(stdscr, COLOR_PAIR(5) | A_BOLD);
     };
 
+    // Which physical disk each drive letter lives on, so a volume row is not a
+    // free-floating letter. Windows fills this with the disk scan.
+    std::map<char, int> letterDisk;
+    for (const auto& pd : data.physicalDisks)
+        for (char l : pd.driveLetters) letterDisk[l] = pd.index;
+
     if (!data.disks.empty()) {
         section("Volumes");
         for (const auto& d : data.disks) {
@@ -2461,7 +2478,13 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             snprintf(head, sizeof(head), "%s   %s   %.0f%%   %s / %s   free %s",
                      label.c_str(), d.fileSystem.c_str(), upct,
                      used.c_str(), total.c_str(), free.c_str());
-            mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(head, W - 6).c_str());
+            std::string headStr = head;
+            if (d.letter) {
+                const auto it = letterDisk.find(d.letter);
+                if (it != letterDisk.end())
+                    headStr += "   [Disk " + std::to_string(it->second) + "]";
+            }
+            mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(headStr, W - 6).c_str());
 
             const int barW = 24;
             double p = upct < 0 ? 0 : (upct > 100 ? 100 : upct);
@@ -2489,6 +2512,10 @@ void TuiApp::RenderDiskDetails(int rows, int cols, int ch) {
             std::string head = pd.model;
             if (!pd.diskType.empty()) head += "  " + pd.diskType;
             if (pd.capacity > 0) head += "  " + FormatSize(pd.capacity);
+            // The volumes on this disk, the other half of the binding shown
+            // on each volume row.
+            for (size_t li = 0; li < pd.driveLetters.size(); ++li)
+                head += (li == 0 ? "   " : ", ") + std::string(1, pd.driveLetters[li]) + ":";
             mvwprintw(stdscr, y++, x0 + 3, "%s", utf8_truncate(head, W - 6).c_str());
 
             std::string stats;

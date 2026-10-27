@@ -135,6 +135,8 @@ void ModuleCoordinator::Start() {
     MemoryInfo memInfo;
     data_.ramSpeed = memInfo.GetRamSpeed();
     data_.ramType = memInfo.GetRamType();
+    data_.ramSlotsTotal = memInfo.GetRamSlotsTotal();
+    data_.ramSlotsUsed = memInfo.GetRamSlotsUsed();
 }
 
 void ModuleCoordinator::Stop() {
@@ -235,8 +237,12 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.swapUsed = data_.swapUsed.load();
     tuiData.swapTotal = data_.swapTotal.load();
     sysInfo.ramSpeed = data_.ramSpeed;
+    sysInfo.ramSlotsTotal = data_.ramSlotsTotal;
+    sysInfo.ramSlotsUsed = data_.ramSlotsUsed;
     snprintf(sysInfo.ramType, sizeof(sysInfo.ramType), "%s", data_.ramType.c_str());
     tuiData.ramSpeed = data_.ramSpeed;
+    tuiData.ramSlotsTotal = data_.ramSlotsTotal;
+    tuiData.ramSlotsUsed = data_.ramSlotsUsed;
     snprintf(tuiData.ramType, sizeof(tuiData.ramType), "%s", data_.ramType.c_str());
 
     // GPU

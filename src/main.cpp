@@ -2071,6 +2071,8 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     pi.index = pd.physicalIndex;
                     pi.readBps = pd.readBytesPerSec;
                     pi.writeBps = pd.writeBytesPerSec;
+                    for (int li = 0; li < pd.logicalDriveCount && li < 8; ++li)
+                        pi.driveLetters.push_back(pd.logicalDriveLetters[li]);
                     for (int ai = 0; ai < pd.attributeCount && ai < 32; ai++) {
                         const auto& sa = pd.attributes[ai];
                         tcmt::TuiData::SmAttributeInfo ai2;

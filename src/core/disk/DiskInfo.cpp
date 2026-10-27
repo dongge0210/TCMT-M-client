@@ -98,11 +98,14 @@ static bool ParseDiskPartition(const std::wstring& text, int& diskIndexOut) {
     return true;
 }
 
-// 使用 WMI 关联查询获取物理磁盘到逻辑驱动器的映射
-// Fast, non-blocking physical disk list (single Win32_DiskDrive query).
-// No ASSOCIATORS letter mapping and no SMART reads — those can be slow or
-// block on unresponsive drives, so callers publish this list first and read
-// SMART per disk separately.
+// Physical disk index -> drive letters; defined further down next to the
+// enumeration that also needs it.
+static void MapDriveLetters(IWbemServices* svc, std::map<int, std::vector<char>>& out);
+
+// Fast, non-blocking physical disk list (single Win32_DiskDrive query) plus
+// the letter mapping. No SMART reads — those can hang on an unresponsive
+// drive, so callers publish this list first and read SMART per disk
+// separately.
 void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
     IWbemServices* svc = wmi.GetWmiService();
     if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
@@ -168,6 +171,22 @@ void DiskInfo::CollectPhysicalDiskInfo(WmiManager& wmi, SystemInfo& sysInfo) {
         pEnum->Release();
     }
 
+    // Drive letters, so the UI can say which physical disk a volume sits on.
+    // Two extra WMI association queries per disk; this runs with the 60 s
+    // disk scan, not on the sampling path.
+    std::map<int, std::vector<char>> letters;
+    MapDriveLetters(svc, letters);
+    for (auto& kv : tempDisks) {
+        const auto it = letters.find(kv.first);
+        if (it == letters.end()) continue;
+        int n = 0;
+        for (char c : it->second) {
+            if (n >= 8) break;
+            kv.second.logicalDriveLetters[n++] = c;
+        }
+        kv.second.logicalDriveCount = n;
+    }
+
     sysInfo.physicalDisks.clear();
     for (auto& kv : tempDisks) {
         sysInfo.physicalDisks.push_back(kv.second);
@@ -229,11 +248,10 @@ void DiskInfo::SampleIoRates(std::vector<PhysicalDiskSmartData>& disks) {
     apply(writeCtr, false);
 }
 
-void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
-                                    SystemInfo& sysInfo, bool readSmart) {
-    IWbemServices* svc = wmi.GetWmiService();
-    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
-    std::map<int, std::vector<char>> physicalIndexToLetters;
+// Physical disk index -> the drive letters that live on it. Two ASSOCIATORS
+// queries per disk (DiskDrive -> DiskPartition -> LogicalDisk). That is WMI
+// work, so it belongs with the periodic disk scan, never in a per-tick path.
+static void MapDriveLetters(IWbemServices* svc, std::map<int, std::vector<char>>& out) {
     IEnumWbemClassObject* pEnum = nullptr;
 
     // 方法：对每个物理磁盘，使用 ASSOCIATORS OF 查询关联的分区，再查询关联的逻辑驱动器
@@ -288,7 +306,7 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
                                         std::wstring logicalDeviceID = vtLogicalDeviceID.bstrVal;
                                         if (logicalDeviceID.length() >= 2 && logicalDeviceID[1] == L':') {
                                             char letter = static_cast<char>(::toupper(logicalDeviceID[0]));
-                                            physicalIndexToLetters[diskIndex].push_back(letter);
+                                            out[diskIndex].push_back(letter);
                                         }
                                     }
                                     VariantClear(&vtLogicalDeviceID);
@@ -308,10 +326,18 @@ void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>
         }
         pEnum->Release();
     }
+}
+
+void DiskInfo::CollectPhysicalDisks(WmiManager& wmi, const std::vector<DiskData>& logicalDisks,
+                                    SystemInfo& sysInfo, bool readSmart) {
+    IWbemServices* svc = wmi.GetWmiService();
+    if (!svc) { Logger::Debug("WMI service invalid, skipping physical disk enumeration"); return; }
+    std::map<int, std::vector<char>> physicalIndexToLetters;
+    MapDriveLetters(svc, physicalIndexToLetters);
 
     std::map<int, PhysicalDiskSmartData> tempDisks;
-    pEnum = nullptr;
-    hr = svc->ExecQuery(bstr_t(L"WQL"),
+    IEnumWbemClassObject* pEnum = nullptr;
+    HRESULT hr = svc->ExecQuery(bstr_t(L"WQL"),
         bstr_t(L"SELECT Index,Model,SerialNumber,InterfaceType,Size,MediaType FROM Win32_DiskDrive"),
         WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr, &pEnum);
     if (SUCCEEDED(hr) && pEnum) {

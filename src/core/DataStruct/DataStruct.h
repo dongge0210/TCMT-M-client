@@ -310,6 +310,10 @@ struct SystemInfo {
     uint64_t swapTotal = 0;
     uint32_t ramSpeed = 0;          // RAM frequency in MHz (e.g., 6400)
     char ramType[32] = {};         // DDR generation (e.g., "DDR5", "LPDDR5")
+    // 内存插槽：总槽位来自 SMBIOS 的物理内存数组，已用槽位就是内存条数。
+    // Soldered 平台（Apple Silicon、部分轻薄本）报 0，表示没有可数的插槽。
+    int ramSlotsTotal = 0;
+    int ramSlotsUsed = 0;
     // 识别到的全部 GPU（第 0 项为主卡）。整份进 IPC 的 gpu/json —— 单值的
     // gpuName/gpuBrand/… 只装得下主卡，多卡机器上其余几块以前是直接消失的。
     std::vector<GpuSpec> gpus;

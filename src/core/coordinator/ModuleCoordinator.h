@@ -49,6 +49,8 @@ struct ModuleData {
     std::atomic<uint64_t> swapTotal{0};
     uint32_t ramSpeed = 0;
     std::string ramType;  // non-atomic — set once at startup
+    int ramSlotsTotal = 0;   // SMBIOS physical memory array; 0 when soldered
+    int ramSlotsUsed = 0;
     // GPU (500ms)
     std::atomic<double> gpuUsage{0.0};
     std::atomic<uint64_t> gpuMemory{0};
