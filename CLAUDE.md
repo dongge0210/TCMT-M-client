@@ -113,6 +113,7 @@ IPCDataBlock (single schema-driven block, both platforms)
   - PowerMonitor: `power/PowerMonitor.h/.cpp` (cross-platform power/freq API)
   - Notifications: `notifications/` — DeviceChangeNotifier (USB/BT hotplug), UserNotifier (desktop toasts), SystemEventMonitor (sleep/wake/disk/network/thermal callbacks)
   - Config: `Config/ConfigManager.h/.cpp` — loads `system_monitor.json` from the project root at startup (nlohmann/json, header-only via `src/third_party/json/single_include/`). **Not wired into Windows `main.cpp` yet.**
+- i18n: `src/resources/i18n.json` 是所有界面文案的唯一来源（每条 `{ "en": …, "zh-Hans": … }`），`src/core/I18n.cpp` 首次调用 `Tr()` 时用 nlohmann 解析一次。CMake 把它编成 raw string 字面量，MSBuild 走 `resources.rc` 的 RCDATA；加文案改 JSON 就行，别往 `I18n.h` 里塞表。
   - Utils: `Logger.cpp` (async producer-consumer, 10MB rotation), `WMIManager`, `JThreadCompat.h`, `LogBuffer.h` (TUI log ring; lives here, not in `src/tui/`, so `core` does not depend on the TUI)
   - Experimental, macOS-only motion/ALS line, **not** part of the shipped UI: `accel/` +
     `als/` plus a localhost HTTP side channel (`HTTPServer/MotionHTTPServer.cpp`). Live path is

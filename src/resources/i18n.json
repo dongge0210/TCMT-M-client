@@ -1,0 +1,782 @@
+{
+  "hint.settings": {
+    "en": "S:Settings",
+    "zh-Hans": "S:设置"
+  },
+  "hint.panel": {
+    "en": "Tab:Panel",
+    "zh-Hans": "Tab:面板"
+  },
+  "hint.log": {
+    "en": "L:Log",
+    "zh-Hans": "L:日志"
+  },
+  "hint.update": {
+    "en": "U:Update",
+    "zh-Hans": "U:更新"
+  },
+  "hint.location": {
+    "en": "R:Location",
+    "zh-Hans": "R:定位"
+  },
+  "hint.help": {
+    "en": "?:Help",
+    "zh-Hans": "?:帮助"
+  },
+  "hint.quit": {
+    "en": "Q:Quit",
+    "zh-Hans": "Q:退出"
+  },
+  "status.noclients": {
+    "en": "no clients",
+    "zh-Hans": "无客户端"
+  },
+  "status.since": {
+    "en": "since ",
+    "zh-Hans": "自 "
+  },
+  "push.disabled": {
+    "en": "Push: disabled (press S to configure)",
+    "zh-Hans": "推送：未启用（按 S 配置）"
+  },
+  "push.prefix": {
+    "en": "Push: ",
+    "zh-Hans": "推送："
+  },
+  "push.last": {
+    "en": " (last ",
+    "zh-Hans": "（最近 "
+  },
+  "push.last_close": {
+    "en": ")",
+    "zh-Hans": "）"
+  },
+  "push.never": {
+    "en": "never",
+    "zh-Hans": "从未"
+  },
+  "push.ago": {
+    "en": "s ago",
+    "zh-Hans": "s 前"
+  },
+  "log.title": {
+    "en": "TCMT Log",
+    "zh-Hans": "TCMT 日志"
+  },
+  "log.level": {
+    "en": "level",
+    "zh-Hans": "级别"
+  },
+  "log.lines": {
+    "en": "lines: ",
+    "zh-Hans": "行数："
+  },
+  "log.hint": {
+    "en": "scroll  Home/End  f=follow  ?=help",
+    "zh-Hans": "滚动  Home/End  f=跟随  ?=帮助"
+  },
+  "log.empty": {
+    "en": "No log entries yet (l/Esc to dashboard)",
+    "zh-Hans": "暂无日志（l/Esc 返回仪表盘）"
+  },
+  "help.group.common": {
+    "en": "Common",
+    "zh-Hans": "通用"
+  },
+  "help.group.dashboard": {
+    "en": "Dashboard",
+    "zh-Hans": "仪表盘"
+  },
+  "help.group.log": {
+    "en": "Log page",
+    "zh-Hans": "日志页"
+  },
+  "help.server_push": {
+    "en": "server push settings",
+    "zh-Hans": "服务器推送设置"
+  },
+  "help.switch_log": {
+    "en": "switch to log page",
+    "zh-Hans": "切换到日志页"
+  },
+  "help.check_update": {
+    "en": "check for update",
+    "zh-Hans": "检查更新"
+  },
+  "help.request_loc": {
+    "en": "request Location Services (WiFi SSID)",
+    "zh-Hans": "请求定位权限（WiFi SSID）"
+  },
+  "help.back": {
+    "en": "go back one level",
+    "zh-Hans": "返回上一层"
+  },
+  "help.close": {
+    "en": "close this help",
+    "zh-Hans": "关闭帮助"
+  },
+  "help.quit": {
+    "en": "quit TCMT Monitor",
+    "zh-Hans": "退出 TCMT Monitor"
+  },
+  "help.panel_focus": {
+    "en": "move panel focus",
+    "zh-Hans": "切换面板焦点"
+  },
+  "help.cpu_details": {
+    "en": "open panel details (CPU / GPU / Disks / Power / Network)",
+    "zh-Hans": "打开面板详情（CPU / GPU / 磁盘 / 电源 / 网络面板聚焦时）"
+  },
+  "help.select_row": {
+    "en": "select a process row",
+    "zh-Hans": "选择进程行"
+  },
+  "help.conn_list": {
+    "en": "connections list (expand the status chip)",
+    "zh-Hans": "连接列表（展开状态芯片）"
+  },
+  "help.scroll_line": {
+    "en": "scroll one line",
+    "zh-Hans": "滚动一行"
+  },
+  "help.scroll_page": {
+    "en": "scroll one page",
+    "zh-Hans": "滚动一页"
+  },
+  "help.oldest": {
+    "en": "oldest entry",
+    "zh-Hans": "最早条目"
+  },
+  "help.newest": {
+    "en": "newest entry",
+    "zh-Hans": "最新条目"
+  },
+  "help.follow": {
+    "en": "follow newest lines",
+    "zh-Hans": "跟随最新"
+  },
+  "help.back_dash": {
+    "en": "back to dashboard",
+    "zh-Hans": "返回仪表盘"
+  },
+  "help.settings_hint": {
+    "en": "Settings page: Enter save, Esc cancel, Tab or arrows move focus, Space toggles",
+    "zh-Hans": "设置页：Enter 保存，Esc 取消，Tab/方向键移动焦点，Space 切换"
+  },
+  "settings.title": {
+    "en": "Server Upload Settings",
+    "zh-Hans": "服务器上传设置"
+  },
+  "settings.data_upload": {
+    "en": "Data upload",
+    "zh-Hans": "数据上传"
+  },
+  "settings.server_url": {
+    "en": "Server URL",
+    "zh-Hans": "服务器 URL"
+  },
+  "settings.skip_tls": {
+    "en": "Skip TLS verify",
+    "zh-Hans": "跳过 TLS 校验"
+  },
+  "settings.interval": {
+    "en": "Upload interval",
+    "zh-Hans": "上传间隔"
+  },
+  "settings.bounds": {
+    "en": " s  (bounds 1-60)",
+    "zh-Hans": " 秒（范围 1-60）"
+  },
+  "settings.status": {
+    "en": "Status : ",
+    "zh-Hans": "状态："
+  },
+  "settings.hint1": {
+    "en": "Enter save+apply   Esc cancel   Up/Down or Tab focus",
+    "zh-Hans": "Enter 保存并应用   Esc 取消   ↑↓/Tab 移动焦点"
+  },
+  "settings.hint2": {
+    "en": "Space toggles   type edits URL   digits edit interval",
+    "zh-Hans": "Space 切换   输入编辑 URL   数字键改间隔"
+  },
+  "settings.persist": {
+    "en": "Settings persist to system_monitor.json (server.*)",
+    "zh-Hans": "设置保存到 system_monitor.json (server.*)"
+  },
+  "settings.language": {
+    "en": "Language",
+    "zh-Hans": "语言"
+  },
+  "settings.sample_interval": {
+    "en": "Sample interval",
+    "zh-Hans": "采集间隔"
+  },
+  "hint.sample": {
+    "en": "Sample",
+    "zh-Hans": "采集"
+  },
+  "settings.sample_bounds": {
+    "en": " ms  (bounds 200-5000)",
+    "zh-Hans": " 毫秒（范围 200-5000）"
+  },
+  "lang.name.en": {
+    "en": "EN",
+    "zh-Hans": "EN"
+  },
+  "lang.name.zh": {
+    "en": "简体中文",
+    "zh-Hans": "简体中文"
+  },
+  "conn.title": {
+    "en": "Connections",
+    "zh-Hans": "连接"
+  },
+  "conn.empty": {
+    "en": "no clients connected",
+    "zh-Hans": "无客户端连接"
+  },
+  "conn.count": {
+    "en": "  %d client%s",
+    "zh-Hans": "  %d 个客户端"
+  },
+  "conn.since": {
+    "en": "  Since: ",
+    "zh-Hans": "  自："
+  },
+  "conn.close": {
+    "en": "Enter/Esc/q close",
+    "zh-Hans": "Enter/Esc/q 关闭"
+  },
+  "wifi.connected": {
+    "en": "Connected",
+    "zh-Hans": "已连接"
+  },
+  "wifi.disconnected": {
+    "en": "Disconnected",
+    "zh-Hans": "未连接"
+  },
+  "wifi.off": {
+    "en": "Off",
+    "zh-Hans": "关闭"
+  },
+  "wifi.loc_off": {
+    "en": "unknown (Location off)",
+    "zh-Hans": "未知（定位关闭）"
+  },
+  "wifi.loc_denied": {
+    "en": "unknown (Location denied)",
+    "zh-Hans": "未知（定位被拒）"
+  },
+  "wifi.press_r": {
+    "en": "press R to request Location Services",
+    "zh-Hans": "按 R 请求定位权限"
+  },
+  "wifi.grant": {
+    "en": "grant: System Settings > Privacy & Security",
+    "zh-Hans": "授权：系统设置 > 隐私与安全"
+  },
+  "wifi.g1_denied": {
+    "en": "Location denied, SSID unavailable",
+    "zh-Hans": "定位被拒，SSID 不可用"
+  },
+  "wifi.g1_open": {
+    "en": "Location not granted, SSID hidden",
+    "zh-Hans": "定位未授权，SSID 隐藏"
+  },
+  "wifi.g2": {
+    "en": "Press R to request Location Services",
+    "zh-Hans": "按 R 请求定位权限"
+  },
+  "wifi.path1": {
+    "en": "System Settings > Privacy & Security",
+    "zh-Hans": "系统设置 > 隐私与安全"
+  },
+  "wifi.path2": {
+    "en": "> Location Services, allow TCMT-M",
+    "zh-Hans": "> 定位服务，允许 TCMT-M"
+  },
+  "wifi.ssid_denied": {
+    "en": "SSID unavailable (Location Services denied)",
+    "zh-Hans": "SSID 不可用（定位被拒）"
+  },
+  "wifi.loc_root": {
+    "en": "unknown (root can't request permission)",
+    "zh-Hans": "未知（root 无法申请权限）"
+  },
+  "wifi.g_root": {
+    "en": "root can't request permission",
+    "zh-Hans": "root 无法申请权限"
+  },
+  "wifi.ssid_root": {
+    "en": "SSID hidden (root can't request permission)",
+    "zh-Hans": "SSID 不可用（root 无法申请权限）"
+  },
+  "wifi.g1_root": {
+    "en": "Running as root: can't request permission",
+    "zh-Hans": "以 root 运行，无法申请定位权限"
+  },
+  "bt.on": {
+    "en": "On (%d devices)",
+    "zh-Hans": "开（%d 台设备）"
+  },
+  "bt.off": {
+    "en": "Off",
+    "zh-Hans": "关"
+  },
+  "bt.paired": {
+    "en": "+%d paired",
+    "zh-Hans": "+%d 已配对"
+  },
+  "cpu.no_percore": {
+    "en": "Per-core data is not collected on this platform",
+    "zh-Hans": "此平台未采集逐核数据"
+  },
+  "details.close": {
+    "en": "Esc / Space close",
+    "zh-Hans": "Esc / 空格关闭"
+  },
+  "details.gpu_switch": {
+    "en": "Left/Right switch GPU",
+    "zh-Hans": "左右键切换 GPU"
+  },
+  "disk.none": {
+    "en": "No disks detected",
+    "zh-Hans": "未检测到磁盘"
+  },
+  "battery.none": {
+    "en": "No battery detected",
+    "zh-Hans": "未检测到电池"
+  },
+  "sys.toosmall": {
+    "en": "Terminal too small. Current: %dx%d",
+    "zh-Hans": "终端过小。当前：%dx%d"
+  },
+  "sys.unknown_os": {
+    "en": "Unknown OS",
+    "zh-Hans": "未知系统"
+  },
+  "update.checking": {
+    "en": "Checking for updates…",
+    "zh-Hans": "检查更新…"
+  },
+  "update.downloading": {
+    "en": "Downloading update…",
+    "zh-Hans": "下载更新包…"
+  },
+  "update.newver": {
+    "en": "New version %s available (current %s, press U)",
+    "zh-Hans": "新版本 %s 可用（当前 %s，按 U 更新）"
+  },
+  "update.ready": {
+    "en": "Update ready — restart after quitting (press Q)",
+    "zh-Hans": "更新完成，退出后重启生效（Q 退出）"
+  },
+  "update.fail.manifest": {
+    "en": "Release manifest incomplete",
+    "zh-Hans": "发布格式不完整"
+  },
+  "update.fail.sig": {
+    "en": "Signature verification failed",
+    "zh-Hans": "签名校验失败"
+  },
+  "update.fail.nobin": {
+    "en": "Release manifest incomplete (binary missing)",
+    "zh-Hans": "发布格式不完整（缺少二进制）"
+  },
+  "update.fail.parse": {
+    "en": "Update check failed (parse)",
+    "zh-Hans": "检查更新失败（解析）"
+  },
+  "update.fail.url": {
+    "en": "Invalid update URL",
+    "zh-Hans": "更新地址无效"
+  },
+  "update.fail.dl": {
+    "en": "Download failed",
+    "zh-Hans": "下载失败"
+  },
+  "update.fail.hash": {
+    "en": "Hash verification failed",
+    "zh-Hans": "哈希校验失败"
+  },
+  "update.fail.tmp": {
+    "en": "Failed to write temp file",
+    "zh-Hans": "写入临时文件失败"
+  },
+  "update.fail.bin": {
+    "en": "Failed to replace binary",
+    "zh-Hans": "替换二进制失败"
+  },
+  "smart.1": {
+    "en": "Raw Read Error Rate",
+    "zh-Hans": "读取错误率"
+  },
+  "smart.3": {
+    "en": "Spin-Up Time",
+    "zh-Hans": "硬盘启动时间"
+  },
+  "smart.4": {
+    "en": "Start/Stop Count",
+    "zh-Hans": "启停次数"
+  },
+  "smart.5": {
+    "en": "Reallocated Sectors Count",
+    "zh-Hans": "重映射扇区计数"
+  },
+  "smart.7": {
+    "en": "Seek Error Rate",
+    "zh-Hans": "寻道错误率"
+  },
+  "smart.9": {
+    "en": "Power-On Hours",
+    "zh-Hans": "通电时间"
+  },
+  "smart.10": {
+    "en": "Spin Retry Count",
+    "zh-Hans": "启动重试次数"
+  },
+  "smart.12": {
+    "en": "Power Cycle Count",
+    "zh-Hans": "通电次数"
+  },
+  "smart.15": {
+    "en": "Data Integrity Errors",
+    "zh-Hans": "数据完整性错误"
+  },
+  "smart.16": {
+    "en": "Error Log Entries",
+    "zh-Hans": "错误日志条目数"
+  },
+  "smart.148": {
+    "en": "Reserved",
+    "zh-Hans": "预留"
+  },
+  "smart.149": {
+    "en": "Reserved",
+    "zh-Hans": "预留"
+  },
+  "smart.167": {
+    "en": "SSD Protect Mode",
+    "zh-Hans": "固态硬盘保护模式"
+  },
+  "smart.168": {
+    "en": "SATA Phy Error Count",
+    "zh-Hans": "SATA 物理层错误计数"
+  },
+  "smart.169": {
+    "en": "Remaining Life",
+    "zh-Hans": "剩余寿命"
+  },
+  "smart.170": {
+    "en": "Available Reserved Space",
+    "zh-Hans": "可用预留空间"
+  },
+  "smart.171": {
+    "en": "SSD Program Fail Count",
+    "zh-Hans": "SSD 编程失败计数"
+  },
+  "smart.172": {
+    "en": "SSD Erase Fail Count",
+    "zh-Hans": "SSD 擦除失败计数"
+  },
+  "smart.173": {
+    "en": "SSD Wear Leveling Count",
+    "zh-Hans": "SSD 磨损均衡计数"
+  },
+  "smart.174": {
+    "en": "Unexpected Power Loss",
+    "zh-Hans": "意外断电计数"
+  },
+  "smart.175": {
+    "en": "Power-On Hours",
+    "zh-Hans": "通电时间"
+  },
+  "smart.176": {
+    "en": "Erase Fail Count",
+    "zh-Hans": "擦除失败计数"
+  },
+  "smart.177": {
+    "en": "Wear Leveling Count",
+    "zh-Hans": "磨损均衡计数"
+  },
+  "smart.179": {
+    "en": "Used Reserved Block Count",
+    "zh-Hans": "已用预留块计数"
+  },
+  "smart.180": {
+    "en": "Program Fail Count",
+    "zh-Hans": "编程失败计数"
+  },
+  "smart.181": {
+    "en": "Program Fail Count",
+    "zh-Hans": "编程失败计数"
+  },
+  "smart.182": {
+    "en": "Erase Fail Count",
+    "zh-Hans": "擦除失败计数"
+  },
+  "smart.183": {
+    "en": "SATA Downshift Count",
+    "zh-Hans": "SATA 下行计数"
+  },
+  "smart.184": {
+    "en": "End-to-End Error",
+    "zh-Hans": "端到端错误"
+  },
+  "smart.187": {
+    "en": "Reported Uncorrectable Errors",
+    "zh-Hans": "报告不可校正错误"
+  },
+  "smart.188": {
+    "en": "Command Timeout",
+    "zh-Hans": "命令超时"
+  },
+  "smart.189": {
+    "en": "Factory Bad Block",
+    "zh-Hans": "工厂坏块"
+  },
+  "smart.190": {
+    "en": "Airflow Temperature",
+    "zh-Hans": "气流温度"
+  },
+  "smart.191": {
+    "en": "G-Sense Error Rate",
+    "zh-Hans": "G-Sense 错误率"
+  },
+  "smart.192": {
+    "en": "Power-Off Retract Count",
+    "zh-Hans": "断电撤回计数"
+  },
+  "smart.193": {
+    "en": "Load/Unload Cycle Count",
+    "zh-Hans": "加载卸载计数"
+  },
+  "smart.194": {
+    "en": "Temperature",
+    "zh-Hans": "温度"
+  },
+  "smart.195": {
+    "en": "Hardware ECC Recovered",
+    "zh-Hans": "硬件 ECC 恢复"
+  },
+  "smart.196": {
+    "en": "Reallocation Event Count",
+    "zh-Hans": "重新分配事件"
+  },
+  "smart.197": {
+    "en": "Current Pending Sector",
+    "zh-Hans": "当前待处理扇区"
+  },
+  "smart.198": {
+    "en": "Offline Uncorrectable",
+    "zh-Hans": "脱机不可校正"
+  },
+  "smart.199": {
+    "en": "CRC Error Count",
+    "zh-Hans": "CRC 错误计数"
+  },
+  "smart.200": {
+    "en": "Write Error Rate",
+    "zh-Hans": "写入错误率"
+  },
+  "smart.201": {
+    "en": "Soft Read Error Rate",
+    "zh-Hans": "软读取错误率"
+  },
+  "smart.202": {
+    "en": "Data Address Mark Errors",
+    "zh-Hans": "数据地址标记错误"
+  },
+  "smart.203": {
+    "en": "Run Out Cancel",
+    "zh-Hans": "耗尽取消"
+  },
+  "smart.204": {
+    "en": "Soft ECC Correction",
+    "zh-Hans": "软 ECC 修正"
+  },
+  "smart.205": {
+    "en": "Thermal Asperity",
+    "zh-Hans": "热糙度"
+  },
+  "smart.206": {
+    "en": "Flying Height",
+    "zh-Hans": "磁头高度"
+  },
+  "smart.207": {
+    "en": "Spin Vibration",
+    "zh-Hans": "硬盘旋转震动"
+  },
+  "smart.208": {
+    "en": "Write Vibration",
+    "zh-Hans": "硬盘写入震动"
+  },
+  "smart.210": {
+    "en": "RAID Recovery",
+    "zh-Hans": "RAID 恢复"
+  },
+  "smart.218": {
+    "en": "CRC Error Count",
+    "zh-Hans": "CRC 错误计数"
+  },
+  "smart.220": {
+    "en": "Disk Shift",
+    "zh-Hans": "磁盘偏移"
+  },
+  "smart.222": {
+    "en": "Loaded Hours",
+    "zh-Hans": "已加载小时"
+  },
+  "smart.223": {
+    "en": "Load/Unload Retry Count",
+    "zh-Hans": "加载卸载重试"
+  },
+  "smart.224": {
+    "en": "Load Friction",
+    "zh-Hans": "负载摩擦"
+  },
+  "smart.225": {
+    "en": "Load/Unload Cycle Count",
+    "zh-Hans": "负载卸载计数"
+  },
+  "smart.226": {
+    "en": "Load-In Time",
+    "zh-Hans": "负载时间"
+  },
+  "smart.227": {
+    "en": "Torque Amplification Count",
+    "zh-Hans": "扭矩放大计数"
+  },
+  "smart.228": {
+    "en": "Power-Off Retract Count",
+    "zh-Hans": "断电撤回计数"
+  },
+  "smart.230": {
+    "en": "SSD Life",
+    "zh-Hans": "SSD 寿命"
+  },
+  "smart.231": {
+    "en": "SSD Remaining Life",
+    "zh-Hans": "SSD 剩余寿命"
+  },
+  "smart.232": {
+    "en": "Available Reserved Space",
+    "zh-Hans": "可用预留空间"
+  },
+  "smart.233": {
+    "en": "NAND Writes Total",
+    "zh-Hans": "NAND 写入总量"
+  },
+  "smart.234": {
+    "en": "Average Erase Count",
+    "zh-Hans": "平均擦除次数"
+  },
+  "smart.235": {
+    "en": "Max Erase Count",
+    "zh-Hans": "最大擦除次数"
+  },
+  "smart.240": {
+    "en": "Head Flying Hours",
+    "zh-Hans": "磁头飞行时间"
+  },
+  "smart.241": {
+    "en": "Host Writes Total",
+    "zh-Hans": "主机总计写入"
+  },
+  "smart.242": {
+    "en": "Host Reads Total",
+    "zh-Hans": "主机总计读取"
+  },
+  "smart.244": {
+    "en": "Average Erase Count",
+    "zh-Hans": "平均擦除次数"
+  },
+  "smart.245": {
+    "en": "Max Erase Count",
+    "zh-Hans": "最大擦除次数"
+  },
+  "smart.246": {
+    "en": "Total Erase Count",
+    "zh-Hans": "总计擦除次数"
+  },
+  "smart.247": {
+    "en": "Host Reads",
+    "zh-Hans": "主机读取量"
+  },
+  "smart.248": {
+    "en": "Host Writes",
+    "zh-Hans": "主机写入量"
+  },
+  "smart.249": {
+    "en": "NAND Reads",
+    "zh-Hans": "NAND 读取量"
+  },
+  "smart.250": {
+    "en": "Read Error Retry Rate",
+    "zh-Hans": "读取错误重试率"
+  },
+  "smart.251": {
+    "en": "Remaining Spare Capacity",
+    "zh-Hans": "剩余备用容量"
+  },
+  "smart.nvme.warning": {
+    "en": "Critical Warning",
+    "zh-Hans": "严重警告标志"
+  },
+  "smart.nvme.temp": {
+    "en": "Temperature",
+    "zh-Hans": "温度"
+  },
+  "smart.nvme.avail_spare": {
+    "en": "Available Spare",
+    "zh-Hans": "可用备用空间"
+  },
+  "smart.nvme.spare_thresh": {
+    "en": "Available Spare Threshold",
+    "zh-Hans": "可用备用空间阈值"
+  },
+  "smart.nvme.pct_used": {
+    "en": "Percentage Used",
+    "zh-Hans": "已用寿命百分比"
+  },
+  "smart.nvme.data_read": {
+    "en": "Data Units Read",
+    "zh-Hans": "数据读取量"
+  },
+  "smart.nvme.data_written": {
+    "en": "Data Units Written",
+    "zh-Hans": "数据写入量"
+  },
+  "smart.nvme.host_reads": {
+    "en": "Host Read Commands",
+    "zh-Hans": "主机读命令数"
+  },
+  "smart.nvme.host_writes": {
+    "en": "Host Write Commands",
+    "zh-Hans": "主机写命令数"
+  },
+  "smart.nvme.busy_time": {
+    "en": "Controller Busy Time",
+    "zh-Hans": "控制器忙碌时间"
+  },
+  "smart.nvme.power_cycles": {
+    "en": "Power Cycles",
+    "zh-Hans": "通电次数"
+  },
+  "smart.nvme.power_on": {
+    "en": "Power On Hours",
+    "zh-Hans": "通电时间"
+  },
+  "smart.nvme.unsafe_shutdowns": {
+    "en": "Unsafe Shutdowns",
+    "zh-Hans": "异常断电次数"
+  },
+  "smart.nvme.media_errors": {
+    "en": "Media & Integrity Errors",
+    "zh-Hans": "媒体与完整性错误"
+  },
+  "smart.nvme.error_log": {
+    "en": "Error Log Entries",
+    "zh-Hans": "错误日志条目数"
+  }
+}

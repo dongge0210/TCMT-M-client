@@ -194,6 +194,9 @@
     <ClCompile Include="src\core\Utils\ComInitializationHelper.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\I18n.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\Updater.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

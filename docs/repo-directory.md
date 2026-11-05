@@ -1,6 +1,6 @@
 # TCMT Repository Directory
 
-327 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
+332 tracked files. 由 `git ls-files` 生成 —— 加完目录跑一次
 `node tools/gen-repo-directory.mjs`，别手改这一份。
 
 ```
@@ -196,6 +196,7 @@
 |   |   |   |-- Platform_macOS.cpp    -- POSIX: pthread_mutex, SMC, shm_open
 |   |   |-- Utils/
 |   |   |   |-- ComInitializationHelper.cpp    -- CoInitializeEx wrapper
+|   |   |   |-- IsaLock.h
 |   |   |   |-- JThreadCompat.h    -- jthread compatibility shim for older C++ std
 |   |   |   |-- LogBuffer.h    -- 500-line thread-safe ring buffer
 |   |   |   |-- Logger.cpp    -- File + console + TUI buffer output
@@ -205,6 +206,7 @@
 |   |   |   |-- TimeUtils.h    -- Boot time, uptime, timestamps
 |   |   |   |-- TpmBridge.cpp    -- TBS API wrappers
 |   |   |   |-- TpmBridge.h    -- TPM 2.0 detection header
+|   |   |   |-- UserIdentity.h
 |   |   |   |-- WMIManager.cpp    -- WMI locator + IWbemServices
 |   |   |   |-- WMIManager.h    -- WMI COM service header
 |   |   |   |-- WinUtils.cpp    -- UTF-8↔UTF-16, admin check, elevation
@@ -314,6 +316,7 @@
 |   |   |   |-- WiFiInfo_linux.cpp
 |   |   |   |-- WiFiInfo_wlan.c    -- WLAN callback + scan helper
 |   |   |   |-- WiFiInfo_wlan.h    -- WLAN helper header
+|   |   |-- I18n.cpp
 |   |   |-- I18n.h
 |   |   |-- ServerProbe.cpp
 |   |   |-- ServerProbe.h
@@ -354,6 +357,8 @@
 |   |   |   |-- SmbusNCT6793.bin
 |   |   |   |-- SmbusPIIX4.bin
 |   |   |   |-- ZhaoxinMSR.bin
+|   |   |-- i18n.json
+|   |   |-- i18n_data.cpp.in
 |   |-- third_party/
 |   |   |-- sqlite-amalgamation/
 |   |   |   |-- sqlite3.c

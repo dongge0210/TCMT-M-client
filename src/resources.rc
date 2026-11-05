@@ -11,3 +11,7 @@ INTEL_OOBMSM    RCDATA "src/resources/pawnio/IntelOOBMSM.bin"
 INTEL_MCHBAR    RCDATA "src/resources/pawnio/IntelMCHBAR.bin"
 RYZEN_SMU       RCDATA "src/resources/pawnio/RyzenSMU.bin"
 LPC_IO          RCDATA "src/resources/pawnio/LpcIO.bin"
+
+// UI strings, parsed by src/core/I18n.cpp. The CMake build compiles the same
+// file in through src/resources/i18n_data.cpp.in instead of this resource.
+I18N_JSON       RCDATA "src/resources/i18n.json"

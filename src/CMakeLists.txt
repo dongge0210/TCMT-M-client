@@ -19,6 +19,7 @@ set(UTILS_SOURCES
 
 # Core modules
 set(CORE_MODULES_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/I18n.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/board/BoardInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/cpu/CpuInfo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/core/gpu/GpuInfo.cpp
@@ -183,6 +184,24 @@ elseif(TCMT_LINUX)
 endif()
 
 # ============================================================
+# i18n strings
+# ============================================================
+# src/resources/i18n.json is the single source for every UI string. It is
+# compiled in as a raw string literal so the table travels with the binary;
+# the MSBuild build embeds the same file as RCDATA in resources.rc instead.
+# CMAKE_CONFIGURE_DEPENDS makes editing the JSON re-run configure, which is
+# what regenerates the embedded copy.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n.json" TCMT_I18N_JSON)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n.json")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n_data.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/i18n_data.cpp"
+    @ONLY
+)
+list(APPEND CORE_MODULES_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/generated/i18n_data.cpp")
+
+# ============================================================
 # Build TCMTCore static library
 # ============================================================
 add_library(TCMTCore STATIC
@@ -202,6 +221,10 @@ set_target_properties(TCMTCore PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
+
+# I18n.cpp takes the table from the generated source on every CMake build;
+# the MSBuild path takes it from resources.rc instead.
+target_compile_definitions(TCMTCore PRIVATE TCMT_I18N_GENERATED=1)
 
 target_include_directories(TCMTCore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

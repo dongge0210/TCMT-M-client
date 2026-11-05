@@ -661,6 +661,23 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
 - 未验证：以上 Windows 路径都要在 Windows 端实跑确认，本机的 macOS 构建碰不到这些
   `#ifdef TCMT_WINDOWS` 分支。
 
+## 2026-11-05 — 界面文案从 C++ 表迁到 i18n.json
+
+- `src/core/I18n.h` 里那张 195 条的前置表搬进 `src/resources/i18n.json`，每条是
+  `{ "en": …, "zh-Hans": … }`。头文件只剩 `Lang` / `g_lang` / `Tr()` / `I18nSelect()`，
+  解析和查找在新增的 `src/core/I18n.cpp`：首次 `Tr()` 用 `std::call_once` 装载，
+  查找走 `std::map<std::string, …, std::less<>>` 的透明比较，不再每帧线性 `strcmp`，
+  未知 id 仍旧原样回显。
+- 嵌入方式两条：CMake 用 `configure_file` 把 JSON 生成成 raw string 字面量
+  （模板 `src/resources/i18n_data.cpp.in`，改 JSON 会触发重新 configure）；
+  MSBuild 把同一份文件以 RCDATA 打进 exe（`resources.rc` 的 `I18N_JSON`），
+  `I18n.cpp` 用 `FindResourceW` 读回。两条路径都由 `TCMT_I18N_GENERATED` 区分。
+- 覆盖顺序：`TCMT_I18N` 指定的文件 > exe 同目录的 `i18n.json` > 嵌入表。
+  覆盖文件读不了会记一条 ERROR 再退回嵌入表，不会让界面掉成裸 id。
+  环境变量按 UTF-8 转成 `std::filesystem::path`，Windows 上走 `MultiByteToWideChar`。
+- 验证：macOS Release 构建 0 error 0 warning；独立探针确认中英查表、未知 id 回显、
+  `TCMT_I18N` 覆盖生效、文件缺失时回退嵌入表。Windows 的 RCDATA 路径本机编不了，未验证。
+
 ## Known Issues
 - （2026-10-15 更正）原先写「openssl submodule not yet built into CMake (uses Homebrew openssl@3 on macOS)」，
   这条**已不成立**：`src/CMakeLists.txt` 现在**自建子模块** —— 自定义目标 `tcmt_openssl` 编出
