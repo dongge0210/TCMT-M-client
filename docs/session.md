@@ -675,7 +675,8 @@ macOS `cmake --build build -j8` 0 error；`dotnet build AvaloniaUI/TCMT.Avalonia
 - 覆盖顺序：`TCMT_I18N` 指定的文件 > exe 同目录的 `i18n.json` > 嵌入表。
   覆盖文件读不了会记一条 ERROR 再退回嵌入表，不会让界面掉成裸 id。
   环境变量按 UTF-8 转成 `std::filesystem::path`，Windows 上走 `MultiByteToWideChar`。
-- 验证：macOS Release 构建 0 error 0 warning；独立探针确认中英查表、未知 id 回显、
+- 验证：macOS Release 构建 0 error，新增文件 0 warning（另有 5 条来自 Apple SDK 头，
+  是既有的）；独立探针确认中英查表、未知 id 回显、
   `TCMT_I18N` 覆盖生效、文件缺失时回退嵌入表。Windows 的 RCDATA 路径本机编不了，未验证。
 
 ## Known Issues
