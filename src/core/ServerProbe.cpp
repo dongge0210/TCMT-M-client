@@ -35,6 +35,9 @@
 
 using json = nlohmann::json;
 
+// While a 403 has us blocked, retry at this cadence instead of every loop.
+static constexpr auto kBlockedRetryInterval = std::chrono::seconds(60);
+
 // Small platform shims: winsock on Windows, POSIX sockets elsewhere.
 #ifdef _WIN32
 static int CloseFd(int fd) { return closesocket(fd); }
@@ -299,6 +302,7 @@ bool ServerProbe::Start(const std::string& serverUrl) {
 #endif
     model_ = "TCMT-M";
 
+    blocked_ = false;  // a new target starts unblocked
     running_ = true;
     thread_ = std::thread(&ServerProbe::ProbeThread, this);
     Logger::Info("ServerProbe: started, target " + serverUrl
@@ -321,6 +325,11 @@ std::string ServerProbe::Token() const {
     return token_;
 }
 
+void ServerProbe::SetEnrollCode(const std::string& code) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    enrollCode_ = code;
+}
+
 void ServerProbe::PostSnapshot(const std::string& jsonData) {
     std::lock_guard<std::mutex> lk(mutex_);
     pendingSnapshot_ = jsonData;
@@ -329,6 +338,7 @@ void ServerProbe::PostSnapshot(const std::string& jsonData) {
 void ServerProbe::ProbeThread() {
     bool registered = false;
     bool wasOnline = false;
+    auto nextRegisterAttempt = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lk(mutex_);
         registered = !token_.empty();
@@ -339,12 +349,19 @@ void ServerProbe::ProbeThread() {
 
         // ── Register / re-register until the server accepts us ──
         if (!registered) {
-            const json body = {
+            const auto now = std::chrono::steady_clock::now();
+            if (blocked_.load() && now < nextRegisterAttempt) continue;
+
+            json body = {
                 {"name", deviceName_},
                 {"os", os_},
                 {"model", model_},
                 {"clientKey", clientKey_},
             };
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                if (!enrollCode_.empty()) body["enroll"] = enrollCode_;
+            }
             std::string response;
             const int status = RawPost(serverHost_, serverPort_,
                                        basePath_ + "/api/register",
@@ -370,14 +387,33 @@ void ServerProbe::ProbeThread() {
                         deviceId_ = id;
                     }
                     SaveClientIdentity(serverUrl_, clientKey_, id, token);
+                    blocked_ = false;
                     registered = true;
                     wasOnline = true;
                     Logger::Info("ServerProbe: registered as " + id);
+                }
+            } else if (status == 403) {
+                // Refused by policy: the device was revoked, or the enrollment
+                // code is wrong. Neither is fixed by retrying every 2 s, so
+                // back off and log once per transition instead of per cycle.
+                const bool wasBlocked = blocked_.exchange(true);
+                wasOnline = false;
+                if (!wasBlocked) {
+                    std::string reason;
+                    try {
+                        const json err = json::parse(response);
+                        if (err.contains("error") && err["error"].is_string())
+                            reason = err["error"].get<std::string>();
+                    } catch (...) { /* non-JSON body */ }
+                    Logger::Error("ServerProbe: registration refused (HTTP 403)"
+                                  + (reason.empty() ? std::string(", no reason given")
+                                                    : ": " + reason));
                 }
             } else if (wasOnline) {
                 Logger::Warn("ServerProbe: lost server (HTTP " + std::to_string(status) + "), retrying");
                 wasOnline = false;
             }
+            if (blocked_.load()) nextRegisterAttempt = now + kBlockedRetryInterval;
             continue;
         }
 

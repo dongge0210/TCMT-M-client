@@ -2325,9 +2325,12 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
 
                 // Live push status for the TUI (handshake visibility).
                 if (g_push.active) {
-                    g_push.status = g_push.probe.Token().empty()
-                        ? "connecting..."
-                        : ("uploading (" + g_push.probe.DeviceId() + ")");
+                    if (g_push.probe.IsBlocked())
+                        g_push.status = "blocked";
+                    else
+                        g_push.status = g_push.probe.Token().empty()
+                            ? "connecting..."
+                            : ("uploading (" + g_push.probe.DeviceId() + ")");
                 }
 
                 // Time-based upload gate (configurable 1..60 s via TUI).
@@ -2661,6 +2664,17 @@ int main(int argc, char* argv[]) {
             g_push.intervalSec = (std::max)(1, (std::min)(cfg.GetInt("server.intervalSec", 2), 60));
             g_push.intervalMs = (int64_t)g_push.intervalSec * 1000;
             g_push.active = g_push.enabled;
+            // Optional enrollment code: TCMT_ENROLL wins over the config
+            // file. server.enroll is the namespace the rest of the push
+            // settings use; push.enroll is accepted too.
+            {
+                const char* env = std::getenv("TCMT_ENROLL");
+                std::string enroll = (env && env[0] != '\0') ? env : "";
+                if (enroll.empty())
+                    enroll = cfg.GetString("server.enroll",
+                                           cfg.GetString("push.enroll", ""));
+                g_push.probe.SetEnrollCode(enroll);
+            }
             if (g_push.enabled) {
                 g_push.probe.SetInsecure(g_push.insecure);
                 if (g_push.probe.Start(g_push.url)) {

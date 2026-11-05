@@ -480,6 +480,17 @@ int main(int argc, char* argv[]) {
     }
     const bool serverEnabled = g_cfg.GetBool("server.enabled", false);
     const bool serverInsecure = g_cfg.GetBool("server.insecure", false);
+    // Optional enrollment code: TCMT_ENROLL wins over the config file. The
+    // push settings live under server.*; push.enroll is accepted as well so
+    // either spelling works.
+    std::string enrollCode;
+    {
+        const char* env = std::getenv("TCMT_ENROLL");
+        if (env && env[0] != '\0') enrollCode = env;
+        if (enrollCode.empty())
+            enrollCode = g_cfg.GetString("server.enroll",
+                                         g_cfg.GetString("push.enroll", ""));
+    }
     const bool motionHttpEnabled = g_cfg.GetBool("motion_http.enabled", false);
     // Upload cadence — hard bounds 1..60 s (config + TUI settings page).
     int intervalSec = g_cfg.GetInt("server.intervalSec", 2);
@@ -1099,6 +1110,7 @@ int main(int argc, char* argv[]) {
 
     // ServerProbe: push data to tcmt-server (enable/URL from TUI settings)
     static ServerProbe s_probe;
+    s_probe.SetEnrollCode(enrollCode);
     if (serverEnabled) {
         s_probe.SetInsecure(serverInsecure);
         Logger::Info("ServerProbe: target " + serverUrl);
@@ -1206,9 +1218,12 @@ int main(int argc, char* argv[]) {
             // Handshake state, visible in the TUI: connecting until the
             // server assigns an id, then uploading with that id attached.
             if (probeActive) {
-                probeStatus = s_probe.Token().empty()
-                    ? "connecting..."
-                    : ("uploading (" + s_probe.DeviceId() + ")");
+                if (s_probe.IsBlocked())
+                    probeStatus = "blocked";
+                else
+                    probeStatus = s_probe.Token().empty()
+                        ? "connecting..."
+                        : ("uploading (" + s_probe.DeviceId() + ")");
             }
             data.sampleIntervalMs = g_sampleIntervalMs.load();  // dashboard header
             data.serverPushEnabled = probeActive;

@@ -30,6 +30,15 @@ public:
     // Only meaningful with https URLs. Use at your own risk.
     void SetInsecure(bool insecure) { insecure_ = insecure; }
 
+    // Optional enrollment code for servers started with --enroll-token.
+    // Sent as the `enroll` field on /api/register; omitted when empty.
+    void SetEnrollCode(const std::string& code);
+
+    // True after /api/register was refused with 403 (device disabled, or a
+    // wrong enrollment code) and no later registration succeeded. The probe
+    // keeps retrying in this state, at a much slower cadence.
+    bool IsBlocked() const { return blocked_.load(); }
+
     // Call from main loop to push current data.
     // Thread-safe — posts asynchronously via a background thread.
     // Returns the probe's device token (empty if not started).
@@ -61,7 +70,9 @@ private:
     std::string model_;
     std::string token_;
     std::string deviceId_;
+    std::string enrollCode_;  // guarded by mutex_
     std::atomic<bool> running_{false};
+    std::atomic<bool> blocked_{false};
     std::thread thread_;
     mutable std::mutex mutex_;
     std::string pendingSnapshot_;

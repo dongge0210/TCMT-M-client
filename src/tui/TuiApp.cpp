@@ -2004,6 +2004,11 @@ void TuiApp::RenderConnectionsList(int rows, int cols, int ch) {
     int color = -1;
     if (!data.serverPushEnabled) {
         pushStr = Tr("push.disabled");
+    } else if (data.serverStatus.rfind("blocked", 0) == 0) {
+        // Server refused registration (revoked device / bad enrollment code).
+        // No "last upload" suffix: there is nothing to report.
+        color = 4;
+        pushStr = Tr("push.blocked");
     } else {
         std::string age = Tr("push.never");
         if (data.lastPushMs > 0) {
@@ -3984,6 +3989,9 @@ void TuiApp::Run() {
             int color = (data.connectionCount > 0) ? 2 : -1;
             if (!data.serverPushEnabled) {
                 pushStr = Tr("push.disabled");
+            } else if (data.serverStatus.rfind("blocked", 0) == 0) {
+                color = 4;
+                pushStr = Tr("push.blocked");
             } else {
                 std::string age = Tr("push.never");
                 if (data.lastPushMs > 0) {

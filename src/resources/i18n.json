@@ -39,6 +39,10 @@
     "en": "Push: disabled (press S to configure)",
     "zh-Hans": "推送：未启用（按 S 配置）"
   },
+  "push.blocked": {
+    "en": "Push: blocked (server refused)",
+    "zh-Hans": "推送：已阻止（服务端拒绝）"
+  },
   "push.prefix": {
     "en": "Push: ",
     "zh-Hans": "推送："
