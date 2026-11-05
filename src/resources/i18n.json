@@ -28,8 +28,8 @@
     "zh-Hans": "Q:退出"
   },
   "status.noclients": {
-    "en": "no clients",
-    "zh-Hans": "无客户端"
+    "en": "no connections",
+    "zh-Hans": "无连接"
   },
   "status.since": {
     "en": "since ",
@@ -236,12 +236,12 @@
     "zh-Hans": "连接"
   },
   "conn.empty": {
-    "en": "no clients connected",
-    "zh-Hans": "无客户端连接"
+    "en": "no connections",
+    "zh-Hans": "暂无连接"
   },
   "conn.count": {
-    "en": "  %d client%s",
-    "zh-Hans": "  %d 个客户端"
+    "en": "  %d connection%s",
+    "zh-Hans": "  %d 个连接"
   },
   "conn.since": {
     "en": "  Since: ",
