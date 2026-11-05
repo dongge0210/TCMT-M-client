@@ -90,17 +90,20 @@ Never hardcode a build output path. Ask the MCP server to infer it:
 
 ### Data Flow
 ```
-C++ Core (TCMT-M / TCMT.exe)
+采集端 TCMT-M / TCMT.exe（src/main_mac.cpp / src/main.cpp / src/main_linux.cpp）
   │  Collects: CPU, GPU, Memory, Disk, Network, WiFi, Bluetooth, OS, Temperature
   │  Sources: WMI (Windows), IOKit/sysctl (macOS), PawnIO (Windows kernel),
   │           NVML/CUDA (Windows), CoreWLAN/IOBluetooth (macOS), WLAN API (Windows)
   ▼
-IPCDataBlock (single schema-driven block, both platforms)
-  │  Same field layout everywhere; only the transport differs — Unix socket (macOS) / NamedPipe (Windows)
+IPCDataBlock —— 一块 schema 驱动的共享内存，所有平台字段布局一致
+  │  读数就在这块内存里（macOS/Linux 是 POSIX shm，Windows 是命名映射文件）；
+  │  套接字只负责把 schema 广播出去，从不搬运读数。
   │
-  ├── AvaloniaUI (.NET 10.0, cross-platform) — connects via IPCPipeClient, reads via IPCMemoryReader
-  ├── ncurses TUI (macOS-only) — reads directly in main_mac.cpp
-  └── MCP Server — `TCMT-M --mcp` (JSON-RPC 2.0 stdio, uses IPC for data)
+  ├── AvaloniaUI（.NET 10，前端）—— 用 IPCPipeClient 拿到 schema，之后靠 IPCMemoryReader
+  │                                 直接读共享内存，不再经过管道
+  ├── TUI（Windows 用 PDCurses，macOS/Linux 用 ncurses）—— 同进程，直接读当前快照
+  └── MCP（`TCMT-M --mcp`）—— 对外是 stdio JSON-RPC 的 MCP server，对内只是 IPC 客户端：
+                              有采集端就用它的数据，没有就自己采，从不启动 IPCServer
 ```
 
 ### Key Modules
