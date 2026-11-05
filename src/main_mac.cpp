@@ -2068,7 +2068,9 @@ int main(int argc, char* argv[]) {
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             const bool pushDue = lastPushMs == 0 || nowMs - lastPushMs >= intervalMs;
-            if (probeActive && isHeavyFrame && pushDue && s_probe.Token().size() > 0) {
+            // Queue even before registration so the backfill ring collects
+            // history while the server is unreachable.
+            if (probeActive && isHeavyFrame && pushDue) {
                 char snap[1024];
                 snprintf(snap, sizeof(snap),
                     "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"

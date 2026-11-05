@@ -2,6 +2,8 @@
 
 #include <string>
 #include <atomic>
+#include <cstdint>
+#include <deque>
 #include <thread>
 #include <mutex>
 
@@ -54,7 +56,17 @@ public:
     void PostSnapshot(const std::string& jsonData);
 
 private:
+    // One snapshot kept for the post-registration backfill. Timestamps are
+    // absolute epoch milliseconds so the server can place them on a timeline.
+    struct BackfillSample {
+        int64_t ts = 0;
+        std::string json;
+    };
+
     void ProbeThread();
+    // POSTs the accumulated ring to /api/backfill and clears it. Called once
+    // per successful registration, after which normal ingest resumes.
+    void SendBackfill(const std::string& token);
     bool HttpPost(const std::string& path, const std::string& body, std::string& response);
     bool HttpPostSync(const std::string& path, const std::string& body, std::string& response);
 
@@ -76,4 +88,5 @@ private:
     std::thread thread_;
     mutable std::mutex mutex_;
     std::string pendingSnapshot_;
+    std::deque<BackfillSample> backfillRing_;  // guarded by mutex_
 };

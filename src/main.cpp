@@ -2339,7 +2339,9 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         std::chrono::system_clock::now().time_since_epoch()).count();
                     const bool due = g_push.lastPushMs == 0 ||
                         nowMs - g_push.lastPushMs >= g_push.intervalMs;
-                    if (g_push.active && due && g_push.probe.Token().size() > 0) {
+                    // Queue even before registration so the backfill ring
+                    // collects history while the server is unreachable.
+                    if (g_push.active && due) {
                         std::string body = "{";
                         char buf[512];
                         snprintf(buf, sizeof(buf),

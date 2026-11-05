@@ -38,6 +38,11 @@ using json = nlohmann::json;
 // While a 403 has us blocked, retry at this cadence instead of every loop.
 static constexpr auto kBlockedRetryInterval = std::chrono::seconds(60);
 
+// Recent snapshots kept in memory for the one-shot backfill after a
+// successful registration. 90 samples at the default 2 s cadence is about
+// three minutes of history, i.e. tens of KB.
+static constexpr size_t kBackfillCapacity = 90;
+
 // Small platform shims: winsock on Windows, POSIX sockets elsewhere.
 #ifdef _WIN32
 static int CloseFd(int fd) { return closesocket(fd); }
@@ -330,9 +335,62 @@ void ServerProbe::SetEnrollCode(const std::string& code) {
     enrollCode_ = code;
 }
 
+// Backfill timestamps are epoch milliseconds. Prefer a timestamp already in
+// the snapshot; today the collectors emit none, so this normally falls back to
+// the enqueue time — captured per sample, not once for the whole batch.
+static int64_t SnapshotTimestampMs(const std::string& snapshot) {
+    try {
+        const json j = json::parse(snapshot);
+        for (const char* key : {"ts", "timestamp"}) {
+            if (j.contains(key) && j[key].is_number()) return j[key].get<int64_t>();
+        }
+    } catch (...) { /* not valid JSON; use the clock */ }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 void ServerProbe::PostSnapshot(const std::string& jsonData) {
+    const int64_t ts = SnapshotTimestampMs(jsonData);
     std::lock_guard<std::mutex> lk(mutex_);
     pendingSnapshot_ = jsonData;
+    backfillRing_.push_back({ts, jsonData});
+    if (backfillRing_.size() > kBackfillCapacity) backfillRing_.pop_front();
+}
+
+void ServerProbe::SendBackfill(const std::string& token) {
+    std::string body;
+    size_t count = 0;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        count = backfillRing_.size();
+        if (count == 0) return;
+        body = "{\"token\":\"" + token + "\",\"samples\":[";
+        for (size_t i = 0; i < count; ++i) {
+            if (i) body += ",";
+            body += "{\"ts\":" + std::to_string(backfillRing_[i].ts)
+                  + ",\"data\":" + backfillRing_[i].json + "}";
+        }
+        body += "]}";
+        backfillRing_.clear();
+    }
+
+    std::string response;
+    const int status = RawPost(serverHost_, serverPort_, basePath_ + "/api/backfill",
+                               body, response, useTls_, insecure_);
+    if (status != 200) {
+        // Best effort: this is history only, normal ingest is unaffected.
+        Logger::Debug("ServerProbe: backfill failed (HTTP " + std::to_string(status) + ")");
+        return;
+    }
+    int accepted = -1, skipped = -1;
+    try {
+        const json j = json::parse(response);
+        accepted = j.value("accepted", -1);
+        skipped = j.value("skipped", -1);
+    } catch (...) { /* response body is informational only */ }
+    Logger::Debug("ServerProbe: backfill sent " + std::to_string(count)
+                  + " samples (accepted " + std::to_string(accepted)
+                  + ", skipped " + std::to_string(skipped) + ")");
 }
 
 void ServerProbe::ProbeThread() {
@@ -391,6 +449,7 @@ void ServerProbe::ProbeThread() {
                     registered = true;
                     wasOnline = true;
                     Logger::Info("ServerProbe: registered as " + id);
+                    SendBackfill(token);
                 }
             } else if (status == 403) {
                 // Refused by policy: the device was revoked, or the enrollment
