@@ -2333,15 +2333,16 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                             : ("uploading (" + g_push.probe.DeviceId() + ")");
                 }
 
-                // Time-based upload gate (configurable 1..60 s via TUI).
+                // Upload gate (configurable 1..60 s via TUI). Every collection
+                // tick is queued; the probe batches the queue when due.
                 {
                     const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch()).count();
                     const bool due = g_push.lastPushMs == 0 ||
                         nowMs - g_push.lastPushMs >= g_push.intervalMs;
-                    // Queue even before registration so the backfill ring
-                    // collects history while the server is unreachable.
-                    if (g_push.active && due) {
+                    // Queue even before registration so the backfill replays
+                    // the history collected while the server is unreachable.
+                    if (g_push.active) {
                         std::string body = "{";
                         char buf[512];
                         snprintf(buf, sizeof(buf),
@@ -2408,7 +2409,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                         }
                         body += "]}";
                         g_push.probe.PostSnapshot(std::move(body));
-                        g_push.lastPushMs = nowMs;
+                        if (due) {
+                            g_push.probe.RequestFlush();
+                            g_push.lastPushMs = nowMs;
+                        }
                     }
                 }
 

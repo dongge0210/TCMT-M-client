@@ -3,6 +3,7 @@
 #include <string>
 #include <atomic>
 #include <cstdint>
+#include <condition_variable>
 #include <deque>
 #include <thread>
 #include <mutex>
@@ -55,18 +56,23 @@ public:
     // Queue a JSON snapshot for upload. Non-blocking.
     void PostSnapshot(const std::string& jsonData);
 
+    // Ask the upload thread to POST every queued sample as one batch right
+    // away. Non-blocking; a failed upload keeps the samples for the next try.
+    void RequestFlush();
+
 private:
-    // One snapshot kept for the post-registration backfill. Timestamps are
-    // absolute epoch milliseconds so the server can place them on a timeline.
-    struct BackfillSample {
+    // One collected sample waiting to be uploaded. Timestamps are absolute
+    // epoch milliseconds so the server can place them on a timeline.
+    struct Sample {
         int64_t ts = 0;
         std::string json;
     };
 
     void ProbeThread();
-    // POSTs the accumulated ring to /api/backfill and clears it. Called once
-    // per successful registration, after which normal ingest resumes.
-    void SendBackfill(const std::string& token);
+    // POSTs every queued sample to `path` as one batch. Samples leave the
+    // queue only after the server answers 200, so a failed upload (or a
+    // failed backfill) keeps them for the next attempt.
+    int SendBatch(const std::string& path, const std::string& token);
     bool HttpPost(const std::string& path, const std::string& body, std::string& response);
     bool HttpPostSync(const std::string& path, const std::string& body, std::string& response);
 
@@ -87,6 +93,11 @@ private:
     std::atomic<bool> blocked_{false};
     std::thread thread_;
     mutable std::mutex mutex_;
-    std::string pendingSnapshot_;
-    std::deque<BackfillSample> backfillRing_;  // guarded by mutex_
+    // Every collected sample not yet accepted by the server. Shared by the
+    // regular batch upload and the post-registration backfill.
+    std::deque<Sample> sampleQueue_;  // guarded by mutex_
+    // Wakes ProbeThread early when an upload is due.
+    std::mutex flushMutex_;
+    std::condition_variable flushCv_;
+    bool flushRequested_ = false;  // guarded by flushMutex_
 };

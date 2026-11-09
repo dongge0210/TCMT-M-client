@@ -499,7 +499,7 @@ int main(int argc, char* argv[]) {
     int64_t intervalMs = (int64_t)intervalSec * 1000;  // runtime (TUI can change)
     bool probeActive = serverEnabled;   // runtime state (TUI can toggle)
     std::string probeStatus = "disabled";  // shown on the TUI settings page
-    int64_t lastPushMs = 0;                // last successful snapshot post
+    int64_t lastPushMs = 0;                // last batch upload attempt
 
     if (jsonMode) {
         // One-shot JSON output for scripting
@@ -2068,9 +2068,10 @@ int main(int argc, char* argv[]) {
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             const bool pushDue = lastPushMs == 0 || nowMs - lastPushMs >= intervalMs;
-            // Queue even before registration so the backfill ring collects
-            // history while the server is unreachable.
-            if (probeActive && isHeavyFrame && pushDue) {
+            // Queue every heavy frame so the server gets one sample per
+            // collection tick; the probe batches the queue when an upload is
+            // due. Queueing before registration lets the backfill replay it.
+            if (probeActive && isHeavyFrame) {
                 char snap[1024];
                 snprintf(snap, sizeof(snap),
                     "\"cpu_usage\":%.1f,\"cpu_temp\":%.1f,"
@@ -2141,7 +2142,10 @@ int main(int argc, char* argv[]) {
                 }
                 body += "]}";
                 s_probe.PostSnapshot(std::move(body));
-                lastPushMs = nowMs;
+                if (pushDue) {
+                    s_probe.RequestFlush();
+                    lastPushMs = nowMs;
+                }
             }
 
             // Sleep

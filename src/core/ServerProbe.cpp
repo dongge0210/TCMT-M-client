@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #endif
+#include <algorithm>
 #include <fcntl.h>
 #include <cstring>
 #include <cstdlib>
@@ -38,10 +39,10 @@ using json = nlohmann::json;
 // While a 403 has us blocked, retry at this cadence instead of every loop.
 static constexpr auto kBlockedRetryInterval = std::chrono::seconds(60);
 
-// Recent snapshots kept in memory for the one-shot backfill after a
-// successful registration. 90 samples at the default 2 s cadence is about
-// three minutes of history, i.e. tens of KB.
-static constexpr size_t kBackfillCapacity = 90;
+// Samples kept in memory until the server accepts them. Covers the waiting
+// period before registration and any failed uploads; 300 samples is about
+// five minutes at the default 2 s upload interval (and 300 s at 1 Hz).
+static constexpr size_t kSampleCapacity = 300;
 
 // Small platform shims: winsock on Windows, POSIX sockets elsewhere.
 #ifdef _WIN32
@@ -352,45 +353,68 @@ static int64_t SnapshotTimestampMs(const std::string& snapshot) {
 void ServerProbe::PostSnapshot(const std::string& jsonData) {
     const int64_t ts = SnapshotTimestampMs(jsonData);
     std::lock_guard<std::mutex> lk(mutex_);
-    pendingSnapshot_ = jsonData;
-    backfillRing_.push_back({ts, jsonData});
-    if (backfillRing_.size() > kBackfillCapacity) backfillRing_.pop_front();
+    sampleQueue_.push_back({ts, jsonData});
+    if (sampleQueue_.size() > kSampleCapacity) {
+        sampleQueue_.pop_front();
+        Logger::Debug("ServerProbe: queue full, dropped oldest sample");
+    }
 }
 
-void ServerProbe::SendBackfill(const std::string& token) {
+void ServerProbe::RequestFlush() {
+    {
+        std::lock_guard<std::mutex> lk(flushMutex_);
+        flushRequested_ = true;
+    }
+    flushCv_.notify_one();
+}
+
+int ServerProbe::SendBatch(const std::string& path, const std::string& token) {
     std::string body;
     size_t count = 0;
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        count = backfillRing_.size();
-        if (count == 0) return;
+        count = sampleQueue_.size();
+        if (count == 0) return 200;
         body = "{\"token\":\"" + token + "\",\"samples\":[";
         for (size_t i = 0; i < count; ++i) {
             if (i) body += ",";
-            body += "{\"ts\":" + std::to_string(backfillRing_[i].ts)
-                  + ",\"data\":" + backfillRing_[i].json + "}";
+            body += "{\"ts\":" + std::to_string(sampleQueue_[i].ts)
+                  + ",\"data\":" + sampleQueue_[i].json + "}";
         }
         body += "]}";
-        backfillRing_.clear();
     }
 
     std::string response;
-    const int status = RawPost(serverHost_, serverPort_, basePath_ + "/api/backfill",
+    const int status = RawPost(serverHost_, serverPort_, path,
                                body, response, useTls_, insecure_);
     if (status != 200) {
-        // Best effort: this is history only, normal ingest is unaffected.
-        Logger::Debug("ServerProbe: backfill failed (HTTP " + std::to_string(status) + ")");
-        return;
+        // Keep the samples: they are retried with the next batch so a short
+        // outage (or a backfill the server declined) does not lose data.
+        Logger::Debug("ServerProbe: batch to " + path + " failed (HTTP "
+                      + std::to_string(status) + "), "
+                      + std::to_string(count) + " samples kept");
+        return status;
     }
+
+    // Remove only the samples this request carried; ones collected while the
+    // POST was in flight stay queued for the next upload.
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        const size_t sent = (std::min)(count, sampleQueue_.size());
+        sampleQueue_.erase(sampleQueue_.begin(),
+                           sampleQueue_.begin() + static_cast<std::ptrdiff_t>(sent));
+    }
+
     int accepted = -1, skipped = -1;
     try {
         const json j = json::parse(response);
         accepted = j.value("accepted", -1);
         skipped = j.value("skipped", -1);
     } catch (...) { /* response body is informational only */ }
-    Logger::Debug("ServerProbe: backfill sent " + std::to_string(count)
-                  + " samples (accepted " + std::to_string(accepted)
+    Logger::Debug("ServerProbe: " + std::to_string(count) + " samples to " + path
+                  + " (accepted " + std::to_string(accepted)
                   + ", skipped " + std::to_string(skipped) + ")");
+    return status;
 }
 
 void ServerProbe::ProbeThread() {
@@ -403,7 +427,19 @@ void ServerProbe::ProbeThread() {
     }
 
     while (running_) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        // Sleep between register retries, but wake at once when an upload is
+        // due so the batch is not held back by the retry cadence. Clearing the
+        // request here also keeps a pending flush from spinning the retry loop:
+        // while unregistered the queue is replayed by the backfill instead.
+        bool flush = false;
+        {
+            std::unique_lock<std::mutex> lk(flushMutex_);
+            flushCv_.wait_for(lk, std::chrono::milliseconds(2000),
+                              [this] { return !running_.load() || flushRequested_; });
+            flush = flushRequested_;
+            flushRequested_ = false;
+        }
+        if (!running_) break;
 
         // ── Register / re-register until the server accepts us ──
         if (!registered) {
@@ -449,7 +485,9 @@ void ServerProbe::ProbeThread() {
                     registered = true;
                     wasOnline = true;
                     Logger::Info("ServerProbe: registered as " + id);
-                    SendBackfill(token);
+                    // Replay whatever the queue holds. A failure is history
+                    // only: the samples stay queued for the next upload.
+                    SendBatch(basePath_ + "/api/backfill", token);
                 }
             } else if (status == 403) {
                 // Refused by policy: the device was revoked, or the enrollment
@@ -476,27 +514,16 @@ void ServerProbe::ProbeThread() {
             continue;
         }
 
-        // ── Upload latest snapshot ──
-        std::string snapshot;
+        // ── Upload every queued sample as one batch ──
+        if (!flush) continue;
+
         std::string token;
         {
             std::lock_guard<std::mutex> lk(mutex_);
-            if (pendingSnapshot_.empty()) continue;
-            snapshot = std::move(pendingSnapshot_);
             token = token_;
         }
 
-        std::string body = "{\"token\":\"" + token + "\"";
-        if (!snapshot.empty() && snapshot.front() == '{') {
-            body += "," + snapshot.substr(1);
-        } else {
-            body += "}";
-        }
-
-        std::string response;
-        const int status = RawPost(serverHost_, serverPort_,
-                                   basePath_ + "/api/ingest",
-                                   body, response, useTls_, insecure_);
+        const int status = SendBatch(basePath_ + "/api/ingest", token);
         if (status == 200) {
             if (!wasOnline) Logger::Info("ServerProbe: upload resumed");
             wasOnline = true;
