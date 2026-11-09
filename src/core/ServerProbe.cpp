@@ -234,22 +234,27 @@ static std::string GenClientKey() {
 
 static void LoadClientIdentity(const std::string& serverUrl,
                                std::string& clientKey,
-                               std::string& id, std::string& token) {
+                               std::string& id, std::string& token,
+                               int& intervalSec) {
+    intervalSec = 0;
     std::ifstream f(ClientConfigPath());
     if (!f) return;
     try {
         json cfg = json::parse(f);
         clientKey = cfg.value("clientKey", "");
         if (cfg.contains("servers") && cfg["servers"].contains(serverUrl)) {
-            id = cfg["servers"][serverUrl].value("id", "");
-            token = cfg["servers"][serverUrl].value("token", "");
+            const json& entry = cfg["servers"][serverUrl];
+            id = entry.value("id", "");
+            token = entry.value("token", "");
+            intervalSec = entry.value("intervalSec", 0);
         }
     } catch (...) { /* corrupt file — will rewrite */ }
 }
 
 static void SaveClientIdentity(const std::string& serverUrl,
                                const std::string& clientKey,
-                               const std::string& id, const std::string& token) {
+                               const std::string& id, const std::string& token,
+                               int intervalSec) {
     try {
         json cfg = json::object();
         {
@@ -257,7 +262,8 @@ static void SaveClientIdentity(const std::string& serverUrl,
             if (f) { try { cfg = json::parse(f); } catch (...) { cfg = json::object(); } }
         }
         cfg["clientKey"] = clientKey;
-        cfg["servers"][serverUrl] = {{"id", id}, {"token", token}};
+        cfg["servers"][serverUrl] = {
+            {"id", id}, {"token", token}, {"intervalSec", intervalSec}};
         const std::string dir = ClientConfigPath().substr(0, ClientConfigPath().find_last_of("/\\"));
         MakeDir(dir);
         std::ofstream f(ClientConfigPath());
@@ -292,8 +298,25 @@ bool ServerProbe::Start(const std::string& serverUrl) {
 #endif
 
     // Restore or create the stable client identity.
-    LoadClientIdentity(serverUrl_, clientKey_, deviceId_, token_);
+    int registeredIntervalSec = 0;
+    LoadClientIdentity(serverUrl_, clientKey_, deviceId_, token_, registeredIntervalSec);
     if (clientKey_.empty()) clientKey_ = GenClientKey();
+
+    // The server sizes its offline threshold from the `intervalSec` reported
+    // at registration. A cached token was issued for the old cadence, so drop
+    // it when the interval changed: ProbeThread then registers again and the
+    // server learns the new value. (Same path as a 401 re-registration.)
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (!token_.empty() && registeredIntervalSec > 0
+            && registeredIntervalSec != uploadIntervalSec_) {
+            Logger::Info("ServerProbe: upload interval changed ("
+                         + std::to_string(registeredIntervalSec) + "s -> "
+                         + std::to_string(uploadIntervalSec_)
+                         + "s), re-registering");
+            token_.clear();
+        }
+    }
 
     // Static register payload fields.
     deviceName_ = "TCMT-M on " + [] {
@@ -334,6 +357,13 @@ std::string ServerProbe::Token() const {
 void ServerProbe::SetEnrollCode(const std::string& code) {
     std::lock_guard<std::mutex> lk(mutex_);
     enrollCode_ = code;
+}
+
+void ServerProbe::SetUploadIntervalSec(int seconds) {
+    if (seconds < 1) seconds = 1;
+    if (seconds > 300) seconds = 300;
+    std::lock_guard<std::mutex> lk(mutex_);
+    uploadIntervalSec_ = seconds;
 }
 
 // Backfill timestamps are epoch milliseconds. Prefer a timestamp already in
@@ -452,10 +482,15 @@ void ServerProbe::ProbeThread() {
                 {"model", model_},
                 {"clientKey", clientKey_},
             };
+            int intervalSec = 2;
             {
                 std::lock_guard<std::mutex> lk(mutex_);
+                intervalSec = uploadIntervalSec_;
                 if (!enrollCode_.empty()) body["enroll"] = enrollCode_;
             }
+            // Lets the server size its offline threshold from this device's
+            // actual cadence instead of a fixed 15 s.
+            body["intervalSec"] = intervalSec;
             std::string response;
             const int status = RawPost(serverHost_, serverPort_,
                                        basePath_ + "/api/register",
@@ -475,12 +510,15 @@ void ServerProbe::ProbeThread() {
                     id = response.substr(idPos, end - idPos);
                 }
                 if (!token.empty()) {
+                    int reportedIntervalSec = 2;
                     {
                         std::lock_guard<std::mutex> lk(mutex_);
                         token_ = token;
                         deviceId_ = id;
+                        reportedIntervalSec = uploadIntervalSec_;
                     }
-                    SaveClientIdentity(serverUrl_, clientKey_, id, token);
+                    SaveClientIdentity(serverUrl_, clientKey_, id, token,
+                                       reportedIntervalSec);
                     blocked_ = false;
                     registered = true;
                     wasOnline = true;

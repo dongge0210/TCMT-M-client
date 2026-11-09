@@ -1441,6 +1441,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 g_push.url = pending.url;
                 g_push.intervalSec = (std::max)(1, (std::min)(pending.intervalSec, 60));
                 g_push.intervalMs = (int64_t)g_push.intervalSec * 1000;
+                // Report the new cadence at the next registration; Start()
+                // clears a cached token when the interval changed, so the
+                // server sees the new value right away.
+                g_push.probe.SetUploadIntervalSec(g_push.intervalSec);
                 g_push.enabled = pending.enabled;
                 g_push.insecure = pending.insecure;
                 if (pending.enabled) {
@@ -2681,6 +2685,7 @@ int main(int argc, char* argv[]) {
                                            cfg.GetString("push.enroll", ""));
                 g_push.probe.SetEnrollCode(enroll);
             }
+            g_push.probe.SetUploadIntervalSec(g_push.intervalSec);
             if (g_push.enabled) {
                 g_push.probe.SetInsecure(g_push.insecure);
                 if (g_push.probe.Start(g_push.url)) {

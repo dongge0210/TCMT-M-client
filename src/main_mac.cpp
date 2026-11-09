@@ -1111,6 +1111,7 @@ int main(int argc, char* argv[]) {
     // ServerProbe: push data to tcmt-server (enable/URL from TUI settings)
     static ServerProbe s_probe;
     s_probe.SetEnrollCode(enrollCode);
+    s_probe.SetUploadIntervalSec(intervalSec);
     if (serverEnabled) {
         s_probe.SetInsecure(serverInsecure);
         Logger::Info("ServerProbe: target " + serverUrl);
@@ -1189,6 +1190,10 @@ int main(int argc, char* argv[]) {
                     serverUrl = pending.url;
                     intervalSec = (std::max)(1, (std::min)(pending.intervalSec, 60));
                     intervalMs = (int64_t)intervalSec * 1000;
+                    // Report the new cadence at the next registration; Start()
+                    // clears a cached token when the interval changed, so the
+                    // server sees the new value right away.
+                    s_probe.SetUploadIntervalSec(intervalSec);
                     s_probe.Stop();
                     if (pending.enabled) {
                         s_probe.SetInsecure(pending.insecure);

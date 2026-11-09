@@ -37,6 +37,11 @@ public:
     // Sent as the `enroll` field on /api/register; omitted when empty.
     void SetEnrollCode(const std::string& code);
 
+    // Upload cadence the collector actually uses, in seconds. Reported as
+    // `intervalSec` on /api/register so the server can derive its offline
+    // threshold from this device's real cadence. Clamped to 1..300; default 2.
+    void SetUploadIntervalSec(int seconds);
+
     // True after /api/register was refused with 403 (device disabled, or a
     // wrong enrollment code) and no later registration succeeded. The probe
     // keeps retrying in this state, at a much slower cadence.
@@ -89,6 +94,7 @@ private:
     std::string token_;
     std::string deviceId_;
     std::string enrollCode_;  // guarded by mutex_
+    int uploadIntervalSec_ = 2;  // guarded by mutex_
     std::atomic<bool> running_{false};
     std::atomic<bool> blocked_{false};
     std::thread thread_;
