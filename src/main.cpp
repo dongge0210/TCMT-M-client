@@ -2364,19 +2364,42 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                             JsonSafeStr(tuiData.osVersion).c_str(),
                             (unsigned long long)tuiData.uptimeSeconds);
                         body += buf;
-                        // Disks (volumes): name + used/total bytes.
+                        // Disks (volumes): name + used/total bytes. Health is a
+                        // property of the physical disk, so map it back by drive
+                        // letter; unknown/SMART-less disks omit the field rather
+                        // than reporting 0 (which reads as "0% healthy").
                         body += ",\"disks\":[";
                         for (size_t di = 0; di < tuiData.disks.size(); ++di) {
                             if (di) body += ",";
                             const auto& dsk = tuiData.disks[di];
                             std::string dname = !dsk.label.empty() ? dsk.label
                                 : (dsk.letter ? std::string(1, dsk.letter) : std::string("?"));
-                            char db[256];
-                            snprintf(db, sizeof(db), "{\"name\":\"%s\",\"used\":%llu,\"total\":%llu}",
-                                     JsonSafeStr(dname).c_str(),
+                            int health = -1;
+                            if (dsk.letter) {
+                                const char vol = (dsk.letter >= 'a' && dsk.letter <= 'z')
+                                    ? static_cast<char>(dsk.letter - 'a' + 'A') : dsk.letter;
+                                for (const auto& pd : tuiData.physicalDisks) {
+                                    if (!pd.smartSupported) continue;
+                                    bool owns = false;
+                                    for (char dl : pd.driveLetters) {
+                                        const char up = (dl >= 'a' && dl <= 'z')
+                                            ? static_cast<char>(dl - 'a' + 'A') : dl;
+                                        if (up == vol) { owns = true; break; }
+                                    }
+                                    if (owns) { health = static_cast<int>(pd.healthPct); break; }
+                                }
+                            }
+                            std::string dobj = "{\"name\":\"" + JsonSafeStr(dname) + "\"";
+                            char db[96];
+                            if (health >= 0) {
+                                snprintf(db, sizeof(db), ",\"health\":%d", health);
+                                dobj += db;
+                            }
+                            snprintf(db, sizeof(db), ",\"used\":%llu,\"total\":%llu}",
                                      (unsigned long long)dsk.usedSpace,
                                      (unsigned long long)dsk.totalSize);
-                            body += db;
+                            dobj += db;
+                            body += dobj;
                         }
                         body += "]";
                         // Network adapters: name + down/up speeds (bytes/s).
@@ -2411,7 +2434,35 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                                      JsonSafeStr(temps[ti].first).c_str(), temps[ti].second);
                             body += tb;
                         }
-                        body += "]}";
+                        body += "]";
+                        // Motherboard fans (Super I/O tach). Absent sensor means
+                        // no key at all — same as battery above.
+                        if (!tuiData.fans.empty()) {
+                            body += ",\"fans\":[";
+                            for (size_t fi = 0; fi < tuiData.fans.size(); ++fi) {
+                                if (fi) body += ",";
+                                char fb[192];
+                                snprintf(fb, sizeof(fb), "{\"name\":\"%s\",\"rpm\":%d}",
+                                         JsonSafeStr(tuiData.fans[fi].first).c_str(),
+                                         tuiData.fans[fi].second);
+                                body += fb;
+                            }
+                            body += "]";
+                        }
+                        // Per-core die temperatures; "core" is the array index.
+                        if (tuiData.perCoreCount > 0) {
+                            body += ",\"perCore\":[";
+                            for (uint8_t ci = 0; ci < tuiData.perCoreCount; ++ci) {
+                                if (ci) body += ",";
+                                char cb[64];
+                                snprintf(cb, sizeof(cb), "{\"core\":%d,\"temp\":%.1f}",
+                                         static_cast<int>(ci),
+                                         static_cast<double>(tuiData.perCoreTemp[ci]));
+                                body += cb;
+                            }
+                            body += "]";
+                        }
+                        body += "}";
                         g_push.probe.PostSnapshot(std::move(body));
                         if (due) {
                             g_push.probe.RequestFlush();
