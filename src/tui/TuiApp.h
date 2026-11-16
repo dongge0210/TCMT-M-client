@@ -55,6 +55,7 @@ struct ServerSettings {
     int intervalSec = 2;       // upload cadence, hard bounds 1..60
     int sampleIntervalMs = kSampleIntervalDefaultMs; // hardware sampling cadence
     std::string status = "";   // probe state reported by main ("running" etc.)
+    std::string enroll = "";   // enrollment code, empty when the server has none
 };
 
 // Data snapshot for TUI rendering (filled by main thread)
@@ -674,8 +675,9 @@ private:
     int selPid_ = -1;                      // selected process pid on the dashboard (-1 = none)
     int gpuIndex_ = 0;                     // GPU shown by the panel/details (Left/Right switches)
     int settingsFocus_ = 0;                // 0=enable, 1=url, 2=insecure, 3=upload interval,
-                                           // 4=sample interval, 5=language
+                                           // 4=sample interval, 5=enroll, 6=language
     int urlCursor_ = 0;                    // cursor position inside URL field
+    int enrollCursor_ = 0;                 // cursor position inside the enrollment field
     Lang draftLang_ = Lang::En;            // language draft in the settings form
     Lang langOnOpen_ = Lang::En;           // language when the form opened (Esc restores)
 

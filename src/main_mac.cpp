@@ -351,6 +351,7 @@ constexpr CfgKey kClientConfigKeys[] = {
     { "server.url",          CfgType::Str  },
     { "server.insecure",     CfgType::Bool },
     { "server.intervalSec",  CfgType::Int  },
+    { "server.enroll",       CfgType::Str  },
     { "sampling.intervalMs", CfgType::Int  },
     { "ui.language",         CfgType::Str  },
 };
@@ -369,6 +370,7 @@ std::string BuildConfigSnapshotJson() {
     j["server.url"]          = g_cfg.GetString("server.url", "");
     j["server.insecure"]     = g_cfg.GetBool("server.insecure", false);
     j["server.intervalSec"]  = g_cfg.GetInt("server.intervalSec", 2);
+    j["server.enroll"]       = g_cfg.GetString("server.enroll", "");
     j["sampling.intervalMs"] = g_sampleIntervalMs.load();
     j["ui.language"]         = g_cfg.GetString("ui.language", "zh-Hans");
     return j.dump();
@@ -874,7 +876,7 @@ int main(int argc, char* argv[]) {
     // 认键、校验、落盘、让探针重启，都在这里 —— 只有 main 有 g_cfg 和那套 pending 机制。
     ipcServer.SetConfigBridge(
         [] { return BuildConfigSnapshotJson(); },
-        [&ipcServer](const std::string& payload) {
+        [&ipcServer, &enrollCode](const std::string& payload) {
             nlohmann::json in;
             try {
                 in = nlohmann::json::parse(payload);
@@ -933,6 +935,11 @@ int main(int argc, char* argv[]) {
             s.url         = g_cfg.GetString("server.url", "");
             s.insecure    = g_cfg.GetBool("server.insecure", false);
             s.intervalSec = g_cfg.GetInt("server.intervalSec", 2);
+            // Only take the code when the client actually sent it — otherwise
+            // an unrelated config change would look like an identity change.
+            s.enroll = in.contains("server.enroll")
+                           ? g_cfg.GetString("server.enroll", "")
+                           : enrollCode;
             {
                 std::lock_guard<std::mutex> lock(s_settingsMutex);
                 s_pendingSettings = s;
@@ -1015,7 +1022,7 @@ int main(int argc, char* argv[]) {
     }
     // Server push settings (TUI settings page, press S) -> persist + apply.
     tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec,
-                              g_sampleIntervalMs.load(), probeStatus});
+                              g_sampleIntervalMs.load(), probeStatus, enrollCode});
     tuiApp.SetSampleIntervalHandler([](int ms) {
         if (ms < 200) ms = 200;
         if (ms > 5000) ms = 5000;
@@ -1042,6 +1049,7 @@ int main(int argc, char* argv[]) {
         g_cfg.SetString("server.url", s.url);
         g_cfg.SetBool("server.insecure", s.insecure);
         g_cfg.SetInt("server.intervalSec", s.intervalSec);
+        g_cfg.SetString("server.enroll", s.enroll);
         g_cfg.Save();
         std::lock_guard<std::mutex> lock(s_settingsMutex);
         s_pendingSettings = s;
@@ -1197,6 +1205,13 @@ int main(int argc, char* argv[]) {
                     // clears a cached token when the interval changed, so the
                     // server sees the new value right away.
                     s_probe.SetUploadIntervalSec(intervalSec);
+                    // A changed enrollment code is a different identity: drop
+                    // the cached token so the next registration uses the new one.
+                    if (pending.enroll != enrollCode) {
+                        enrollCode = pending.enroll;
+                        s_probe.SetEnrollCode(enrollCode);
+                        s_probe.ClearIdentity();
+                    }
                     s_probe.Stop();
                     if (pending.enabled) {
                         s_probe.SetInsecure(pending.insecure);
@@ -1216,7 +1231,7 @@ int main(int argc, char* argv[]) {
                     }
                     tuiApp.SetServerSettings(
                         {pending.enabled, pending.url, pending.insecure, intervalSec,
-                         g_sampleIntervalMs.load(), probeStatus});
+                         g_sampleIntervalMs.load(), probeStatus, pending.enroll});
                 }
             }
 

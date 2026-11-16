@@ -211,6 +211,10 @@
     "en": "Language",
     "zh-Hans": "语言"
   },
+  "settings.enroll": {
+    "en": "Enroll code",
+    "zh-Hans": "注册码"
+  },
   "settings.sample_interval": {
     "en": "Sample interval",
     "zh-Hans": "采集间隔"

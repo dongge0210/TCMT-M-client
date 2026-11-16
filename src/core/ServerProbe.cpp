@@ -268,6 +268,10 @@ static void SaveClientIdentity(const std::string& serverUrl,
         MakeDir(dir);
         std::ofstream f(ClientConfigPath());
         if (f) f << cfg.dump(2);
+#ifndef _WIN32
+        // The file holds device tokens; keep it private to this user.
+        ::chmod(ClientConfigPath().c_str(), 0600);
+#endif
     } catch (...) { /* non-fatal */ }
 }
 
@@ -357,6 +361,16 @@ std::string ServerProbe::Token() const {
 void ServerProbe::SetEnrollCode(const std::string& code) {
     std::lock_guard<std::mutex> lk(mutex_);
     enrollCode_ = code;
+}
+
+void ServerProbe::ClearIdentity() {
+    std::lock_guard<std::mutex> lk(mutex_);
+    token_.clear();
+    deviceId_.clear();
+    if (!serverUrl_.empty()) {
+        SaveClientIdentity(serverUrl_, clientKey_, "", "", 0);
+    }
+    Logger::Info("ServerProbe: identity cleared (enrollment changed)");
 }
 
 void ServerProbe::SetUploadIntervalSec(int seconds) {

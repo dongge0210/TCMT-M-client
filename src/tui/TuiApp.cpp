@@ -1571,7 +1571,7 @@ int TuiApp::DrawProcessPanel(WINDOW* win, const TuiData& data, int y, int x0, in
 // the URL field (Left/Right/Home/End/Backspace); Enter saves + applies via
 // the settings handler; Esc cancels without applying.
 void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
-    const int FIELD_COUNT = 6;
+    const int FIELD_COUNT = 7;
     auto insertUrlChar = [&](char c) {
         draftSettings_.url.insert(draftSettings_.url.begin() + urlCursor_, c);
         urlCursor_ += 1;
@@ -1580,6 +1580,16 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
         if (urlCursor_ > 0) {
             draftSettings_.url.erase(draftSettings_.url.begin() + urlCursor_ - 1);
             urlCursor_ -= 1;
+        }
+    };
+    auto insertEnrollChar = [&](char c) {
+        draftSettings_.enroll.insert(draftSettings_.enroll.begin() + enrollCursor_, c);
+        enrollCursor_ += 1;
+    };
+    auto deleteEnrollChar = [&]() {
+        if (enrollCursor_ > 0) {
+            draftSettings_.enroll.erase(draftSettings_.enroll.begin() + enrollCursor_ - 1);
+            enrollCursor_ -= 1;
         }
     };
 
@@ -1595,16 +1605,19 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
         case KEY_DOWN:
             settingsFocus_ = (settingsFocus_ + 1) % FIELD_COUNT;
             urlCursor_ = (int)draftSettings_.url.size();
+            enrollCursor_ = (int)draftSettings_.enroll.size();
             break;
         case KEY_UP:
             settingsFocus_ = (settingsFocus_ + FIELD_COUNT - 1) % FIELD_COUNT;
             urlCursor_ = (int)draftSettings_.url.size();
+            enrollCursor_ = (int)draftSettings_.enroll.size();
             break;
         case ' ':
             if (settingsFocus_ == 0) draftSettings_.enabled = !draftSettings_.enabled;
             else if (settingsFocus_ == 2) draftSettings_.insecure = !draftSettings_.insecure;
             else if (settingsFocus_ == 1) insertUrlChar(' ');
-            else if (settingsFocus_ == 5) {
+            else if (settingsFocus_ == 5) insertEnrollChar(' ');
+            else if (settingsFocus_ == 6) {
                 draftLang_ = (draftLang_ == Lang::En) ? Lang::ZhHans : Lang::En;
                 g_lang = draftLang_;   // live preview; Esc restores, Enter keeps
             }
@@ -1649,6 +1662,19 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
                 urlCursor_ = 0;
             } else if (settingsFocus_ == 1 && ch == KEY_END) {
                 urlCursor_ = (int)draftSettings_.url.size();
+            } else if (settingsFocus_ == 5 && ch >= 32 && ch < 127) {
+                insertEnrollChar((char)ch);
+            } else if (settingsFocus_ == 5 && (ch == KEY_BACKSPACE || ch == 127 || ch == 8)) {
+                deleteEnrollChar();
+            } else if (settingsFocus_ == 5 && ch == KEY_LEFT && enrollCursor_ > 0) {
+                enrollCursor_ -= 1;
+            } else if (settingsFocus_ == 5 && ch == KEY_RIGHT &&
+                       enrollCursor_ < (int)draftSettings_.enroll.size()) {
+                enrollCursor_ += 1;
+            } else if (settingsFocus_ == 5 && ch == KEY_HOME) {
+                enrollCursor_ = 0;
+            } else if (settingsFocus_ == 5 && ch == KEY_END) {
+                enrollCursor_ = (int)draftSettings_.enroll.size();
             } else if (settingsFocus_ == 3 && ch >= '0' && ch <= '9') {
                 const int next = draftSettings_.intervalSec * 10 + (ch - '0');
                 draftSettings_.intervalSec = (next > 60) ? 60 : next;
@@ -1713,7 +1739,15 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
               std::to_string(draftSettings_.intervalSec) + Tr("settings.bounds"));
     drawField(4, y0 + 6, Tr("settings.sample_interval"),
               std::to_string(draftSettings_.sampleIntervalMs) + Tr("settings.sample_bounds"));
-    drawField(5, y0 + 7, Tr("settings.language"),
+    // Enrollment code: masked in the form. It is a shared secret for the
+    // server's first-registration gate, not something to leave on screen.
+    {
+        std::string masked = draftSettings_.enroll;
+        for (char& c : masked) c = '*';
+        masked.resize(URL_BOX, ' ');
+        drawField(5, y0 + 7, Tr("settings.enroll"), masked);
+    }
+    drawField(6, y0 + 8, Tr("settings.language"),
               draftLang_ == Lang::ZhHans ? Tr("lang.name.zh") : Tr("lang.name.en"));
     // Saved as ui.language via SetLanguageHandler (main persists it) and read back
     // at startup; TCMT_LANG still takes priority.
@@ -1728,7 +1762,7 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
                 ? (serverSettings_.enabled ? "starting..." : "disabled")
                 : serverSettings_.status);
         const std::string stLine = std::string(" ") + Tr("settings.status") + st;
-        mvwprintw(stdscr, y0 + 8, x0 + 2, "%s", utf8_truncate(stLine, W - 4).c_str());
+        mvwprintw(stdscr, y0 + 9, x0 + 2, "%s", utf8_truncate(stLine, W - 4).c_str());
     }
     mvwprintw(stdscr, y0 + 10, x0 + 2, " %s",
               utf8_truncate(Tr("settings.hint1"), W - 4).c_str());
@@ -1746,6 +1780,11 @@ void TuiApp::RenderSettingsPage(int rows, int cols, int ch) {
         const int valuePad = 2;              // "[ "
         const int cursorInBox = std::max(0, std::min(urlCursor_ - winStart, URL_BOX - 1));
         move(y0 + 3, x0 + 2 + labelW + valuePad + cursorInBox);
+    } else if (settingsFocus_ == 5) {
+        const int labelW = 3 + 2 + 16 + 3;
+        const int valuePad = 2;
+        const int cursorInBox = std::max(0, std::min(enrollCursor_, URL_BOX - 1));
+        move(y0 + 7, x0 + 2 + labelW + valuePad + cursorInBox);
     }
 }
 
@@ -3568,6 +3607,7 @@ void TuiApp::Run() {
             }
             settingsFocus_ = 0;
             urlCursor_ = (int)draftSettings_.url.size();
+            enrollCursor_ = (int)draftSettings_.enroll.size();
             langOnOpen_ = g_lang;
             draftLang_ = g_lang;
             settingsPage_ = true;

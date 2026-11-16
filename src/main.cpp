@@ -102,6 +102,7 @@ struct ServerPushState {
     int64_t intervalMs = 2000;
     bool active = false;
     std::string status = "disabled";
+    std::string enroll = "";    // enrollment code sent at registration
     int64_t lastPushMs = 0;
     std::mutex mutex;
     tcmt::ServerSettings pending;
@@ -140,6 +141,7 @@ constexpr CfgKey kClientConfigKeys[] = {
     { "server.url",          CfgType::Str  },
     { "server.insecure",     CfgType::Bool },
     { "server.intervalSec",  CfgType::Int  },
+    { "server.enroll",       CfgType::Str  },
     { "sampling.intervalMs", CfgType::Int  },
     { "ui.language",         CfgType::Str  },
 };
@@ -158,6 +160,7 @@ std::string BuildConfigSnapshotJson() {
     j["server.url"]          = cfg.GetString("server.url", "");
     j["server.insecure"]     = cfg.GetBool("server.insecure", false);
     j["server.intervalSec"]  = cfg.GetInt("server.intervalSec", 2);
+    j["server.enroll"]       = cfg.GetString("server.enroll", "");
     j["sampling.intervalMs"] = g_sampleIntervalMs.load();
     j["ui.language"]         = cfg.GetString("ui.language", "zh-Hans");
     return j.dump();
@@ -222,6 +225,10 @@ void ApplyClientConfigSet(const std::string& payload, tcmt::ipc::IPCServer& ipcS
     s.url         = cfg.GetString("server.url", "");
     s.insecure    = cfg.GetBool("server.insecure", false);
     s.intervalSec = cfg.GetInt("server.intervalSec", 2);
+    // Only when the client sent it: an unrelated change must not look like an
+    // enrollment change and wipe the cached token.
+    s.enroll      = in.contains("server.enroll") ? cfg.GetString("server.enroll", "")
+                                                 : g_push.enroll;
     {
         std::lock_guard<std::mutex> lock(g_push.mutex);
         g_push.pending = s;
@@ -1445,6 +1452,14 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 // clears a cached token when the interval changed, so the
                 // server sees the new value right away.
                 g_push.probe.SetUploadIntervalSec(g_push.intervalSec);
+                // A changed enrollment code is a different identity: the old
+                // token was issued against the old code, so drop it and let
+                // the next registration use the new one.
+                if (pending.enroll != g_push.enroll) {
+                    g_push.enroll = pending.enroll;
+                    g_push.probe.SetEnrollCode(pending.enroll);
+                    g_push.probe.ClearIdentity();
+                }
                 g_push.enabled = pending.enabled;
                 g_push.insecure = pending.insecure;
                 if (pending.enabled) {
@@ -1458,12 +1473,10 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                     g_push.status = "disabled";
                     Logger::Info("ServerProbe stopped (disabled in settings)");
                 }
-                // ServerSettings 有六个成员，这里以前只传五个 —— 09-16 给 macOS 那边加了
-                // sampleIntervalMs 之后，这个调用点没跟着改，MSVC 直接 C2664 编不过。
-                // 采样间隔走 g_sampleIntervalMs（设置页可改），不是默认值
+                // 七个成员全传；少传一个聚合初始化会把后面的值整体错位
                 tuiApp.SetServerSettings(
                     {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec,
-                     g_sampleIntervalMs.load(), g_push.status});
+                     g_sampleIntervalMs.load(), g_push.status, g_push.enroll});
             }
         }
         static DeviceChangeNotifier s_usbNotify(DeviceChangeNotifier::USB);
@@ -2734,6 +2747,7 @@ int main(int argc, char* argv[]) {
                 if (enroll.empty())
                     enroll = cfg.GetString("server.enroll",
                                            cfg.GetString("push.enroll", ""));
+                g_push.enroll = enroll;
                 g_push.probe.SetEnrollCode(enroll);
             }
             g_push.probe.SetUploadIntervalSec(g_push.intervalSec);
@@ -2760,16 +2774,17 @@ int main(int argc, char* argv[]) {
                          " ms");
         }
 
-        // 同上：六个成员，别漏 sampleIntervalMs —— 而且这里要传真值，不是默认值
+        // 七个成员，别漏 sampleIntervalMs / enroll —— 而且这里要传真值，不是默认值
         tuiApp.SetServerSettings(
             {g_push.enabled, g_push.url, g_push.insecure, g_push.intervalSec,
-             g_sampleIntervalMs.load(), g_push.status});
+             g_sampleIntervalMs.load(), g_push.status, g_push.enroll});
         tuiApp.SetServerSettingsHandler([](const tcmt::ServerSettings& s) {
             auto& cfg = GetServerCfg();
             cfg.SetBool("server.enabled", s.enabled);
             cfg.SetString("server.url", s.url);
             cfg.SetBool("server.insecure", s.insecure);
             cfg.SetInt("server.intervalSec", s.intervalSec);
+            cfg.SetString("server.enroll", s.enroll);
             cfg.Save();
             std::lock_guard<std::mutex> lock(g_push.mutex);
             g_push.pending = s;

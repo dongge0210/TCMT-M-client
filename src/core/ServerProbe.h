@@ -33,6 +33,11 @@ public:
     // Only meaningful with https URLs. Use at your own risk.
     void SetInsecure(bool insecure) { insecure_ = insecure; }
 
+    // Forget the device token and id for the current server URL. Called when
+    // the enrollment code changed: the token was issued against the old code,
+    // so keeping it would keep reporting under the old identity.
+    void ClearIdentity();
+
     // Optional enrollment code for servers started with --enroll-token.
     // Sent as the `enroll` field on /api/register; omitted when empty.
     void SetEnrollCode(const std::string& code);
