@@ -1005,10 +1005,13 @@ int main(int argc, char* argv[]) {
             WiFiInfo::RequestLocationAuthorization();
         };
         tuiApp.SetLocationRequestHandler(fetchSsid);
-        // Nothing handed over yet (first run, or the file went stale): fetch
-        // once at startup through the bundle, so a rebuild does not require
-        // pressing R.
-        if (WiFiInfo::NeedsSsidHandoff()) fetchSsid();
+        // The authorization prompt is only ever raised by the user's R. Once
+        // granted, though, refreshing the SSID is not a permission request:
+        // the bundle instance sees the standing grant and returns at once, so
+        // a stale hand-off can be renewed silently at startup or the panel
+        // would go blank every five minutes until someone pressed R again.
+        if (WiFiInfo::KnownAuthorization() == 2 && WiFiInfo::NeedsSsidHandoff())
+            fetchSsid();
     }
     // Server push settings (TUI settings page, press S) -> persist + apply.
     tuiApp.SetServerSettings({serverEnabled, serverUrl, serverInsecure, intervalSec,

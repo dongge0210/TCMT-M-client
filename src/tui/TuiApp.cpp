@@ -894,9 +894,14 @@ int TuiApp::DrawWifiBluetoothPanel(WINDOW* win, const TuiData& data, int y, int 
                           utf8_truncate(Tr(denied ? "wifi.g1_denied" : "wifi.g1_open"),
                                         maxW - 4).c_str());
                 lines++;
-                mvwprintw(win, y + lines, x0 + 2, "%s",
-                          utf8_truncate(Tr("wifi.g2"), maxW - 4).c_str());
-                lines++;
+                // Once denied, the system will not prompt again for this
+                // bundle; offering R there sent the user to a key that could
+                // only fail. The settings path is the only way back.
+                if (!denied) {
+                    mvwprintw(win, y + lines, x0 + 2, "%s",
+                              utf8_truncate(Tr("wifi.g2"), maxW - 4).c_str());
+                    lines++;
+                }
                 mvwprintw(win, y + lines, x0 + 2, "%s",
                           utf8_truncate(Tr("wifi.path1"), maxW - 4).c_str());
                 lines++;

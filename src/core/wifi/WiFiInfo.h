@@ -41,6 +41,10 @@ public:
     // True when no fresh SSID hand-off file exists, i.e. the startup fetch
     // should run once through the app bundle.
     static bool NeedsSsidHandoff();
+    // Decision recorded by the bundle instance: -1 never asked, 0 not
+    // determined, 1 denied, 2 granted. Used to keep a silent SSID refresh
+    // running once the user has granted, and to stop offering the request.
+    static int KnownAuthorization();
     // Run the authorization request with a live run loop and wait for the
     // user's decision. Only a LaunchServices-launched instance can raise the
     // prompt, so the TUI re-opens the bundle with --request-location and this

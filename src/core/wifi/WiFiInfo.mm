@@ -77,6 +77,34 @@ static bool ReadWifiInfoFile(std::string& ssid, std::string& bssid) {
     return !ssid.empty() || !bssid.empty();
 }
 
+// The SSID hand-off expires after 5 minutes, but the authorization decision
+// does not: it lives in the user's TCC database until they change it. Without
+// this marker the TUI cannot tell "never asked" from "granted, cache expired"
+// (the terminal child's own CLLocationManager always reports not-determined),
+// so it kept offering a request that had already been answered. The bundle
+// instance records the decision here; unlike the SSID file it has no TTL.
+static constexpr const char* kWifiAuthPath = "/tmp/tcmt-wifi-auth";  // "0"|"1"|"2"
+
+static void WriteWifiAuthMarker(int status) {
+    FILE* f = std::fopen(kWifiAuthPath, "w");
+    if (!f) return;
+    ::fchmod(fileno(f), 0600);
+    std::fprintf(f, "%d\n", status);
+    std::fclose(f);
+}
+
+// -1 = no marker, otherwise 0/1/2 as CLAuthorizationStatus is reported above.
+static int ReadWifiAuthMarker() {
+    struct stat st {};
+    if (stat(kWifiAuthPath, &st) != 0) return -1;
+    if (st.st_uid != getuid()) return -1;
+    std::ifstream f(kWifiAuthPath);
+    if (!f) return -1;
+    int v = -1;
+    f >> v;
+    return (v >= 0 && v <= 2) ? v : -1;
+}
+
 // "spairport_wireless_card_type_wifi (0x14E4, 0x4387)" → "BCM4387".
 // Vendor 0x14E4 is Broadcom; the Bluetooth profile names the same silicon
 // "BCM_4387", so use the same style here.
@@ -220,6 +248,8 @@ bool WiFiInfo::NeedsSsidHandoff() {
     return !ReadWifiInfoFile(ssid, bssid);
 }
 
+int WiFiInfo::KnownAuthorization() { return ReadWifiAuthMarker(); }
+
 int WiFiInfo::RunLocationRequestBlocking(int timeoutSeconds) {
     // Called by the --request-location launch mode: an instance started by
     // LaunchServices has the GUI session a prompt needs, unlike the TUI's
@@ -241,6 +271,11 @@ int WiFiInfo::RunLocationRequestBlocking(int timeoutSeconds) {
                 st == kCLAuthorizationStatusRestricted) { result = 1; break; }
         }
 
+        // Record the decision for the TUI. A granted app stays granted across
+        // launches and SSID-cache expiry; without this the TUI would keep
+        // offering the request because its own status stays not-determined.
+        WriteWifiAuthMarker(result);
+
         // Authorized: read what the TUI cannot and hand it over.
         if (result == 2) {
             std::string ssid, bssid;
@@ -258,6 +293,13 @@ int WiFiInfo::RunLocationRequestBlocking(int timeoutSeconds) {
 }
 
 void WiFiInfo::Detect() {
+    // The hand-off file expires after 5 minutes, but the association does not.
+    // Keep the last name while the radio still reports a live link, so the
+    // panel does not alternate between an SSID and "unknown" every few
+    // minutes. Switching networks shows up through the readable RSSI/channel
+    // until the next refresh.
+    const std::string prevSsid = data_.ssid;
+    const std::string prevBssid = data_.bssid;
     Clear();
 
     @autoreleasepool {
@@ -286,7 +328,17 @@ void WiFiInfo::Detect() {
         } else if (locationOK) {
             data_.locationStatus = 2;
         } else {
-            data_.locationStatus = 0;
+            // The terminal child is attributed to the terminal app, so its own
+            // status never turns authorized even after the user grants TCMT-M.
+            // Fall back to the bundle's recorded decision: granted then keeps
+            // the request hint away for the rest of the session and across
+            // restarts, while a real "not determined" still offers it.
+            const int marker = ReadWifiAuthMarker();
+            data_.locationStatus = (marker == 2) ? 2 : 0;
+            if (marker == 1) {
+                data_.locationStatus = 1;
+                data_.locationDenied = true;
+            }
         }
 
         // --- Primary: CoreWLAN (fast, non-blocking) ---
@@ -396,7 +448,16 @@ void WiFiInfo::Detect() {
         // association is also proved by a live RSSI or channel — otherwise a
         // root/sudo process reported "disconnected" while the radio was
         // plainly associated, and the panel hid everything it could read.
-        data_.isConnected = !data_.bssid.empty() || data_.rssi != 0 || data_.channel != 0;
+        const bool liveLink = data_.rssi != 0 || data_.channel != 0;
+
+        // Granted but the hand-off expired: a live link keeps the last name
+        // instead of blanking it. Pressing R refreshes it on demand.
+        if (data_.locationStatus == 2 && liveLink) {
+            if (data_.ssid.empty()) data_.ssid = prevSsid;
+            if (data_.bssid.empty()) data_.bssid = prevBssid;
+        }
+
+        data_.isConnected = !data_.bssid.empty() || liveLink;
 
         Logger::Debug("WiFiInfo: ssid=" + data_.ssid +
                       " bssid=" + data_.bssid +
