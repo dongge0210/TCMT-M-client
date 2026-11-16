@@ -327,6 +327,9 @@ static ConfigManager g_cfg("system_monitor.json");
 static std::mutex s_settingsMutex;
 static bool s_settingsPending = false;
 static tcmt::ServerSettings s_pendingSettings;
+// Current enrollment code, shared by the monitor loop and the IPC thread.
+// Guarded by s_settingsMutex; never read the raw enrollCode across threads.
+static std::string s_enrollCode;
 
 // ── IPC 配置通道：允许客户端改的键 ────────────────────────────────────────
 //
@@ -370,7 +373,6 @@ std::string BuildConfigSnapshotJson() {
     j["server.url"]          = g_cfg.GetString("server.url", "");
     j["server.insecure"]     = g_cfg.GetBool("server.insecure", false);
     j["server.intervalSec"]  = g_cfg.GetInt("server.intervalSec", 2);
-    j["server.enroll"]       = g_cfg.GetString("server.enroll", "");
     j["sampling.intervalMs"] = g_sampleIntervalMs.load();
     j["ui.language"]         = g_cfg.GetString("ui.language", "zh-Hans");
     return j.dump();
@@ -492,6 +494,10 @@ int main(int argc, char* argv[]) {
         if (enrollCode.empty())
             enrollCode = g_cfg.GetString("server.enroll",
                                          g_cfg.GetString("push.enroll", ""));
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_settingsMutex);
+        s_enrollCode = enrollCode;
     }
     const bool motionHttpEnabled = g_cfg.GetBool("motion_http.enabled", false);
     // Upload cadence — hard bounds 1..60 s (config + TUI settings page).
@@ -937,9 +943,12 @@ int main(int argc, char* argv[]) {
             s.intervalSec = g_cfg.GetInt("server.intervalSec", 2);
             // Only take the code when the client actually sent it — otherwise
             // an unrelated config change would look like an identity change.
-            s.enroll = in.contains("server.enroll")
-                           ? g_cfg.GetString("server.enroll", "")
-                           : enrollCode;
+            if (in.contains("server.enroll")) {
+                s.enroll = g_cfg.GetString("server.enroll", "");
+            } else {
+                std::lock_guard<std::mutex> lock(s_settingsMutex);
+                s.enroll = s_enrollCode;
+            }
             {
                 std::lock_guard<std::mutex> lock(s_settingsMutex);
                 s_pendingSettings = s;
@@ -1205,14 +1214,19 @@ int main(int argc, char* argv[]) {
                     // clears a cached token when the interval changed, so the
                     // server sees the new value right away.
                     s_probe.SetUploadIntervalSec(intervalSec);
+                    // Stop first: ClearIdentity must not race a registration
+                    // request that is still in flight on the old thread.
+                    s_probe.Stop();
                     // A changed enrollment code is a different identity: drop
                     // the cached token so the next registration uses the new one.
-                    if (pending.enroll != enrollCode) {
-                        enrollCode = pending.enroll;
-                        s_probe.SetEnrollCode(enrollCode);
-                        s_probe.ClearIdentity();
+                    {
+                        std::lock_guard<std::mutex> lock(s_settingsMutex);
+                        if (pending.enroll != s_enrollCode) {
+                            s_enrollCode = pending.enroll;
+                            s_probe.SetEnrollCode(s_enrollCode);
+                            s_probe.ClearIdentity();
+                        }
                     }
-                    s_probe.Stop();
                     if (pending.enabled) {
                         s_probe.SetInsecure(pending.insecure);
                         if (s_probe.Start(pending.url)) {
@@ -1243,10 +1257,18 @@ int main(int argc, char* argv[]) {
             if (probeActive) {
                 if (s_probe.IsBlocked())
                     probeStatus = "blocked";
-                else
-                    probeStatus = s_probe.Token().empty()
-                        ? "connecting..."
-                        : ("uploading (" + s_probe.DeviceId() + ")");
+                else if (s_probe.Token().empty()) {
+                    probeStatus = "connecting...";
+                } else {
+                    // Two-way: the id says the server accepted us, the ack age
+                    // says it is still receiving what we send.
+                    probeStatus = "uploading (" + s_probe.DeviceId() + ")";
+                    const int64_t ackAge = s_probe.LastAckAgeSec();
+                    if (ackAge >= 0)
+                        probeStatus += " | confirmed "
+                                     + std::to_string(s_probe.LastAckCount())
+                                     + " " + std::to_string(ackAge) + "s ago";
+                }
             }
             data.sampleIntervalMs = g_sampleIntervalMs.load();  // dashboard header
             data.serverPushEnabled = probeActive;

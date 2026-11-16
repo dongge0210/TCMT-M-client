@@ -363,8 +363,18 @@ void ServerProbe::SetEnrollCode(const std::string& code) {
     enrollCode_ = code;
 }
 
+int64_t ServerProbe::LastAckAgeSec() const {
+    std::lock_guard<std::mutex> lk(mutex_);
+    if (lastAckMs_ <= 0) return -1;
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const int64_t age = (nowMs - lastAckMs_) / 1000;
+    return age < 0 ? 0 : age;
+}
+
 void ServerProbe::ClearIdentity() {
     std::lock_guard<std::mutex> lk(mutex_);
+    ++identityGen_;  // invalidate any registration response still in flight
     token_.clear();
     deviceId_.clear();
     if (!serverUrl_.empty()) {
@@ -455,6 +465,14 @@ int ServerProbe::SendBatch(const std::string& path, const std::string& token) {
         accepted = j.value("accepted", -1);
         skipped = j.value("skipped", -1);
     } catch (...) { /* response body is informational only */ }
+    // Only a real ingest POST is a server acknowledgement; the backfill
+    // replay does not mean the live stream is confirmed.
+    if (path.find("/api/ingest") != std::string::npos) {
+        std::lock_guard<std::mutex> lk(mutex_);
+        lastAckMs_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        lastAckCount_ = accepted >= 0 ? accepted : static_cast<int>(count);
+    }
     Logger::Debug("ServerProbe: " + std::to_string(count) + " samples to " + path
                   + " (accepted " + std::to_string(accepted)
                   + ", skipped " + std::to_string(skipped) + ")");
@@ -505,6 +523,13 @@ void ServerProbe::ProbeThread() {
             // Lets the server size its offline threshold from this device's
             // actual cadence instead of a fixed 15 s.
             body["intervalSec"] = intervalSec;
+            // Snapshot the identity generation: if ClearIdentity() runs while
+            // this request is in flight, its answer must not be persisted.
+            uint64_t gen = 0;
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                gen = identityGen_;
+            }
             std::string response;
             const int status = RawPost(serverHost_, serverPort_,
                                        basePath_ + "/api/register",
@@ -523,14 +548,25 @@ void ServerProbe::ProbeThread() {
                     const auto end = response.find('"', idPos);
                     id = response.substr(idPos, end - idPos);
                 }
+                int reportedIntervalSec = 2;
+                bool stale = false;
                 if (!token.empty()) {
-                    int reportedIntervalSec = 2;
                     {
                         std::lock_guard<std::mutex> lk(mutex_);
-                        token_ = token;
-                        deviceId_ = id;
+                        stale = identityGen_ != gen;
+                        if (!stale) {
+                            token_ = token;
+                            deviceId_ = id;
+                        }
                         reportedIntervalSec = uploadIntervalSec_;
                     }
+                }
+                if (stale) {
+                    // The enrollment code changed while we were registering;
+                    // the token belongs to the old identity.
+                    Logger::Info("ServerProbe: discarded a registration that "
+                                 "was superseded by an identity reset");
+                } else if (!token.empty()) {
                     SaveClientIdentity(serverUrl_, clientKey_, id, token,
                                        reportedIntervalSec);
                     blocked_ = false;

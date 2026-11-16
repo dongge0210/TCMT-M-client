@@ -9,6 +9,9 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#ifndef _WIN32
+#include <filesystem>
+#endif
 
 // =========================================================================
 // Helper: split dotted key "foo.bar.baz" -> ["foo", "bar", "baz"]
@@ -78,7 +81,16 @@ bool ConfigManager::Save() const {
         std::ofstream out(path_);
         if (!out) return false;
         out << data_.dump(2);
-        return out.good();
+        const bool ok = out.good();
+        out.close();
+#ifndef _WIN32
+        // The file holds the enrollment code; keep it private to this user.
+        std::error_code ec;
+        std::filesystem::permissions(path_,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace, ec);
+#endif
+        return ok;
     } catch (...) {
         return false;
     }

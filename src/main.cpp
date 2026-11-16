@@ -160,7 +160,6 @@ std::string BuildConfigSnapshotJson() {
     j["server.url"]          = cfg.GetString("server.url", "");
     j["server.insecure"]     = cfg.GetBool("server.insecure", false);
     j["server.intervalSec"]  = cfg.GetInt("server.intervalSec", 2);
-    j["server.enroll"]       = cfg.GetString("server.enroll", "");
     j["sampling.intervalMs"] = g_sampleIntervalMs.load();
     j["ui.language"]         = cfg.GetString("ui.language", "zh-Hans");
     return j.dump();
@@ -226,9 +225,14 @@ void ApplyClientConfigSet(const std::string& payload, tcmt::ipc::IPCServer& ipcS
     s.insecure    = cfg.GetBool("server.insecure", false);
     s.intervalSec = cfg.GetInt("server.intervalSec", 2);
     // Only when the client sent it: an unrelated change must not look like an
-    // enrollment change and wipe the cached token.
-    s.enroll      = in.contains("server.enroll") ? cfg.GetString("server.enroll", "")
-                                                 : g_push.enroll;
+    // enrollment change and wipe the cached token. Read the current value
+    // under the push mutex; the monitor loop writes it there too.
+    if (in.contains("server.enroll")) {
+        s.enroll = cfg.GetString("server.enroll", "");
+    } else {
+        std::lock_guard<std::mutex> lock(g_push.mutex);
+        s.enroll = g_push.enroll;
+    }
     {
         std::lock_guard<std::mutex> lock(g_push.mutex);
         g_push.pending = s;
@@ -1454,11 +1458,15 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 g_push.probe.SetUploadIntervalSec(g_push.intervalSec);
                 // A changed enrollment code is a different identity: the old
                 // token was issued against the old code, so drop it and let
-                // the next registration use the new one.
-                if (pending.enroll != g_push.enroll) {
-                    g_push.enroll = pending.enroll;
-                    g_push.probe.SetEnrollCode(pending.enroll);
-                    g_push.probe.ClearIdentity();
+                // the next registration use the new one. Probe is stopped
+                // above, so the old thread cannot resurrect the token.
+                {
+                    std::lock_guard<std::mutex> lock(g_push.mutex);
+                    if (pending.enroll != g_push.enroll) {
+                        g_push.enroll = pending.enroll;
+                        g_push.probe.SetEnrollCode(pending.enroll);
+                        g_push.probe.ClearIdentity();
+                    }
                 }
                 g_push.enabled = pending.enabled;
                 g_push.insecure = pending.insecure;
@@ -2344,10 +2352,18 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 if (g_push.active) {
                     if (g_push.probe.IsBlocked())
                         g_push.status = "blocked";
-                    else
-                        g_push.status = g_push.probe.Token().empty()
-                            ? "connecting..."
-                            : ("uploading (" + g_push.probe.DeviceId() + ")");
+                    else if (g_push.probe.Token().empty()) {
+                        g_push.status = "connecting...";
+                    } else {
+                        // Two-way: the id says the server accepted us, the ack
+                        // age says it is still receiving what we send.
+                        g_push.status = "uploading (" + g_push.probe.DeviceId() + ")";
+                        const int64_t ackAge = g_push.probe.LastAckAgeSec();
+                        if (ackAge >= 0)
+                            g_push.status += " | confirmed "
+                                           + std::to_string(g_push.probe.LastAckCount())
+                                           + " " + std::to_string(ackAge) + "s ago";
+                    }
                 }
 
                 // Upload gate (configurable 1..60 s via TUI). Every collection

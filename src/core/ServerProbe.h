@@ -63,6 +63,25 @@ public:
         return deviceId_;
     }
 
+    // Last /api/ingest acknowledgement: epoch milliseconds of the response and
+    // how many samples it accepted. 0 / false until the first acknowledged
+    // batch, so the TUI can show that the server confirmed receipt rather than
+    // only that a request left the machine.
+    bool HasServerAck() const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return lastAckMs_ > 0;
+    }
+    int64_t LastAckMs() const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return lastAckMs_;
+    }
+    int LastAckCount() const {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return lastAckCount_;
+    }
+    // Seconds since the last acknowledged batch, or -1 if none yet.
+    int64_t LastAckAgeSec() const;
+
     // Queue a JSON snapshot for upload. Non-blocking.
     void PostSnapshot(const std::string& jsonData);
 
@@ -100,6 +119,12 @@ private:
     std::string deviceId_;
     std::string enrollCode_;  // guarded by mutex_
     int uploadIntervalSec_ = 2;  // guarded by mutex_
+    // Bumped by ClearIdentity(). A registration response that comes back for
+    // an older generation is discarded, so a detached thread cannot restore a
+    // token that was just revoked.
+    uint64_t identityGen_ = 0;  // guarded by mutex_
+    int64_t lastAckMs_ = 0;     // guarded by mutex_
+    int lastAckCount_ = 0;      // guarded by mutex_
     std::atomic<bool> running_{false};
     std::atomic<bool> blocked_{false};
     std::thread thread_;
