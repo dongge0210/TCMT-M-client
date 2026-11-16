@@ -6,6 +6,7 @@
 
 #ifdef TCMT_MACOS
 
+#import <AppKit/AppKit.h>
 #import <CoreWLAN/CoreWLAN.h>
 #import <CoreLocation/CoreLocation.h>
 #include <nlohmann/json.hpp>
@@ -256,20 +257,50 @@ int WiFiInfo::RunLocationRequestBlocking(int timeoutSeconds) {
     // terminal child, where the request is silently dropped.
     if (geteuid() == 0) return 0;
 
-    int result = 0;
+    __block int result = 0;
     @autoreleasepool {
+        // Give the request an application context: a bundle child started by
+        // LaunchServices with no NSApplication has nowhere to put the consent
+        // dialog. Accessory keeps it out of the Dock. The request itself was
+        // being dropped for a second reason, the missing
+        // com.apple.security.personal-information.location entitlement under
+        // the hardened runtime, which is what made R look dead.
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        [NSApp activateIgnoringOtherApps:YES];
+
         if (!s_locMgr) s_locMgr = [[CLLocationManager alloc] init];
         [s_locMgr requestWhenInUseAuthorization];
 
+        // Run AppKit's own loop and poll from a timer: the authorization
+        // callback is delivered on it, and the timer gives the deadline an
+        // exit that does not depend on a user event that may never come.
+        __block bool decided = false;
         NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutSeconds];
-        while ([deadline timeIntervalSinceNow] > 0) {
-            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
-                                     beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+        [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer* timer) {
             const CLAuthorizationStatus st = [CLLocationManager authorizationStatus];
-            if (st == kCLAuthorizationStatusAuthorizedAlways) { result = 2; break; }
-            if (st == kCLAuthorizationStatusDenied ||
-                st == kCLAuthorizationStatusRestricted) { result = 1; break; }
-        }
+            if (st == kCLAuthorizationStatusAuthorizedAlways) { result = 2; decided = true; }
+            else if (st == kCLAuthorizationStatusDenied ||
+                     st == kCLAuthorizationStatusRestricted) { result = 1; decided = true; }
+            else if ([deadline timeIntervalSinceNow] <= 0) { decided = true; }
+            if (decided) {
+                [timer invalidate];
+                [NSApp stop:nil];
+                // Wake the loop so stop takes effect now, not on the next
+                // user event that may never come.
+                NSEvent* wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                                  location:NSZeroPoint
+                                             modifierFlags:0
+                                                 timestamp:0
+                                              windowNumber:0
+                                                   context:nil
+                                                   subtype:0
+                                                     data1:0
+                                                     data2:0];
+                [NSApp postEvent:wake atStart:NO];
+            }
+        }];
+        [NSApp run];
 
         // Record the decision for the TUI. A granted app stays granted across
         // launches and SSID-cache expiry; without this the TUI would keep

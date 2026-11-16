@@ -6,5 +6,9 @@
 	<!-- Allow loading Homebrew ncurses (different Team ID) -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
+	<!-- CoreLocation under the hardened runtime: without this the request is
+	     dropped without a prompt and authorizationStatus stays not-determined. -->
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
 </dict>
 </plist>
