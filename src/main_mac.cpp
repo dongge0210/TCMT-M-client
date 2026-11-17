@@ -379,10 +379,10 @@ int g_pushedIntervalSec = 0;  // 0 = 没有待应用的上报间隔
 /// 表里没有的东西一律保留：丢掉没人要求的读数等于丢数据。
 const std::map<std::string, std::vector<const char*>>& SectionKeys() {
     static const std::map<std::string, std::vector<const char*>> table = {
-        {"cpu",     {"cpu_usage", "cpu_temp", "cpu_name"}},
+        {"cpu",     {"cpu_usage", "cpu_name"}},
         {"memory",  {"memory_used", "memory_total"}},
         {"gpu",     {"gpu_usage", "gpu_temp", "gpu_name"}},
-        {"thermal", {"temperatures"}},
+        {"thermal", {"cpu_temp", "temperatures"}},
         {"motion",  {"ax", "ay", "az", "gx", "gy", "gz", "lidAngle", "hb", "imut"}},
         {"storage", {"disks"}},
         {"network", {"net"}},
