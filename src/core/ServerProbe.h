@@ -5,8 +5,11 @@
 #include <cstdint>
 #include <condition_variable>
 #include <deque>
+#include <functional>
+#include <map>
 #include <thread>
 #include <mutex>
+#include <vector>
 
 // Sends TCMT sensor data to a remote tcmt-server via HTTP(S) POST.
 // Registers on a background thread (retries until reachable), then POSTs
@@ -41,6 +44,25 @@ public:
     // Optional enrollment code for servers started with --enroll-token.
     // Sent as the `enroll` field on /api/register; omitted when empty.
     void SetEnrollCode(const std::string& code);
+
+    // Sections this build can collect (cpu, memory, gpu, thermal, motion,
+    // storage, network, power). Reported on /api/register so the server can
+    // tell "this machine has no battery" apart from "the reading went
+    // missing". Call before Start().
+    void SetSections(std::vector<std::string> sections);
+
+    // Settings the server pushes back with every accepted request. The probe
+    // keeps the upload cadence and backfill flag for itself; everything else
+    // is handed to the collector, which decides what goes into a snapshot.
+    struct ServerSettings {
+        std::string rev;              // server's config revision
+        int intervalSec = 0;          // upload cadence, 0 when not stated
+        bool backfill = true;         // replay the queue after (re)registering
+        std::map<std::string, bool> collect;  // section -> enabled
+    };
+    // Fires on the upload thread, at most once per rev. Must be cheap and
+    // thread-safe: it runs between batches.
+    void SetOnServerSettings(std::function<void(const ServerSettings&)> callback);
 
     // Upload cadence the collector actually uses, in seconds. Reported as
     // `intervalSec` on /api/register so the server can derive its offline
@@ -102,6 +124,10 @@ private:
     // queue only after the server answers 200, so a failed upload (or a
     // failed backfill) keeps them for the next attempt.
     int SendBatch(const std::string& path, const std::string& token);
+    // Reads the `cfg` envelope a server attaches to every accepted response
+    // and applies the one-time-per-rev parts. Safe with older servers that
+    // send no envelope at all.
+    void ApplyServerSettings(const std::string& response);
     bool HttpPost(const std::string& path, const std::string& body, std::string& response);
     bool HttpPostSync(const std::string& path, const std::string& body, std::string& response);
 
@@ -119,6 +145,14 @@ private:
     std::string deviceId_;
     std::string enrollCode_;  // guarded by mutex_
     int uploadIntervalSec_ = 2;  // guarded by mutex_
+    std::vector<std::string> sections_;  // set before Start, then read-only
+    std::function<void(const ServerSettings&)> onSettings_;  // guarded by mutex_
+    std::string appliedRev_;       // guarded by mutex_
+    bool backfillEnabled_ = true;  // guarded by mutex_
+    // The server asked for the section list (it has none for this device).
+    // Answered by registering again, once per process.
+    bool sectionsReported_ = false;       // guarded by mutex_
+    std::atomic<bool> reRegister_{false};
     // Bumped by ClearIdentity(). A registration response that comes back for
     // an older generation is discarded, so a detached thread cannot restore a
     // token that was just revoked.

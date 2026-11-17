@@ -20,6 +20,9 @@
 #include <sys/stat.h>
 #endif
 #include <algorithm>
+#include <map>
+#include <utility>
+#include <vector>
 #include <fcntl.h>
 #include <cstring>
 #include <cstdlib>
@@ -383,6 +386,97 @@ void ServerProbe::ClearIdentity() {
     Logger::Info("ServerProbe: identity cleared (enrollment changed)");
 }
 
+void ServerProbe::SetSections(std::vector<std::string> sections) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    sections_ = std::move(sections);
+}
+
+void ServerProbe::SetOnServerSettings(std::function<void(const ServerSettings&)> callback) {
+    std::lock_guard<std::mutex> lk(mutex_);
+    onSettings_ = std::move(callback);
+}
+
+// The server answers every accepted request with the settings it wants this
+// device to run. Applying them here — and not in the collector — keeps the
+// upload cadence and the replay policy inside the component that owns them;
+// the collector only hears about the sections it should stop sampling.
+void ServerProbe::ApplyServerSettings(const std::string& response) {
+    json parsed;
+    try {
+        parsed = json::parse(response);
+    } catch (...) {
+        return;  // a server that predates the envelope, or a proxy's error page
+    }
+    if (!parsed.contains("cfg") || !parsed["cfg"].is_object()) return;
+    const json& cfg = parsed["cfg"];
+
+    ServerSettings settings;
+    settings.rev = cfg.value("rev", std::string{});
+    if (settings.rev.empty()) return;
+
+    std::function<void(const ServerSettings&)> callback;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (settings.rev == appliedRev_) return;  // nothing new since last time
+        appliedRev_ = settings.rev;
+
+        settings.intervalSec = cfg.value("intervalSec", 0);
+        settings.backfill = cfg.value("backfill", backfillEnabled_);
+        backfillEnabled_ = settings.backfill;
+        if (cfg.contains("collect") && cfg["collect"].is_object()) {
+            for (auto it = cfg["collect"].begin(); it != cfg["collect"].end(); ++it) {
+                if (it.value().is_boolean()) {
+                    settings.collect[it.key()] = it.value().get<bool>();
+                }
+            }
+        }
+        // The server keeps no section list for us: it asked for one. Only
+        // worth a round trip if we actually have something to say, and only
+        // once — otherwise an old server and a silent probe would ping-pong.
+        if (cfg.contains("ask") && cfg["ask"].is_array() && !sectionsReported_
+            && !sections_.empty()) {
+            for (const auto& want : cfg["ask"]) {
+                if (want.is_string() && want.get<std::string>() == "sections") {
+                    reRegister_.store(true);
+                    break;
+                }
+            }
+        }
+        callback = onSettings_;
+    }
+
+    // The cadence belongs to the probe: the collector is told through the
+    // callback so its own frame timing follows, but the upload interval and
+    // the persisted identity are updated here, in one place. Without the
+    // re-save, a restart would see a mismatched interval and throw away a
+    // perfectly good token.
+    if (settings.intervalSec >= 1 && settings.intervalSec <= 300) {
+        bool changed = false;
+        std::string id, token;
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            changed = settings.intervalSec != uploadIntervalSec_;
+            uploadIntervalSec_ = settings.intervalSec;
+            id = deviceId_;
+            token = token_;
+        }
+        // File write outside the lock: PostSnapshot runs on the collector
+        // thread and must never wait on the disk.
+        if (!token.empty()) {
+            SaveClientIdentity(serverUrl_, clientKey_, id, token, settings.intervalSec);
+        }
+        // A new cadence is a new registration: the server sizes its offline
+        // threshold from the interval the agent reports, and only a
+        // registration carries that number.
+        if (changed) reRegister_.store(true);
+    }
+
+    Logger::Info("ServerProbe: server settings rev " + settings.rev
+                 + " (interval " + std::to_string(settings.intervalSec) + "s"
+                 + (settings.backfill ? ", backfill on" : ", backfill off") + ")");
+    if (callback) callback(settings);
+}
+
 void ServerProbe::SetUploadIntervalSec(int seconds) {
     if (seconds < 1) seconds = 1;
     if (seconds > 300) seconds = 300;
@@ -459,6 +553,10 @@ int ServerProbe::SendBatch(const std::string& path, const std::string& token) {
                            sampleQueue_.begin() + static_cast<std::ptrdiff_t>(sent));
     }
 
+    // Every accepted batch repeats the settings envelope, so an operator's
+    // change reaches an agent that has not re-registered in days.
+    ApplyServerSettings(response);
+
     int accepted = -1, skipped = -1;
     try {
         const json j = json::parse(response);
@@ -523,6 +621,16 @@ void ServerProbe::ProbeThread() {
             // Lets the server size its offline threshold from this device's
             // actual cadence instead of a fixed 15 s.
             body["intervalSec"] = intervalSec;
+            // What this build can collect. An empty list is not sent: the
+            // server treats a missing `sections` as "unknown", which is the
+            // honest answer for a probe that was never told.
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                if (!sections_.empty()) {
+                    body["sections"] = sections_;
+                    sectionsReported_ = true;
+                }
+            }
             // Snapshot the identity generation: if ClearIdentity() runs while
             // this request is in flight, its answer must not be persisted.
             uint64_t gen = 0;
@@ -573,9 +681,20 @@ void ServerProbe::ProbeThread() {
                     registered = true;
                     wasOnline = true;
                     Logger::Info("ServerProbe: registered as " + id);
+                    // The registration answer carries the settings this device
+                    // should run with; adopt them before replaying, so the
+                    // backfill decision is the server's and not a default.
+                    ApplyServerSettings(response);
                     // Replay whatever the queue holds. A failure is history
                     // only: the samples stay queued for the next upload.
-                    SendBatch(basePath_ + "/api/backfill", token);
+                    bool replay = true;
+                    {
+                        std::lock_guard<std::mutex> lk(mutex_);
+                        replay = backfillEnabled_;
+                    }
+                    if (replay) {
+                        SendBatch(basePath_ + "/api/backfill", token);
+                    }
                 }
             } else if (status == 403) {
                 // Refused by policy: the device was revoked, or the enrollment
@@ -615,6 +734,16 @@ void ServerProbe::ProbeThread() {
         if (status == 200) {
             if (!wasOnline) Logger::Info("ServerProbe: upload resumed");
             wasOnline = true;
+            if (reRegister_.exchange(false)) {
+                // The server asked what this machine collects. Registering
+                // again is how we answer; the token is rotated in the process.
+                Logger::Info("ServerProbe: server asked for the section list, re-registering");
+                {
+                    std::lock_guard<std::mutex> lk(mutex_);
+                    token_.clear();
+                }
+                registered = false;
+            }
         } else if (status == 401) {
             // Token revoked (server DB reset / moved). Re-register next cycle.
             Logger::Warn("ServerProbe: unauthorized — re-registering");

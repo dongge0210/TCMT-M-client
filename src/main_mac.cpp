@@ -14,6 +14,8 @@
 #include <atomic>
 #include <cstring>
 #include <csignal>
+#include <map>
+#include <vector>
 #include <unistd.h>
 #include <spawn.h>
 #include <sys/types.h>
@@ -364,6 +366,52 @@ const CfgKey* FindCfgKey(const std::string& key) {
         if (key == k.key) return &k;
     }
     return nullptr;
+}
+
+// ── 服务端下发的开关 ──
+// 由上传线程写入、采集线程读取。空表表示「服务端没下过命令，全采」，
+// 这和「全部打开」不是一回事：前者在服务端新增 section 时自动跟随。
+std::mutex g_pushedMutex;
+std::map<std::string, bool> g_pushedCollect;
+int g_pushedIntervalSec = 0;  // 0 = 没有待应用的上报间隔
+
+/// 每个 section 对应的快照键。关掉某个 section 只删这些键，
+/// 表里没有的东西一律保留：丢掉没人要求的读数等于丢数据。
+const std::map<std::string, std::vector<const char*>>& SectionKeys() {
+    static const std::map<std::string, std::vector<const char*>> table = {
+        {"cpu",     {"cpu_usage", "cpu_temp", "cpu_name"}},
+        {"memory",  {"memory_used", "memory_total"}},
+        {"gpu",     {"gpu_usage", "gpu_temp", "gpu_name"}},
+        {"thermal", {"temperatures"}},
+        {"motion",  {"ax", "ay", "az", "gx", "gy", "gz", "lidAngle", "hb", "imut"}},
+        {"storage", {"disks"}},
+        {"network", {"net"}},
+        {"power",   {"battery"}},
+    };
+    return table;
+}
+
+/// 按服务端的开关裁剪一条快照。全部打开时原样返回，热路径不解析 JSON。
+std::string ApplySectionFilter(std::string body) {
+    std::vector<std::string> off;
+    {
+        std::lock_guard<std::mutex> lk(g_pushedMutex);
+        for (const auto& entry : g_pushedCollect) {
+            if (!entry.second) off.push_back(entry.first);
+        }
+    }
+    if (off.empty()) return body;
+    try {
+        nlohmann::json j = nlohmann::json::parse(body);
+        for (const auto& section : off) {
+            const auto keys = SectionKeys().find(section);
+            if (keys == SectionKeys().end()) continue;
+            for (const char* key : keys->second) j.erase(key);
+        }
+        return j.dump();
+    } catch (...) {
+        return body;  // 裁不掉也比丢一条样本强
+    }
 }
 
 /// 当前配置值，交给 IPCServer 在客户端握手完成后推过去。
@@ -1132,6 +1180,24 @@ int main(int argc, char* argv[]) {
     static ServerProbe s_probe;
     s_probe.SetEnrollCode(enrollCode);
     s_probe.SetUploadIntervalSec(intervalSec);
+    // 这台机器拿得到哪些 section。服务端据此区分「没有电池」和「读数丢了」。
+    s_probe.SetSections({"cpu", "memory", "gpu", "thermal", "motion",
+                         "storage", "network", "power"});
+    s_probe.SetOnServerSettings([](const ServerProbe::ServerSettings& pushed) {
+        {
+            std::lock_guard<std::mutex> lk(g_pushedMutex);
+            g_pushedCollect = pushed.collect;
+            if (pushed.intervalSec >= 1) g_pushedIntervalSec = pushed.intervalSec;
+        }
+        std::string off;
+        for (const auto& entry : pushed.collect) {
+            if (!entry.second) off += (off.empty() ? "" : ",") + entry.first;
+        }
+        Logger::Info("服务端下发配置 rev=" + pushed.rev
+                     + " 间隔=" + std::to_string(pushed.intervalSec) + "s"
+                     + " 补传=" + (pushed.backfill ? "开" : "关")
+                     + (off.empty() ? " 全部采集" : " 关闭:" + off));
+    });
     if (serverEnabled) {
         s_probe.SetInsecure(serverInsecure);
         Logger::Info("ServerProbe: target " + serverUrl);
@@ -1204,6 +1270,28 @@ int main(int argc, char* argv[]) {
                         pending = s_pendingSettings;
                         s_settingsPending = false;
                         havePending = true;
+                    }
+                }
+                // 服务端下发的上报间隔。上传线程已经按新节奏发了，采集端跟着改，
+                // 否则队列里会按旧节奏堆积。
+                {
+                    int pushed = 0;
+                    {
+                        std::lock_guard<std::mutex> lock(g_pushedMutex);
+                        pushed = g_pushedIntervalSec;
+                        g_pushedIntervalSec = 0;
+                    }
+                    if (pushed >= 1) {
+                        const int cadence = (std::max)(1, (std::min)(pushed, 60));
+                        if (cadence != intervalSec) {
+                            intervalSec = cadence;
+                            intervalMs = (int64_t)intervalSec * 1000;
+                            s_probe.SetUploadIntervalSec(cadence);
+                            g_cfg.SetInt("server.intervalSec", cadence);
+                            g_cfg.Save();
+                            Logger::Info("服务端把上报间隔改成 "
+                                         + std::to_string(cadence) + "s");
+                        }
                     }
                 }
                 if (havePending) {
@@ -2186,7 +2274,7 @@ int main(int argc, char* argv[]) {
                     body += tb;
                 }
                 body += "]}";
-                s_probe.PostSnapshot(std::move(body));
+                s_probe.PostSnapshot(ApplySectionFilter(std::move(body)));
                 if (pushDue) {
                     s_probe.RequestFlush();
                     lastPushMs = nowMs;
