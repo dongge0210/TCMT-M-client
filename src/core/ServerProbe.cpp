@@ -25,6 +25,7 @@
 #include <vector>
 #include <fcntl.h>
 #include <cstring>
+#include <cstdio>
 #include <cstdlib>
 #include <sstream>
 #include <thread>
@@ -254,6 +255,10 @@ static void LoadClientIdentity(const std::string& serverUrl,
     } catch (...) { /* corrupt file — will rewrite */ }
 }
 
+// One writer at a time: the probe saves the identity from the upload thread
+// while an identity reset can clear it from the caller's thread.
+static std::mutex g_identityFileMutex;
+
 static void SaveClientIdentity(const std::string& serverUrl,
                                const std::string& clientKey,
                                const std::string& id, const std::string& token,
@@ -267,14 +272,24 @@ static void SaveClientIdentity(const std::string& serverUrl,
         cfg["clientKey"] = clientKey;
         cfg["servers"][serverUrl] = {
             {"id", id}, {"token", token}, {"intervalSec", intervalSec}};
-        const std::string dir = ClientConfigPath().substr(0, ClientConfigPath().find_last_of("/\\"));
+        const std::string path = ClientConfigPath();
+        const std::string dir = path.substr(0, path.find_last_of("/\\"));
         MakeDir(dir);
-        std::ofstream f(ClientConfigPath());
-        if (f) f << cfg.dump(2);
+        // Write beside the real file and rename over it: a crash mid-write
+        // must not leave a half-written identity behind, because the next
+        // start reads whatever is there and treats it as the truth.
+        const std::string temp = path + ".tmp";
+        {
+            std::ofstream f(temp, std::ios::trunc);
+            if (!f) return;
+            f << cfg.dump(2);
+            if (!f.good()) return;
+        }
 #ifndef _WIN32
         // The file holds device tokens; keep it private to this user.
-        ::chmod(ClientConfigPath().c_str(), 0600);
+        ::chmod(temp.c_str(), 0600);
 #endif
+        std::rename(temp.c_str(), path.c_str());
     } catch (...) { /* non-fatal */ }
 }
 
@@ -376,12 +391,20 @@ int64_t ServerProbe::LastAckAgeSec() const {
 }
 
 void ServerProbe::ClearIdentity() {
-    std::lock_guard<std::mutex> lk(mutex_);
-    ++identityGen_;  // invalidate any registration response still in flight
-    token_.clear();
-    deviceId_.clear();
-    if (!serverUrl_.empty()) {
-        SaveClientIdentity(serverUrl_, clientKey_, "", "", 0);
+    std::string url, key;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        ++identityGen_;  // invalidate any registration response still in flight
+        token_.clear();
+        deviceId_.clear();
+        url = serverUrl_;
+        key = clientKey_;
+    }
+    // Outside the state lock, and after it: the file lock is always taken
+    // after this one, never around it.
+    if (!url.empty()) {
+        std::lock_guard<std::mutex> fileLock(g_identityFileMutex);
+        SaveClientIdentity(url, key, "", "", 0);
     }
     Logger::Info("ServerProbe: identity cleared (enrollment changed)");
 }
@@ -407,11 +430,15 @@ void ServerProbe::ApplyServerSettings(const std::string& response) {
     } catch (...) {
         return;  // a server that predates the envelope, or a proxy's error page
     }
-    if (!parsed.contains("cfg") || !parsed["cfg"].is_object()) return;
+    if (!parsed.is_object() || !parsed.contains("cfg") || !parsed["cfg"].is_object()) return;
     const json& cfg = parsed["cfg"];
 
+    // Every read below is type-checked: the envelope arrives from the network,
+    // and a ``value()`` on a mistyped field throws straight out of the upload
+    // thread.
+    if (!cfg.contains("rev") || !cfg["rev"].is_string()) return;
     ServerSettings settings;
-    settings.rev = cfg.value("rev", std::string{});
+    settings.rev = cfg["rev"].get<std::string>();
     if (settings.rev.empty()) return;
 
     std::function<void(const ServerSettings&)> callback;
@@ -420,8 +447,12 @@ void ServerProbe::ApplyServerSettings(const std::string& response) {
         if (settings.rev == appliedRev_) return;  // nothing new since last time
         appliedRev_ = settings.rev;
 
-        settings.intervalSec = cfg.value("intervalSec", 0);
-        settings.backfill = cfg.value("backfill", backfillEnabled_);
+        settings.intervalSec = cfg.contains("intervalSec") && cfg["intervalSec"].is_number_integer()
+                                   ? cfg["intervalSec"].get<int>()
+                                   : 0;
+        settings.backfill = cfg.contains("backfill") && cfg["backfill"].is_boolean()
+                                ? cfg["backfill"].get<bool>()
+                                : backfillEnabled_;
         backfillEnabled_ = settings.backfill;
         if (cfg.contains("collect") && cfg["collect"].is_object()) {
             for (auto it = cfg["collect"].begin(); it != cfg["collect"].end(); ++it) {
@@ -453,17 +484,30 @@ void ServerProbe::ApplyServerSettings(const std::string& response) {
     if (settings.intervalSec >= 1 && settings.intervalSec <= 300) {
         bool changed = false;
         std::string id, token;
+        uint64_t gen = 0;
         {
             std::lock_guard<std::mutex> lk(mutex_);
             changed = settings.intervalSec != uploadIntervalSec_;
             uploadIntervalSec_ = settings.intervalSec;
             id = deviceId_;
             token = token_;
+            gen = identityGen_;
         }
         // File write outside the lock: PostSnapshot runs on the collector
         // thread and must never wait on the disk.
         if (!token.empty()) {
-            SaveClientIdentity(serverUrl_, clientKey_, id, token, settings.intervalSec);
+            std::lock_guard<std::mutex> fileLock(g_identityFileMutex);
+            bool fresh = false;
+            {
+                std::lock_guard<std::mutex> lk(mutex_);
+                fresh = identityGen_ == gen && !token_.empty();
+            }
+            // An identity reset while this response was in flight owns the
+            // file: writing the old token back would resurrect a credential
+            // the operator just revoked.
+            if (fresh) {
+                SaveClientIdentity(serverUrl_, clientKey_, id, token, settings.intervalSec);
+            }
         }
         // A new cadence is a new registration: the server sizes its offline
         // threshold from the interval the agent reports, and only a
@@ -675,8 +719,18 @@ void ServerProbe::ProbeThread() {
                     Logger::Info("ServerProbe: discarded a registration that "
                                  "was superseded by an identity reset");
                 } else if (!token.empty()) {
-                    SaveClientIdentity(serverUrl_, clientKey_, id, token,
-                                       reportedIntervalSec);
+                    {
+                        std::lock_guard<std::mutex> fileLock(g_identityFileMutex);
+                        bool fresh = false;
+                        {
+                            std::lock_guard<std::mutex> lk(mutex_);
+                            fresh = identityGen_ == gen;
+                        }
+                        if (fresh) {
+                            SaveClientIdentity(serverUrl_, clientKey_, id, token,
+                                               reportedIntervalSec);
+                        }
+                    }
                     blocked_ = false;
                     registered = true;
                     wasOnline = true;
