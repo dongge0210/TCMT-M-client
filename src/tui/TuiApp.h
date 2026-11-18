@@ -556,6 +556,7 @@ private:
     int DrawCpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawMemoryPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
+    int DrawAnePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawNetworkPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);
     int DrawTpmPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW);

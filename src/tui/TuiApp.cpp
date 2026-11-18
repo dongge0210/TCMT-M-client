@@ -653,6 +653,15 @@ int TuiApp::DrawGpuPanel(WINDOW* win, const TuiData& data, int y, int x0, int ma
     return lines;
 }
 
+int TuiApp::DrawAnePanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
+    if (maxW < 10) return 0;
+    DrawPanelTitle(win, y, x0, maxW, "ANE", false);
+    char val[32];
+    snprintf(val, sizeof(val), "%.1f%%", data.aneUsage);
+    DrawUsageBarRow(win, y + 1, x0, maxW, "Use:", data.aneUsage, val);
+    return 2;
+}
+
 int TuiApp::DrawDiskPanel(WINDOW* win, const TuiData& data, int y, int x0, int maxW) {
     if (maxW < 10) return 0;
 
@@ -3912,6 +3921,14 @@ void TuiApp::Run() {
 
         // === Right panels (storage / network / thermal first) ===
         int ry = 2;
+#if defined(TCMT_MACOS) && defined(__aarch64__)
+        // ANE sits at the top of the right column, mirroring the CPU/GPU
+        // usage bars on the left. No detail view, so it is not focusable.
+        if (ry < maxY) {
+            const int h = DrawAnePanel(stdscr, data, ry, rx, rightW);
+            if (h > 0) ry += h + 1;
+        }
+#endif
         if (ry < maxY) {
             int h = DrawDiskPanel(stdscr, data, ry, rx, rightW);
             RegisterPanel(PanelId::Disk, ry, rx, rightW, h);
