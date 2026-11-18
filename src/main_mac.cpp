@@ -2233,10 +2233,16 @@ int main(int argc, char* argv[]) {
                     std::string dname = !dsk.label.empty() ? dsk.label
                         : (dsk.letter ? std::string(1, dsk.letter) : std::string("?"));
                     char db[256];
-                    snprintf(db, sizeof(db), "{\"name\":\"%s\",\"used\":%llu,\"total\":%llu}",
+                    snprintf(db, sizeof(db),
+                             "{\"name\":\"%s\",\"used\":%llu,\"total\":%llu,"
+                             "\"free\":%llu,\"fs\":\"%s\",\"mount\":\"%s\"}",
                              JsonSafe(dname).c_str(),
                              (unsigned long long)dsk.usedSpace,
-                             (unsigned long long)dsk.totalSize);
+                             (unsigned long long)dsk.totalSize,
+                             (unsigned long long)(dsk.totalSize > dsk.usedSpace
+                                 ? dsk.totalSize - dsk.usedSpace : 0),
+                             JsonSafe(dsk.fileSystem).c_str(),
+                             JsonSafe(dsk.mountPoint).c_str());
                     body += db;
                 }
                 body += "]";
@@ -2273,7 +2279,103 @@ int main(int argc, char* argv[]) {
                              temps[ti].first.c_str(), temps[ti].second);
                     body += tb;
                 }
-                body += "]}";
+                body += "]";
+                // Fans: name + RPM. An empty array means the machine has none
+                // we can see, which is not the same as not collecting them.
+                body += ",\"fans\":[";
+                {
+                    const auto& fans = s_fan.GetFans();
+                    for (size_t fi = 0; fi < fans.size(); ++fi) {
+                        if (fi) body += ",";
+                        char fb[192];
+                        snprintf(fb, sizeof(fb), "{\"name\":\"%s\",\"rpm\":%d}",
+                                 JsonSafe(fans[fi].name).c_str(),
+                                 static_cast<int>(fans[fi].rpm));
+                        body += fb;
+                    }
+                }
+                body += "]";
+                // Per-core readings. macOS has usage and frequency per logical
+                // core; the per-core die sensor is still empty, so `temp` is
+                // omitted rather than reported as 0 C.
+                body += ",\"perCore\":[";
+                {
+                    // perCoreCount counts cores with temperature/frequency
+                    // data; macOS only wires usage, so take whichever count is
+                    // larger or every core would be dropped as "no sensors".
+                    const int cores = std::min(
+                        (std::max)(static_cast<int>(data.perCoreCount),
+                                   static_cast<int>(data.perCoreUsageCount)),
+                        16);
+                    for (int ci = 0; ci < cores; ++ci) {
+                        if (ci) body += ",";
+                        char cb[192];
+                        int written = snprintf(cb, sizeof(cb),
+                                               "{\"core\":%d,\"usage\":%.1f",
+                                               ci + 1, data.perCoreUsage[ci]);
+                        if (data.perCoreFreq[ci] > 0 && written > 0 &&
+                            written < static_cast<int>(sizeof(cb))) {
+                            written += snprintf(cb + written, sizeof(cb) - written,
+                                                ",\"freq\":%.0f", data.perCoreFreq[ci]);
+                        }
+                        if (data.perCoreTemp[ci] > 0 && written > 0 &&
+                            written < static_cast<int>(sizeof(cb))) {
+                            snprintf(cb + written, sizeof(cb) - written,
+                                     ",\"temp\":%.1f", data.perCoreTemp[ci]);
+                        }
+                        body += cb;
+                        body += "}";
+                    }
+                }
+                body += "]";
+                // Memory detail: available and compressed sit next to used and
+                // total; swap is its own line.
+                {
+                    char mb[256];
+                    snprintf(mb, sizeof(mb),
+                             ",\"memory_available\":%llu,\"memory_compressed\":%llu,"
+                             "\"swap_used\":%llu,\"swap_total\":%llu",
+                             (unsigned long long)data.availableMemory,
+                             (unsigned long long)data.compressedMemory,
+                             (unsigned long long)data.swapUsed,
+                             (unsigned long long)data.swapTotal);
+                    body += mb;
+                }
+                // Load average and process count: cheap, and they explain a
+                // 100% CPU reading that is not a stuck machine.
+                {
+                    char lb[192];
+                    snprintf(lb, sizeof(lb),
+                             ",\"load1\":%.2f,\"load5\":%.2f,\"load15\":%.2f,"
+                             "\"process_count\":%d",
+                             data.loadAvg1, data.loadAvg5, data.loadAvg15,
+                             data.processCount);
+                    body += lb;
+                }
+                // Cluster temperatures, GPU detail.
+                {
+                    char gb[256];
+                    snprintf(gb, sizeof(gb),
+                             ",\"cpu_pcore_temp\":%.1f,\"cpu_ecore_temp\":%.1f,"
+                             "\"gpu_memory\":%llu,\"gpu_memory_pct\":%.1f,"
+                             "\"gpu_freq\":%.0f",
+                             data.cpuPcoreTemp, data.cpuEcoreTemp,
+                             (unsigned long long)data.gpuMemory,
+                             data.gpuMemoryPercent, data.gpuFreq);
+                    body += gb;
+                }
+                // Power draw in watts, only when the platform has a live
+                // source: a 0 W reading would look like a measured idle.
+                if (data.powerAvailable) {
+                    char pb[160];
+                    snprintf(pb, sizeof(pb),
+                             ",\"cpu_power\":%.2f,\"gpu_power\":%.2f,"
+                             "\"ane_power\":%.2f",
+                             data.cpuPower / 1000.0, data.gpuPower / 1000.0,
+                             data.anePower / 1000.0);
+                    body += pb;
+                }
+                body += "}";
                 s_probe.PostSnapshot(ApplySectionFilter(std::move(body)));
                 if (pushDue) {
                     s_probe.RequestFlush();
