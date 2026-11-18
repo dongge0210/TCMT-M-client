@@ -95,6 +95,9 @@ static bool ValidIoBase(uint16_t b) { return b >= 0x100 && b != 0xFFFF; }
 
 std::vector<BoardTemp> BoardTempReader::ReadAll(std::vector<BoardFan>* fansOut) {
     std::vector<BoardTemp> result;
+    // Clear up front: the early returns below leave the caller's cache empty
+    // instead of holding RPMs from a board that has stopped answering.
+    if (fansOut) fansOut->clear();
     static PawnIOWrapper s_pa;
     static uint16_t s_base = 0;
     static bool s_ready = false;

@@ -80,8 +80,11 @@ std::filesystem::path PathFromUtf8(const char* text) {
 #ifdef _WIN32
     const int wide = MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
     if (wide <= 1) return {};
-    std::wstring out(static_cast<size_t>(wide - 1), L'\0');
+    // MultiByteToWideChar writes `wide` units including the terminator, so the
+    // buffer must be that large; the string is trimmed afterwards.
+    std::wstring out(static_cast<size_t>(wide), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, text, -1, out.data(), wide);
+    out.resize(static_cast<size_t>(wide - 1));
     return std::filesystem::path(out);
 #else
     return std::filesystem::path(text);

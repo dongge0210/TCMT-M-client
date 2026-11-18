@@ -86,6 +86,7 @@ bool WlanDetect(WlanData* out) {
 
     // --- Current connection (SSID, BSSID, security, tx rate) ---
     PWLAN_CONNECTION_ATTRIBUTES pConn = NULL;
+    ULONG signalQuality = 0;    // copied out before pConn is freed
     WLAN_OPCODE_VALUE_TYPE opCode = wlan_opcode_value_type_query_only;
     DWORD connSize = 0;
 
@@ -119,6 +120,7 @@ bool WlanDetect(WlanData* out) {
                      pConn->wlanAssociationAttributes.dot11Bssid[5]);
 
             out->txRate = GetTxRateMbps(pConn);
+            signalQuality = pConn->wlanAssociationAttributes.wlanSignalQuality;
 
             // Security
             switch (pConn->wlanSecurityAttributes.dot11AuthAlgorithm) {
@@ -130,16 +132,17 @@ bool WlanDetect(WlanData* out) {
             case DOT11_AUTH_ALGO_RSNA:             snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA2-Enterprise"); break;
             case DOT11_AUTH_ALGO_RSNA_PSK:         snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA2-Personal"); break;
             // DOT11_AUTH_ALGO_WPA3 and DOT11_AUTH_ALGO_WPA3_SAE may share the
-            // same value in newer SDKs (see wlantypes.h); handle with one case.
-#if DOT11_AUTH_ALGO_WPA3 != DOT11_AUTH_ALGO_WPA3_SAE
-            case DOT11_AUTH_ALGO_WPA3:
-#endif
+            // same value in newer SDKs (see wlantypes.h), so they cannot be
+            // two case labels. SAE takes the case, plain WPA3 the comparison.
             case DOT11_AUTH_ALGO_WPA3_SAE:         snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA3-SAE"); break;
             case DOT11_AUTH_ALGO_WPA3_ENT_192:     snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA3-Enterprise-192"); break;
             case DOT11_AUTH_ALGO_OWE:              snprintf(out->security, WLAN_SECURITY_MAX_LEN, "OWE"); break;
             default:
-                snprintf(out->security, WLAN_SECURITY_MAX_LEN, "Auth-0x%X",
-                         pConn->wlanSecurityAttributes.dot11AuthAlgorithm);
+                if (pConn->wlanSecurityAttributes.dot11AuthAlgorithm == DOT11_AUTH_ALGO_WPA3)
+                    snprintf(out->security, WLAN_SECURITY_MAX_LEN, "WPA3");
+                else
+                    snprintf(out->security, WLAN_SECURITY_MAX_LEN, "Auth-0x%X",
+                             pConn->wlanSecurityAttributes.dot11AuthAlgorithm);
                 break;
             }
 
@@ -178,9 +181,8 @@ bool WlanDetect(WlanData* out) {
         }
         if (pRssi) WlanFreeMemory(pRssi);
         // Fallback: use wlanSignalQuality (0-100%) from connection attributes
-        if (out->rssi == 0 && out->isConnected && pConn) {
-            ULONG sq = pConn->wlanAssociationAttributes.wlanSignalQuality;
-            if (sq <= 100) out->rssi = -100 + (int32_t)sq * 70 / 100;
+        if (out->rssi == 0 && out->isConnected && signalQuality <= 100) {
+            out->rssi = -100 + (int32_t)signalQuality * 70 / 100;
         }
     }
 

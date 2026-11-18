@@ -248,6 +248,19 @@ void DiskInfo::SampleIoRates(std::vector<PhysicalDiskSmartData>& disks) {
     apply(writeCtr, false);
 }
 
+// WQL string literals escape backslash and quote with a backslash. DiskDrive
+// DeviceIDs are paths such as \\.\PHYSICALDRIVE0, so pasting them unescaped
+// makes ExecQuery reject the whole statement and the map comes back empty.
+static std::wstring EscapeWqlString(const std::wstring& text) {
+    std::wstring escaped;
+    escaped.reserve(text.size() + 8);
+    for (wchar_t ch : text) {
+        if (ch == L'\\' || ch == L'\'') escaped.push_back(L'\\');
+        escaped.push_back(ch);
+    }
+    return escaped;
+}
+
 // Physical disk index -> the drive letters that live on it. Two ASSOCIATORS
 // queries per disk (DiskDrive -> DiskPartition -> LogicalDisk). That is WMI
 // work, so it belongs with the periodic disk scan, never in a per-tick path.
@@ -274,7 +287,7 @@ static void MapDriveLetters(IWbemServices* svc, std::map<int, std::vector<char>>
                 std::wstring diskDeviceID = vtDeviceID.bstrVal;
                 // ASSOCIATORS OF {Win32_DiskDrive.DeviceID='...'} WHERE AssocClass = Win32_DiskDriveToDiskPartition
                 std::wstring query = L"ASSOCIATORS OF {Win32_DiskDrive.DeviceID='";
-                query += diskDeviceID;
+                query += EscapeWqlString(diskDeviceID);
                 query += L"'} WHERE AssocClass = Win32_DiskDriveToDiskPartition";
                 IEnumWbemClassObject* pEnumPart = nullptr;
                 HRESULT hrPart = svc->ExecQuery(bstr_t(L"WQL"), bstr_t(query.c_str()), 
@@ -290,7 +303,7 @@ static void MapDriveLetters(IWbemServices* svc, std::map<int, std::vector<char>>
                             std::wstring partDeviceID = vtPartDeviceID.bstrVal;
                             // 再查询关联的逻辑驱动器
                             std::wstring queryLogical = L"ASSOCIATORS OF {Win32_DiskPartition.DeviceID='";
-                            queryLogical += partDeviceID;
+                            queryLogical += EscapeWqlString(partDeviceID);
                             queryLogical += L"'} WHERE AssocClass = Win32_LogicalDiskToPartition";
                             IEnumWbemClassObject* pEnumLogical = nullptr;
                             HRESULT hrLogical = svc->ExecQuery(bstr_t(L"WQL"), bstr_t(queryLogical.c_str()),
@@ -305,7 +318,7 @@ static void MapDriveLetters(IWbemServices* svc, std::map<int, std::vector<char>>
                                         && vtLogicalDeviceID.vt == VT_BSTR) {
                                         std::wstring logicalDeviceID = vtLogicalDeviceID.bstrVal;
                                         if (logicalDeviceID.length() >= 2 && logicalDeviceID[1] == L':') {
-                                            char letter = static_cast<char>(::toupper(logicalDeviceID[0]));
+                                            char letter = static_cast<char>(::towupper(logicalDeviceID[0]));
                                             out[diskIndex].push_back(letter);
                                         }
                                     }
