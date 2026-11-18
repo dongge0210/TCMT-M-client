@@ -2313,6 +2313,17 @@ int main(int argc, char* argv[]) {
                         int written = snprintf(cb, sizeof(cb),
                                                "{\"core\":%d,\"usage\":%.1f",
                                                ci + 1, data.perCoreUsage[ci]);
+                        // Which silicon the core sits on. Index order is the
+                        // P cores first, then the E cores; when the platform
+                        // cannot tell us the split we say nothing rather than
+                        // guess.
+                        if (data.perCorePEKnown && written > 0 &&
+                            written < static_cast<int>(sizeof(cb))) {
+                            const char* kind =
+                                (ci + 1) <= data.performanceCores ? "P" : "E";
+                            written += snprintf(cb + written, sizeof(cb) - written,
+                                                ",\"type\":\"%s\"", kind);
+                        }
                         if (data.perCoreFreq[ci] > 0 && written > 0 &&
                             written < static_cast<int>(sizeof(cb))) {
                             written += snprintf(cb + written, sizeof(cb) - written,
