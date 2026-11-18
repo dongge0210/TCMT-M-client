@@ -405,7 +405,9 @@ bool SmartReader::Read(int diskIndex, PhysicalDiskSmartData& smartData) {
                 auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal, const wchar_t* name, const wchar_t* desc) {
                     if (smartData.attributeCount >= 32) return;
                     auto& a = smartData.attributes[smartData.attributeCount++];
-                    a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = 0;
+                    // NVMe has no historical worst value; repeat the current one
+                    // so the UI does not show a column of zeroes.
+                    a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = cur;
                     wcsncpy_s(a.name, name, _TRUNCATE);
                     wcsncpy_s(a.description, desc, _TRUNCATE);
                 };

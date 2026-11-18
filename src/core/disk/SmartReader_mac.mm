@@ -236,7 +236,9 @@ static bool ReadNVMeSmart(int diskIndex, PhysicalDiskSmartData &out) {
                 auto addAttr = [&](uint8_t id, uint8_t cur, uint64_t rawVal, const WCHAR* name, const WCHAR* desc) {
                     if (out.attributeCount >= 32) return;
                     auto& a = out.attributes[out.attributeCount++];
-                    a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = 0;
+                    // NVMe has no historical worst value; repeat the current one
+                    // so the UI does not show a column of zeroes.
+                    a.id = id; a.current = cur; a.rawValue = rawVal; a.worst = cur;
                     wcs_ncopy(a.name, name, 63);
                     wcs_ncopy(a.description, desc, 127);
                 };
