@@ -112,13 +112,29 @@ std::filesystem::path ExecutableDir() {
 #endif
 }
 
+// MSVC flags plain getenv as unsafe (C4996); _dupenv_s is the supported form.
+static std::string GetEnv(const char* name) {
+#ifdef _WIN32
+    char* raw = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&raw, &len, name) != 0 || raw == nullptr) return {};
+    std::string value(raw);
+    free(raw);
+    return value;
+#else
+    const char* raw = std::getenv(name);
+    return raw ? std::string(raw) : std::string();
+#endif
+}
+
 void LoadOnce() {
-    if (const char* env = std::getenv("TCMT_I18N"); env && *env) {
-        if (ParseFile(PathFromUtf8(env))) {
-            Logger::Debug(std::string("i18n: table replaced from TCMT_I18N=") + env);
+    const std::string env = GetEnv("TCMT_I18N");
+    if (!env.empty()) {
+        if (ParseFile(PathFromUtf8(env.c_str()))) {
+            Logger::Debug("i18n: table replaced from TCMT_I18N=" + env);
             return;
         }
-        Logger::Error(std::string("i18n: TCMT_I18N did not load (") + env + "), using the embedded table");
+        Logger::Error("i18n: TCMT_I18N did not load (" + env + "), using the embedded table");
     }
 
     const std::filesystem::path dir = ExecutableDir();
