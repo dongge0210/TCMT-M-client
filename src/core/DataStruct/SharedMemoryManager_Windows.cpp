@@ -279,6 +279,7 @@ void SharedMemoryManager::WriteToSharedMemory(const SystemInfo& systemInfo) {
         pBuffer->cpuPower = static_cast<float>(systemInfo.cpuPower);
         pBuffer->gpuPower = static_cast<float>(systemInfo.gpuPower);
         pBuffer->anePower = static_cast<float>(systemInfo.anePower);
+        pBuffer->aneUsage = static_cast<float>(systemInfo.aneUsage);
 
         // OS
         SafeCopyStr(pBuffer->osVersion, sizeof(pBuffer->osVersion), systemInfo.osVersion);

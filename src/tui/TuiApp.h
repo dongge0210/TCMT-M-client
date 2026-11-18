@@ -230,6 +230,7 @@ struct TuiData {
     double cpuPower = 0.0;
     double gpuPower = 0.0;
     double anePower = 0.0;
+    double aneUsage = 0.0;   // ANE utilization %, derived from power (macOS)
     // Power availability (IOReport energy). Unprivileged processes cannot
     // read energy on macOS 27 (confirmed system limit); the root helper
     // tcmt-powerd supplies it via shared memory when installed. Filled by

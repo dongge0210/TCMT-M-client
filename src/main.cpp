@@ -865,6 +865,7 @@ static void BuildWindowsIpcSchema(tcmt::ipc::SchemaHeader& schemaHdr,
     addField("power/cpu", offsetof(B, cpuPower), 4);
     addField("power/gpu", offsetof(B, gpuPower), 4);
     addField("power/ane", offsetof(B, anePower), 4);
+    addField("power/ane_usage", offsetof(B, aneUsage), 4);
 
     // OS
     addField("os/version", offsetof(B, osVersion), sizeof(B::osVersion), (uint8_t)FT::String);
@@ -2013,6 +2014,7 @@ static void RunMonitoringLoop(std::shared_ptr<WmiManager>& wmiManager,
                 tuiData.cpuPower = sysInfo.cpuPower;
                 tuiData.gpuPower = sysInfo.gpuPower;
                 tuiData.anePower = sysInfo.anePower;
+                tuiData.aneUsage = sysInfo.aneUsage;
                 // PowerMonitor is the macOS energy-model implementation; on
                 // Windows IsPowerAvailable() is a stub that always returns
                 // false, so the panel said "unavailable" even when NVML had

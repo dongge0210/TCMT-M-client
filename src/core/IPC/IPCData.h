@@ -133,6 +133,7 @@ struct IPCDataBlock {
     float    cpuPower                = 0;
     float    gpuPower                = 0;
     float    anePower                = 0;
+    float    aneUsage                = 0;   // ANE utilization %, derived from power
 
     // OS
     char     osVersion[128]          = {};

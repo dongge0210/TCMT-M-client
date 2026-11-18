@@ -351,12 +351,14 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.cpuPower = data_.cpuPower.load();
     tuiData.gpuPower = data_.gpuPower.load();
     tuiData.anePower = data_.anePower.load();
+    tuiData.aneUsage = data_.aneUsage.load();
     tuiData.powerAvailable = pwrAvail;
     tuiData.gpuFreq = data_.gpuFreq.load();
     tuiData.gpuMaxFreq = data_.gpuMaxFreq.load();
     sysInfo.cpuPower = data_.cpuPower.load();
     sysInfo.gpuPower = data_.gpuPower.load();
     sysInfo.anePower = data_.anePower.load();
+    sysInfo.aneUsage = data_.aneUsage.load();
     sysInfo.powerAvailable = pwrAvail;
     sysInfo.gpuFreq = data_.gpuFreq.load();
 
@@ -494,6 +496,8 @@ void ModuleCoordinator::Snapshot(SystemInfo& sysInfo, tcmt::TuiData& tuiData) {
     tuiData.powerAvailable = sysInfo.powerAvailable;
     sysInfo.anePower = 0.0;
     tuiData.anePower = 0.0;
+    sysInfo.aneUsage = 0.0;
+    tuiData.aneUsage = 0.0;
     if (!gpuCache.empty() && gpuCache.front().powerValid) {
         sysInfo.gpuPower = gpuCache.front().powerMilliwatts;
         tuiData.gpuPower = gpuCache.front().powerMilliwatts;
@@ -678,6 +682,9 @@ void ModuleCoordinator::TemperatureLoop(tcmt::compat::StopToken st) {
                 if (gp > 0) data_.gpuPower.store(gp);
                 if (ap > 0) data_.anePower.store(ap);
             }
+            // The ANE has no residency counter; utilization is inferred from
+            // its power draw against the 8 W peak (same approach as asitop).
+            data_.aneUsage.store(PowerMonitor::AneUsageFromPower(data_.anePower.load()));
 #endif
         } catch (const std::exception& e) {
             Logger::Error("TemperatureLoop: " + std::string(e.what()));

@@ -94,6 +94,7 @@ struct ModuleData {
     std::atomic<double> cpuPower{0.0};
     std::atomic<double> gpuPower{0.0};
     std::atomic<double> anePower{0.0};
+    std::atomic<double> aneUsage{0.0};   // % derived from anePower
     // ETW dirty flags — set by callbacks, checked by loops
     std::atomic<bool> powerDirty{false};
     std::atomic<bool> networkDirty{false};

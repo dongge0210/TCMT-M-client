@@ -1279,7 +1279,8 @@ int TuiApp::DrawPowerPanel(WINDOW* win, const TuiData& data, int y, int x0, int 
         snprintf(val, sizeof(val), "%.2f W", data.gpuPower / 1000.0);
         DrawLabeledValue(win, y + lines, x0, maxW, "GPU:", val);
         lines++;
-        snprintf(val, sizeof(val), "%.2f W", data.anePower / 1000.0);
+        snprintf(val, sizeof(val), "%.2f W (%.0f%%)", data.anePower / 1000.0,
+                 data.aneUsage);
         DrawLabeledValue(win, y + lines, x0, maxW, "ANE:", val);
         lines++;
         snprintf(val, sizeof(val), "%.2f W", totalPower);

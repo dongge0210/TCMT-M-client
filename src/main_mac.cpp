@@ -134,6 +134,7 @@ static void BuildIPCDataBlockSchema(tcmt::ipc::SchemaHeader& header,
     addF("power/cpu",             offsetof(B, cpuPower));
     addF("power/gpu",             offsetof(B, gpuPower));
     addF("power/ane",             offsetof(B, anePower));
+    addF("power/ane_usage",       offsetof(B, aneUsage));
 
     // OS
     addS("os/version",            offsetof(B, osVersion), 128);
@@ -1986,6 +1987,7 @@ int main(int argc, char* argv[]) {
                         b->cpuPower = static_cast<float>(data.cpuPower);
                         b->gpuPower = static_cast<float>(data.gpuPower);
                         b->anePower = static_cast<float>(data.anePower);
+                        b->aneUsage = static_cast<float>(data.aneUsage);
                         // OS
                         std::strncpy(b->osVersion, data.osVersion.c_str(), 127);
                         b->osVersion[127] = '\0';
@@ -2381,9 +2383,9 @@ int main(int argc, char* argv[]) {
                     char pb[160];
                     snprintf(pb, sizeof(pb),
                              ",\"cpu_power\":%.2f,\"gpu_power\":%.2f,"
-                             "\"ane_power\":%.2f",
+                             "\"ane_power\":%.2f,\"ane_usage\":%.1f",
                              data.cpuPower / 1000.0, data.gpuPower / 1000.0,
-                             data.anePower / 1000.0);
+                             data.anePower / 1000.0, data.aneUsage);
                     body += pb;
                 }
                 body += "}";

@@ -52,6 +52,17 @@ public:
     double GetCpuPower() const   { return cpuPower_.load(); }
     double GetGpuPower() const   { return gpuPower_.load(); }
     double GetAnePower() const   { return anePower_.load(); }
+    // ANE utilization, derived from power: the ANE exposes no residency or
+    // busy counter, so tools such as asitop divide measured ANE power by its
+    // 8 W peak (asitop/asitop.py: ane_W / ane_max_power with ane_max_power =
+    // 8.0). Clamped to 0..100.
+    double GetAneUsage() const   { return AneUsageFromPower(anePower_.load()); }
+    static double AneUsageFromPower(double milliwatts) {
+        double pct = milliwatts / 80.0;  // 8000 mW peak → 100 %
+        if (pct < 0.0) pct = 0.0;
+        if (pct > 100.0) pct = 100.0;
+        return pct;
+    }
 
     // True when a power source is actually producing readings: direct IOReport
     // energy (macOS <= 26, or root) or a live tcmt-powerd SHM feed (macOS 27+,
