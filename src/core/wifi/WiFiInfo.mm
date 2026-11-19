@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
@@ -224,6 +225,24 @@ static void RunSystemProfiler() {
 // Shared CLLocationManager retained across Detect() calls for auth polling.
 static CLLocationManager* s_locMgr = nil;
 
+// CoreLocation throttles its own APIs and logs "Supported CoreLocation API
+// call rate exceeded" when they are hit too often. Detect() runs every few
+// seconds, so hold the answer for a while instead of asking each time; the
+// grant still reaches the panel through the hand-off marker, which Detect()
+// reads separately and immediately.
+static CLAuthorizationStatus CachedAuthorizationStatus() {
+    static CLAuthorizationStatus cached = kCLAuthorizationStatusNotDetermined;
+    static bool valid = false;
+    static std::chrono::steady_clock::time_point fetched{};
+    const auto now = std::chrono::steady_clock::now();
+    if (!valid || std::chrono::duration_cast<std::chrono::seconds>(now - fetched).count() >= 10) {
+        cached = [CLLocationManager authorizationStatus];
+        fetched = now;
+        valid = true;
+    }
+    return cached;
+}
+
 void WiFiInfo::RequestLocationAuthorization() {
     // Location Services is granted per login user. A root process has no
     // window-server session to prompt in, so the request would never produce
@@ -277,7 +296,10 @@ int WiFiInfo::RunLocationRequestBlocking(int timeoutSeconds) {
         // exit that does not depend on a user event that may never come.
         __block bool decided = false;
         NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutSeconds];
-        [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer* timer) {
+        // One poll per second: CoreLocation logs a "call rate exceeded"
+        // warning when its APIs are hit more often, and the dialog is not
+        // answered faster than that anyway.
+        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer* timer) {
             const CLAuthorizationStatus st = [CLLocationManager authorizationStatus];
             if (st == kCLAuthorizationStatusAuthorizedAlways) { result = 2; decided = true; }
             else if (st == kCLAuthorizationStatusDenied ||
@@ -349,7 +371,7 @@ void WiFiInfo::Detect() {
         // explain the sudo case rather than showing a generic denial.
         data_.locationRoot = (geteuid() == 0);
 
-        CLAuthorizationStatus auth = [CLLocationManager authorizationStatus];
+        CLAuthorizationStatus auth = CachedAuthorizationStatus();
         // macOS only reports Always (kCLAuthorizationStatusAuthorized is its
         // deprecated alias); the When In Use value is iOS-only.
         bool locationOK = (auth == kCLAuthorizationStatusAuthorizedAlways);
